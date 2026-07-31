@@ -94,6 +94,42 @@ function resyncWorld(state, game, world) {
   }
 }
 
+/**
+ * The rival brains outlive the match: bots.js builds them once, in main.js, and
+ * nothing here can replace them. Left alone they carry a goal aimed at a
+ * building that no longer exists, blacklists keyed on the *old* clock, and a
+ * `lastKnight` stamp from ~200s in — which, against a match clock that has just
+ * gone back to zero, reads as "played a knight in the future" and suppresses
+ * the Knight heuristic for the whole replay.
+ *
+ * main.js exposes the bots on `game`, so wipe the per-match fields in place
+ * (never the identity fields: rng, lag, speedScale, noise — those are the
+ * personalities, and a replayed Alex should still move like Alex).
+ */
+function resetBots(game) {
+  const bots = game.bots;
+  if (!bots) return false;
+  if (typeof bots.reset === 'function') {
+    try { bots.reset(); return true; } catch (e) { /* fall through */ }
+  }
+  const brains = bots.brains;
+  if (!Array.isArray(brains)) return false;
+  brains.forEach((b, i) => {
+    b.goal = null;
+    b.hold = 0;
+    b.stuck = 0;
+    b.sinceAct = 0;
+    b.watchProgress = -1;
+    b.externalGather = false;
+    b.intentAge = 0;
+    b.lastKnight = -999;
+    b.think = 0.15 + i * 0.17;
+    if (b.avoidNodes && b.avoidNodes.clear) b.avoidNodes.clear();
+    if (b.avoidGoals && b.avoidGoals.clear) b.avoidGoals.clear();
+  });
+  return true;
+}
+
 function resetInterface(game) {
   // showResults() is deliberately un-closeable — only "Play Again" leaves it.
   // Routing through a dismissible sheet lets the modal layer go without a
@@ -128,6 +164,7 @@ export function resetMatchInPlace(state, game, opts = {}) {
     for (const p of state.players) resetPlayer(p);
     resetState(state, (opts.seed ?? (Math.random() * 1e9)) | 0);
     resyncWorld(state, g, world);
+    resetBots(g);
     resetInterface(g);
     return true;
   } catch (err) {

@@ -703,6 +703,16 @@ export function createMatchFlow(state, game) {
     // rules-side victory with panels missing) — still run the sequence.
     if (state.phase === 'over' && stage !== 'over') { startWin(state.winner); return; }
 
+    // The draft completed without this state machine driving it — a test
+    // harness, a restored match, or the bots' own fallback watchdog. Tear the
+    // opening chrome down instead of leaving the intro card floating over live
+    // gameplay, and hand control to the player.
+    if (state.phase === 'play' && stage !== 'play' && stage !== 'handoff') {
+      ui.hideIntro();
+      enterPlay(true);
+      return;
+    }
+
     switch (stage) {
       case 'boot':
         if (stageT >= T.boot) {

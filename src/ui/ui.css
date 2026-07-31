@@ -370,7 +370,7 @@
   .pr-txt{font-size:11px;letter-spacing:.07em}
   .pr-sub{font-size:9px}
 
-  .hud-toasts{bottom:calc(var(--gB) + 108px)}
+  .hud-toasts{bottom:calc(var(--gB) + 54px);max-width:44vw}
   .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
 
   .ann-txt{font-size:22px}

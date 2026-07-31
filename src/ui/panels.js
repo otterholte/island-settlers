@@ -91,6 +91,23 @@ export function createPanels(root, state, game) {
     return portId === null ? TRADE_BASE : activeTradeRatio(state, 0, give, portId);
   }
 
+  /**
+   * The rate available *right now*. economy.js owns the proximity rule, so when
+   * it is attached we defer to it — otherwise the sheet would keep honouring
+   * the ratio it opened with after the settler has walked away from the post.
+   * Without economy (a bare UI harness) we fall back to the opening ratio.
+   */
+  function liveQuote() {
+    const eco = game && game.economy;
+    if (eco && typeof eco.quote === 'function') {
+      try {
+        const q = eco.quote(give || RES[0]);
+        if (q) return q;
+      } catch (e) { /* fall through to the local rate */ }
+    }
+    return { ok: true, ratio: currentRatio(), label: null };
+  }
+
   function syncTrade() {
     for (const r of RES) {
       const have = me.res[r] | 0;
@@ -101,12 +118,13 @@ export function createPanels(root, state, game) {
       toggle(getPick[r].node, 'on', get === r);
       toggle(getPick[r].node, 'off', give === r);
     }
-    const ratio = currentRatio();
+    const q = liveQuote();
+    const ratio = q.ok ? q.ratio : currentRatio();
     setText(ratioBig.childNodes[0], ratio);
     const port = portId === null ? null : ports[portId];
-    setText(ratioWhere, port
+    setText(ratioWhere, q.label || (port
       ? (port.resource ? `${RES_LABEL[port.resource]} Dock` : 'Trading Dock')
-      : 'Great Market');
+      : 'Great Market'));
 
     let note = '';
     if (give) {
@@ -117,7 +135,8 @@ export function createPanels(root, state, game) {
 
     const have = give ? (me.res[give] | 0) : 0;
     let why = '', ok = false;
-    if (!give) why = 'Pick what to give';
+    if (!q.ok) why = q.reason || 'Head to a trading post';
+    else if (!give) why = 'Pick what to give';
     else if (!get) why = 'Pick what to get';
     else if (give === get) why = 'Pick two different resources';
     else if (have < ratio) why = `Need ${ratio} ${RES_LABEL[give]} — you have ${have}`;
@@ -129,6 +148,22 @@ export function createPanels(root, state, game) {
 
   function doTheTrade() {
     if (!give || !get || give === get) return false;
+
+    // economy.js is the one path that enforces "you must be standing at the
+    // post". Route through it whenever it exists; it toasts on success and
+    // hands back a display-ready reason on refusal.
+    const eco = game && game.economy;
+    if (eco && typeof eco.trade === 'function') {
+      const r = eco.trade(give, get);
+      if (!r || !r.ok) {
+        syncTrade();
+        if (r && r.reason) setText(tradeWhy, r.reason);
+        return false;
+      }
+      close();
+      return true;
+    }
+
     const ratio = currentRatio();
     const ok = doTrade(state, 0, give, get, ratio);
     if (!ok) { syncTrade(); return false; }

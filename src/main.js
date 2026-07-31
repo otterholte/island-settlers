@@ -138,6 +138,13 @@ async function boot() {
   const panels = panelM.createPanels(uiRoot, state, game);
   game.hud = hud; game.overview = overview; game.panels = panels;
 
+  // The simulation systems are part of the public `game` surface: matchflow
+  // needs `bots` so an in-place restart can wipe stale bot goals, and the
+  // verification harness drives the same functions the frame loop does.
+  game.bots = bots;
+  game.gathering = gathering;
+  game.controller = controller;
+
   const flow = flowM.createMatchFlow(state, game);
   game.flow = flow;
   if (ecoM && ecoM.attach) ecoM.attach(game);
