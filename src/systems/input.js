@@ -1,0 +1,332 @@
+/**
+ * Island Settlers — input.
+ *
+ *   createInput(domRoot) ->
+ *     { stick:{x,y}, tapped, actionPressed, mapPressed, update() }
+ *
+ * Mobile-first: a floating virtual joystick that materialises wherever the
+ * thumb first lands in the left ~45% of the screen, follows it, and fades on
+ * release. The joystick lives in the DOM (cheap, crisp, no draw calls) and is
+ * inserted BEFORE #ui at a lower z-index so HUD panels always paint over it.
+ * Everything is pointer-events:none except the knob itself.
+ *
+ * Keyboard fallback for desktop / headless testing:
+ *   WASD + arrows -> stick, Space -> actionPressed, Tab -> mapPressed.
+ *
+ * `stick` is normalised with magnitude clamped to 1; +y is "up the screen"
+ * (away from the camera). Edge flags are true for exactly one update().
+ *
+ * Owner: Character agent.
+ */
+
+const LEFT_ZONE = 0.45;
+const RING_R = 66;          // css px — ring radius
+const MAX_R = 52;           // knob travel
+const DEAD = 0.16;          // fraction of MAX_R ignored
+const TAP_MOVE = 14;
+const TAP_MS = 320;
+
+const IGNORE_SEL = '#ui,[data-ui],#boot,#rotate-gate';
+
+const CSS = `
+/* z-index:0 (not a positive value) so the layer paints in DOM order against
+   #ui: inserted before it, it always sits under the HUD whatever ui.css does. */
+#js-layer{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden;
+  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#gl{touch-action:none}
+#js-ring{position:absolute;left:0;top:0;width:${RING_R * 2}px;height:${RING_R * 2}px;
+  margin:${-RING_R}px 0 0 ${-RING_R}px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 50% 40%,rgba(255,255,255,.17),rgba(9,30,56,.34) 58%,rgba(9,30,56,.06) 74%);
+  border:2px solid rgba(255,255,255,.40);
+  box-shadow:0 0 26px rgba(70,180,255,.34),inset 0 0 22px rgba(130,205,255,.22),0 8px 20px rgba(0,0,0,.30);
+  opacity:0;transform:scale(.68);
+  transition:opacity .17s ease,transform .2s cubic-bezier(.2,1.5,.4,1);will-change:transform,opacity}
+#js-ring::after{content:'';position:absolute;inset:15px;border-radius:50%;
+  border:1.5px dashed rgba(255,255,255,.20)}
+#js-ring::before{content:'';position:absolute;inset:-7px;border-radius:50%;
+  background:conic-gradient(from -90deg,rgba(120,205,255,.0),rgba(120,205,255,.30),rgba(120,205,255,.0));
+  filter:blur(6px);opacity:.85}
+#js-ring.on{opacity:1;transform:scale(1)}
+#js-knob{position:absolute;left:0;top:0;width:60px;height:60px;margin:-30px 0 0 -30px;
+  border-radius:50%;pointer-events:auto;
+  background:radial-gradient(circle at 36% 28%,#ffffff,#dbecff 34%,#7db2ea 72%,#2f6bb0 100%);
+  border:2px solid rgba(255,255,255,.88);
+  box-shadow:0 5px 15px rgba(0,0,0,.36),0 0 20px rgba(130,205,255,.55),
+             inset 0 -5px 9px rgba(18,58,110,.36),inset 0 3px 6px rgba(255,255,255,.7);
+  opacity:0;transform:scale(.6);
+  transition:opacity .15s ease,transform .18s cubic-bezier(.2,1.5,.4,1);will-change:transform,opacity}
+#js-knob.on{opacity:1;transform:scale(1)}
+#js-knob i{position:absolute;inset:16px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.55);border-bottom-color:rgba(47,107,176,.5)}
+`;
+
+function injectStyle(doc) {
+  if (!doc || !doc.head || doc.getElementById('js-style')) return;
+  const el = doc.createElement('style');
+  el.id = 'js-style';
+  el.textContent = CSS;
+  doc.head.appendChild(el);
+}
+
+function matchesIgnored(el) {
+  for (let n = el; n && n.nodeType === 1; n = n.parentNode) {
+    if (typeof n.matches === 'function' && n.matches(IGNORE_SEL)) return true;
+  }
+  return false;
+}
+
+export function createInput(domRoot) {
+  const doc = (domRoot && domRoot.ownerDocument)
+    || (typeof document !== 'undefined' ? document : null);
+  const win = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null);
+  const root = domRoot || (doc ? doc.body : null);
+
+  const stick = { x: 0, y: 0 };
+  const api = {
+    stick,
+    tapped: false,
+    actionPressed: false,
+    mapPressed: false,
+    frame: 0,
+    active: false,
+    update, dispose, setEnabled
+  };
+
+  /* ------------------------------------------------------------------ DOM */
+  let layer = null, ring = null, knob = null;
+  if (doc && root && doc.createElement) {
+    injectStyle(doc);
+    layer = doc.createElement('div');
+    layer.id = 'js-layer';
+    ring = doc.createElement('div');
+    ring.id = 'js-ring';
+    knob = doc.createElement('div');
+    knob.id = 'js-knob';
+    const inner = doc.createElement('i');
+    knob.appendChild(inner);
+    layer.appendChild(ring);
+    layer.appendChild(knob);
+    const ui = root.querySelector ? root.querySelector('#ui') : null;
+    if (ui && ui.parentNode === root) root.insertBefore(layer, ui);
+    else root.appendChild(layer);
+  }
+
+  /* ---------------------------------------------------------------- state */
+  let enabled = true;
+  let stickId = null;
+  let originX = 0, originY = 0;
+  let curX = 0, curY = 0;
+  let touchStick = false;
+
+  let tapId = null, tapX = 0, tapY = 0, tapT = 0;
+  let tapPending = false;
+  let actionPending = false;
+  let mapPending = false;
+
+  const keys = new Set();
+
+  const rect = () => {
+    if (root && root.getBoundingClientRect) {
+      const r = root.getBoundingClientRect();
+      if (r && r.width) return r;
+    }
+    const w = (win && win.innerWidth) || 1280;
+    const h = (win && win.innerHeight) || 720;
+    return { left: 0, top: 0, width: w, height: h };
+  };
+
+  function placeRing(x, y) {
+    if (!ring) return;
+    ring.style.transform = 'scale(1)';
+    ring.style.left = x + 'px';
+    ring.style.top = y + 'px';
+    ring.classList.add('on');
+  }
+  function placeKnob(x, y) {
+    if (!knob) return;
+    knob.style.left = x + 'px';
+    knob.style.top = y + 'px';
+    knob.classList.add('on');
+  }
+  function hideStick() {
+    if (ring) ring.classList.remove('on');
+    if (knob) knob.classList.remove('on');
+  }
+
+  function beginStick(id, lx, ly) {
+    stickId = id;
+    touchStick = true;
+    originX = lx; originY = ly;
+    curX = lx; curY = ly;
+    placeRing(lx, ly);
+    placeKnob(lx, ly);
+    api.active = true;
+  }
+
+  function moveStick(lx, ly) {
+    let dx = lx - originX;
+    let dy = ly - originY;
+    const m = Math.hypot(dx, dy);
+    if (m > MAX_R) {
+      // Drag the origin along so the stick never feels pinned.
+      originX += (dx / m) * (m - MAX_R);
+      originY += (dy / m) * (m - MAX_R);
+      dx = (dx / m) * MAX_R;
+      dy = (dy / m) * MAX_R;
+      placeRing(originX, originY);
+    }
+    curX = originX + dx;
+    curY = originY + dy;
+    placeKnob(curX, curY);
+
+    const mag = Math.hypot(dx, dy) / MAX_R;
+    if (mag <= DEAD) { stick.x = 0; stick.y = 0; return; }
+    const scaled = Math.min(1, (mag - DEAD) / (1 - DEAD));
+    const inv = 1 / (Math.hypot(dx, dy) || 1);
+    stick.x = dx * inv * scaled;
+    stick.y = -dy * inv * scaled;      // screen y is down; stick y is up
+  }
+
+  function endStick() {
+    stickId = null;
+    touchStick = false;
+    api.active = false;
+    stick.x = 0; stick.y = 0;
+    hideStick();
+  }
+
+  /* ------------------------------------------------------------- pointers */
+  function onDown(ev) {
+    if (!enabled) return;
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    const tgt = ev.target;
+    if (tgt && tgt !== knob && matchesIgnored(tgt)) return;
+
+    const r = rect();
+    const lx = ev.clientX - r.left;
+    const ly = ev.clientY - r.top;
+
+    if (lx < r.width * LEFT_ZONE) {
+      if (stickId !== null) return;             // multi-touch safe
+      beginStick(ev.pointerId, lx, ly);
+      if (ev.cancelable) ev.preventDefault();
+    } else if (tapId === null) {
+      tapId = ev.pointerId;
+      tapX = ev.clientX; tapY = ev.clientY;
+      tapT = (win && win.performance ? win.performance.now() : Date.now());
+    }
+  }
+
+  function onMove(ev) {
+    if (ev.pointerId === stickId) {
+      const r = rect();
+      moveStick(ev.clientX - r.left, ev.clientY - r.top);
+      if (ev.cancelable) ev.preventDefault();
+    } else if (ev.pointerId === tapId) {
+      if (Math.hypot(ev.clientX - tapX, ev.clientY - tapY) > TAP_MOVE) tapId = null;
+    }
+  }
+
+  function onUp(ev) {
+    if (ev.pointerId === stickId) { endStick(); return; }
+    if (ev.pointerId === tapId) {
+      const now = (win && win.performance ? win.performance.now() : Date.now());
+      const moved = Math.hypot(ev.clientX - tapX, ev.clientY - tapY);
+      if (moved <= TAP_MOVE && now - tapT <= TAP_MS) tapPending = true;
+      tapId = null;
+    }
+  }
+
+  function onCancel(ev) {
+    if (ev.pointerId === stickId) endStick();
+    if (ev.pointerId === tapId) tapId = null;
+  }
+
+  function onBlur() { endStick(); keys.clear(); }
+
+  /* ------------------------------------------------------------- keyboard */
+  const MOVE_KEYS = new Set([
+    'KeyW', 'KeyA', 'KeyS', 'KeyD',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
+  ]);
+
+  function onKeyDown(ev) {
+    const code = ev.code || ev.key;
+    if (!code) return;
+    if (code === 'Space' || code === 'Tab') { if (ev.preventDefault) ev.preventDefault(); }
+    if (MOVE_KEYS.has(code) && ev.preventDefault) ev.preventDefault();
+    if (keys.has(code)) return;                  // ignore auto-repeat
+    keys.add(code);
+    if (code === 'Space') actionPending = true;
+    if (code === 'Tab') mapPending = true;
+  }
+
+  function onKeyUp(ev) {
+    const code = ev.code || ev.key;
+    if (code) keys.delete(code);
+  }
+
+  /* ------------------------------------------------------------- wire up */
+  const bound = [];
+  function on(target, type, fn, opts) {
+    if (!target || !target.addEventListener) return;
+    target.addEventListener(type, fn, opts);
+    bound.push([target, type, fn, opts]);
+  }
+  if (root) on(root, 'pointerdown', onDown, { passive: false });
+  if (win) {
+    on(win, 'pointermove', onMove, { passive: false });
+    on(win, 'pointerup', onUp);
+    on(win, 'pointercancel', onCancel);
+    on(win, 'blur', onBlur);
+    on(win, 'keydown', onKeyDown);
+    on(win, 'keyup', onKeyUp);
+    on(win, 'contextmenu', e => { if (e.preventDefault) e.preventDefault(); });
+  }
+
+  /* --------------------------------------------------------------- update */
+  function update() {
+    api.frame++;
+
+    if (!touchStick) {
+      let kx = 0, ky = 0;
+      if (keys.has('KeyD') || keys.has('ArrowRight')) kx += 1;
+      if (keys.has('KeyA') || keys.has('ArrowLeft')) kx -= 1;
+      if (keys.has('KeyW') || keys.has('ArrowUp')) ky += 1;
+      if (keys.has('KeyS') || keys.has('ArrowDown')) ky -= 1;
+      const m = Math.hypot(kx, ky);
+      if (m > 1) { kx /= m; ky /= m; }
+      stick.x = kx; stick.y = ky;
+    }
+
+    // Safety: never hand out a magnitude above 1 or a NaN.
+    if (!Number.isFinite(stick.x)) stick.x = 0;
+    if (!Number.isFinite(stick.y)) stick.y = 0;
+    const mag = Math.hypot(stick.x, stick.y);
+    if (mag > 1) { stick.x /= mag; stick.y /= mag; }
+
+    api.tapped = tapPending; tapPending = false;
+    api.actionPressed = actionPending; actionPending = false;
+    api.mapPressed = mapPending; mapPending = false;
+
+    if (win && win.dispatchEvent && typeof CustomEvent === 'function') {
+      if (api.actionPressed) win.dispatchEvent(new CustomEvent('island:action'));
+      if (api.mapPressed) win.dispatchEvent(new CustomEvent('island:map'));
+    }
+  }
+
+  function setEnabled(v) {
+    enabled = !!v;
+    if (!enabled) endStick();
+  }
+
+  function dispose() {
+    for (const [t, type, fn, opts] of bound) t.removeEventListener(type, fn, opts);
+    bound.length = 0;
+    if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+  }
+
+  return api;
+}
+
+export default createInput;
