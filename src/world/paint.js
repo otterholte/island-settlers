@@ -40,64 +40,106 @@ function ring(g, x, y, r, w, stroke) {
 
 /* ------------------------------------------------------- number token atlas */
 
-/* The gameplay-critical colour convention: 6 and 8 are RED, everything else
-   is near-black. Both sit on a bone/cream disc with a single thin dark ring.
-   The old art stacked a dark-brown ring, a mid-brown ring and a brown numeral
-   on a cream face — brown on brown, illegible at gameplay size. */
-const HOT = '#cf2a1e';
-const HOT_DARK = '#8d1a11';
-const INK = '#16110c';
-const BONE = '#f7efdc';
-const BONE_HI = '#fffaf0';
-const RIM = '#33251a';
+/*
+ * TOKEN COLOURS ARE AUTHORED AS ALBEDO, NOT AS FINAL PIXELS.
+ *
+ * The tokens used to be their own private colour pipeline: an unlit shader
+ * writing a NoColorSpace texel straight to the framebuffer with no tone map
+ * and no output encode. Sampled with gl.readPixels, the painted face #f7efdc
+ * arrived on screen as (246,239,221) — bit-for-bit the canvas value — while
+ * every other surface in the frame went linear -> ACES -> sRGB and had its
+ * highlights rolled off. The disc was the only thing in the scene allowed to
+ * reach 250+, so it read as a glowing white sticker.
+ *
+ * The token shader now runs the standard pipeline (see island.js): sRGB decode
+ * -> scene irradiance -> ACES at exposure 1.05 -> sRGB encode. That transform
+ * is not a passthrough and it is not gentle. Under this scene's irradiance a
+ * pure white albedo tops out at (223,213,199) on screen, and an albedo of
+ * #f2e2bd — the "warm cream" you'd reach for instinctively — comes back out at
+ * roughly #dedad2, i.e. still washed out.
+ *
+ * So each constant below was solved backwards through three's ACES RRT/ODT fit
+ * for the screen colour we actually want, sampled off the reference art:
+ *
+ *   FACE     #dbc4a4 -> (210,183,140)  warm cream, well clear of the ceiling
+ *   RIM      #5f544e -> ( 86, 60, 42)  dark brown ring
+ *   INK      #323533 -> ( 30, 26, 18)  near-black numerals
+ *   HOT      #bf4335 -> (198, 44, 29)  6 and 8, unmistakably red
+ *
+ * If the lighting rig in sky.js changes, these need re-solving.
+ */
+const HOT = '#bf4335';       // 6 and 8
+const HOT_EDGE = '#642a24';  // outline that keeps a red glyph heavy
+const INK = '#323533';
+const FACE = '#dbc4a4';
+const RIM = '#5f544e';
+const TAU = Math.PI * 2;
+
+/**
+ * Fraction of an atlas cell taken up by the disc itself. The rest is headroom
+ * for the drop shadow, which falls below and outside the disc. island.js sizes
+ * its quads against this so the disc keeps its intended world size.
+ */
+export const DISC_FRAC = 0.86;
 
 function paintToken(g, cx, cy, R, number, pips) {
   const hot = number === 6 || number === 8;
 
-  // contact shadow under the disc
+  // ---- cast shadow: a squashed pool below the disc, not a halo around it.
+  // A ring of shadow on every side made the token look like a cut-out sticker;
+  // a pool underneath makes it read as standing on the tile.
   g.save();
-  g.globalAlpha = 0.30;
-  disc(g, cx, cy + R * 0.085, R * 0.985, '#1d1207');
+  g.translate(cx, cy + R * 0.66);
+  g.scale(1, 0.40);
+  const sg = g.createRadialGradient(0, 0, R * 0.20, 0, 0, R * 1.02);
+  sg.addColorStop(0.00, 'rgba(42,35,32,0.68)');
+  sg.addColorStop(0.55, 'rgba(42,35,32,0.40)');
+  sg.addColorStop(1.00, 'rgba(42,35,32,0)');
+  g.fillStyle = sg;
+  g.beginPath(); g.arc(0, 0, R * 1.02, 0, TAU); g.fill();
   g.restore();
 
-  // ONE thin dark ring, then the bone face. Nothing else eats the disc.
-  disc(g, cx, cy, R * 0.965, RIM);
-  disc(g, cx, cy, R * 0.885, BONE);
+  // ---- rim, then the cream face inside it
+  disc(g, cx, cy, R, RIM);
+  disc(g, cx, cy, R * 0.925, FACE);
 
-  // gentle top bevel — kept subtle so the numeral keeps full contrast
+  // ---- form: warm light off the top, earth bounce under the bottom. Kept
+  // gentle — a hard white bevel is what crushed the numeral contrast before.
   const grd = g.createLinearGradient(cx, cy - R, cx, cy + R);
-  grd.addColorStop(0, 'rgba(255,255,255,0.75)');
-  grd.addColorStop(0.45, 'rgba(255,255,255,0.06)');
-  grd.addColorStop(1, 'rgba(150,116,74,0.22)');
+  grd.addColorStop(0.00, 'rgba(255,244,222,0.70)');
+  grd.addColorStop(0.48, 'rgba(255,244,222,0.00)');
+  grd.addColorStop(1.00, 'rgba(70,50,34,0.34)');
   g.save();
-  g.beginPath(); g.arc(cx, cy, R * 0.885, 0, Math.PI * 2); g.clip();
+  g.beginPath(); g.arc(cx, cy, R * 0.925, 0, TAU); g.clip();
   g.fillStyle = grd; g.fillRect(cx - R, cy - R, R * 2, R * 2);
   g.restore();
-  ring(g, cx, cy, R * 0.845, R * 0.022, 'rgba(51,37,26,0.30)');
+  // seat the face into the rim
+  ring(g, cx, cy, R * 0.915, R * 0.030, 'rgba(95,84,78,0.55)');
 
   // ------------------------------------------------------------- numeral
   const label = String(number);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  // Big: the numeral is the whole point of the token.
-  const size = label.length > 1 ? R * 1.12 : R * 1.34;
+  // Large, but leaving a clear cream margin inside the rim like the reference.
+  const size = label.length > 1 ? R * 0.86 : R * 1.10;
   g.font = `900 ${size}px ${STACK}`;
-  const ny = cy - R * 0.13;
+  const ny = cy - R * 0.150;
   g.lineJoin = 'round';
-  g.lineWidth = R * 0.10;
-  // a bone halo keeps the glyph readable over the bevel
-  g.strokeStyle = BONE_HI;
-  g.strokeText(label, cx, ny);
-  g.lineWidth = R * 0.05;
-  g.strokeStyle = hot ? HOT_DARK : INK;
+  g.lineCap = 'round';
+  // a one-pixel warm lift under the glyph reads as engraving, not as a halo
+  g.fillStyle = 'rgba(255,248,232,0.42)';
+  g.fillText(label, cx, ny + R * 0.030);
+  // stroke then fill: the stroke is the weight, the fill is the colour
+  g.lineWidth = R * 0.055;
+  g.strokeStyle = hot ? HOT_EDGE : INK;
   g.strokeText(label, cx, ny);
   g.fillStyle = hot ? HOT : INK;
   g.fillText(label, cx, ny);
 
   // ---------------------------------------------------------------- pips
-  const pr = R * 0.072;
-  const gap = pr * 2.9;
-  const py = cy + R * 0.535;
+  const pr = R * 0.060;
+  const gap = pr * 3.1;
+  const py = cy + R * 0.560;
   const x0 = cx - (pips - 1) * gap * 0.5;
   for (let i = 0; i < pips; i++) {
     disc(g, x0 + i * gap, py, pr, hot ? HOT : INK);
@@ -107,6 +149,9 @@ function paintToken(g, cx, cy, R, number, pips) {
 /**
  * One atlas holding every number token. Returns { texture, cells } where
  * cells[i] = { u0, v0, u1, v1 } for tokens.length entries in the same order.
+ *
+ * The texture is sRGB, not raw: the sampler decodes it to linear so the token
+ * shader can light and tone map it alongside the rest of the island.
  */
 export function tokenAtlas(specs) {
   const CELL = 256;
@@ -119,9 +164,9 @@ export function tokenAtlas(specs) {
     specs.forEach((s, i) => {
       const cx = (i % cols) * CELL + CELL / 2;
       const cy = Math.floor(i / cols) * CELL + CELL / 2;
-      paintToken(g, cx, cy, CELL * 0.46, s.number, s.pips);
+      paintToken(g, cx, cy, CELL * DISC_FRAC * 0.5, s.number, s.pips);
     });
-  }, { raw: true, aniso: 8 });
+  }, { aniso: 8 });
   specs.forEach((s, i) => {
     const cx = i % cols, cy = Math.floor(i / cols);
     cells.push({

@@ -23,7 +23,7 @@ import {
   APOTHEM, SHELF, CLIFF_W, BEACH_TOP, PALETTE, SHORE,
   ROAD_STRIP_INNER
 } from './terrain.js';
-import { grainTexture, tokenAtlas } from './paint.js';
+import { grainTexture, tokenAtlas, DISC_FRAC } from './paint.js';
 import { hexBorderGeometry } from './borders.js';
 import { merge, triCount } from './geo.js';
 import { pipsFor } from '../core/constants.js';
@@ -202,14 +202,28 @@ function overlayGeometry(tile) {
 /*
  * Number tokens.
  *
- * Two things were broken. First the disc was a plain world-space billboard, so
- * a token six units from the camera drew three times the screen area of one
- * thirty units away and the set stopped reading as a single UI system. The
- * vertex stage below compensates: the quad is scaled by (d / D0)^0.62, which
- * leaves apparent size varying as d^-0.38 instead of d^-1. Over the camera's
- * working range that collapses a 3x spread to about 1.35x, and the clamp caps
- * it either side. Second the disc was far too big and floated too high; the
- * reference keeps it near a fifth of the hex width, sitting ON the tile.
+ * Three things were broken.
+ *
+ * 1. SIZE WITH DISTANCE. A plain world-space billboard six units from the
+ *    camera drew three times the screen area of one thirty units away and the
+ *    set stopped reading as a single UI system. The quad is scaled by
+ *    (d / D0)^0.62, leaving apparent size varying as d^-0.38 instead of d^-1;
+ *    over the camera's working range that collapses a 3x spread to ~1.35x.
+ *
+ * 2. SHAPE. The quad stayed world-vertical while the follow camera looks down
+ *    at roughly 40 degrees, so every disc rendered as a squashed ellipse. The
+ *    vertex stage now divides the local Y by cos(elevation) to put the circle
+ *    back, without tilting the quad into the terrain.
+ *
+ * 3. COLOUR PIPELINE — the reason the discs blew out to white. The old shader
+ *    sampled a NoColorSpace atlas and wrote the texel straight to the
+ *    framebuffer with toneMapped:false and no output encode. Measured with
+ *    gl.readPixels: painted #f7efdc arrived on screen as (246,239,221), the
+ *    exact canvas value, while everything else in the frame went
+ *    linear -> ACES(1.05) -> sRGB and had its highlights rolled off. The token
+ *    was the only object permitted to hit 250+, hence the glowing sticker.
+ *    It now decodes from sRGB, is lit by the scene's own irradiance, and goes
+ *    through the same tone map and encode as the ground under it.
  */
 const TOKEN_VERT = /* glsl */`
 attribute vec3 aCenter;
@@ -220,42 +234,86 @@ uniform float uRefDist;
 varying vec2 vUv;
 void main() {
   vec3 up = vec3(0.0, 1.0, 0.0);
-  vec3 look = uCam - aCenter;
-  look.y = 0.0;
-  float l = length(look);
-  vec3 fwd = l > 0.0001 ? look / l : vec3(0.0, 0.0, 1.0);
+  vec3 toCam = uCam - aCenter;
+  vec3 flatv = vec3(toCam.x, 0.0, toCam.z);
+  float fl = length(flatv);
+  vec3 fwd = fl > 0.0001 ? flatv / fl : vec3(0.0, 0.0, 1.0);
   vec3 right = normalize(cross(up, fwd));
 
-  float d = length(uCam - aCenter);
+  float d = length(toCam);
   float k = clamp(pow(max(d, 1.0) / uRefDist, 0.62), 0.70, 1.55);
 
-  // aCenter is the BASE of the disc and aLocal.y runs 0..2R upward, so the
-  // distance compensation grows the token off the ground instead of into it.
+  // A world-vertical billboard seen from a camera pitched down by E has its
+  // height squashed on screen by cos(E). cos(E) is the horizontal run of the
+  // view ray over its full length, so 1/that restores a circular disc.
+  float lean = clamp(fl / max(d, 0.0001), 0.36, 1.0);
+
+  // aCenter is the BASE of the disc and aLocal.y runs 0..2R upward, so both
+  // corrections grow the token off the ground instead of into it.
   vec3 c = aCenter;
-  c.y += sin(uTime * 1.15 + aCenter.x * 0.27 + aCenter.z * 0.19) * 0.07;
-  vec3 p = c + right * (aLocal.x * k) + up * (aLocal.y * k);
+  c.y += sin(uTime * 1.15 + aCenter.x * 0.27 + aCenter.z * 0.19) * 0.05;
+  vec3 p = c + right * (aLocal.x * k) + up * (aLocal.y * k / lean);
   vUv = uv;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 
 const TOKEN_FRAG = /* glsl */`
 uniform sampler2D uMap;
+uniform vec3 uLight;
 varying vec2 vUv;
 void main() {
-  vec4 c = texture2D(uMap, vUv);
-  if (c.a < 0.42) discard;
-  gl_FragColor = vec4(c.rgb, 1.0);
+  // uMap is an sRGB texture, so this is already linear albedo.
+  vec4 t = texture2D(uMap, vUv);
+  if (t.a < 0.06) discard;
+  gl_FragColor = vec4(t.rgb * uLight, t.a);
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
 }`;
+
+/*
+ * Resolve the scene's lights into one irradiance value for the tokens. Doing
+ * it this way rather than hard-coding a constant means the discs track the
+ * key/fill rig in sky.js instead of drifting away from it.
+ */
+const _lc = new THREE.Color();
+function tokenIrradiance(scene) {
+  const acc = new THREE.Color(0, 0, 0);
+  let key = null;
+  scene.traverse(o => {
+    if (o.isDirectionalLight && (!key || o.intensity > key.intensity)) key = o;
+  });
+  scene.traverse(o => {
+    if (o.isDirectionalLight) {
+      // The key sits high and roughly behind the follow camera, so a
+      // camera-facing disc holds a high N.L across the camera's working arc;
+      // 0.80 also stands in for the sheen a lacquered chit picks up. Measured
+      // at this value a white albedo tops out at (223,213,199) on screen,
+      // which is the headroom the atlas palette is solved against.
+      acc.add(_lc.copy(o.color).multiplyScalar(o.intensity * (o === key ? 0.80 : 0.30)));
+    } else if (o.isHemisphereLight) {
+      acc.add(_lc.copy(o.color).multiplyScalar(o.intensity * 0.62));
+      acc.add(_lc.copy(o.groundColor).multiplyScalar(o.intensity * 0.38));
+    } else if (o.isAmbientLight) {
+      acc.add(_lc.copy(o.color).multiplyScalar(o.intensity));
+    }
+  });
+  // r169's lambert BRDF divides every irradiance term by PI. Matching that is
+  // what puts the disc at the same exposure as the terrain it sits on.
+  acc.multiplyScalar(1 / Math.PI);
+  // Fallback for the degraded boot path, where sky.js never ran.
+  if (acc.r + acc.g + acc.b < 0.05) acc.setRGB(0.61, 0.48, 0.39);
+  return acc;
+}
 
 function buildTokens(scene) {
   const specs = tiles.filter(t => t.number > 0)
     .map(t => ({ tile: t, number: t.number, pips: pipsFor(t.number) }));
   const atlas = tokenAtlas(specs);
 
-  // Hex width (flat to flat) is 2 * APOTHEM = 15.59. At 1.85 the discs read as
-  // giant floating coins; 0.175 of the apothem puts the disc at 2.7 across,
-  // about a sixth of the hex, which is where the reference art keeps it.
-  const R = APOTHEM * 0.175;
+  // Hex width (flat to flat) is 2 * APOTHEM = 15.59, and the reference art
+  // keeps the disc near a sixth of that. The quad is larger than the disc by
+  // 1/DISC_FRAC because the atlas cell also carries the drop shadow.
+  const R = (APOTHEM * 0.152) / DISC_FRAC;
   const n = specs.length;
   const pos = new Float32Array(n * 4 * 3);
   const nrm = new Float32Array(n * 4 * 3);
@@ -270,7 +328,11 @@ function buildTokens(scene) {
     // Base of the disc, a hair over whatever is actually under the tile centre
     // — the plateau on most tiles, the flank of a peak on the mountains.
     const ground = Math.max(heightAt(t.x, t.z), topOf(t));
-    const base = ground + 0.34;
+    // The painted shadow pool occupies the bottom of the cell, so the quad base
+    // sits below the disc. Lift it enough that the disc clears the trees and
+    // rocks standing on the tile — the token is depth-tested like everything
+    // else, and a numeral hidden behind a fir is a numeral you cannot play on.
+    const base = ground + 1.15;
     const cell = atlas.cells[i];
     // aLocal.y runs 0 .. 2R so the shader can scale about the disc's base.
     const corners = [[-R, 0, cell.u0, cell.v0], [R, 0, cell.u1, cell.v0],
@@ -307,7 +369,8 @@ function buildTokens(scene) {
     uTime: { value: 0 },
     // The follow camera orbits ~30 units out; that is the distance at which a
     // token draws at exactly its authored world size.
-    uRefDist: { value: 30 }
+    uRefDist: { value: 30 },
+    uLight: { value: tokenIrradiance(scene) }
   };
   const mat = new THREE.ShaderMaterial({
     vertexShader: TOKEN_VERT,
@@ -315,8 +378,14 @@ function buildTokens(scene) {
     uniforms,
     side: THREE.DoubleSide,
     fog: false,
-    toneMapped: false,
-    transparent: false
+    // toneMapped stays true: it is what makes three inject the ACES function
+    // the fragment shader's tonemapping_fragment include expands to.
+    toneMapped: true,
+    // The drop shadow needs a soft edge, so the token blends instead of
+    // alpha-testing. depthWrite is kept on: discs sit on separate tiles and
+    // must still occlude anything drawn behind them.
+    transparent: true,
+    depthWrite: true
   });
   const mesh = new THREE.Mesh(g, mat);
   mesh.name = 'tokens';
