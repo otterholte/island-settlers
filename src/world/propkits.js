@@ -14,7 +14,28 @@
  */
 
 import * as THREE from 'three';
-import { merge, place, tint, gradient, box, cyl, cone, ball, rock, blade } from './geo.js';
+import { merge, place, tint, gradient, box, cyl, cone, ball, blob, rock, blade } from './geo.js';
+
+/*
+ * Triangle discipline
+ * -------------------
+ * These kits are instanced 20 to 600 times each, so a single wasted face on a
+ * conifer costs eighty-five faces in the frame. Two rules are applied
+ * throughout:
+ *
+ *   1. Caps that face away from every camera the game ever uses are dropped.
+ *     The play camera sits at a 50 degree downward pitch and the sun that
+ *     drives the shadow map is higher still, so the underside of a conifer
+ *     skirt, of a wheat ear, or of a trunk buried in the ground is never
+ *     rasterised. `cone(..., open)` and `cyl(..., open)` remove them.
+ *   2. Filler volumes — the blob inside a fern, the companion stone beside a
+ *     boulder, a pebble at half a metre across — use the 8-face `blob` / low
+ *     poly `rock` instead of the 20-face icosahedron. At their on-screen size
+ *     the two are indistinguishable, and the flat shading is on-style.
+ *
+ * Silhouette-defining volumes (hero canopies, the sheep, the ore seam) keep
+ * their original resolution.
+ */
 
 /* Canopies are deliberately DARKER than the grass and the forest floor they
    stand on. The build's greens used to be one acidic mid-tone across terrain,
@@ -44,44 +65,46 @@ export const C = {
 
 /* -------------------------------------------------------------------- trees */
 
-/** Tall stylised spruce: stacked cones on a chunky trunk.  (60 tris) */
+/** Tall stylised spruce: stacked cones on a chunky trunk.  (30 tris) */
 export function conifer() {
   const parts = [];
-  parts.push(place(cyl(0.10, 0.17, 1.05, 5, C.barkDark), 0, 0.52, 0));
-  parts.push(gradient(place(cone(0.72, 1.35, 7, C.needle), 0, 1.30, 0), C.needle, C.needleMid));
-  parts.push(gradient(place(cone(0.56, 1.20, 7, C.needleMid), 0, 2.02, 0), C.needleMid, C.needleHi));
-  parts.push(gradient(place(cone(0.36, 0.98, 6, C.needleHi), 0, 2.72, 0), C.needleMid, C.needleHi));
+  parts.push(place(cyl(0.10, 0.17, 1.05, 5, C.barkDark, true), 0, 0.52, 0));
+  parts.push(gradient(place(cone(0.72, 1.35, 7, C.needle, 0, true), 0, 1.30, 0), C.needle, C.needleMid));
+  parts.push(gradient(place(cone(0.56, 1.20, 7, C.needleMid, 0, true), 0, 2.02, 0), C.needleMid, C.needleHi));
+  parts.push(gradient(place(cone(0.36, 0.98, 6, C.needleHi, 0, true), 0, 2.72, 0), C.needleMid, C.needleHi));
   return merge(parts);
 }
 
-/** Shorter, rounder pine for layering behind the spruces.  (44 tris) */
+/** Shorter, rounder pine for layering behind the spruces.  (22 tris) */
 export function coniferShort() {
   const parts = [];
-  parts.push(place(cyl(0.11, 0.16, 0.6, 5, C.bark), 0, 0.3, 0));
-  parts.push(gradient(place(cone(0.78, 1.05, 6, C.needle), 0, 0.92, 0), C.needle, C.needleMid));
-  parts.push(gradient(place(cone(0.52, 0.86, 6, C.needleMid), 0, 1.52, 0), C.needleMid, C.needleHi));
+  parts.push(place(cyl(0.11, 0.16, 0.6, 5, C.bark, true), 0, 0.3, 0));
+  parts.push(gradient(place(cone(0.78, 1.05, 6, C.needle, 0, true), 0, 0.92, 0), C.needle, C.needleMid));
+  parts.push(gradient(place(cone(0.52, 0.86, 6, C.needleMid, 0, true), 0, 1.52, 0), C.needleMid, C.needleHi));
   return merge(parts);
 }
 
-/** Broadleaf: leaning trunk with two overlapping canopy blobs.  (60 tris) */
+/** Broadleaf: leaning trunk with two overlapping canopy blobs.  (38 tris) */
 export function broadleaf() {
   const parts = [];
-  const t = cyl(0.11, 0.19, 1.5, 5, C.bark);
+  const t = cyl(0.11, 0.19, 1.5, 5, C.bark, true);
   place(t, 0, 0.75, 0, 0, 0, 0.07);
   parts.push(t);
+  // The lead canopy holds the silhouette and keeps its 20 faces; the smaller
+  // one only breaks the outline, so 8 faces read the same at any distance.
   parts.push(gradient(place(ball(0.86, 0, C.leafHi), 0.06, 1.88, 0), C.leaf, C.leafHi));
-  parts.push(gradient(place(ball(0.56, 0, C.leaf), -0.58, 1.55, 0.22), C.leaf, C.leafHi));
+  parts.push(gradient(place(blob(0.62, C.leaf), -0.58, 1.55, 0.22), C.leaf, C.leafHi));
   return merge(parts);
 }
 
-/** The hero tree used for the harvestable forest nodes.  (~86 tris) */
+/** The hero tree used for the harvestable forest nodes.  (43 tris) */
 export function heroTree() {
   const parts = [];
-  parts.push(place(cyl(0.15, 0.28, 1.25, 6, C.barkDark), 0, 0.62, 0));
+  parts.push(place(cyl(0.15, 0.28, 1.25, 6, C.barkDark, true), 0, 0.62, 0));
   parts.push(place(cyl(0.09, 0.13, 0.55, 4, C.bark, true), 0.30, 1.15, 0.12, 0, 0, -0.75));
-  parts.push(gradient(place(cone(0.95, 1.55, 8, C.needle), 0, 1.55, 0), C.needle, C.needleMid));
-  parts.push(gradient(place(cone(0.74, 1.35, 8, C.needleMid), 0, 2.38, 0), C.needleMid, C.needleHi));
-  parts.push(gradient(place(cone(0.48, 1.10, 7, C.needleHi), 0, 3.16, 0), C.needleMid, C.needleHi));
+  parts.push(gradient(place(cone(0.95, 1.55, 8, C.needle, 0, true), 0, 1.55, 0), C.needle, C.needleMid));
+  parts.push(gradient(place(cone(0.74, 1.35, 8, C.needleMid, 0, true), 0, 2.38, 0), C.needleMid, C.needleHi));
+  parts.push(gradient(place(cone(0.48, 1.10, 7, C.needleHi, 0, true), 0, 3.16, 0), C.needleMid, C.needleHi));
   return merge(parts);
 }
 
@@ -101,13 +124,13 @@ export function deadwood() {
   const log = cyl(0.20, 0.23, 1.7, 6, C.bark);
   place(log, 0.95, 0.21, 0.55, Math.PI / 2, 0.5, 0);
   parts.push(log);
-  parts.push(place(rock(0.30, 0, C.stone, 0.4, 12), -0.55, 0.14, 0.35));
+  parts.push(place(rock(0.32, 0, C.stone, 0.44, 12, true), -0.55, 0.14, 0.35));
   return merge(parts);
 }
 
 /* -------------------------------------------------------------- undergrowth */
 
-/** Fern fronds around a low bush.  (28 tris) */
+/** Fern fronds around a low bush.  (16 tris) */
 export function undergrowth() {
   const parts = [];
   for (let i = 0; i < 4; i++) {
@@ -116,7 +139,9 @@ export function undergrowth() {
     place(b, Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12, 0, a, 0.22);
     parts.push(b);
   }
-  parts.push(gradient(place(ball(0.38, 0, C.leaf), 0.40, 0.26, -0.3), C.leaf, C.leafHi));
+  // The bush is a 40cm lump behind four fronds; 8 faces is all it ever showed.
+  parts.push(gradient(place(blob(0.42, C.leaf), 0.40, 0.26, -0.3, 0, 0.6, 0, 1, 0.82, 1),
+    C.leaf, C.leafHi));
   return merge(parts);
 }
 
@@ -153,7 +178,9 @@ export function flowerTuft() {
     const st = blade(0.045, h, 0x6ea83c, 0x8dc855, 0.10, 1);
     place(st, x, 0, z, 0, a + 1.2, 0);
     parts.push(st);
-    parts.push(place(cone(0.12, 0.14, 4, petals[i]), x, h + 0.04, z, Math.PI, 0, 0));
+    // Bell-shaped: the cone is flipped, so its cap is the face you look down
+    // on. It stays. Dropping a radial segment is the free saving here.
+    parts.push(place(cone(0.13, 0.14, 3, petals[i]), x, h + 0.04, z, Math.PI, 0, 0));
   }
   return merge(parts);
 }
@@ -161,11 +188,13 @@ export function flowerTuft() {
 /* --------------------------------------------------------------- wheat */
 
 /**
- * Dense wheat cluster: tapered stalks topped with fat ears.  (~56 tris)
+ * Dense wheat cluster: tapered stalks topped with fat ears.  (24 tris)
  *
- * Seven stalks rather than five, and every one now carries an ear. Combined
- * with a tighter footprint in props.js the fields tiles read as a solid gold
- * mass instead of sparse twigs on bare sand.
+ * Six stalks, four of them eared. Combined with a tight footprint in props.js
+ * the fields tiles read as a solid gold mass instead of sparse twigs on bare
+ * sand. This is the most-instanced kit in the game after grass (472 of them),
+ * so the ears are open cones: their base points at the sky-facing stalk top and
+ * is covered by it, and each cap was costing the frame 1,400 triangles.
  */
 export function wheatTuft() {
   const parts = [];
@@ -180,7 +209,7 @@ export function wheatTuft() {
     place(b, x, 0, z, 0, a, 0.11);
     parts.push(b);
     if (i % 3 !== 2) {
-      const ear = cone(0.13, 0.40, 3, C.wheatHi);
+      const ear = cone(0.13, 0.40, 3, C.wheatHi, 0, true);
       place(ear, x + 0.02, h + 0.06, z, 0, a, 0.14);
       parts.push(gradient(ear, C.wheat, C.wheatHi));
     }
@@ -215,27 +244,29 @@ export function hayBale() {
 
 /* ---------------------------------------------------------------- stone */
 
-/** (20 tris) */
+/** Pebble grade — 307 of them, none wider than half a metre.  (8 tris) */
 export function smallRock(seed = 5) {
-  return rock(0.34, 0, C.stone, 0.45, seed);
+  return rock(0.36, 0, C.stone, 0.50, seed, true);
 }
 
-/** (40 tris) */
+/** (28 tris) */
 export function boulder(seed = 9) {
   const parts = [];
+  // Lead stone keeps its 20 faces — boulders are a metre across and sit on the
+  // waterline where they catch the eye. The companion chip goes low poly.
   parts.push(place(rock(0.88, 0, C.stone, 0.30, seed), 0, 0.60, 0));
-  parts.push(place(rock(0.38, 0, C.stoneHi, 0.42, seed + 3), 0.78, 0.24, 0.32));
+  parts.push(place(rock(0.40, 0, C.stoneHi, 0.46, seed + 3, true), 0.78, 0.24, 0.32));
   return merge(parts);
 }
 
-/** Tall shard of rock for the mountain skyline.  (52 tris) */
+/** Tall shard of rock for the mountain skyline.  (28 tris) */
 export function spire() {
   const parts = [];
   const s = cone(0.62, 2.6, 6, C.slate);
   place(s, 0, 1.28, 0, 0.05, 0.4, 0.07);
   parts.push(gradient(s, C.slate, C.slateHi));
-  parts.push(place(rock(0.48, 0, C.slate, 0.38, 21), 0.5, 0.24, -0.32));
-  parts.push(place(rock(0.30, 0, C.slateHi, 0.38, 33), -0.46, 0.16, 0.36));
+  parts.push(place(rock(0.50, 0, C.slate, 0.42, 21, true), 0.5, 0.24, -0.32));
+  parts.push(place(rock(0.32, 0, C.slateHi, 0.42, 33, true), -0.46, 0.16, 0.36));
   return merge(parts);
 }
 
@@ -380,7 +411,7 @@ export function timberPile() {
     parts.push(place(cyl(0.11, 0.11, 1.3, 5, C.plankDark, true), 0.24, 0.30 + i * 0.19, 0.1,
       Math.PI / 2, 0.3, 0));
   }
-  parts.push(place(rock(0.26, 0, C.stone, 0.4, 71), -0.7, 0.13, 0.35));
+  parts.push(place(rock(0.28, 0, C.stone, 0.44, 71, true), -0.7, 0.13, 0.35));
   return merge(parts);
 }
 

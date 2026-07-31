@@ -3,11 +3,19 @@
  *
  * Chunky heroic proportions, Clash-of-Clans flavoured: head is ~1/3.2 of the
  * 2.0-unit total height, torso is short, limbs are stubby, hands are big.
- * Every bone is ONE merged mesh (vertex colours carry the material variety)
- * so a full settler costs ~10-13 draw calls instead of ~40.
  *
  * Local space: feet at y = 0, character faces +Z.
  * (Board convention: facing = atan2(dz,dx) -> mesh.rotation.y = PI/2 - facing.)
+ *
+ * The rig is a real bone hierarchy — hips, torso, neck, two arm chains, two leg
+ * chains, pack — but every bone's geometry is welded into ONE SkinnedMesh with
+ * hard 1.0 weights. Rigid skinning reproduces a transform rig exactly, so the
+ * animation in settler.js is untouched while a settler costs 2 draw calls for
+ * its body (skin + textured head) instead of ten to fourteen.
+ *
+ * Bots additionally build at a reduced tessellation (`BOT_LOD`). They render at
+ * 1.70 presence scale off in the middle distance; the fillet resolution that
+ * the hero needs at 2.35 in the centre of frame is invisible on them.
  *
  * Owner: Character agent.
  */
@@ -15,9 +23,31 @@
 import * as THREE from 'three';
 import { CHAR_HEIGHT, PLAYER_COLORS } from '../core/constants.js';
 import {
-  part, mergeParts, roundedBox, capsule, ball, tube, rock,
+  part, mergeParts, skinCombine,
+  roundedBox as _roundedBox, capsule as _capsule, ball as _ball, tube as _tube, rock,
   canvasTexture, hexCss, shade, bodyMaterial
 } from './procgeo.js';
+
+/* --------------------------------------------------------------- build LOD */
+
+/** Tessellation multiplier applied while a rig is under construction. */
+const BOT_LOD = 0.58;
+let LOD = 1;
+
+const seg = (n, min) => Math.max(min, Math.round(n * LOD));
+
+function roundedBox(w, h, d, r, wSeg = 14, hSeg = 8) {
+  return _roundedBox(w, h, d, r, seg(wSeg, 7), seg(hSeg, 5));
+}
+function capsule(radius, length, cap = 4, radial = 10) {
+  return _capsule(radius, length, seg(cap, 2), seg(radial, 5));
+}
+function ball(radius, wSeg = 12, hSeg = 8) {
+  return _ball(radius, seg(wSeg, 6), seg(hSeg, 4));
+}
+function tube(rTop, rBot, h, s = 12, open = false) {
+  return _tube(rTop, rBot, h, seg(s, 6), open);
+}
 
 /* ------------------------------------------------------------- proportions */
 
@@ -238,7 +268,7 @@ function hairGeometry(pal) {
     [-0.04, 0.30, -0.20, 0.23, -0.6, -0.3]
   ];
   for (const [x, y, z, r, rx, rz] of tufts) {
-    p.push(part(new THREE.ConeGeometry(r * 0.42 * S, r * 1.15 * S, 7), hl,
+    p.push(part(new THREE.ConeGeometry(r * 0.42 * S, r * 1.15 * S, seg(7, 4)), hl,
       [x * S, y * S, z * S], [rx, 0, rz]));
   }
   // Bots wear a colour-coded cap, merged into the hair mesh (no extra draw).
@@ -319,8 +349,8 @@ function packGeometry(pal) {
       [s * 0.10 * S, -0.045 * S, 0.125 * S]));
   }
   // bedroll lashed under the flap
-  p.push(part(new THREE.CylinderGeometry(0.055 * S, 0.055 * S, 0.34 * S, 10), pal.tunicDark,
-    [0, -0.13 * S, 0.075 * S], [0, 0, Math.PI / 2]));
+  p.push(part(new THREE.CylinderGeometry(0.055 * S, 0.055 * S, 0.34 * S, seg(10, 6)),
+    pal.tunicDark, [0, -0.13 * S, 0.075 * S], [0, 0, Math.PI / 2]));
   return mergeParts(p);
 }
 
@@ -486,45 +516,56 @@ function mesh(geo, mat, castShadow = true) {
 }
 
 /**
- * Build the full rig. `detailed` adds real elbow / knee joints (2 extra draw
- * calls per limb pair); bots run the cheaper baked-bend variant.
+ * Build the full rig. `detailed` adds real elbow / knee joints and full
+ * tessellation; bots run the baked-bend, reduced-segment variant.
+ *
+ * The returned handles (`hips`, `torso`, `neck`, `arms[].root`, `arms[].fore`,
+ * `legs[].root`, `legs[].shin`, `pack`) are THREE.Bone instances, which are
+ * plain Object3Ds — settler.js drives them with exactly the same position /
+ * rotation / scale writes it always used. The difference is that they now feed
+ * a Skeleton instead of each carrying their own Mesh.
  */
 export function buildRig(pal, detailed) {
+  LOD = detailed ? 1 : BOT_LOD;
   const bm = bodyMaterial();
   const root = new THREE.Group();          // yaw + bob + squash
-  const hips = new THREE.Group();
-  hips.position.y = RIG.hipY;
-  root.add(hips);
 
-  const torso = new THREE.Group();
-  hips.add(torso);
-  const torsoMesh = mesh(torsoGeometry(pal), bm);
-  torso.add(torsoMesh);
+  const bones = [];
+  const pieces = [];                       // { geometry, bone } in bone-local space
+  const boneOf = new Map();
+  const addBone = (parent, x = 0, y = 0, z = 0) => {
+    const b = new THREE.Bone();
+    b.position.set(x, y, z);
+    parent.add(b);
+    boneOf.set(b, bones.length);
+    bones.push(b);
+    return b;
+  };
+  const skin = (bone, geometry) => { if (geometry) pieces.push({ bone, geometry }); };
+
+  const hips = addBone(root, 0, RIG.hipY, 0);
+  const torso = addBone(hips);
+  skin(torso, torsoGeometry(pal));
 
   // head ---------------------------------------------------------------
-  const neck = new THREE.Group();
-  neck.position.y = RIG.headY - RIG.hipY;
-  torso.add(neck);
+  const neck = addBone(torso, 0, RIG.headY - RIG.hipY, 0);
+  // The face is a painted canvas map, so the head is the one part that cannot
+  // share the body's vertex-colour material. It rides the neck bone directly
+  // as a plain child mesh — one extra call, and only one.
   const headMesh = mesh(headGeometry(), makeHeadMaterial(pal));
   neck.add(headMesh);
-  const hairMesh = mesh(hairGeometry(pal), bm);
-  neck.add(hairMesh);
+  skin(neck, hairGeometry(pal));
 
   // arms ---------------------------------------------------------------
   const arms = [];
   for (const side of [1, -1]) {           // +1 = right hand (holds the tool)
-    const g = new THREE.Group();
-    g.position.set(side * RIG.shoulderX, RIG.shoulderY - RIG.hipY, 0);
-    torso.add(g);
+    const g = addBone(torso, side * RIG.shoulderX, RIG.shoulderY - RIG.hipY, 0);
     const built = armGeometry(pal, side, detailed);
-    const upperMesh = mesh(built.upper, bm);
-    g.add(upperMesh);
+    skin(g, built.upper);
     let fore = null;
     if (built.lower) {
-      fore = new THREE.Group();
-      fore.position.y = -RIG.upperArm;
-      g.add(fore);
-      fore.add(mesh(built.lower, bm));
+      fore = addBone(g, 0, -RIG.upperArm, 0);
+      skin(fore, built.lower);
     }
     const hand = new THREE.Group();
     hand.position.y = detailed ? -RIG.foreArm * 0.88 : -(RIG.upperArm + RIG.foreArm * 0.86);
@@ -535,26 +576,40 @@ export function buildRig(pal, detailed) {
   // legs ---------------------------------------------------------------
   const legs = [];
   for (const side of [1, -1]) {
-    const g = new THREE.Group();
-    g.position.set(side * RIG.hipX, 0, 0);
-    hips.add(g);
+    const g = addBone(hips, side * RIG.hipX, 0, 0);
     const built = legGeometry(pal, side, detailed);
-    g.add(mesh(built.upper, bm));
+    skin(g, built.upper);
     let shin = null;
     if (built.lower) {
-      shin = new THREE.Group();
-      shin.position.y = -RIG.thigh;
-      g.add(shin);
-      shin.add(mesh(built.lower, bm));
+      shin = addBone(g, 0, -RIG.thigh, 0);
+      skin(shin, built.lower);
     }
     legs.push({ side, root: g, shin });
   }
 
   // pack ---------------------------------------------------------------
-  const pack = new THREE.Group();
-  pack.position.set(0, RIG.packY, RIG.packZ);
-  torso.add(pack);
-  pack.add(mesh(packGeometry(pal), bm));
+  const pack = addBone(torso, 0, RIG.packY, RIG.packZ);
+  skin(pack, packGeometry(pal));
+
+  // weld ---------------------------------------------------------------
+  // Freeze the rest pose, bake every bone's geometry into bind space and hand
+  // the inverses to a Skeleton. `root` has no parent yet, so matrixWorld here
+  // is the rig-local bind transform; at runtime the avatar's presence scale and
+  // the world placement cancel out of the skinning equation.
+  root.updateMatrixWorld(true);
+  const boneInverses = bones.map(b => b.matrixWorld.clone().invert());
+  const bodyGeo = skinCombine(pieces.map(p => ({
+    geometry: p.geometry,
+    boneIndex: boneOf.get(p.bone),
+    bindMatrix: p.bone.matrixWorld
+  })));
+
+  const body = new THREE.SkinnedMesh(bodyGeo, bm);
+  body.castShadow = true;
+  body.receiveShadow = false;
+  body.frustumCulled = false;              // the bind-pose sphere lies once posed
+  root.add(body);
+  body.bind(new THREE.Skeleton(bones, boneInverses), new THREE.Matrix4());
 
   // tool ---------------------------------------------------------------
   const toolGeos = {};
@@ -569,9 +624,10 @@ export function buildRig(pal, detailed) {
   toolPivot.add(toolMesh);
   arms[0].hand.add(toolPivot);
 
+  LOD = 1;
   return {
     root, hips, torso, neck, arms, legs, pack,
-    meshes: { torsoMesh, headMesh, hairMesh },
+    meshes: { body, headMesh },
     tool: { pivot: toolPivot, mesh: toolMesh, geos: toolGeos, current: 'axe' }
   };
 }

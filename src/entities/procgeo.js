@@ -81,6 +81,67 @@ export function mergeParts(parts, keep = false) {
   return out;
 }
 
+/**
+ * Weld already-merged bone geometries into ONE skinnable buffer.
+ *
+ * Each entry is `{ geometry, boneIndex, bindMatrix }` where `geometry` is
+ * authored in that bone's local space and `bindMatrix` is the bone's world
+ * matrix in the rest pose. The vertices are baked into bind space and given a
+ * single hard weight on their bone, which reproduces a rigid transform rig
+ * exactly — same silhouette, same animation, one draw call instead of twelve.
+ *
+ * Pair with `boneInverses[i] = inverse(bones[i].matrixWorld)` taken from the
+ * same rest pose and `mesh.bind(skeleton, new THREE.Matrix4())`, so the shader
+ * evaluates `bone.matrixWorld * vertexLocal` — literally what the old scene
+ * graph was doing per mesh.
+ */
+export function skinCombine(pieces) {
+  const live = pieces.filter(p => p && p.geometry && p.geometry.attributes.position);
+  let total = 0;
+  for (const p of live) total += p.geometry.attributes.position.count;
+
+  const position = new Float32Array(total * 3);
+  const normal = new Float32Array(total * 3);
+  const color = new Float32Array(total * 3);
+  const skinIndex = new Uint16Array(total * 4);
+  const skinWeight = new Float32Array(total * 4);
+
+  const nm = new THREE.Matrix3();
+  let o = 0;
+  for (const p of live) {
+    const g = p.geometry;
+    const n = g.attributes.position.count;
+    const pos = g.attributes.position.array;
+    const nor = g.attributes.normal ? g.attributes.normal.array : null;
+    const col = g.attributes.color ? g.attributes.color.array : null;
+    nm.getNormalMatrix(p.bindMatrix);
+    for (let i = 0; i < n; i++) {
+      const j = (o + i) * 3;
+      _v.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]).applyMatrix4(p.bindMatrix);
+      position[j] = _v.x; position[j + 1] = _v.y; position[j + 2] = _v.z;
+      if (nor) {
+        _v.set(nor[i * 3], nor[i * 3 + 1], nor[i * 3 + 2]).applyMatrix3(nm).normalize();
+        normal[j] = _v.x; normal[j + 1] = _v.y; normal[j + 2] = _v.z;
+      }
+      if (col) { color[j] = col[i * 3]; color[j + 1] = col[i * 3 + 1]; color[j + 2] = col[i * 3 + 2]; }
+      else { color[j] = color[j + 1] = color[j + 2] = 1; }
+      skinIndex[(o + i) * 4] = p.boneIndex;
+      skinWeight[(o + i) * 4] = 1;
+    }
+    o += n;
+    g.dispose();
+  }
+
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  out.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
+  out.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
+  out.computeBoundingSphere();
+  return out;
+}
+
 /* -------------------------------------------------------------- primitives */
 
 /**
@@ -123,8 +184,10 @@ export function tube(rTop, rBot, h, seg = 12, open = false) {
   return new THREE.CylinderGeometry(rTop, rBot, h, seg, 1, open);
 }
 
-export function rock(radius, detail = 0) {
-  const g = new THREE.IcosahedronGeometry(radius, detail);
+export function rock(radius, detail = 0, lowPoly = false) {
+  const g = lowPoly
+    ? new THREE.OctahedronGeometry(radius, detail)
+    : new THREE.IcosahedronGeometry(radius, detail);
   const pos = g.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     _v.fromBufferAttribute(pos, i);

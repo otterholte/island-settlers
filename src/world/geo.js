@@ -139,12 +139,23 @@ export function cyl(rt, rb, h, seg, hex, open = false, jitter = 0) {
   return tint(new THREE.CylinderGeometry(rt, rb, h, seg, 1, open), hex, jitter);
 }
 
-export function cone(r, h, seg, hex, jitter = 0) {
-  return tint(new THREE.ConeGeometry(r, h, seg, 1, false), hex, jitter);
+/**
+ * `open` drops the base cap. The camera never gets below a cone's base plane
+ * (50 degree downward pitch, and the sun that drives the shadow map is higher
+ * still), so for stacked conifer skirts and wheat ears the cap is pure waste —
+ * a third to a half of the kit's triangles for a face nobody can see.
+ */
+export function cone(r, h, seg, hex, jitter = 0, open = false) {
+  return tint(new THREE.ConeGeometry(r, h, seg, 1, open), hex, jitter);
 }
 
 export function ball(r, det, hex, jitter = 0) {
   return tint(new THREE.IcosahedronGeometry(r, det), hex, jitter);
+}
+
+/** 8-face stand-in for `ball` — a fifth of the cost at half a metre wide. */
+export function blob(r, hex, jitter = 0) {
+  return tint(new THREE.OctahedronGeometry(r, 0), hex, jitter);
 }
 
 export function quad(w, h, hex) {
@@ -155,8 +166,10 @@ export function quad(w, h, hex) {
  * Chunky low-poly rock: an icosahedron with hashed, per-vertex radial noise.
  * `flat` welds nothing so the facets read hard-edged like painted stone.
  */
-export function rock(r, det, hex, rough = 0.34, seed = 7) {
-  const g = new THREE.IcosahedronGeometry(r, det);
+export function rock(r, det, hex, rough = 0.34, seed = 7, lowPoly = false) {
+  const g = lowPoly
+    ? new THREE.OctahedronGeometry(r, det)   // 8 faces — pebble grade
+    : new THREE.IcosahedronGeometry(r, det); // 20 faces — hero grade
   const p = g.attributes.position;
   let s = seed * 2654435761 >>> 0;
   const rnd = () => {

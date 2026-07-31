@@ -88,7 +88,7 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
   const blob = buildShadowBlob(detailed ? pal.tunic : undefined);
   avatar.add(blob);
 
-  const carry = createCarry(pal, scale);
+  const carry = createCarry(pal, scale, detailed);
   rig.pack.add(carry.stack);
   group.add(carry.cart);
 

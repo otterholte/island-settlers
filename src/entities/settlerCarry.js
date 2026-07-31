@@ -12,11 +12,40 @@
 import * as THREE from 'three';
 import { RES } from '../core/constants.js';
 import {
-  part, mergeParts, roundedBox, ball, tube, rock, bodyMaterial
+  part, mergeParts,
+  roundedBox as _roundedBox, ball as _ball, tube as _tube, rock, bodyMaterial
 } from './procgeo.js';
 import { UNIT as S, LEATHER, LEATHER_DARK, WOODEN } from './settlerBody.js';
 
 export const CART_THRESHOLD = 12;
+
+/* ------------------------------------------------------------------- LOD */
+/*
+ * Cargo is the spikiest thing a settler owns: a full pack plus a cart is more
+ * geometry than the settler wearing it, and all four of them can be loaded at
+ * once mid-match. Bots build it at reduced tessellation, and the log end-caps —
+ * a 12mm-thick disc that used to be a closed 8-sided cylinder, 32 triangles for
+ * a face you see edge-on — are now flat discs.
+ */
+const BOT_LOD = 0.58;
+let LOD = 1;
+const seg = (n, min) => Math.max(min, Math.round(n * LOD));
+
+function roundedBox(w, h, d, r, wSeg = 14, hSeg = 8) {
+  return _roundedBox(w, h, d, r, seg(wSeg, 6), seg(hSeg, 4));
+}
+function ball(radius, wSeg = 12, hSeg = 8) {
+  return _ball(radius, seg(wSeg, 6), seg(hSeg, 4));
+}
+function tube(rTop, rBot, h, s = 12, open = false) {
+  return _tube(rTop, rBot, h, seg(s, 5), open);
+}
+/** Flat cap facing local +Y, so a [0,0,±PI/2] part rotation aims it along ±X. */
+function disc(r, s) {
+  const g = new THREE.CircleGeometry(r, seg(s, 5));
+  g.rotateX(-Math.PI / 2);
+  return g;
+}
 
 const CAP = { wood: 4, brick: 4, wool: 3, wheat: 3, ore: 4 };
 
@@ -62,8 +91,8 @@ function stackParts(c) {
     p.push(part(tube(0.055 * S, 0.055 * S, 0.42 * S, 8), LOG,
       [x, y, z], [0, 0, Math.PI / 2]));
     for (const s of [-1, 1]) {
-      p.push(part(tube(0.052 * S, 0.052 * S, 0.012 * S, 8), LOG_END,
-        [x + s * 0.215 * S, y, z], [0, 0, Math.PI / 2]));
+      p.push(part(disc(0.053 * S, 8), LOG_END,
+        [x + s * 0.216 * S, y, z], [0, 0, -s * Math.PI / 2]));
     }
   }
   if (c.wood > 0) {
@@ -92,9 +121,9 @@ function stackParts(c) {
   for (let i = 0; i < c.wheat; i++) {
     const lean = (i - 1) * 0.16;
     const x = (0.22 + i * 0.02) * S;
-    p.push(part(new THREE.CylinderGeometry(0.055 * S, 0.032 * S, 0.34 * S, 8), WHEAT,
+    p.push(part(new THREE.CylinderGeometry(0.055 * S, 0.032 * S, 0.34 * S, seg(8, 5)), WHEAT,
       [x, 0.25 * S, -0.10 * S], [0.22, 0, lean - 0.28]));
-    p.push(part(new THREE.ConeGeometry(0.072 * S, 0.14 * S, 8), WHEAT_DARK,
+    p.push(part(new THREE.ConeGeometry(0.072 * S, 0.14 * S, seg(8, 5)), WHEAT_DARK,
       [x + 0.07 * S, 0.42 * S, -0.06 * S], [0.22, 0, lean - 0.28]));
     p.push(part(tube(0.058 * S, 0.058 * S, 0.02 * S, 8), LEATHER,
       [x - 0.02 * S, 0.20 * S, -0.11 * S], [0.22, 0, lean - 0.28]));
@@ -104,11 +133,11 @@ function stackParts(c) {
   if (c.ore > 0) {
     p.push(part(tube(0.115 * S, 0.095 * S, 0.14 * S, 12, true), LEATHER,
       [0.20 * S, -0.14 * S, -0.05 * S]));
-    p.push(part(new THREE.TorusGeometry(0.115 * S, 0.014 * S, 4, 12), LEATHER_DARK,
+    p.push(part(new THREE.TorusGeometry(0.115 * S, 0.014 * S, 3, seg(12, 7)), LEATHER_DARK,
       [0.20 * S, -0.075 * S, -0.05 * S], [Math.PI / 2, 0, 0]));
     for (let i = 0; i < c.ore; i++) {
       const a = i * 2.2;
-      p.push(part(rock(0.052 * S), i % 2 ? ORE_LIGHT : ORE,
+      p.push(part(rock(0.052 * S, 0, true), i % 2 ? ORE_LIGHT : ORE,
         [(0.20 + Math.cos(a) * 0.045) * S,
          (-0.06 + (i % 2) * 0.035) * S,
          (-0.05 + Math.sin(a) * 0.045) * S],
@@ -155,11 +184,11 @@ function cartBodyParts(c) {
       [(0.20 - i * 0.02) * S, (0.22 + i * 0.13) * S, (0.10 - i * 0.06) * S]));
   }
   for (let i = 0; i < Math.min(3, c.wheat); i++) {
-    heap.push(part(new THREE.ConeGeometry(0.09 * S, 0.30 * S, 8), WHEAT,
+    heap.push(part(new THREE.ConeGeometry(0.09 * S, 0.30 * S, seg(8, 5)), WHEAT,
       [(0.26 - i * 0.10) * S, 0.28 * S, -0.16 * S], [0.1, 0, (i - 1) * 0.2]));
   }
   for (let i = 0; i < Math.min(4, c.ore); i++) {
-    heap.push(part(rock(0.075 * S), i % 2 ? ORE_LIGHT : ORE,
+    heap.push(part(rock(0.075 * S, 0, true), i % 2 ? ORE_LIGHT : ORE,
       [(-0.10 + (i % 2) * 0.18) * S, (0.13 + Math.floor(i / 2) * 0.11) * S, -0.02 * S],
       [i, i * 0.6, 0]));
   }
@@ -169,7 +198,7 @@ function cartBodyParts(c) {
 function cartWheelParts() {
   const p = [];
   for (const s of [-1, 1]) {
-    p.push(part(new THREE.TorusGeometry(0.20 * S, 0.045 * S, 6, 14), LEATHER_DARK,
+    p.push(part(new THREE.TorusGeometry(0.20 * S, 0.045 * S, 4, seg(14, 9)), LEATHER_DARK,
       [s * 0.44 * S, 0, 0], [0, Math.PI / 2, 0]));
     p.push(part(tube(0.05 * S, 0.05 * S, 0.06 * S, 8), WOODEN,
       [s * 0.44 * S, 0, 0], [0, 0, Math.PI / 2]));
@@ -184,14 +213,16 @@ function cartWheelParts() {
 /* ---------------------------------------------------------------- factory */
 
 /**
- * @param pal    settler palette
- * @param scale  presence scale of the owning avatar. The pack stack rides
- *               inside the scaled rig, but the cart hangs off the unscaled
- *               settler group (it trails in world space), so it scales itself.
+ * @param pal      settler palette
+ * @param scale    presence scale of the owning avatar. The pack stack rides
+ *                 inside the scaled rig, but the cart hangs off the unscaled
+ *                 settler group (it trails in world space), so it scales itself.
+ * @param detailed hero tessellation. Bots build the reduced variant.
  */
-export function createCarry(pal, scale = 1) {
+export function createCarry(pal, scale = 1, detailed = true) {
   const bm = bodyMaterial();
   const K = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  const lod = detailed ? 1 : BOT_LOD;
 
   const stack = new THREE.Mesh(new THREE.BufferGeometry(), bm);
   stack.castShadow = true;
@@ -224,6 +255,7 @@ export function createCarry(pal, scale = 1) {
     if (s === sig) { counts = c; total = c.__total; return; }
     sig = s; counts = c; total = c.__total;
 
+    LOD = lod;
     const sp = stackParts(c);
     stack.geometry.dispose();
     stack.geometry = sp.length ? mergeParts(sp) : new THREE.BufferGeometry();
@@ -240,6 +272,7 @@ export function createCarry(pal, scale = 1) {
       cartBody.geometry.dispose();
       cartBody.geometry = mergeParts(cartBodyParts(c));
     }
+    LOD = 1;
   }
 
   /**
