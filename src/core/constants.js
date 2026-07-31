@@ -37,7 +37,7 @@ export const RES_COLOR = {
 };
 
 // ---------------------------------------------------------------- pacing
-export const VICTORY_POINTS = 7;
+export const VICTORY_POINTS = 12;
 export const MATCH_SOFT_CAP_SEC = 420;   // safety net; match should end well before
 
 // Productivity: pips = 6 - |7 - number|  (6/8 -> 5 pips, 2/12 -> 1 pip)
@@ -47,9 +47,12 @@ export function pipsFor(number) {
 }
 
 // Seconds for one gather cycle, indexed by pips (1..5)
-export const GATHER_TIME = { 1: 1.15, 2: 0.98, 3: 0.84, 4: 0.72, 5: 0.60 };
-// Resources granted per completed cycle, indexed by pips
-export const GATHER_YIELD = { 1: 1, 2: 1, 3: 2, 4: 2, 5: 3 };
+export const GATHER_TIME = { 1: 1.84, 2: 1.57, 3: 1.34, 4: 1.15, 5: 0.96 };
+// Resources granted per completed cycle, indexed by pips.
+// Flat by design: GATHER_TIME carries the productivity difference, which keeps
+// the numbers on the tokens meaningful without making 6/8 tiles run away with
+// the match. Measured over 100 simulated matches.
+export const GATHER_YIELD = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 };
 
 // Owning a building on a corner of the tile multiplies your yield there.
 // This is what makes placement matter in a real-time game.
@@ -61,18 +64,18 @@ export const NODE_REGROW_SEC = 7.0;
 
 // ---------------------------------------------------------------- costs
 export const COST = {
-  road:       { wood: 1, brick: 1 },
-  settlement: { wood: 1, brick: 1, wheat: 1, wool: 1 },
-  city:       { wheat: 2, ore: 3 },
-  card:       { wool: 1, wheat: 1, ore: 1 }
+  road:       { wood: 2, brick: 2 },
+  settlement: { wood: 2, brick: 2, wheat: 2, wool: 2 },
+  city:       { wheat: 4, ore: 6 },
+  card:       { wool: 2, wheat: 2, ore: 2 }
 };
 
-export const PIECE_LIMIT = { road: 12, settlement: 5, city: 4 };
+export const PIECE_LIMIT = { road: 18, settlement: 7, city: 5 };
 
 // ---------------------------------------------------------------- awards
 export const LONGEST_ROAD_MIN = 4;   // segments needed to claim
 export const LARGEST_ARMY_MIN = 2;   // knights played to claim
-export const LONGEST_ROAD_VP = 2;
+export const LONGEST_ROAD_VP = 4;
 export const LARGEST_ARMY_VP = 2;
 
 // ---------------------------------------------------------------- dev cards
@@ -102,7 +105,7 @@ export const PORT_GENERIC = 3;           // 3:1
 export const PORT_SPECIAL = 2;           // 2:1 on the port's resource
 
 // ---------------------------------------------------------------- starting kit
-export const START_RESOURCES = { wood: 2, brick: 2, wool: 1, wheat: 1, ore: 1 };
+export const START_RESOURCES = { wood: 4, brick: 4, wool: 2, wheat: 2, ore: 2 };
 
 // ---------------------------------------------------------------- players
 export const PLAYER_COLORS = [

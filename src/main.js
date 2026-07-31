@@ -126,7 +126,10 @@ async function boot() {
     closeOverview() { overview.close(); },
     openTrade(portId) { panels.openTrade(portId ?? null); },
     openCards() { panels.openCards(); },
-    restart() { location.reload(); },
+    restart() {
+      if (game.flow && game.flow.restartInPlace && game.flow.restartInPlace()) return;
+      location.reload();
+    },
     toast(msg, kind) { hud.toast(msg, kind); }
   };
 
