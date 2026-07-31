@@ -84,22 +84,88 @@ export const nodesByTile = (() => {
   return m;
 })();
 
+/* --------------------------------------------------------- tile recovery */
+/**
+ * Recovery is scoped to the whole REGION, not to individual nodes.
+ *
+ * With per-node regrowth the first trees you felled grew back before you had
+ * finished walking the tile, so a region could never visibly empty and the
+ * player had no way to read "this place is worked out". Now a depleted node
+ * stays down until every node on its tile is down; the region then goes
+ * dormant for a fixed spell and the whole thing comes back at once. That gives
+ * a region a legible life cycle: full -> visibly thinning -> clear cut ->
+ * counting down -> lush again.
+ */
+export const TILE_REGROW_SEC = 20.0;
+
+const tileState = new Map();   // tileId -> { dormantUntil, exhaustedAt }
+
+function stateFor(tileId) {
+  let st = tileState.get(tileId);
+  if (!st) { st = { dormantUntil: 0, exhaustedAt: 0 }; tileState.set(tileId, st); }
+  return st;
+}
+
 export function resetNodes() {
-  for (const n of nodes) { n.remaining = NODE_CAPACITY; n.regrowAt = 0; }
+  for (const n of nodes) { n.remaining = NODE_CAPACITY; n.regrowAt = 0; n.justRegrew = false; }
+  tileState.clear();
 }
 
 export function tickNodes(now) {
-  for (const n of nodes) {
-    if (n.remaining <= 0 && now >= n.regrowAt) {
-      n.remaining = NODE_CAPACITY;
-      n.justRegrew = true;
+  for (const [tileId, list] of nodesByTile) {
+    const st = tileState.get(tileId);
+    if (!st || !st.dormantUntil) continue;
+    if (now >= st.dormantUntil) {
+      for (const n of list) { n.remaining = NODE_CAPACITY; n.regrowAt = 0; n.justRegrew = true; }
+      st.dormantUntil = 0;
+      st.exhaustedAt = 0;
     }
   }
 }
 
 export function depleteNode(n, now) {
   n.remaining -= 1;
-  if (n.remaining <= 0) n.regrowAt = now + NODE_REGROW_SEC;
+  if (n.remaining > 0) return;
+  n.regrowAt = 0;
+  const list = nodesByTile.get(n.tile) || [];
+  if (list.every(x => x.remaining <= 0)) {
+    const st = stateFor(n.tile);
+    st.exhaustedAt = now;
+    st.dormantUntil = now + TILE_REGROW_SEC;
+  }
+}
+
+/** How much of a region is still standing — drives the "thinning out" read. */
+export function tileRemaining(tileId) {
+  const list = nodesByTile.get(tileId) || [];
+  let live = 0, units = 0;
+  for (const n of list) { if (n.remaining > 0) live++; units += Math.max(0, n.remaining); }
+  const total = list.length;
+  return {
+    live, total, units,
+    maxUnits: total * NODE_CAPACITY,
+    fraction: total ? live / total : 0
+  };
+}
+
+/** Recovery readout for the HUD and the in-world region marker. */
+export function tileRecovery(tileId, now) {
+  const st = tileState.get(tileId);
+  if (!st || !st.dormantUntil) {
+    return { exhausted: false, secondsLeft: 0, progress: 1, total: TILE_REGROW_SEC };
+  }
+  const left = Math.max(0, st.dormantUntil - now);
+  return {
+    exhausted: true,
+    secondsLeft: left,
+    progress: 1 - left / TILE_REGROW_SEC,
+    total: TILE_REGROW_SEC
+  };
+}
+
+export function isTileExhausted(tileId) {
+  const st = tileState.get(tileId);
+  return !!(st && st.dormantUntil);
 }
 
 /** Nearest live node of any kind (or a specific resource) to a point. */

@@ -60,7 +60,7 @@ export const OWNERSHIP_MULT = { none: 1, settlement: 2, city: 3 };
 
 // A node (tree / rock / sheep ...) depletes after this many cycles, then regrows.
 export const NODE_CAPACITY = 3;
-export const NODE_REGROW_SEC = 7.0;
+export const NODE_REGROW_SEC = 20.0;   // legacy per-node value; recovery is now tile-scoped (see board/nodes.js)
 
 // ---------------------------------------------------------------- costs
 export const COST = {
