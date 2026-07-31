@@ -275,13 +275,29 @@ export function createInput(domRoot) {
   }
   if (root) on(root, 'pointerdown', onDown, { passive: false });
   if (win) {
-    on(win, 'pointermove', onMove, { passive: false });
-    on(win, 'pointerup', onUp);
-    on(win, 'pointercancel', onCancel);
+    // CAPTURE PHASE, deliberately.
+    //
+    // UI controls call stopPropagation() on pointerup (see ui/dom.js onTap) so
+    // that a tap on a button never leaks through to the 3D layer. In the bubble
+    // phase that also swallowed the joystick's release: let go of the stick
+    // anywhere over a button, card or panel and the stick stayed latched at its
+    // last value, so the settler ran forever and slid around the coastline in
+    // circles with no way to stop. Capture-phase listeners run before any UI
+    // handler can cancel them, so a release is always seen.
+    on(win, 'pointermove', onMove, { passive: false, capture: true });
+    on(win, 'pointerup', onUp, { capture: true });
+    on(win, 'pointercancel', onCancel, { capture: true });
     on(win, 'blur', onBlur);
     on(win, 'keydown', onKeyDown);
     on(win, 'keyup', onKeyUp);
     on(win, 'contextmenu', e => { if (e.preventDefault) e.preventDefault(); });
+
+    // Belt and braces for the other ways a browser silently drops a pointer:
+    // an OS gesture, an alt-tab, a phone call, a backgrounded tab.
+    on(win, 'pointerleave', ev => { if (ev.target === win || !ev.relatedTarget) endStick(); });
+    if (typeof document !== 'undefined') {
+      on(document, 'visibilitychange', () => { if (document.hidden) onBlur(); });
+    }
   }
 
   /* --------------------------------------------------------------- update */
