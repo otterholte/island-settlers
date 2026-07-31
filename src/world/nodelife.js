@@ -35,8 +35,8 @@
 import * as THREE from 'three';
 import { NODE_CAPACITY } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
-import { nodes, mulberry32 } from '../board/nodes.js';
-import { heightAt, hexFrac } from './terrain.js';
+import { nodes, mulberry32, isTileExhausted } from '../board/nodes.js';
+import { heightAt, hexFrac, APOTHEM } from './terrain.js';
 import { instanced, setInstance, triCount } from './geo.js';
 import * as K from './propkits.js';
 
@@ -83,6 +83,12 @@ const GROW = { tree: 1.25, wheat: 0.95, sheep: 1.75, claypit: 0.85, orerock: 0.8
 
 /* What is left standing once a sub-unit has been worked out. Trees and sheep
    leave nothing (the stump mesh covers the tree); the rest leave a scar. */
+/* A clear-cut is not just stumps: it is stumps AND the slash left lying beside
+   them. One tree in every three stays down as a sawn trunk on the ground rather
+   than fading out, so a worked-out forest tile reads as timber operation rather
+   than as a lawn with posts in it. */
+const LOG = { s: 0.62, sy: 0.44, dy: -0.18 };
+
 const RESIDUE = {
   tree:    { s: 0.0001, sy: 0.0001, dy: 0 },
   sheep:   { s: 0.0001, sy: 0.0001, dy: 0 },
@@ -244,9 +250,16 @@ export function buildNodeLife(group, mats) {
         ry = sl.ry + sl.fallA + shake * 0.4;
         rz = ang + kick + bounce;
         const gone = clamp01((u - 0.78) / 0.22);
-        s = sl.s * (1 - gone);
-        sy = s;
-        y = sl.y - gone * 0.55;
+        if (sl.k === 0) {
+          // this one is left lying where it fell — sawn slash, not vapour
+          s = sl.s * (1 - gone * (1 - LOG.s));
+          sy = sl.s * (1 - gone * (1 - LOG.sy));
+          y = sl.y + gone * LOG.dy;
+        } else {
+          s = sl.s * (1 - gone);
+          sy = s;
+          y = sl.y - gone * 0.55;
+        }
       } else if (sl.kind === 'sheep') {
         const hop = u < 0.16 ? Math.sin((u / 0.16) * Math.PI) : 0;
         y = sl.y + hop * 0.42;
@@ -299,9 +312,17 @@ export function buildNodeLife(group, mats) {
       }
     } else if (!sl.alive) {
       /* ------------------------------------------------------- worked out */
-      s = sl.s * res.s;
-      sy = sl.s * res.sy;
-      y = sl.y + res.dy;
+      if (sl.kind === 'tree' && sl.k === 0) {
+        s = sl.s * LOG.s;
+        sy = sl.s * LOG.sy;
+        y = sl.y + LOG.dy;
+        ry = sl.ry + sl.fallA;
+        rz = 1.62;
+      } else {
+        s = sl.s * res.s;
+        sy = sl.s * res.sy;
+        y = sl.y + res.dy;
+      }
       if (sl.kind === 'wheat' && sl.k === 1) rz = 1.42;
       if (sl.kind === 'orerock') rz = 0.34;
     } else {
@@ -393,11 +414,36 @@ export function buildNodeLife(group, mats) {
     active.add(sl);
   }
 
+  /* ------------------------------------------------------- regrowth sweep
+   *
+   * Recovery is scoped to the whole region, so the whole region comes back in
+   * the same instant. Popping 21 trees on one frame is a glitch; letting the
+   * life run outward from the middle of the hex over half a second is a
+   * moment. Each node carries its own delay, measured from the tile centre. */
+  const nodeSweep = new Map();
+  for (const n of nodes) {
+    const t = tiles[n.tile];
+    if (!t) continue;
+    nodeSweep.set(n.id, Math.hypot(n.x - t.x, n.z - t.z) / APOTHEM * 0.78);
+  }
+  const wasSpent = new Map();
+  const sweepAt = new Map();
+
+  function sweepDelay(n) {
+    const now = isTileExhausted(n.tile);
+    const was = wasSpent.get(n.tile);
+    if (was && !now) sweepAt.set(n.tile, clock);
+    if (was !== now) wasSpent.set(n.tile, now);
+    const at = sweepAt.get(n.tile);
+    return at !== undefined && clock - at < 2.0 ? (nodeSweep.get(n.id) || 0) : 0;
+  }
+
   /** Bring one node's three sub-units in line with `node.remaining`. */
   function reconcile(n, instant) {
     const list = byNode.get(n.id);
     if (!list) return;
     const left = Math.max(0, Math.min(SUB, n.remaining | 0));
+    const sweep = instant ? 0 : sweepDelay(n);
     for (let k = 0; k < list.length; k++) {
       const sl = list[k];
       // sub-units are consumed front to back, so the last `left` survive
@@ -405,7 +451,7 @@ export function buildNodeLife(group, mats) {
       if (shouldLive === sl.alive && sl.phase === 0) continue;
       if (shouldLive && !sl.alive) {
         if (instant) { sl.alive = true; sl.phase = 0; sl.t = 0; sl.stumpS = 0; writeSlot(sl); writeStump(sl); }
-        else startGrow(sl, (SUB - 1 - k) * 0.22);
+        else startGrow(sl, sweep + (SUB - 1 - k) * 0.22);
       } else if (!shouldLive && sl.alive) {
         if (instant) { sl.alive = false; sl.phase = 0; sl.t = 0; sl.stumpS = 1; writeSlot(sl); writeStump(sl); }
         else startDie(sl);

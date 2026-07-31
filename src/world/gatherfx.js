@@ -27,7 +27,7 @@
 
 import * as THREE from 'three';
 import { RES_COLOR, RES_LABEL, INTERACT_RADIUS } from '../core/constants.js';
-import { nodes } from '../board/nodes.js';
+import { nodes, isTileExhausted } from '../board/nodes.js';
 import { heightAt } from './terrain.js';
 import { instanced, setInstance } from './geo.js';
 
@@ -35,6 +35,10 @@ const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const KINDS = ['wood', 'brick', 'wool', 'wheat', 'ore', 'blocked'];
 const BLOCKED_RGB = [0.44, 0.16, 0.13];
+/* An exhausted REGION is not the same statement as a single emptied node: the
+   ring drops all its colour and shrinks to a cold scar, so the ground under a
+   spent tile stops advertising a resource it cannot give you. */
+const SPENT_RGB = [0.30, 0.30, 0.32];
 
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
@@ -298,17 +302,18 @@ export function buildGatherFX(group) {
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i];
         const blocked = n.tile === blockAll;
+        const spent = !blocked && n.remaining <= 0 && isTileExhausted(n.tile);
         const live = n.remaining > 0 && !blocked;
-        const want = blocked ? 0.62 : (n.remaining > 0 ? 1 : 0.22);
+        const want = blocked ? 0.62 : (n.remaining > 0 ? 1 : (spent ? 0.34 : 0.22));
         const cur = shown[i] + (want - shown[i]) * Math.min(1, dt * 4.5);
         shown[i] = cur;
         if (cur < 0.02) { setInstance(glints, i, n.x, glintY[i], n.z, 0, 0.0001, 0.0001); continue; }
         const pulse = live
           ? 1 + Math.sin(clock * 1.9 + glintAmp[i] * TAU) * 0.085
           : (blocked ? 1 + Math.sin(clock * 1.15 + glintAmp[i] * TAU) * 0.03 : 0.86);
-        const s = (blocked ? glintR[i] * 1.15 : glintR[i]) * cur * pulse;
+        const s = (blocked ? glintR[i] * 1.15 : spent ? glintR[i] * 0.68 : glintR[i]) * cur * pulse;
         setInstance(glints, i, n.x, glintY[i], n.z, glintAmp[i] * TAU, s, s);
-        const c = blocked ? BLOCKED_RGB : glintRGB[i];
+        const c = blocked ? BLOCKED_RGB : spent ? SPENT_RGB : glintRGB[i];
         const k = cur * (live ? 1 : 0.75);
         gcol[i * 3] = c[0] * k; gcol[i * 3 + 1] = c[1] * k; gcol[i * 3 + 2] = c[2] * k;
       }

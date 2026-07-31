@@ -11,13 +11,16 @@
  * The 126 gather nodes themselves live in `nodelife.js` (three sub-units each,
  * one per harvest cycle, that visibly topple / bolt / get cut / get dug out and
  * then regrow) and their "you can pick this up" affordances live in
- * `gatherfx.js`. Both build into this group and share these materials.
+ * `gatherfx.js`. The REGION-scale read — worked ground, the dressing answering
+ * to the harvest, the exhausted badge with its recovery countdown and the
+ * regrowth beat — lives in `regions.js` / `regionmark.js`. All of them build
+ * into this group and share these materials.
  *
  * Everything is an InstancedMesh sharing four materials, so ~1795 instanced
- * dressing pieces plus a baked static batch plus the 378 node sub-units cost
- * eighteen draw calls in total. Foliage sways in a vertex-shader wind injected
- * through onBeforeCompile; only the animated nodes rewrite instance matrices
- * per frame.
+ * dressing pieces plus a baked static batch plus the 378 node sub-units plus
+ * the whole region layer cost twenty draw calls in total. Foliage sways in a
+ * vertex-shader wind injected through onBeforeCompile; only the animated nodes
+ * and the dressing currently answering a harvest rewrite instance matrices.
  *
  * Placement rule: dressing is kept to hexFrac <= 0.78 so the tan border strip
  * (hexFrac 0.81 -> 1.00) stays clear for the structures agent's roads.
@@ -32,6 +35,22 @@ import { instanced, setInstance, triCount, merge } from './geo.js';
 import * as K from './propkits.js';
 import { buildNodeLife } from './nodelife.js';
 import { buildGatherFX } from './gatherfx.js';
+import { buildRegions } from './regions.js';
+
+/*
+ * Dressing kits that answer to the harvest. Every instance of these is assigned
+ * to its nearest gather node by `regions.js` and topples / gets cropped / goes
+ * straw-coloured as that node is emptied, so a region visibly clears section by
+ * section instead of standing untouched around seven gaps. Nothing is deleted
+ * and no count changes — it is instance matrices and instance colours only, and
+ * it all reverses when the region grows back. Baked (STATIC_MERGE) kits cannot
+ * animate, which is why fences, clay works and mine portals stay put: they are
+ * the works, not the crop.
+ */
+const RESPONSIVE = new Set([
+  'conifer', 'coniferShort', 'broadleaf', 'undergrowth',
+  'grass', 'flower', 'wheat', 'rockSmall', 'boulder'
+]);
 
 /*
  * Kits that never animate, always use the plain solid material and exist in
@@ -255,11 +274,16 @@ export function buildProps(scene) {
   const bucket = {};
   const push = (kit, o) => { (bucket[kit] || (bucket[kit] = [])).push(o); };
 
+  // Which hex the piece currently being dropped belongs to. -1 for the
+  // shoreline collar, which is nobody's region and never responds.
+  let dropTile = -1;
+
   function drop(kit, x, z, rng, extra = {}) {
     const st = STYLE[kit];
     const s = st.s[0] + rng() * (st.s[1] - st.s[0]);
     const [rx, rz] = tiltAt(x, z, st.tilt);
     push(kit, {
+      tile: dropTile,
       x, z,
       y: heightAt(x, z) - st.sink * s,
       ry: extra.ry !== undefined ? extra.ry : (st.yaw ? rng() * Math.PI * 2 : 0),
@@ -274,6 +298,7 @@ export function buildProps(scene) {
     const rng = mulberry32(50021 + ti * 3181 + tile.number * 977);
     const placer = makePlacer(tile, rng);
     const recipe = RECIPE[tile.terrain] || {};
+    dropTile = tile.id;
 
     // mine portal first so it owns the best spot on a mountain
     if (tile.terrain === 'mountains') {
@@ -337,6 +362,7 @@ export function buildProps(scene) {
    * existing boulder / rockSmall instanced meshes, so it costs no draw calls.
    */
   {
+    dropTile = -1;
     const rng = mulberry32(778811);
     const taken = [];
     const free = (x, z, foot) => {
@@ -503,6 +529,22 @@ export function buildProps(scene) {
   triangles += affordance.triangles;
   drawCalls += affordance.drawCalls;
 
+  /* --------------------------------------------------------- the regions
+   *
+   * Region-scale legibility: worked ground, the dressing answering to the
+   * harvest, an exhausted badge with a live countdown, and the regrowth beat.
+   * Two draw calls for all nineteen hexes.
+   */
+  const dressing = {};
+  for (const kit in bucket) {
+    if (!RESPONSIVE.has(kit)) continue;
+    const mesh = meshes[kit];
+    if (mesh) dressing[kit] = { mesh, list: bucket[kit] };
+  }
+  const regions = buildRegions(group, dressing);
+  triangles += regions.triangles;
+  drawCalls += regions.drawCalls;
+
   /* --------------------------------------------------------- animation */
 
   let wind = 0;
@@ -514,6 +556,7 @@ export function buildProps(scene) {
     mats.wheat.userData.wind.value = wind * 1.2;
     life.update(dt);
     affordance.update(dt);
+    regions.update(dt);
   }
 
   return {
@@ -523,6 +566,7 @@ export function buildProps(scene) {
     materials: mats,
     triangles,
     drawCalls,
+    regions,
 
     playHarvest(idOrNode) { life.playHarvest(idOrNode); },
     setDepleted(idOrNode, on = true) { life.setDepleted(idOrNode, on); },
@@ -537,6 +581,7 @@ export function buildProps(scene) {
       for (const k in mats) mats[k].dispose();
       life.dispose();
       affordance.dispose();
+      regions.dispose();
     }
   };
 }

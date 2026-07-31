@@ -235,6 +235,107 @@ if (STAGE === 'intro') {
     return {gathered:state.players[0].stats.gathered,res:state.players[0].res,
       propTris:world.props.triangles,propCalls:world.props.drawCalls};})()`)));
 
+} else if (STAGE === 'region') {
+  /*
+   * Region depletion + recovery. Drains a WHOLE TILE through the real
+   * `depleteNode` path so the region layer sees exactly what it sees in play,
+   * and photographs the arc: full -> half worked -> clear cut -> spent badge
+   * with a live countdown -> regrown.
+   *
+   *   --terrain=forest|fields|pasture|hills|mountains
+   *   --phase=a   full region / half worked
+   *   --phase=b   clear cut with the spent badge / mid countdown
+   *   --phase=c   the last second of dormancy / the regrowth beat
+   *   --fov=34    narrow the lens so one hex fills the frame
+   */
+  const TERRAIN = arg('terrain', 'forest');
+  const PHASE = arg('phase', 'a');
+  await finishDraft();
+  await ev(`import('/src/board/nodes.js').then(m=>{window.__N__=m}).then(()=>1)`, true);
+  console.log('  setup ' + await ev(`(()=>{const{state,game}=window.__ISLAND__;
+    return import('/src/board/layout.js').then(L=>{
+      const t=L.tiles.filter(t=>t.terrain===${JSON.stringify(TERRAIN)})
+        .sort((a,b)=>Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z))[0];
+      window.__T__=t;
+      const p=state.players[0];
+      p.x=t.x+0.6; p.z=t.z+2.2; p.vx=0; p.vz=0; p.action='idle';
+      p.facing=-Math.PI/2;
+      try{game.camera.focus.set(t.x,3.4,t.z+1.0);}catch(e){}
+      p.res={wood:9,brick:5,wool:3,wheat:7,ore:4};
+      game.avatars[0].setCarry(p.res);
+      game.avatars[0].group.position.set(p.x,0,p.z);
+      window.__STEP__=(k)=>{for(let i=0;i<k;i++){window.__R__.tickWorld(state,1/60);
+        game.flow.update(1/60);game.controller.update(1/60);
+        game.gathering.update(1/60);game.bots.update(1/60);}return +state.time.toFixed(1);};
+      window.__DRAIN__=(cnt)=>{const list=window.__N__.nodesByTile.get(t.id)||[];
+        let done=0;
+        for(const n of list){ if(done>=cnt) break;
+          while(n.remaining>0) window.__N__.depleteNode(n,state.time); done++; }
+        return window.__N__.tileRemaining(t.id);};
+      window.__REC__=()=>{const r=window.__N__.tileRecovery(t.id,state.time);
+        const g=window.__ISLAND__.world.props.regions;
+        return {left:+r.secondsLeft.toFixed(1),
+          badge:(g?g.readout():[]).filter(x=>x.tile===t.id)[0],
+          dress:g&&g.debug?g.debug(t.id):null};};
+      return 'tile '+t.id+' '+t.terrain+' n='+(window.__N__.nodesByTile.get(t.id)||[]).length;
+    });})()`, true));
+  if (arg('hud', '1') === '0') await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+  await ev(`(()=>{const c=window.__ISLAND__.camera;c.fov=${+arg('fov', 34)};c.updateProjectionMatrix();return c.fov})()`);
+  await sleep(+arg('settle', 2600));
+
+  if (PHASE === 'board') {
+    // Several regions in different states at once — the "can I read the board
+    // at a glance" test. Drains three tiles fully and half-works two more.
+    console.log('  ' + JSON.stringify(await ev(`(()=>{const{state}=window.__ISLAND__,N=window.__N__;
+      return import('/src/board/layout.js').then(L=>{
+        const pick=k=>L.tiles.filter(t=>t.terrain===k)
+          .sort((a,b)=>Math.hypot(a.x,a.z)-Math.hypot(b.x,b.z))[0];
+        const out=[];
+        for(const k of ['forest','fields','mountains']){const t=pick(k);
+          for(const n of (N.nodesByTile.get(t.id)||[])) while(n.remaining>0) N.depleteNode(n,state.time);
+          out.push(k+':spent');}
+        for(const k of ['pasture','hills']){const t=pick(k);
+          const l=N.nodesByTile.get(t.id)||[];
+          l.slice(0,4).forEach(n=>{while(n.remaining>0) N.depleteNode(n,state.time);});
+          out.push(k+':'+N.tileRemaining(t.id).fraction.toFixed(2));}
+        return out;});})()`, true)));
+    await ev(`window.__STEP__(60)`);
+    await sleep(3200);
+    await shot('r-board-glance');
+    await ev(`window.__ISLAND__.game.openOverview('view')`);
+    await sleep(2600);
+    await shot('r-board-overview');
+
+  } else if (PHASE === 'a') {
+    if (arg('pre', '1') !== '0') await shot(`r-${TERRAIN}-1-full`);
+    console.log('  drain ' + JSON.stringify(await ev(`window.__DRAIN__(${+arg('take', 3)})`)));
+    await ev(`window.__STEP__(30)`);
+    await sleep(2000);
+    await shot(`r-${TERRAIN}-2-half`);
+    console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
+  } else if (PHASE === 'b') {
+    console.log('  drain ' + JSON.stringify(await ev(`window.__DRAIN__(9)`)));
+    await ev(`window.__STEP__(60)`);
+    await sleep(2600);
+    await shot(`r-${TERRAIN}-3-clearcut`);
+    console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
+    await ev(`window.__STEP__(${Math.round(+arg('skip', 13) * 60)})`);
+    await sleep(1400);
+    await shot(`r-${TERRAIN}-4-countdown`);
+    console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
+  } else {
+    console.log('  drain ' + JSON.stringify(await ev(`window.__DRAIN__(9)`)));
+    // Run the dormancy out on the simulation clock, then hand the last stretch
+    // back to real frames so the regrowth beat actually animates.
+    await ev(`window.__STEP__(${Math.round(+arg('skip', 19.9) * 60)})`);
+    await sleep(+arg('beat', 900));
+    await shot(`r-${TERRAIN}-5-regrowing`);
+    console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
+    await sleep(+arg('wait', 2600));
+    await shot(`r-${TERRAIN}-6-regrown`);
+    console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
+  }
+
 } else if (STAGE === 'map') {
   await finishDraft();
   await sleep(1500);
