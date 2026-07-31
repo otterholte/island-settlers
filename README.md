@@ -15,20 +15,21 @@ canvas, and all audio is synthesized with the Web Audio API.
 ## Run it
 
 The game is plain ES modules, so it has to be served over HTTP — module imports
-do not work from `file://`.
+do not work from `file://`. A dependency-free server is included:
 
 ```bash
 cd island-settlers
-python3 -m http.server 5173
+node serve.mjs
 ```
 
-or, if you prefer node:
+Then open **<http://localhost:5173>**. The server prints your phone URL too.
 
-```bash
-npx serve -l 5173
-```
+If port 5173 is busy, pass another: `node serve.mjs 5174`.
 
-Then open **<http://localhost:5173>**.
+> **On Windows, don't use `python3 -m http.server`.** Unless you installed Python
+> yourself, `python3` resolves to the Microsoft Store stub at
+> `AppData\Local\Microsoft\WindowsApps\python3.exe`, which exits silently without
+> starting a server — you get no error and nothing on the port. Use `node serve.mjs`.
 
 ### Play on your phone
 
