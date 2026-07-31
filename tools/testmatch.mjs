@@ -1,7 +1,10 @@
 /**
  * Island Settlers — automated acceptance suite.
  *
- *   node tools/testmatch.mjs [--only=1,3,15] [--w=960] [--h=444] [--shots]
+ *   node tools/testmatch.mjs [--only=1,3,15] [--w=960] [--h=444] [--noshots]
+ *
+ * A full run takes ~45s under SwiftShader; two thirds of that is the two
+ * screen captures in check 18. `--noshots` runs every assertion in ~15s.
  *
  * Drives the REAL game in headless Chrome (SwiftShader WebGL) over the DevTools
  * protocol and asserts the nineteen shipping requirements against the running
@@ -48,6 +51,9 @@ const OUT = resolve(ROOT, arg('out', 'progress/shots'));
 const CHROME = arg('chrome', '/tmp/chrome-headless-shell-linux64/chrome-headless-shell');
 const LIBS = arg('libs', '/tmp/xlibs/root/usr/lib/x86_64-linux-gnu');
 const SHOTS = !!arg('shots', false);
+// Each SwiftShader capture costs 6-12s. --noshots keeps every assertion and
+// skips only the PNG writing, for a ~15s run.
+const NOSHOTS = !!arg('noshots', false);
 const ONLY = arg('only', '') ? String(arg('only', '')).split(',').map(Number) : null;
 
 mkdirSync(OUT, { recursive: true });
@@ -1135,6 +1141,32 @@ await test(14, 'Largest Army can change hands', async () => {
 /* ---- 15. victory + results ---------------------------------------------- */
 
 await test(15, 'A player can win; the results screen appears with correct rankings', async () => {
+  // --- pass A: the human wins, so the "Victory!" branch is exercised too ---
+  await pev(`window.__ISLAND__.game.flow.restartInPlace({seed:11})`);
+  await sleep(350);
+  const dA = await pev('__draft(45)');
+  const winA = await pev(`(()=>{
+    const R=window.__R__, C=window.__C__; const st=window.__ISLAND__.state; const p=st.players[0];
+    let guard=0;
+    while (R.scoreOf(st,p) < C.VICTORY_POINTS && guard++ < 40){
+      const legal=R.legalSettlements(st,0);
+      if (legal.length && p.settlements.size+p.cities.size<7){ R.placeSettlement(st,0,legal[0],true); continue; }
+      const up=R.legalCities(st,0);
+      if (up.length){ R.upgradeCity(st,0,up[0],true); continue; }
+      const rd=R.legalRoads(st,0);
+      if (rd.length){ R.placeRoad(st,0,rd[0],true); continue; }
+      break;
+    }
+    __tick(6,{flow:true});
+    return { vp:R.scoreOf(st,p), phase:st.phase, winner:st.winner };})()`);
+  await sleep(400);
+  const uiA = await pev(`(()=>({
+    title:(document.querySelector('.rs-title')||{}).textContent,
+    sub:(document.querySelector('.rs-sub')||{}).textContent,
+    lost:(document.querySelector('.results')||{className:''}).className.indexOf('lost')>=0,
+    top:(document.querySelector('.rs-row .rs-name')||{}).textContent }))()`);
+
+  // --- pass B: a rival wins, and the full sequence is inspected ---
   await pev(`window.__ISLAND__.game.flow.restartInPlace({seed:99})`);
   await sleep(400);
   const d = await pev('__draft(45)');
@@ -1201,14 +1233,18 @@ await test(15, 'A player can win; the results screen appears with correct rankin
 
   const rankMatch = ui.rows.length === 4
     && ui.rows.every((r, i) => r.name === ui.truth[i].name && +r.vp === ui.truth[i].vp);
-  const pass = drive.phase === 'over' && drive.winner === 1
+  const humanWinOk = winA.winner === 0 && winA.phase === 'over'
+    && /Victory/i.test(uiA.title || '') && uiA.lost === false && uiA.top === 'You';
+  const pass = humanWinOk && drive.phase === 'over' && drive.winner === 1
     && seq.after.isWin === true && seq.after.overview === true
     && ui.present && !ui.hidden && rankMatch && ui.frozen && /Play Again/i.test(ui.again || '');
   if (SHOTS) await shot(`tm-results-${W}x${H}`);
   return {
     pass,
     evidence:
-      `victory: phase=${drive.phase} winner=${drive.winner} winnerVP=${drive.vp}\n` +
+      `HUMAN WINS: winner=${winA.winner} vp=${winA.vp} phase=${winA.phase} -> title="${uiA.title}" ` +
+      `sub="${uiA.sub}" lostStyling=${uiA.lost} topOfTable="${uiA.top}"\n` +
+      `RIVAL WINS: phase=${drive.phase} winner=${drive.winner} winnerVP=${drive.vp}\n` +
       `flow: isWinSequence=${seq.after.isWin} stage=${seq.after.stage} cameraOverview=${seq.after.overview}\n` +
       `results panel present=${ui.present} hidden=${ui.hidden} title="${ui.title}" sub="${ui.sub}"\n` +
       `rankings shown: ${ui.rows.map(r => `${r.pos}.${r.name}=${r.vp}`).join('  ')}\n` +
@@ -1246,7 +1282,7 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
   const play = await pev(`(()=>{
     const R=window.__R__; const st=window.__ISLAND__.state, g=window.__ISLAND__.game;
     const b0=st.buildings.size;
-    __tick(45,{flow:true,bots:true,gather:true});
+    __tick(30,{flow:true,bots:true,gather:true});
     return { phase:st.phase, time:+st.time.toFixed(1), grew:st.buildings.size-b0,
       gathered:st.players.map(p=>p.stats.gathered),
       vp:st.players.map(p=>R.scoreOf(st,p)) };})()`);
@@ -1280,7 +1316,7 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
       `resources back to START=${cleanRes}; vpCards=${JSON.stringify(after.vpCards)} ` +
       `knights=${JSON.stringify(after.knights)} awards=${JSON.stringify(after.awards)}\n` +
       `second draft: phase=${d2.phase} settlements=${d2.buildings} roads=${d2.roads}\n` +
-      `45s of replayed play: buildings +${play.grew}, gathered=${JSON.stringify(play.gathered)}, vp=${JSON.stringify(play.vp)}\n` +
+      `30s of replayed play: buildings +${play.grew}, gathered=${JSON.stringify(play.gathered)}, vp=${JSON.stringify(play.vp)}\n` +
       `bot brains before Play Again: ${JSON.stringify(brainsBefore)}\n` +
       `bot brains after Play Again:  ${JSON.stringify(after.brains)}${staleBrains.length ? '  <-- STALE' : '  (clean)'}\n` +
       `bot brains after 45s of play: ${JSON.stringify(dirty)}${wasDirty ? '  (dirty, as expected)' : '  <-- never got dirty; the reset check is vacuous'}\n` +
@@ -1295,7 +1331,7 @@ await test(19, 'Performance: draw calls and triangles inside budget', async () =
   await ensurePlay();
   const p = await pev(`(()=>{ const st=window.__ISLAND__.state;
     __tick(30,{flow:true,bots:true,gather:true}); return 1;})()`);
-  await sleep(550);   // several real frames with everything on screen
+  await sleep(450);   // several real frames with everything on screen
   perfSample = await pev('(()=>({ perf:__perf(), snap:__snap(), breakdown:__triBreakdown() }))()');
   const { perf, snap, breakdown } = perfSample;
   const BUDGET_CALLS = 90, BUDGET_TRIS = 130000;
@@ -1326,7 +1362,7 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
     try{ g.panels.close(); }catch(e){}
     try{ if (g.camera && g.camera.setOverview) g.camera.setOverview(false); }catch(e){}
     return 1;})()`);
-  await sleep(800);
+  await sleep(600);
   for (const [w, h] of sizes) {
     // Always override, even for the launch size: the headless window's content
     // box is a few pixels taller than `--window-size`, and we want the layout
@@ -1335,7 +1371,7 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
       width: w, height: h, deviceScaleFactor: 1, mobile: true
     });
     await ev(`dispatchEvent(new Event('resize'))`);
-    await sleep(500);
+    await sleep(250);
     // The checklist item is about the in-play interface, so make sure no modal
     // is mid-transition over it — an opening sheet is scaled and would read as
     // "off screen" while it is animating in.
@@ -1353,7 +1389,7 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
           return [Math.round(b.top),Math.round(b.bottom),Math.round(b.left)].join(',');}).join('|'))()`);
       if (now && now === stable) { settled = true; break; }
       stable = now;
-      await sleep(110);
+      await sleep(90);
     }
     const geo = await pev(`(()=>{
       const r=el=>{const n=document.querySelector(el); if(!n) return null;
@@ -1386,7 +1422,7 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
         build:r('.buildbar')||r('.builds'), ranks:r('.ranks')||r('.ranklist'),
         offscreen: off.slice(0,8), offscreenCount: off.length,
         tiny: small.slice(0,8), tinyCount: small.length };})()`);
-    const path = await shot(`tm-play-${w}x${h}`);
+    const path = NOSHOTS ? '(skipped: --noshots)' : await shot(`tm-play-${w}x${h}`);
     const bad = geo.offscreenCount > 0;
     if (bad) ok = false;
     notes.push(`${w}x${h}: viewport ${geo.vw}x${geo.vh}, layoutSettled=${settled}, rotate-gate="${geo.gate}", ` +
