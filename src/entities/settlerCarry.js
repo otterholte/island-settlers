@@ -262,8 +262,10 @@ export function createCarry(pal, scale = 1, detailed = true) {
     stack.visible = sp.length > 0;
 
     // The cart is only ever built once someone actually hauls enough to need
-    // it — most settlers never pay for that geometry at all.
-    if (total >= CART_THRESHOLD) {
+    // it — most settlers never pay for that geometry at all. Rivals never get
+    // one: the hero's overhead columns are the readout that matters, and three
+    // loaded bot carts trundling around the island was pure noise.
+    if (detailed && total >= CART_THRESHOLD) {
       if (!cartBuilt) {
         cartBuilt = true;
         cartWheels.geometry.dispose();
@@ -283,7 +285,7 @@ export function createCarry(pal, scale = 1, detailed = true) {
    * @param moving    true when the settler is running
    */
   function update(dt, origin, yaw, groundY, moving) {
-    const want = total >= CART_THRESHOLD;
+    const want = detailed && total >= CART_THRESHOLD;
     cart.visible = want;
     if (!want) { seeded = false; return; }
 

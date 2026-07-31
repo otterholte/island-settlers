@@ -97,24 +97,44 @@ export function broadleaf() {
   return merge(parts);
 }
 
-/** The hero tree used for the harvestable forest nodes.  (43 tris) */
+/*
+ * ---------------------------------------------------------------------------
+ * HARVEST SUB-UNITS
+ * ---------------------------------------------------------------------------
+ * A gather node holds NODE_CAPACITY (3) harvest cycles, and the player has to
+ * SEE those three cycles come out of the ground. So a node is no longer one
+ * object — it is three, and each cycle fells / shears / cuts / digs / cracks
+ * exactly one of them. The kits below are therefore built at a third of the old
+ * silhouette weight: three of them together read denser than the single hero
+ * they replaced, for roughly the same triangles.
+ *
+ * Every one of them stands on y = 0 with its mass centred on the origin, so an
+ * instance matrix can topple it about its own base.
+ */
+
+/**
+ * One tree of a three-tree copse — the harvestable forest node.  (23 tris)
+ *
+ * Deliberately painted two full steps LIGHTER than the decorative spruces it
+ * stands among (needleMid -> 0x76c94a rather than needle -> needleHi) and given
+ * a pale trunk, because thirty-six dressing conifers per tile will otherwise
+ * swallow the seven copses you are actually allowed to chop.
+ */
 export function heroTree() {
   const parts = [];
-  parts.push(place(cyl(0.15, 0.28, 1.25, 6, C.barkDark, true), 0, 0.62, 0));
-  parts.push(place(cyl(0.09, 0.13, 0.55, 4, C.bark, true), 0.30, 1.15, 0.12, 0, 0, -0.75));
-  parts.push(gradient(place(cone(0.95, 1.55, 8, C.needle, 0, true), 0, 1.55, 0), C.needle, C.needleMid));
-  parts.push(gradient(place(cone(0.74, 1.35, 8, C.needleMid, 0, true), 0, 2.38, 0), C.needleMid, C.needleHi));
-  parts.push(gradient(place(cone(0.48, 1.10, 7, C.needleHi, 0, true), 0, 3.16, 0), C.needleMid, C.needleHi));
+  parts.push(place(cyl(0.14, 0.24, 1.10, 5, C.barkPale, true), 0, 0.55, 0));
+  parts.push(gradient(place(cone(0.84, 1.52, 7, C.needleMid, 0, true), 0, 1.42, 0),
+    C.needleMid, C.needleHi));
+  parts.push(gradient(place(cone(0.58, 1.26, 6, C.needleHi, 0, true), 0, 2.30, 0),
+    C.needleHi, 0x76c94a));
   return merge(parts);
 }
 
-/** What a felled hero tree leaves behind.  (52 tris) */
+/** What a felled tree leaves behind — a pale sawn top on a dark stump. (24 tris) */
 export function stump() {
-  const parts = [];
-  parts.push(place(cyl(0.30, 0.38, 0.48, 7, C.barkDark), 0, 0.24, 0));
-  parts.push(place(box(0.16, 0.12, 0.34, C.barkDark), 0.30, 0.07, 0.06, 0, 0.4, 0.25));
-  parts.push(place(box(0.16, 0.12, 0.34, C.barkDark), -0.24, 0.07, -0.18, 0, 2.2, 0.25));
-  return merge(parts);
+  const g = cyl(0.30, 0.40, 0.44, 6, C.barkDark);
+  place(g, 0, 0.22, 0);
+  return gradient(g, C.barkDark, C.barkPale);
 }
 
 /** Stump + fallen log + a rock: a whole forest-floor vignette.  (68 tris) */
@@ -217,18 +237,18 @@ export function wheatTuft() {
   return merge(parts);
 }
 
-/** The harvestable wheat node: a bound sheaf.  (~72 tris) */
+/** One standing sheaf of a three-sheaf wheat node.  (33 tris) */
 export function wheatSheaf() {
   const parts = [];
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2;
-    const st = cyl(0.05, 0.075, 1.25, 4, C.wheat, true);
-    place(st, Math.cos(a) * 0.14, 0.62, Math.sin(a) * 0.14,
-      Math.sin(a) * 0.16, 0, -Math.cos(a) * 0.16);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const st = cyl(0.06, 0.09, 1.18, 3, C.wheat, true);
+    place(st, Math.cos(a) * 0.13, 0.59, Math.sin(a) * 0.13,
+      Math.sin(a) * 0.17, 0, -Math.cos(a) * 0.17);
     parts.push(gradient(st, C.wheat, C.wheatHi));
   }
-  parts.push(place(cyl(0.30, 0.26, 0.14, 6, 0x9c6f2c, true), 0, 0.55, 0));
-  parts.push(gradient(place(cone(0.42, 0.58, 6, C.wheatHi), 0, 1.44, 0), C.wheat, C.wheatHi));
+  parts.push(place(cyl(0.26, 0.23, 0.13, 5, 0x9c6f2c, true), 0, 0.52, 0));
+  parts.push(gradient(place(cone(0.38, 0.56, 5, C.wheatHi, 0, true), 0, 1.30, 0), C.wheat, C.wheatHi));
   return merge(parts);
 }
 
@@ -270,19 +290,19 @@ export function spire() {
   return merge(parts);
 }
 
-/** Harvestable ore seam: dark rock split by glinting crystals. (~104 tris) */
+/** One crystal-bearing chunk of a three-chunk ore seam.  (32 tris) */
 export function oreRock() {
   const parts = [];
-  parts.push(place(rock(0.80, 1, C.slate, 0.30, 41), 0, 0.58, 0));
+  parts.push(place(rock(0.50, 0, C.slate, 0.32, 41, true), 0, 0.34, 0));
+  parts.push(place(rock(0.28, 0, C.slateHi, 0.40, 47, true), 0.44, 0.18, -0.20));
   const crystal = (x, y, z, r, h, c) => {
     const g = new THREE.OctahedronGeometry(r, 0);
     tint(g, c);
     place(g, x, y, z, 0.2, 0.6, 0.25, 1, h / r, 1);
     parts.push(g);
   };
-  crystal(0.10, 1.02, 0.18, 0.20, 0.46, C.oreGlint);
-  crystal(-0.30, 0.86, -0.10, 0.15, 0.34, C.oreGlint);
-  crystal(0.36, 0.76, -0.30, 0.13, 0.28, C.gold);
+  crystal(0.02, 0.62, 0.08, 0.16, 0.40, C.oreGlint);
+  crystal(-0.26, 0.44, -0.10, 0.11, 0.26, C.gold);
   return merge(parts);
 }
 
@@ -303,36 +323,35 @@ export function clayWorks() {
   return merge(parts);
 }
 
-/** The harvestable clay pit: a dug hollow, wet clay and a shovel. (~90 tris) */
+/** One working of a three-working clay pit: hollow, spoil heap, brick. (37 tris) */
 export function clayPit() {
   const parts = [];
-  parts.push(place(cyl(0.70, 0.88, 0.26, 8, 0x8a4322, true), 0, 0.13, 0));
-  parts.push(place(cyl(0.66, 0.52, 0.14, 8, C.clay), 0, 0.06, 0));
-  parts.push(gradient(place(cone(0.50, 0.40, 6, C.clayHi), 0.72, 0.2, 0.36), C.clay, C.clayHi));
-  parts.push(place(box(0.34, 0.14, 0.20, C.brick), -0.62, 0.07, 0.42, 0, 0.5, 0));
-  parts.push(place(box(0.34, 0.14, 0.20, C.brickHi), -0.60, 0.21, 0.40, 0, 0.35, 0));
-  parts.push(place(cyl(0.035, 0.035, 0.95, 4, C.plank, true), 0.30, 0.5, -0.62, 0.35, 0, 0.2));
-  parts.push(place(box(0.22, 0.26, 0.04, C.ironHi), 0.42, 0.10, -0.78, 0.35, 0, 0.2));
+  parts.push(gradient(place(cyl(0.46, 0.62, 0.24, 5, 0x8a4322), 0, 0.12, 0), 0x6f3419, C.clay));
+  parts.push(gradient(place(cone(0.34, 0.42, 5, C.clayHi, 0, true), 0.58, 0.20, 0.30), C.clay, C.clayHi));
+  parts.push(place(box(0.30, 0.13, 0.18, C.brick), -0.48, 0.07, 0.30, 0, 0.5, 0));
   return merge(parts);
 }
 
 /* ---------------------------------------------------------------- pasture */
 
-/** (~196 tris — only 28 of these exist) */
+/**
+ * One sheep of a three-sheep flock. Three per pasture node means twenty-one
+ * animals on a pasture tile and one of them bolting away every harvest cycle,
+ * which is the whole point. At the play camera a sheep is about ten pixels
+ * tall, so the ears and the icosphere fleece the old model carried were paying
+ * for detail nobody could resolve.  (60 tris)
+ */
 export function sheep() {
   const parts = [];
-  const body = ball(0.42, 1, C.wool);
-  place(body, 0, 0.52, 0, 0, 0, 0, 1.25, 0.95, 0.95);
+  const body = ball(0.42, 0, C.wool);
+  place(body, 0, 0.50, 0, 0, 0, 0, 1.25, 0.95, 0.95);
   parts.push(gradient(body, C.woolShade, C.wool));
-  parts.push(gradient(place(ball(0.26, 0, C.wool), -0.32, 0.66, 0.06), C.woolShade, C.wool));
-  parts.push(gradient(place(ball(0.24, 0, C.wool), 0.30, 0.62, -0.04), C.woolShade, C.wool));
-  const head = ball(0.19, 0, C.face);
-  place(head, 0.60, 0.60, 0, 0, 0, 0.2, 1.15, 0.95, 0.85);
+  parts.push(gradient(place(blob(0.26, C.wool), -0.30, 0.64, 0.04), C.woolShade, C.wool));
+  const head = blob(0.20, C.face);
+  place(head, 0.56, 0.58, 0, 0, 0, 0.2, 1.1, 0.95, 0.85);
   parts.push(head);
-  parts.push(place(box(0.10, 0.06, 0.16, C.face), 0.66, 0.74, 0.16, 0, 0, 0.5));
-  parts.push(place(box(0.10, 0.06, 0.16, C.face), 0.66, 0.74, -0.16, 0, 0, 0.5));
-  for (const [x, z] of [[0.30, 0.18], [0.30, -0.18], [-0.24, 0.18], [-0.24, -0.18]]) {
-    parts.push(place(cyl(0.055, 0.05, 0.34, 4, C.face, true), x, 0.17, z));
+  for (const [x, z] of [[0.28, 0.17], [0.28, -0.17], [-0.22, 0.17], [-0.22, -0.17]]) {
+    parts.push(place(cyl(0.05, 0.045, 0.32, 3, C.face, true), x, 0.16, z));
   }
   return merge(parts);
 }

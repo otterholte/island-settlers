@@ -10,6 +10,13 @@
  * is split into stages that each fit inside a single short-lived shell call.
  *
  *   node tools/shoot.mjs --stage=intro|play|map|late|results [--w=960] [--h=444]
+ *
+ * The `gather` stage exists to look at harvesting specifically: it parks the
+ * hero on a node of a chosen kind, loads their pack, steps the real simulation
+ * through N harvest cycles and captures before / after.
+ *
+ *   node tools/shoot.mjs --stage=gather --node=tree|sheep|wheat|claypit|orerock
+ *        [--cycles=2] [--pre=0] [--hud=0] [--wait=1700] [--tag=name]
  */
 
 import { spawn } from 'node:child_process';
@@ -185,6 +192,48 @@ if (STAGE === 'intro') {
   await hold('w', 'KeyW', 87, 1200);
   await sleep(1500);
   await shot('04-running');
+
+} else if (STAGE === 'gather') {
+  // Park the hero on a gather node, load their pack, and run real harvest
+  // cycles so the depletion / carry-column work can actually be looked at.
+  const KIND = arg('node', 'tree');
+  const CYCLES = +arg('cycles', 2);
+  const TAG = arg('tag', KIND);
+  await finishDraft();
+  console.log('  place ' + await ev(`(()=>{const{state,game}=window.__ISLAND__;
+    const N=game.world.props?1:1;
+    return import('/src/board/nodes.js').then(m=>{
+      const list=m.nodes.filter(n=>n.kind===${JSON.stringify(KIND)});
+      const n=list[Math.floor(list.length*0.42)];
+      const p=state.players[0];
+      p.x=n.x-1.75; p.z=n.z+0.9; p.vx=0; p.vz=0; p.action='idle';
+      p.facing=Math.atan2(n.z-p.z,n.x-p.x);
+      p.res={wood:11,brick:6,wool:3,wheat:9,ore:5};
+      game.avatars[0].setCarry(p.res);
+      game.avatars[0].group.position.set(p.x,0,p.z);
+      try{ game.camera.follow(p.x,p.z,1/60); game.camera.focus.set(p.x,3,p.z); }catch(e){}
+      window.__STEP__=(k)=>{for(let i=0;i<k;i++){window.__R__.tickWorld(state,1/60);
+        game.flow.update(1/60);game.controller.update(1/60);
+        game.gathering.update(1/60);game.bots.update(1/60);}return state.time.toFixed(1);};
+      return n.kind+'@'+n.id+' rem='+n.remaining;
+    });})()`, true));
+  if (arg('hud', '1') === '0') await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+  await sleep(1300);
+  const where = async () => ev(`(()=>{const{state,camera,THREE}=window.__ISLAND__;
+    const p=state.players[0];
+    const v=new THREE.Vector3(p.x,3.5,p.z).project(camera);
+    return {px:+p.x.toFixed(1),pz:+p.z.toFixed(1),act:p.action,
+      sx:+((v.x*0.5+0.5)).toFixed(3),sy:+((-v.y*0.5+0.5)).toFixed(3)};})()`);
+  console.log('  cam ' + JSON.stringify(await where()));
+  if (arg('pre', '1') !== '0') await shot(`g-${TAG}-a`);
+  console.log('  t=' + await ev(`window.__STEP__(${Math.round(CYCLES * 78)})`));
+  await sleep(+arg('wait', 1700));
+  await shot(`g-${TAG}-b`);
+  console.log('  ' + JSON.stringify(await ev(`(()=>{const {state,world}=window.__ISLAND__;
+    const c={};world.props.group.traverse(o=>{if(o.isMesh)c[o.name||'?']=
+      (o.isInstancedMesh?o.count:1)*((o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3);});
+    return {gathered:state.players[0].stats.gathered,res:state.players[0].res,
+      propTris:world.props.triangles,propCalls:world.props.drawCalls};})()`)));
 
 } else if (STAGE === 'map') {
   await finishDraft();

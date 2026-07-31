@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { PLAYER_SPEED, CHAR_HEIGHT } from '../core/constants.js';
 import { buildRig, buildShadowBlob, paletteFor, RIG, TOOL_FOR, UNIT as S } from './settlerBody.js';
 import { createCarry } from './settlerCarry.js';
+import { createCarryColumns } from './carryColumns.js';
 import { groundAt } from './ground.js';
 
 /* ---------------------------------------------------------------- presence */
@@ -92,6 +93,12 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
   rig.pack.add(carry.stack);
   group.add(carry.cart);
 
+  // The hero's stock reads from overhead columns; the pack behind them stays on
+  // as dressing. Rivals get neither columns nor a cart — the player explicitly
+  // asked for less noise from the other three.
+  const columns = detailed ? createCarryColumns() : null;
+  if (columns) group.add(columns.group);
+
   const armR = rig.arms[0];   // +X, holds the tool
   const armL = rig.arms[1];
   const legR = rig.legs[0];
@@ -131,6 +138,7 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
 
   function setCarry(resCounts) {
     carry.setCounts(resCounts || {});
+    if (columns) columns.setCounts(resCounts || {});
   }
 
   function celebrate() {
@@ -343,6 +351,12 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
     const backS = 1.4 * S * scale;
     carry.update(dt, { x: px, y: Number.isFinite(group.position.y) ? group.position.y : gy, z: pz },
       yaw, groundAt(px - Math.sin(yaw) * backS, pz - Math.cos(yaw) * backS), isRun);
+
+    /* ------------------------------------------------- overhead columns */
+    if (columns) {
+      const I = typeof globalThis !== 'undefined' ? globalThis.__ISLAND__ : null;
+      columns.update(dt, I ? I.camera : null);
+    }
   }
 
   /* ------------------------------------------------------------- disposal */
@@ -350,6 +364,7 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
     disposed = true;
     group.traverse(o => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
     carry.dispose();
+    if (columns) columns.dispose();
   }
 
   /** Live mesh count (draw calls) — a hidden subtree costs nothing to render. */

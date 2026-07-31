@@ -3,16 +3,21 @@
  *
  *   buildProps(scene) -> { group, update(dt), playHarvest(id), setDepleted(id, b) }
  *
- * The 126 gather nodes from board/nodes.js get their own animated instances
- * (hero trees, wheat sheaves, wandering sheep, clay pits, ore seams). Around
- * them sits three to five times as much non-interactive dressing: layered
- * forests, undergrowth, fallen logs, boulders, wheat fields, fences, hay,
- * crates, clay works, rock spires, mine portals, ore carts and rails.
+ * This file owns the DRESSING: layered forests, undergrowth, fallen logs,
+ * boulders, wheat fields, fences, hay, crates, clay works, rock spires, mine
+ * portals, ore carts and rails — three to five times as much scenery as there
+ * are harvestable nodes.
  *
- * Everything is an InstancedMesh sharing four materials, so ~1855 dressing
- * instances plus the 126 nodes cost 24 draw calls in total. Foliage sways in a
- * vertex-shader wind injected through onBeforeCompile; only the animated nodes
- * rewrite instance matrices per frame.
+ * The 126 gather nodes themselves live in `nodelife.js` (three sub-units each,
+ * one per harvest cycle, that visibly topple / bolt / get cut / get dug out and
+ * then regrow) and their "you can pick this up" affordances live in
+ * `gatherfx.js`. Both build into this group and share these materials.
+ *
+ * Everything is an InstancedMesh sharing four materials, so ~1795 instanced
+ * dressing pieces plus a baked static batch plus the 378 node sub-units cost
+ * eighteen draw calls in total. Foliage sways in a vertex-shader wind injected
+ * through onBeforeCompile; only the animated nodes rewrite instance matrices
+ * per frame.
  *
  * Placement rule: dressing is kept to hexFrac <= 0.78 so the tan border strip
  * (hexFrac 0.81 -> 1.00) stays clear for the structures agent's roads.
@@ -21,10 +26,12 @@
 import * as THREE from 'three';
 import { HEX_SIZE } from '../core/constants.js';
 import { tiles, MARKET, SPAWNS } from '../board/layout.js';
-import { nodes, nodesByTile, mulberry32 } from '../board/nodes.js';
+import { nodesByTile, mulberry32 } from '../board/nodes.js';
 import { heightAt, hexFrac, normalAt, PROP_MAX_FRAC } from './terrain.js';
 import { instanced, setInstance, triCount, merge } from './geo.js';
 import * as K from './propkits.js';
+import { buildNodeLife } from './nodelife.js';
+import { buildGatherFX } from './gatherfx.js';
 
 /*
  * Kits that never animate, always use the plain solid material and exist in
@@ -91,15 +98,6 @@ const STATIC_KITS = {
   timber:       { make: K.timberPile,   mat: 'solid', cast: true }
 };
 
-const NODE_KITS = {
-  tree:    { make: K.heroTree,   mat: 'tree',  cast: true },
-  stump:   { make: K.stump,      mat: 'solid', cast: true },
-  wheat:   { make: K.wheatSheaf, mat: 'wheat', cast: true },
-  sheep:   { make: K.sheep,      mat: 'solid', cast: true },
-  claypit: { make: K.clayPit,    mat: 'solid', cast: true },
-  orerock: { make: K.oreRock,    mat: 'solid', cast: true }
-};
-
 /* Per-tile dressing recipe. Counts are per tile of that terrain. A forest tile
    therefore carries 18 + 11 + 7 = 36 dressing trees on top of its 7 hero
    trees, plus undergrowth, deadwood, rocks and grass. */
@@ -146,14 +144,6 @@ const TINTS = {
   timber:       [[1.00, 1.00, 1.00], [1.10, 1.00, 0.88], [0.88, 0.84, 0.80]]
 };
 
-const NODE_TINTS = {
-  tree:    [[1.00, 1.00, 1.00], [0.82, 0.93, 0.82], [1.14, 1.06, 0.86], [0.72, 0.86, 0.90]],
-  wheat:   [[1.00, 1.00, 1.00], [1.08, 0.99, 0.82], [0.90, 0.88, 0.76]],
-  sheep:   [[1.00, 1.00, 1.00], [0.96, 0.95, 0.93], [1.02, 1.01, 0.98]],
-  claypit: [[1.00, 1.00, 1.00], [1.08, 0.94, 0.86], [0.90, 0.86, 0.84]],
-  orerock: [[1.00, 1.00, 1.00], [0.86, 0.89, 0.96], [1.08, 1.04, 0.98]]
-};
-
 /* Physical footprint radius. Two props may not overlap: the placement test is
    distance >= r(a) + r(b), so grass is free to grow right up under a spruce
    while two spruces still keep a respectful 1.4 units apart. */
@@ -162,7 +152,12 @@ const FOOT = {
   undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.185, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
-  node: 1.30
+  // A node is now a copse / flock / stand of three sub-units spread up to 1.15
+  // from its centre, each carrying a canopy about 1.2 across, so the reserved
+  // disc has to grow with it or the dressing sprouts straight through a
+  // harvestable tree. Kept as tight as that argument allows: every extra tenth
+  // here is dressing the placer fails to fit.
+  node: 1.45
 };
 
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */
@@ -187,17 +182,6 @@ const STYLE = {
   rail:         { s: [0.90, 1.05], sink: 0.05, tilt: 0.80, yaw: false },
   timber:       { s: [0.85, 1.20], sink: 0.06, tilt: 0.40, yaw: true }
 };
-
-const NODE_STYLE = {
-  tree:    { s: [0.88, 1.42], sink: 0.12 },
-  wheat:   { s: [0.95, 1.25], sink: 0.06 },
-  sheep:   { s: [0.95, 1.20], sink: 0.03 },
-  claypit: { s: [1.00, 1.30], sink: 0.05 },
-  orerock: { s: [0.95, 1.35], sink: 0.14 }
-};
-
-/* Depleted survivors: how much of the node is left once it is worked out. */
-const DEPLETED_VIS = { tree: 0.0, wheat: 0.14, sheep: 0.0, claypit: 0.48, orerock: 0.42 };
 
 /* ------------------------------------------------------------- placement */
 
@@ -228,7 +212,10 @@ function makePlacer(tile, rng) {
       const out = [];
       const lim = HEX_SIZE * maxF;
       let guard = 0;
-      const cap = 220 + count * 130;
+      // Generous: the gather-node discs got bigger when a node became a copse
+      // of three, and at the old 130-tries-per-prop budget the sampler simply
+      // gave up on the last few dozen grass tufts. Build-time only.
+      const cap = 500 + count * 420;
       while (out.length < count && guard++ < cap) {
         const a = rng() * Math.PI * 2;
         const rr = Math.sqrt(rng());
@@ -500,242 +487,56 @@ export function buildProps(scene) {
     drawCalls++;
   }
 
-  /* ----------------------------------------------------------- the nodes */
-  const byKind = { tree: [], wheat: [], sheep: [], claypit: [], orerock: [] };
-  for (const n of nodes) if (byKind[n.kind]) byKind[n.kind].push(n);
+  /* ------------------------------------------------------------- the nodes
+   *
+   * The 126 gather nodes are not props — they are the game. Their geometry,
+   * their three-sub-unit harvest life and their regrowth live in nodelife.js;
+   * the "you can pick this up" affordances live in gatherfx.js. Both build into
+   * this same group and share these same materials, so the whole gathering
+   * layer costs six InstancedMeshes plus three unlit overlays.
+   */
+  const life = buildNodeLife(group, mats);
+  triangles += life.triangles;
+  drawCalls += life.drawCalls;
 
-  const nodeMesh = {};
-  const record = new Map();      // node id -> animation record
-  const sheepList = [];
-  const dirty = new Set();
-
-  for (const kind in byKind) {
-    const list = byKind[kind];
-    if (!list.length) continue;
-    const spec = NODE_KITS[kind];
-    const geo = spec.make();
-    geos['node-' + kind] = geo;
-    const mesh = instanced(geo, mats[spec.mat], list.length, spec.cast, true);
-    mesh.name = `node-${kind}`;
-    group.add(mesh);
-    nodeMesh[kind] = mesh;
-    triangles += triCount(geo) * list.length;
-    drawCalls++;
-
-    const st = NODE_STYLE[kind];
-    list.forEach((n, i) => {
-      const rng = mulberry32(4242 + n.id * 7919);
-      const s = st.s[0] + (n.scale - 0.85) / 0.4 * (st.s[1] - st.s[0]);
-      const y = heightAt(n.x, n.z) - st.sink * s;
-      const rec = {
-        id: n.id, kind, i, node: n,
-        x: n.x, z: n.z, y, ry: n.rot, s,
-        punch: 0, vis: 1, want: 1, pop: 0
-      };
-      record.set(n.id, rec);
-      if (kind === 'sheep') {
-        rec.px = n.x; rec.pz = n.z;
-        rec.tx = n.x; rec.tz = n.z;
-        rec.wait = rng() * 3;
-        rec.phase = rng() * 6.28;
-        rec.rng = rng;
-        sheepList.push(rec);
-      }
-      setInstance(mesh, i, rec.x, rec.y, rec.z, rec.ry, rec.s, rec.s);
-    });
-    paintVariants(mesh, list, NODE_TINTS[kind]);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  // felled-tree stumps live in their own kit, hidden until a tree is worked out
-  const treeList = byKind.tree;
-  let stumpMesh = null;
-  if (treeList.length) {
-    const geo = K.stump();
-    geos['node-stump'] = geo;
-    stumpMesh = instanced(geo, mats.solid, treeList.length, true, true);
-    stumpMesh.name = 'node-stump';
-    group.add(stumpMesh);
-    triangles += triCount(geo) * treeList.length;
-    drawCalls++;
-    treeList.forEach((n, i) => {
-      const rec = record.get(n.id);
-      rec.stumpIndex = i;
-      setInstance(stumpMesh, i, rec.x, rec.y, rec.z, rec.ry + 0.7, 0.0001, 0.0001);
-    });
-    stumpMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    stumpMesh.instanceMatrix.needsUpdate = true;
-  }
+  const affordance = buildGatherFX(group);
+  triangles += affordance.triangles;
+  drawCalls += affordance.drawCalls;
 
   /* --------------------------------------------------------- animation */
 
-  function writeNode(rec) {
-    const mesh = nodeMesh[rec.kind];
-    if (!mesh) return;
-    const punchS = 1 + Math.sin(rec.punch * Math.PI) * 0.20;
-    const popS = 1 + Math.sin(rec.pop * Math.PI) * 0.28;
-    const shake = Math.sin(rec.punch * 34) * 0.10 * rec.punch;
-    const s = rec.s * rec.vis * punchS * popS;
-    if (rec.kind === 'sheep') {
-      const bob = Math.sin(rec.phase) * 0.045;
-      const graze = rec.wait > 0 ? 0.20 + Math.sin(rec.phase * 1.7) * 0.05 : 0.04;
-      setInstance(mesh, rec.i, rec.px, rec.y + bob, rec.pz,
-        rec.ry + shake, Math.max(s, 0.0001), Math.max(s * (1 - bob * 0.4), 0.0001),
-        0, -graze);
-    } else {
-      const lean = rec.kind === 'tree' ? shake * 0.5 : 0;
-      setInstance(mesh, rec.i, rec.x, rec.y, rec.z, rec.ry + shake,
-        Math.max(s, 0.0001), Math.max(s * (1 + (1 - punchS) * 0.6), 0.0001), 0, lean);
-    }
-    dirty.add(rec.kind);
-    if (rec.kind === 'tree' && stumpMesh) {
-      const g = rec.s * (1 - rec.vis) * 0.95;
-      setInstance(stumpMesh, rec.stumpIndex, rec.x, rec.y, rec.z, rec.ry + 0.7,
-        Math.max(g, 0.0001), Math.max(g, 0.0001));
-      dirty.add('stump');
-    }
-  }
-
-  const active = new Set();
-
-  function moveSheep(rec, dt) {
-    const speed = 1.5;
-    rec.phase += dt * (rec.wait > 0 ? 2.4 : 6.0);
-    if (rec.want < 0.99) {
-      // fleeing: keep running along the current heading while it shrinks away
-      rec.px += Math.cos(rec.ry) * dt * 4.2 * rec.vis;
-      rec.pz -= Math.sin(rec.ry) * dt * 4.2 * rec.vis;
-      rec.y = heightAt(rec.px, rec.pz) - 0.03;
-      return;
-    }
-    if (rec.wait > 0) { rec.wait -= dt; return; }
-    const dx = rec.tx - rec.px, dz = rec.tz - rec.pz;
-    const d = Math.hypot(dx, dz);
-    if (d < 0.22) {
-      const tile = tiles[rec.node.tile];
-      for (let k = 0; k < 20; k++) {
-        const a = rec.rng() * Math.PI * 2;
-        const r = 1.2 + rec.rng() * 3.4;
-        const nx = rec.node.x + Math.cos(a) * r;
-        const nz = rec.node.z + Math.sin(a) * r;
-        if (hexFrac(nx - tile.x, nz - tile.z) > 0.72) continue;
-        rec.tx = nx; rec.tz = nz; break;
-      }
-      rec.wait = 1.6 + rec.rng() * 3.6;
-      return;
-    }
-    const k = Math.min(1, (dt * speed) / d);
-    rec.px += dx * k; rec.pz += dz * k;
-    rec.y = heightAt(rec.px, rec.pz) - 0.03;
-    // the sheep's nose is along local +X, so heading -> yaw is atan2(-dz, dx)
-    const want = Math.atan2(-dz, dx);
-    let diff = want - rec.ry;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    rec.ry += diff * Math.min(1, dt * 5);
-  }
-
   let wind = 0;
-  let poll = 0;
 
   function update(dt) {
     wind += dt;
     mats.tree.userData.wind.value = wind;
     mats.grass.userData.wind.value = wind * 1.35;
     mats.wheat.userData.wind.value = wind * 1.2;
-
-    for (const rec of sheepList) { moveSheep(rec, dt); writeNode(rec); }
-
-    if (active.size) for (const rec of Array.from(active)) {
-      let live = false;
-      if (rec.punch > 0) { rec.punch = Math.max(0, rec.punch - dt * 2.9); live = true; }
-      if (rec.pop > 0) { rec.pop = Math.max(0, rec.pop - dt * 2.4); live = true; }
-      if (Math.abs(rec.vis - rec.want) > 0.001) {
-        const k = Math.min(1, dt * (rec.want > rec.vis ? 6.5 : 4.2));
-        rec.vis += (rec.want - rec.vis) * k;
-        live = true;
-      } else if (rec.vis !== rec.want) {
-        rec.vis = rec.want; live = true;
-      }
-      writeNode(rec);
-      if (!live) active.delete(rec);
-    }
-
-    // reconcile with the rules engine so regrown nodes pop back on their own
-    poll -= dt;
-    if (poll <= 0) {
-      poll = 0.25;
-      for (const rec of record.values()) {
-        const alive = rec.node.remaining > 0;
-        const want = alive ? 1 : DEPLETED_VIS[rec.kind];
-        if (want !== rec.want) {
-          rec.want = want;
-          if (alive) {
-            rec.pop = 1;
-            if (rec.kind === 'sheep') { rec.px = rec.node.x; rec.pz = rec.node.z; }
-          }
-          active.add(rec);
-        }
-      }
-    }
-
-    for (const kind of dirty) {
-      if (kind === 'stump') { if (stumpMesh) stumpMesh.instanceMatrix.needsUpdate = true; }
-      else if (nodeMesh[kind]) nodeMesh[kind].instanceMatrix.needsUpdate = true;
-    }
-    dirty.clear();
-  }
-
-  function resolve(idOrNode) {
-    if (idOrNode == null) return null;
-    const id = typeof idOrNode === 'object' ? idOrNode.id : idOrNode;
-    return record.get(id) || null;
+    life.update(dt);
+    affordance.update(dt);
   }
 
   return {
     group,
     meshes,
-    nodeMesh,
+    nodeMesh: life.meshes,
     materials: mats,
     triangles,
     drawCalls,
 
-    playHarvest(idOrNode) {
-      const rec = resolve(idOrNode);
-      if (!rec) return;
-      rec.punch = 1;
-      if (rec.kind === 'sheep') rec.wait = Math.max(rec.wait, 0.9);
-      active.add(rec);
-    },
-
-    setDepleted(idOrNode, on = true) {
-      const rec = resolve(idOrNode);
-      if (!rec) return;
-      const want = on ? DEPLETED_VIS[rec.kind] : 1;
-      if (want === rec.want) return;
-      rec.want = want;
-      if (!on) {
-        rec.pop = 1;
-        if (rec.kind === 'sheep') { rec.px = rec.node.x; rec.pz = rec.node.z; }
-      }
-      active.add(rec);
-    },
+    playHarvest(idOrNode) { life.playHarvest(idOrNode); },
+    setDepleted(idOrNode, on = true) { life.setDepleted(idOrNode, on); },
 
     /** Where a node's visual currently stands — handy for FX anchoring. */
-    nodeAnchor(idOrNode) {
-      const rec = resolve(idOrNode);
-      if (!rec) return null;
-      const x = rec.kind === 'sheep' ? rec.px : rec.x;
-      const z = rec.kind === 'sheep' ? rec.pz : rec.z;
-      return { x, y: rec.y, z };
-    },
+    nodeAnchor(idOrNode) { return life.nodeAnchor(idOrNode); },
 
     update,
 
     dispose() {
       for (const k in geos) geos[k].dispose();
       for (const k in mats) mats[k].dispose();
+      life.dispose();
+      affordance.dispose();
     }
   };
 }
