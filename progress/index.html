@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Island Settlers — build status</title>
+<style>
+  :root{
+    --bg:#0b1a2e; --panel:#122844; --line:#1e3d63; --ink:#e8f1fb;
+    --dim:#8fa9c6; --gold:#ffc93c; --good:#57c98a; --warn:#f0b429; --bad:#f2705a;
+    --ff:'Trebuchet MS','Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 var(--ff);
+       background-image:radial-gradient(900px 500px at 20% -10%,#17395f 0%,transparent 60%)}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 22px 80px}
+  h1{font-size:34px;margin:0 0 2px;letter-spacing:.04em;text-transform:uppercase}
+  h1 span{color:var(--gold)}
+  .sub{color:var(--dim);margin:0 0 26px}
+  h2{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);
+     margin:34px 0 12px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+        box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .g3{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  .stat{text-align:center;padding:14px 10px}
+  .stat b{display:block;font-size:26px;color:var(--gold);line-height:1.1}
+  .stat i{display:block;font-style:normal;color:var(--dim);font-size:12px;
+          letter-spacing:.08em;text-transform:uppercase;margin-top:5px}
+  img{width:100%;border-radius:9px;border:1px solid var(--line);display:block}
+  figure{margin:0}
+  figcaption{color:var(--dim);font-size:12.5px;margin-top:7px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:600}
+  .p{color:var(--good);font-weight:700}
+  .w{color:var(--warn);font-weight:700}
+  .f{color:var(--bad);font-weight:700}
+  code{background:#0a1526;border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-size:13px}
+  pre{background:#0a1526;border:1px solid var(--line);border-radius:9px;padding:14px 16px;
+      overflow:auto;font-size:13px;line-height:1.5}
+  ul{margin:6px 0 0;padding-left:19px}
+  li{margin:4px 0}
+  .pill{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+        padding:3px 9px;border-radius:20px;font-weight:700}
+  .pill.ok{background:rgba(87,201,138,.16);color:var(--good);border:1px solid rgba(87,201,138,.4)}
+  .pill.no{background:rgba(242,112,90,.16);color:var(--bad);border:1px solid rgba(242,112,90,.4)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Island <span>Settlers</span></h1>
+  <p class="sub">Playable build status &middot; landscape mobile web &middot; three.js r169, no bundler</p>
+
+  <div class="grid g3">
+    <div class="card stat"><b>Playable</b><i>Full match, end to end</i></div>
+    <div class="card stat"><b>17/19</b><i>Verification checks</i></div>
+    <div class="card stat"><b>3m 24s</b><i>Median match length</i></div>
+    <div class="card stat"><b>74</b><i>Draw calls (budget 90)</i></div>
+    <div class="card stat"><b>123.7k</b><i>Triangles (budget 130k)</i></div>
+    <div class="card stat"><b>0</b><i>Uncaught exceptions</i></div>
+  </div>
+
+  <h2>Launch</h2>
+  <div class="card">
+    <p style="margin-top:0">The game is plain ES modules — no build step, no install. It needs to be served
+    over HTTP (module imports don't work from <code>file://</code>).</p>
+<pre>cd island-settlers
+python3 -m http.server 5173
+# or:  npx serve -l 5173
+</pre>
+    <p>Then open <code>http://localhost:5173</code> in Chrome or Safari.</p>
+    <p style="margin-bottom:0"><b>On your phone:</b> with the computer and phone on the same wi-fi, open
+    <code>http://&lt;your-computer-ip&gt;:5173</code> and turn the phone landscape. Desktop keyboard fallback:
+    <b>WASD</b> to run, <b>Space</b> to gather, <b>Tab</b> for the board map.</p>
+  </div>
+
+  <h2>Current build</h2>
+  <div class="grid g2">
+    <figure class="card">
+      <img src="shots/03-play-start.png" alt="In-world gameplay">
+      <figcaption>Third-person play. 50&deg; pitch on a 36&deg; lens so tokens stay a uniform size
+      front-to-back; timber hex borders carry the board grammar; real cast shadows.</figcaption>
+    </figure>
+    <figure class="card">
+      <img src="shots/06-overview.png" alt="Board overview map">
+      <figcaption>Strategic board map — legal-placement highlighting, live settler positions,
+      port ratios, roads and buildings in player colours.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Reference comparison</h2>
+  <div class="grid g2">
+    <figure class="card">
+      <img src="references/ref-01.png" alt="Reference art">
+      <figcaption>Target reference supplied with the brief.</figcaption>
+    </figure>
+    <figure class="card">
+      <img src="perf-after.png" alt="Current build">
+      <figcaption>Current build. Independent art and UI critics scored the first playable 3/10 and 4/10;
+      the gaps they named drove the passes below.</figcaption>
+    </figure>
+  </div>
+
+  <h2>Gauntlet — what the critics found and what changed</h2>
+  <div class="card">
+    <table>
+      <tr><th>Finding</th><th>Root cause</th><th>State</th></tr>
+      <tr><td>"Flat ambient shading, nothing casts a shadow"</td>
+          <td>Shadows <em>were</em> rendering — the rig put them at 88% of lit value, so they were invisible. Rebalanced to 55–60%.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>Blown-out white polygon at top-centre</td>
+          <td>The market's trade beacon: an additive cone with <code>depthWrite:false</code> clipping every channel to 255. Isolated by binary-searching scene children with <code>gl.readPixels</code>.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>Number tokens blown out, 6/8 red convention lost</td>
+          <td>The token shader skipped the tonemapping and colour-space includes, so it was the only object in the scene outside the ACES pipeline. Also rendering as ellipses.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>"I cannot tell where one hex ends"</td>
+          <td>No hex borders. Added timber beams plus limestone posts at all 54 intersections, merged into the ground mesh for zero extra draw calls.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>"The settler is a 20px blob"</td>
+          <td>Hero scaled 2.35&times; on an inner group, saturated tunic, contact shadow (was buried under the tessellated ground), player ring, always-held tool.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>"Icons are non-functional at 24px"</td>
+          <td>Nine icons re-authored and proof-sheeted at 96/48/28/24/20px. Nothing renders a resource below 20px anywhere.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>"The app's own name is squatting on the prime HUD slot"</td>
+          <td>Title ribbon deleted; the top-centre slot is now the resource bar.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>Camera spring exploded to 3,000 units on a slow frame</td>
+          <td>Explicit Euler at stiffness 120 diverges past ~0.09s steps. Now sub-steps at 1/120s.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>Trade sheet traded 4:1 from anywhere on the island</td>
+          <td>The panel called <code>doTrade()</code> directly with its opening ratio, bypassing the proximity rule. Now quotes through the economy layer.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+      <tr><td>Replayed matches kept stale bot state</td>
+          <td><code>lastKnight</code> from the previous match against a reset clock read as "played a knight in the future" and suppressed the heuristic for the whole replay.</td>
+          <td><span class="pill ok">Fixed</span></td></tr>
+    </table>
+  </div>
+
+  <h2>Verification</h2>
+  <div class="card">
+    <table>
+      <tr><th>#</th><th>Check</th><th>Result</th></tr>
+      <tr><td>1</td><td>Launches clean — no exceptions, no broken shaders</td><td class="p">PASS</td></tr>
+      <tr><td>2</td><td>Opening draft: 8 settlements, 8 roads, reaches play</td><td class="p">PASS</td></tr>
+      <tr><td>3</td><td>All five resources gatherable</td><td class="p">PASS</td></tr>
+      <tr><td>4</td><td>Productivity affects gathering (1.91&times; per swing, 5-pip vs 1-pip)</td><td class="p">PASS</td></tr>
+      <tr><td>5</td><td>Market trades 4:1 and requires proximity</td><td class="p">PASS</td></tr>
+      <tr><td>6</td><td>Ports unlock, then trade 3:1 / 2:1</td><td class="p">PASS</td></tr>
+      <tr><td>7</td><td>Road connection rules enforced</td><td class="p">PASS</td></tr>
+      <tr><td>8</td><td>Settlement distance rule + connected road</td><td class="p">PASS</td></tr>
+      <tr><td>9</td><td>Cities upgrade only your own settlements</td><td class="p">PASS</td></tr>
+      <tr><td>10</td><td>Knight, Road Building and Victory Point all work</td><td class="p">PASS</td></tr>
+      <tr><td>11</td><td>Raider blocks everyone except the player who moved it</td><td class="p">PASS</td></tr>
+      <tr><td>12</td><td>Bots gather/trade/build/score — 0 unexplained resource gains in 60 matches</td><td class="p">PASS</td></tr>
+      <tr><td>13</td><td>Longest Road changes hands</td><td class="p">PASS</td></tr>
+      <tr><td>14</td><td>Largest Army changes hands</td><td class="p">PASS</td></tr>
+      <tr><td>15</td><td>Victory + results screen (both win and loss branches driven for real)</td><td class="p">PASS</td></tr>
+      <tr><td>16</td><td>Replay starts a clean match</td><td class="p">PASS</td></tr>
+      <tr><td>17</td><td>Matches last 3–5 minutes</td><td class="w">PARTIAL — 70% in band</td></tr>
+      <tr><td>18</td><td>Usable at 667&times;375 and 960&times;444</td><td class="p">PASS</td></tr>
+      <tr><td>19</td><td>Performance within budget</td><td class="p">PASS</td></tr>
+    </table>
+    <p style="margin-bottom:0;color:var(--dim);font-size:13px">
+      Run it yourself: <code>node tools/verify.mjs</code> &middot;
+      <code>node tools/testmatch.mjs</code> &middot;
+      <code>node tools/simulate.mjs --matches=60 --gathersys</code>
+    </p>
+  </div>
+
+  <h2>Pacing — 60 simulated matches</h2>
+  <div class="card">
+<pre>min 119.6s   p25 183.8s   median 203.6s   p75 234.9s   max 368.9s   mean 215.2s
+
+in the 3-5 minute band   42/60  (70%)
+under 3 minutes          13/60  (22%)
+over 5 minutes            5/60  ( 8%)
+hit the 7-minute cap      0/60
+
+win rate by strategy     expansion 25%  |  cities 35%  |  cards 40%     (expected 33%)
+award churn per match    Longest Road 1.7 changes  |  Largest Army 2.0 changes</pre>
+    <p style="margin-bottom:0">Tuned from a measured baseline of <b>32 seconds</b> — the first playable was
+    roughly 8&times; too fast. Yields flattened to 1 (productivity now rides on gather <em>time</em>),
+    costs doubled, victory target 7 &rarr; 12, Longest Road raised to 4 VP to make expansion competitive.</p>
+  </div>
+
+  <h2>Known gaps</h2>
+  <div class="card">
+    <ul>
+      <li><b>Match-length tails.</b> 22% of matches finish under 3 minutes and 8% run past 5. The median is right; the distribution is wider than ideal.</li>
+      <li><b>Bot trading is vestigial</b> — about 0.19 trades per bot per match. Walking to the resource almost always beats a 4:1 swap. A human can trade end to end without trouble; this is a balance question, not a bug.</li>
+      <li><b>Strategy balance skews to the card bot</b> (40% vs an expected 33%).</li>
+      <li><b>Safe-area insets are untestable headlessly</b> — <code>env()</code> returns 0 under headless Chrome. An 18px gutter floor is in place, but a notched phone in landscape has not been verified on real hardware.</li>
+      <li><b>Frame rate has not been measured on a real GPU.</b> The capture rig runs SwiftShader at ~3fps, which validates correctness, not performance. Draw calls and triangles are within budget; actual device fps is unconfirmed.</li>
+      <li><b>Audio has never been heard.</b> It is fully synthesized and structurally verified (every sfx schedules real nodes, no NaN envelopes), but headless Chrome produces no sound.</li>
+    </ul>
+  </div>
+
+  <h2>Architecture</h2>
+  <div class="card">
+    <p style="margin-top:0">Roughly 14,000 lines across 50 modules. Everything is procedural — no external
+    models, textures, fonts or audio files. Geometry is built in code; textures are painted to an
+    offscreen canvas; sound is synthesized with the Web Audio API.</p>
+    <table>
+      <tr><th>Layer</th><th>Modules</th></tr>
+      <tr><td>Frozen contracts</td><td><code>core/constants.js</code>, <code>core/rules.js</code>, <code>board/layout.js</code>, <code>board/nodes.js</code> — headless-safe, so the 3D game and the offline simulator run identical rules</td></tr>
+      <tr><td>World</td><td><code>terrain</code>, <code>island</code>, <code>water</code>, <code>sky</code>, <code>props</code>, <code>borders</code>, <code>propkits</code>, <code>geo</code>, <code>paint</code></td></tr>
+      <tr><td>Structures</td><td><code>structures</code>, <code>market</code>, <code>buildkit</code>, <code>buildtown</code>, <code>buildport</code></td></tr>
+      <tr><td>Entities</td><td><code>settler</code> (skinned rig), <code>settlerBody</code>, <code>settlerCarry</code>, <code>playerController</code></td></tr>
+      <tr><td>Systems</td><td><code>camera</code>, <code>input</code>, <code>gathering</code>, <code>economy</code>, <code>bots</code>, <code>botBrain</code>, <code>matchflow</code>, <code>flowUI</code>, <code>flowCamera</code>, <code>flowRestart</code></td></tr>
+      <tr><td>Interface</td><td><code>hud</code>, <code>overview</code>, <code>panels</code>, <code>icons</code>, <code>dom</code>, three stylesheets</td></tr>
+      <tr><td>Audio / FX</td><td><code>synth</code>, <code>sfxbank</code>, <code>beds</code>, <code>audio</code>, <code>particles</code>, <code>labels</code>, <code>rings</code>, <code>effects</code></td></tr>
+      <tr><td>Tools</td><td><code>verify.mjs</code>, <code>simulate.mjs</code>, <code>shoot.mjs</code>, <code>testmatch.mjs</code></td></tr>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
