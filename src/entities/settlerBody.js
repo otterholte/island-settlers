@@ -52,15 +52,27 @@ const STEEL = 0xb9c6d2;
 const STEEL_DARK = 0x7c8a99;
 const WOODEN = 0x9a6b3c;
 
+/** Push a packed colour toward full chroma without shifting its hue. */
+function saturate(hex, amt) {
+  const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const mid = (mx + mn) / 2;
+  const k = 1 + amt;
+  const f = c => Math.max(0, Math.min(255, Math.round(mid + (c - mid) * k)));
+  return (f(r) << 16) | (f(g) << 8) | f(b);
+}
+
 export function paletteFor(colorHex, isHuman) {
   let idx = PLAYER_COLORS.findIndex(c => c.hex === colorHex);
   if (idx < 0) idx = 0;
-  const tunic = colorHex >>> 0;
+  // The hero's tunic runs hotter than the HUD swatch so the silhouette holds
+  // its own against grass and sand at gameplay distance.
+  const tunic = isHuman ? saturate(colorHex >>> 0, 0.42) : (colorHex >>> 0);
   return {
     idx,
     tunic,
-    tunicDark: shade(tunic, -0.13),
-    tunicLight: shade(tunic, 0.14),
+    tunicDark: shade(tunic, isHuman ? -0.24 : -0.13),
+    tunicLight: shade(tunic, isHuman ? 0.26 : 0.14),
     skin: isHuman ? SKINS[0] : SKINS[idx % SKINS.length],
     skinDark: shade(isHuman ? SKINS[0] : SKINS[idx % SKINS.length], -0.1),
     hair: isHuman ? HAIRS[0] : HAIRS[idx % HAIRS.length],
@@ -394,33 +406,71 @@ export const TOOL_FOR = {
 
 /* ------------------------------------------------------------ contact blob */
 
-let blobTexture;
-function shadowTexture() {
-  if (blobTexture !== undefined) return blobTexture;
-  blobTexture = canvasTexture(128, 128, (ctx, w, h) => {
-    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
-    g.addColorStop(0.0, 'rgba(20,32,16,0.62)');
-    g.addColorStop(0.45, 'rgba(20,32,16,0.40)');
-    g.addColorStop(0.78, 'rgba(20,32,16,0.12)');
-    g.addColorStop(1.0, 'rgba(20,32,16,0.0)');
+const TAU2 = Math.PI * 2;
+const blobTextures = new Map();
+
+/**
+ * Contact shadow, optionally with the player-marker ring painted into the very
+ * same canvas — one texture, one mesh, one draw call for both jobs.
+ *
+ * @param ringHex  packed colour of the marker ring, or -1 for a plain blob
+ * @param coreFrac shadow radius as a fraction of the texture's half-width
+ */
+function shadowTexture(ringHex, coreFrac) {
+  const key = `${ringHex}|${coreFrac}`;
+  if (blobTextures.has(key)) return blobTextures.get(key);
+  const tex = canvasTexture(192, 192, (ctx, w, h) => {
+    const cx = w / 2, cy = h / 2, R = w / 2;
+
+    // Dense core so the character is unmistakably planted on the ground.
+    const core = R * coreFrac;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, core);
+    g.addColorStop(0.00, 'rgba(10,18,8,0.90)');
+    g.addColorStop(0.34, 'rgba(10,18,8,0.78)');
+    g.addColorStop(0.68, 'rgba(10,18,8,0.34)');
+    g.addColorStop(1.00, 'rgba(10,18,8,0.00)');
     ctx.fillStyle = g;
-    ctx.fillRect(0, 0, w, h);
+    ctx.beginPath(); ctx.arc(cx, cy, core, 0, TAU2); ctx.fill();
+
+    if (ringHex < 0) return;
+    const lt = shade(ringHex, 0.30), dk = shade(ringHex, -0.18);
+    const rgb = c => `${(c >> 16) & 255},${(c >> 8) & 255},${c & 255}`;
+    const rg = ctx.createRadialGradient(cx, cy, R * 0.55, cx, cy, R);
+    rg.addColorStop(0.00, `rgba(${rgb(dk)},0)`);
+    rg.addColorStop(0.30, `rgba(${rgb(ringHex)},0.28)`);
+    rg.addColorStop(0.62, `rgba(${rgb(ringHex)},0.92)`);
+    rg.addColorStop(0.74, `rgba(${rgb(lt)},0.90)`);
+    rg.addColorStop(0.86, `rgba(${rgb(ringHex)},0.48)`);
+    rg.addColorStop(1.00, `rgba(${rgb(dk)},0)`);
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU2); ctx.fill();
   });
-  return blobTexture;
+  blobTextures.set(key, tex);
+  return tex;
 }
 
-export function buildShadowBlob() {
-  const tex = shadowTexture();
+/**
+ * @param ringHex packed player colour to paint a marker ring, or undefined for
+ *                the plain contact shadow the bots use.
+ */
+export function buildShadowBlob(ringHex) {
+  const marked = Number.isFinite(ringHex);
+  const size = marked ? 1.90 * S : 1.30 * S;
+  // Keep the dark core the same world size in both variants.
+  const tex = shadowTexture(marked ? (ringHex >>> 0) : -1, marked ? 0.54 : 0.90);
   const mat = new THREE.MeshBasicMaterial({
-    transparent: true, depthWrite: false, opacity: 0.85,
+    transparent: true, depthWrite: false, opacity: 0.92,
     color: 0xffffff
   });
   if (tex) mat.map = tex;
-  const g = new THREE.PlaneGeometry(1.15 * S, 1.15 * S);
+  const g = new THREE.PlaneGeometry(size, size);
   g.rotateX(-Math.PI / 2);
   const m = new THREE.Mesh(g, mat);
-  m.position.y = 0.035;
-  m.renderOrder = 2;
+  // The tessellated island can sit a couple of tenths above heightAt(), so the
+  // decal needs real clearance or it vanishes into the ground. At a 50-degree
+  // pitch this lift costs about two pixels of parallax.
+  m.position.y = 0.17;
+  m.renderOrder = 3;
   m.visible = !!tex;
   m.matrixAutoUpdate = true;
   return m;

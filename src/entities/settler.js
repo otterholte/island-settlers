@@ -22,6 +22,19 @@ import { buildRig, buildShadowBlob, paletteFor, RIG, TOOL_FOR, UNIT as S } from 
 import { createCarry } from './settlerCarry.js';
 import { groundAt } from './ground.js';
 
+/* ---------------------------------------------------------------- presence */
+/**
+ * CHAR_HEIGHT is a frozen 2.0 world units, which renders as a ~20px speck at
+ * the pass-2 camera distance. The rig is authored at that height and then the
+ * whole avatar is scaled here so the hero reads at roughly 9% of frame height
+ * (the reference sits near 15%, but that board is far more stylised than ours
+ * and a 5-unit settler would tower over the props).
+ *
+ * Bots run smaller so the human is unambiguously the one you drive.
+ */
+export const PLAYER_SCALE = 2.35;
+export const BOT_SCALE = 1.70;
+
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -56,16 +69,26 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
   const pal = paletteFor(colorHex >>> 0, !!isHuman);
   const detailed = !!isHuman;
 
+  const scale = detailed ? PLAYER_SCALE : BOT_SCALE;
+
   const group = new THREE.Group();
   group.name = 'settler';
 
+  // `group` stays at world scale 1 because the trailing cart positions itself
+  // with world-space deltas; everything body-shaped hangs off `avatar`, which
+  // carries the presence scale.
+  const avatar = new THREE.Group();
+  avatar.name = 'settlerAvatar';
+  avatar.scale.setScalar(scale);
+  group.add(avatar);
+
   const rig = buildRig(pal, detailed);
-  group.add(rig.root);
+  avatar.add(rig.root);
 
-  const blob = buildShadowBlob();
-  group.add(blob);
+  const blob = buildShadowBlob(detailed ? pal.tunic : undefined);
+  avatar.add(blob);
 
-  const carry = createCarry(pal);
+  const carry = createCarry(pal, scale);
   rig.pack.add(carry.stack);
   group.add(carry.cart);
 
@@ -302,7 +325,9 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
     }
 
     /* ------------------------------------------------------------ tool */
-    const wantTool = gatherW > 0.06;
+    // The hero keeps a tool in hand at all times — it is a big part of what
+    // makes the silhouette read as "person" rather than "coloured pill".
+    const wantTool = gatherW > 0.06 || detailed;
     toolW += ((wantTool ? 1 : 0) - toolW) * approach(dt, 14);
     rig.tool.mesh.visible = toolW > 0.05 && !celebrating;
     rig.tool.mesh.scale.setScalar(clamp(toolW, 0.001, 1));
@@ -315,8 +340,9 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
 
     /* ------------------------------------------------------------ cart */
     const gy = groundAt(px, pz);
+    const backS = 1.4 * S * scale;
     carry.update(dt, { x: px, y: Number.isFinite(group.position.y) ? group.position.y : gy, z: pz },
-      yaw, groundAt(px - Math.sin(yaw) * 1.4 * S, pz - Math.cos(yaw) * 1.4 * S), isRun);
+      yaw, groundAt(px - Math.sin(yaw) * backS, pz - Math.cos(yaw) * backS), isRun);
   }
 
   /* ------------------------------------------------------------- disposal */
@@ -348,7 +374,9 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
     dispose,
     meshCount,
     palette: pal,
-    height: CHAR_HEIGHT,
+    /** Presence scale applied to the avatar sub-group. */
+    scale,
+    height: CHAR_HEIGHT * scale,
     /** Monotonic count of gather strikes — the controller feeds camera.shake. */
     get impacts() { return impacts; },
     get swinging() { return swingT >= 0; },

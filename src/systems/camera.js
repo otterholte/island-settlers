@@ -7,8 +7,16 @@
  *
  * Third-person, spring-damped, fixed yaw (0) so "stick up" is always away
  * from the camera — the controller reads `yaw` to map the joystick into world
- * space. Pitch ~40 degrees down, fov 48, framed for roughly three hexes
- * around the settler. Pulls back at speed, tightens while gathering.
+ * space.
+ *
+ * Framing (art-director pass 2): pitch 50 degrees down with a long 36-degree
+ * lens, dollied back so 4-5 hexes read around the settler and the ocean stays
+ * on the frame edge near the coast. The long lens is what keeps number tokens
+ * a uniform size front-to-back — a wide lens made near tokens 3x the far ones.
+ * The look point is pushed away from the camera by a fraction of the distance
+ * so the settler sits below frame centre and the island/horizon fills the top,
+ * matching the reference board shots. Pulls back at speed, tightens while
+ * gathering.
  *
  * Overview eases to a near-isometric framing that fits the whole island using
  * BOUNDS from layout.js. The `overviewOpen` argument of update() is
@@ -26,20 +34,26 @@ const DEG = Math.PI / 180;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const easeIO = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
-const FOV = 48;
-const PLAY_PITCH = 40 * DEG;
+const FOV = 36;
+const PLAY_PITCH = 50 * DEG;
 const PLAY_YAW = 0;
-const BASE_DIST = 34;
-const SPEED_PULL = 6.5;
-const GATHER_TIGHTEN = 5.0;
+const BASE_DIST = 56;
+const SPEED_PULL = 10.0;
+const GATHER_TIGHTEN = 8.0;
+
+/** Height above the ground that the camera aims at (settler chest height). */
+const FOCUS_LIFT = 2.0;
+/** Look point is pushed this fraction of `dist` further from the camera, which
+ *  tips the settler below frame centre and opens up horizon at the top. */
+const LOOK_BIAS = 0.075;
 
 const OVER_PITCH = 55 * DEG;
 const OVER_MARGIN = 1.12;
 const OVER_SEC = 0.55;
 
 const CELEB_SEC = 1.4;
-const CELEB_PITCH = 31 * DEG;
-const CELEB_DIST = 33;
+const CELEB_PITCH = 38 * DEG;
+const CELEB_DIST = 50;
 
 export function createGameCamera(renderer, scene) {
   const dom = renderer && renderer.domElement ? renderer.domElement : null;
@@ -84,7 +98,7 @@ export function createGameCamera(renderer, scene) {
     followX = x; followZ = z;
     if (!seeded) {
       seeded = true;
-      focus.set(x, groundAt(x, z) + 1.1, z);
+      focus.set(x, groundAt(x, z) + FOCUS_LIFT, z);
       lastFX = x; lastFZ = z;
     }
     const step = Number.isFinite(dt) && dt > 1e-5 ? dt : 1 / 60;
@@ -157,15 +171,31 @@ export function createGameCamera(renderer, scene) {
     const lead = clamp(0.30, 0, 1);
     const ax = clamp(vx * lead, -4.5, 4.5);
     const az = clamp(vz * lead, -4.5, 4.5);
-    want.set(followX + ax, groundAt(followX, followZ) + 1.15, followZ + az);
+    want.set(followX + ax, groundAt(followX, followZ) + FOCUS_LIFT, followZ + az);
 
     // Critically damped spring on the focus point.
+    //
+    // Explicit Euler on a stiffness-120 spring diverges once the step exceeds
+    // ~0.09s, which a phone hitting a GC pause or a slow first frame will do.
+    // Sub-step at a fixed 1/120s so the tuned feel survives any frame rate,
+    // and keep a hard snap as a last resort.
     const stiff = 120, damping = 2 * Math.sqrt(stiff) * 0.98;
+    const sub = 1 / 120;
+    const n = Math.max(1, Math.min(16, Math.ceil(step / sub)));
+    const h = step / n;
+    for (let i = 0; i < n; i++) {
+      for (const axis of ['x', 'y', 'z']) {
+        const a = (want[axis] - focus[axis]) * stiff - focusVel[axis] * damping;
+        focusVel[axis] += a * h;
+        focus[axis] += focusVel[axis] * h;
+      }
+    }
     for (const axis of ['x', 'y', 'z']) {
-      const a = (want[axis] - focus[axis]) * stiff - focusVel[axis] * damping;
-      focusVel[axis] += a * step;
-      focus[axis] += focusVel[axis] * step;
-      if (!Number.isFinite(focus[axis])) { focus[axis] = want[axis]; focusVel[axis] = 0; }
+      if (!Number.isFinite(focus[axis]) || Math.abs(focus[axis] - want[axis]) > 90) {
+        focus[axis] = want[axis];
+        focusVel[axis] = 0;
+      }
+      focusVel[axis] = clamp(focusVel[axis], -400, 400);
     }
 
     const wantDist = BASE_DIST + sp01 * SPEED_PULL - (gathering ? GATHER_TIGHTEN : 0);
@@ -177,7 +207,14 @@ export function createGameCamera(renderer, scene) {
       focus.y + dist * sy,
       focus.z + Math.cos(PLAY_YAW) * dist * cy
     );
-    _look.copy(focus);
+    // Bias the aim past the settler, along the camera's own forward vector on
+    // the ground plane. Purely a framing shift: the settler drops below centre
+    // and the extra headroom fills with island and sea instead of dirt.
+    _look.set(
+      focus.x - Math.sin(PLAY_YAW) * dist * LOOK_BIAS,
+      focus.y,
+      focus.z - Math.cos(PLAY_YAW) * dist * LOOK_BIAS
+    );
 
     /* ---- overview framing -------------------------------------------- */
     const ovTarget = overviewOn ? 1 : 0;

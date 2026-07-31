@@ -183,14 +183,22 @@ function cartWheelParts() {
 
 /* ---------------------------------------------------------------- factory */
 
-export function createCarry(pal) {
+/**
+ * @param pal    settler palette
+ * @param scale  presence scale of the owning avatar. The pack stack rides
+ *               inside the scaled rig, but the cart hangs off the unscaled
+ *               settler group (it trails in world space), so it scales itself.
+ */
+export function createCarry(pal, scale = 1) {
   const bm = bodyMaterial();
+  const K = Number.isFinite(scale) && scale > 0 ? scale : 1;
 
   const stack = new THREE.Mesh(new THREE.BufferGeometry(), bm);
   stack.castShadow = true;
   stack.visible = false;
 
   const cart = new THREE.Group();
+  cart.scale.setScalar(K);
   cart.visible = false;
   const cartBody = new THREE.Mesh(new THREE.BufferGeometry(), bm);
   cartBody.castShadow = true;
@@ -246,7 +254,7 @@ export function createCarry(pal) {
     cart.visible = want;
     if (!want) { seeded = false; return; }
 
-    const back = 1.35 * S;
+    const back = 1.35 * S * K;
     const tx = origin.x - Math.sin(yaw) * back;
     const tz = origin.z - Math.cos(yaw) * back;
 
@@ -272,7 +280,7 @@ export function createCarry(pal) {
     // cart lives at the settler's group level (unrotated), so offsets are world-ish
     cart.position.set(cartPos.x - origin.x, cartPos.y - origin.y, cartPos.z - origin.z);
     cart.rotation.y = cartYaw;
-    cart.position.y += 0.30 * S;
+    cart.position.y += 0.30 * S * K;
     cartWheels.rotation.x = wheelSpin;
   }
 
