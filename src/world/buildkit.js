@@ -116,6 +116,55 @@ export function cloth(w, h, hex, hex2, wave = 0.12, segs = 4) {
   return hex2 === undefined ? tint(g, hex, 0.05) : gradient(g, hex2, hex);
 }
 
+/**
+ * Striped cloth panel — awnings, sails, valances.
+ *
+ * Stripes have to be built as separate flat-shaded quads. A subdivided
+ * PlaneGeometry with alternating *vertex* colours just blends one colour into
+ * the next across every quad, which is why the market awnings used to read as
+ * washed-out grey sheets instead of striped canvas.
+ *
+ * The panel lies in the XY plane facing +Z, bulges toward the viewer, and its
+ * top edge (+Y) is a touch darker so the cloth reads as hanging.
+ *
+ * `opts.scallop` gives the bottom edge a scalloped hem (for valances);
+ * `opts.taper` pinches the far edge in (for sails).
+ */
+export function stripePanel(w, h, n, hexA, hexB, opts = {}) {
+  const bulge = opts.bulge ?? 0.10;
+  const rows = opts.rows ?? 2;
+  const scallop = opts.scallop ?? 0;
+  const taper = opts.taper ?? 0;
+  const A = new THREE.Color(hexA), B = new THREE.Color(hexB);
+  const pos = [], col = [];
+  const at = (u, v) => {
+    const k = 1 - taper * v;
+    let y = -h / 2 + v * h;
+    if (scallop && v < 0.001) y += Math.abs(Math.sin(u * Math.PI * n)) * h * scallop;
+    return [(-w / 2 + u * w) * k, y,
+      Math.sin(u * Math.PI) * bulge + Math.sin(v * Math.PI) * bulge * 0.35];
+  };
+  for (let i = 0; i < n; i++) {
+    const c = i % 2 ? B : A;
+    for (let r = 0; r < rows; r++) {
+      const u0 = i / n, u1 = (i + 1) / n, v0 = r / rows, v1 = (r + 1) / rows;
+      const q = [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+      const shade = 1.02 - ((v0 + v1) / 2) * 0.20;
+      for (const t of [[0, 1, 2], [0, 2, 3]]) {
+        for (const j of t) {
+          pos.push(q[j][0], q[j][1], q[j][2]);
+          col.push(c.r * shade, c.g * shade, c.b * shade);
+        }
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.computeVertexNormals();
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+  return g;
+}
+
 /* -------------------------------------------------------------- small props */
 
 export function plank(len, w, t, hex, seed = 1) {
@@ -418,6 +467,34 @@ export function rng(seed) {
 /** Shared opaque material for every structure mesh. */
 export function solidMaterial(opts = {}) {
   return new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
+}
+
+/**
+ * Solid material with self-lit warm surfaces.
+ *
+ * Lambert has one `emissive` uniform for the whole mesh, which is no use when
+ * a single merged geometry holds a whole market. Instead the shader keys off
+ * the vertex colour: anything authored strongly warm — lamp panes, lit
+ * windows, brazier flames — adds its own light, everything else is untouched.
+ *
+ * Because `vColor` already carries the instance colour, a port whose kit is
+ * tinted weathered grey has its lamps go out for free; unlocking it back to
+ * white lights them again. The key deliberately requires a *low blue* and a
+ * *near-saturated red*, so sand, plaster, canvas and skin never trip it.
+ */
+export function glowSolidMaterial(opts = {}) {
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', [
+      '#include <emissivemap_fragment>',
+      '#if defined( USE_COLOR ) || defined( USE_INSTANCING_COLOR )',
+      '  float warmKey = smoothstep( 0.56, 0.40, vColor.b ) * smoothstep( 0.88, 0.98, vColor.r );',
+      '  totalEmissiveRadiance += diffuseColor.rgb * warmKey * 0.55;',
+      '#endif'
+    ].join('\n'));
+  };
+  m.customProgramCacheKey = () => 'islandWarmGlow';
+  return m;
 }
 
 /** Shared two-sided material for cloth: sails, awnings, banners, flags. */

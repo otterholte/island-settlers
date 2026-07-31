@@ -336,6 +336,90 @@ if (STAGE === 'intro') {
     console.log('  ' + JSON.stringify(await ev(`window.__REC__()`)));
   }
 
+} else if (STAGE === 'landmark') {
+  /*
+   * Park the camera close on a landmark so the market and the ports can
+   * actually be judged instead of guessed at from a 40-pixel smudge.
+   *
+   *   --target=market|port|wide   --port=3  --lock=0|1  --tag=name
+   *
+   * Also reports the measured draw-call / triangle cost of the market group
+   * and the ports group by rendering the frame with each group toggled off.
+   */
+  const TAG = arg('tag', 'now');
+  const SETTLE = +arg('settle', 2200);
+  await finishDraft();
+  if (arg('hud', '0') === '0') {
+    await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+  }
+  await ev(`(()=>{window.__ISLAND__.game.camera.update=()=>{};return 1})()`);
+
+  /* spec: name:kind[:portId]  kind = market|mktfar|portU|portL|wide */
+  const SHOTS = arg('targets', 'market:market,portU:portU:2,portL:portL:5,wide:wide')
+    .split(',').filter(Boolean).map(s => s.split(':'));
+
+  for (const [name, kind, pid] of SHOTS) {
+    console.log('  park ' + await ev(`(()=>{const{camera,world,THREE}=window.__ISLAND__;
+      return import('/src/board/layout.js').then(L=>import('/src/world/terrain.js').then(T=>{
+        const k=${JSON.stringify(kind)}; let eye,look,fov=${+arg('fov', 44)};
+        if(k==='wide'){
+          eye=new THREE.Vector3(30,54,78); look=new THREE.Vector3(0,3,0); fov=40;
+        } else if(k==='market'||k==='mktfar'){
+          // stand on the sunlit side, where the trading house now faces
+          const m=L.MARKET, h=T.heightAt(m.x,m.z), far=k==='mktfar';
+          const d=far?34:17.5, az=2.07;
+          eye=new THREE.Vector3(m.x+Math.cos(az)*d,h+(far?23:12.5),m.z+Math.sin(az)*d);
+          look=new THREE.Vector3(m.x,h+(far?7.0:4.0),m.z);
+        } else {
+          // a locked shot has to use a berth the opening draft did not claim
+          const owned=new Set();
+          for(const pl of window.__ISLAND__.state.players) for(const q of pl.ports) owned.add(q);
+          let id=${+(pid || 0)};
+          if(k==='portL'&&owned.has(id)){ for(let j=0;j<L.ports.length;j++) if(!owned.has(j)){ id=j; break; } }
+          const p=L.ports[id], a=world.portsView.anchors[id];
+          if(k==='portU') world.portsView.setUnlocked(id,0);
+          const cb=Math.cos(p.bearing), sb=Math.sin(p.bearing);
+          const lx=16.5, lz=-8.0;
+          eye=new THREE.Vector3(a.x+lx*cb-lz*sb,a.y+7.6,a.z+lx*sb+lz*cb);
+          look=new THREE.Vector3(a.x+0.5*cb,a.y+1.5,a.z+0.5*sb);
+        }
+        camera.position.copy(eye); camera.lookAt(look);
+        camera.fov=fov; camera.near=0.5; camera.far=800; camera.updateProjectionMatrix();
+        return k+'#'+${+(pid || 0)};
+      }));})()`, true));
+    await sleep(SETTLE);
+    await shot(`lm-${TAG}-${name}`);
+  }
+
+  // The painted boards are too small on screen to judge; dump the canvases.
+  if (arg('atlas', '0') === '1') {
+    const d = await ev(`(()=>{const w=window.__ISLAND__.world;
+      return {sign:w.portsView.meshes.sign.material.map.image.toDataURL('image/png'),
+              beacon:w.market.beacon.material.map.image.toDataURL('image/png')};})()`);
+    for (const k of ['sign', 'beacon']) {
+      if (d && d[k]) {
+        writeFileSync(resolve(OUT, `atlas-${k}.png`), Buffer.from(d[k].split(',')[1], 'base64'));
+        console.log(`  atlas-${k}.png`);
+      }
+    }
+  }
+
+  console.log('  cost ' + JSON.stringify(await ev(`(()=>{const{renderer,scene,camera,world}=window.__ISLAND__;
+    const R=()=>{renderer.render(scene,camera);
+      return {c:renderer.info.render.calls,t:renderer.info.render.triangles};};
+    const full=R();
+    world.market.group.visible=false;
+    const noMkt=R();
+    world.portsView.group.visible=false;
+    const neither=R();
+    world.market.group.visible=true; world.portsView.group.visible=true;
+    return {frame:full,
+      market:{calls:full.c-noMkt.c,tris:full.t-noMkt.t},
+      ports:{calls:noMkt.c-neither.c,tris:noMkt.t-neither.t},
+      both:{calls:full.c-neither.c,tris:full.t-neither.t},
+      declared:{market:[world.market.drawCalls,world.market.triangles],
+        ports:[world.portsView.drawCalls,world.portsView.triangles]}};})()`)));
+
 } else if (STAGE === 'map') {
   await finishDraft();
   await sleep(1500);
