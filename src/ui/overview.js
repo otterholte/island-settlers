@@ -18,7 +18,7 @@
  * Owner: UI agent.
  */
 
-import { HEX_SIZE, RES_LABEL, pipsFor } from '../core/constants.js';
+import { HEX_SIZE, pipsFor } from '../core/constants.js';
 import {
   tiles, intersections, edges, ports, BOUNDS, cornerOffset
 } from '../board/layout.js';
@@ -27,7 +27,7 @@ import {
   placeRoad, placeSettlement, upgradeCity, playKnight, scoreOf
 } from '../core/rules.js';
 import { el, button, toggle, setText, clamp, hash01, onTap } from './dom.js';
-import { icon } from './icons.js';
+import { icon, avatar } from './icons.js';
 
 const TERRAIN = {
   forest:    { a: '#5aa03f', b: '#2f6a24', rim: '#20461a', motif: 'tree' },
@@ -59,18 +59,18 @@ export function createOverview(root, state, game) {
     'aria-label': 'Close map', on: { click: () => cancel() }
   }, el('span', { class: 'cb-ico', html: icon('close', 18) }));
 
-  const rail = el('div', { class: 'ov-rail' });
+  const rail = el('div', { class: 'ov-rail plate lift' });
 
   const selLabel = el('span', { class: 'ov-sel', text: 'Pick a spot' });
   const cancelBtn = button('stone', { on: { click: () => cancel() } }, 'Cancel');
   const confirmBtn = button('green off', { on: { click: () => commit() } },
     el('span', { class: 'sb-ico', html: icon('check', 18) }),
     el('span', { class: 'sb-lab', text: 'Confirm' }));
-  const bar = el('div', { class: 'ov-bar hid' }, cancelBtn, selLabel, confirmBtn);
+  const bar = el('div', { class: 'ov-bar plate lift hid' }, cancelBtn, selLabel, confirmBtn);
 
   const wrap = el('div', { class: 'ov hid', 'data-ui': '' },
     cv,
-    el('div', { class: 'ov-top' }, titleEl, hintEl),
+    el('div', { class: 'ov-top plate' }, titleEl, hintEl),
     closeBtn, rail, bar);
   root.appendChild(wrap);
 
@@ -97,9 +97,12 @@ export function createOverview(root, state, game) {
     railRows = state.players.map(p => {
       const vp = el('b', { class: 'rr-vp', text: '0' });
       const stats = el('div', { class: 'rr-stats' });
-      const row = el('div', { class: 'rr' + (p.id === 0 ? ' me' : '') },
+      const row = el('div', {
+        class: 'rr' + (p.id === 0 ? ' me' : ''),
+        style: { '--c': p.color.css, '--cl': p.color.light }
+      },
         el('div', { class: 'rr-top' },
-          el('span', { class: 'chip sm', style: { '--c': p.color.css, '--cl': p.color.light } }),
+          el('span', { class: 'rr-av', html: avatar(p.color.css, p.color.light, 30) }),
           el('span', { class: 'rr-name', text: p.name }),
           vp),
         stats);
@@ -116,13 +119,12 @@ export function createOverview(root, state, game) {
       if (key === r.last) continue;
       r.last = key;
       let h = '';
-      h += `<i title="Settlements">${icon('house', 13)}<em>${r.p.settlements.size}</em></i>`;
-      h += `<i title="Cities">${icon('castle', 13)}<em>${r.p.cities.size}</em></i>`;
-      h += `<i class="${r.p.hasLongestRoad ? 'won' : ''}" title="Longest road">` +
-        `${icon('road', 13)}<em>${r.p.longestRoadLen}</em></i>`;
-      h += `<i class="${r.p.hasLargestArmy ? 'won' : ''}" title="Knights">` +
-        `${icon('knight', 13)}<em>${r.p.knightsPlayed}</em></i>`;
-      if (r.p.hasLongestRoad || r.p.hasLargestArmy) h += `<i class="won">${icon('trophy', 13)}</i>`;
+      h += `<i title="Settlements">${icon('house', 20)}<em>${r.p.settlements.size}</em></i>`;
+      h += `<i title="Cities">${icon('castle', 20)}<em>${r.p.cities.size}</em></i>`;
+      h += `<i class="aw ${r.p.hasLongestRoad ? 'won' : ''}" title="Longest road">` +
+        `${icon('road', 20)}<em>${r.p.longestRoadLen}</em></i>`;
+      h += `<i class="aw ${r.p.hasLargestArmy ? 'won' : ''}" title="Knights">` +
+        `${icon('knight', 20)}<em>${r.p.knightsPlayed}</em></i>`;
       r.stats.innerHTML = h;
     }
   }
@@ -139,13 +141,18 @@ export function createOverview(root, state, game) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lastW = w; lastH = h;
     }
-    // Matches the .ov-rail widths in ui.css (150px, 132px on compact phones).
-    const railW = w > 560 ? (w <= 700 ? 132 : 150) : 0;
-    const padL = 12, padT = 46, padB = 62, padR = railW + 12;
+    // Matches the .ov-rail widths in ui.css (186px, 158px on compact phones).
+    const railW = w > 560 ? (w <= 760 ? 158 : 186) : 0;
+    // The confirm bar only exists in a placement mode; in plain view the board
+    // gets that space back so it fills the frame instead of floating in it.
+    const padL = 14, padT = 44, padR = railW + 22;
+    const padB = mode === 'view' ? 16 : 62;
     const availW = Math.max(60, w - padL - padR);
     const availH = Math.max(60, h - padT - padB);
-    const bw = BOUNDS.width + HEX_SIZE * 3.2;
-    const bd = BOUNDS.depth + HEX_SIZE * 3.2;
+    // Just enough slack for the dock tags that hang off the coast — any more
+    // and the board starts floating in dead blue again.
+    const bw = BOUNDS.width + HEX_SIZE * 1.3;
+    const bd = BOUNDS.depth + HEX_SIZE * 1.3;
     proj.s = Math.min(availW / bw, availH / bd);
     proj.ox = padL + availW / 2 - BOUNDS.cx * proj.s;
     proj.oy = padT + availH / 2 - BOUNDS.cz * proj.s;
@@ -195,51 +202,70 @@ export function createOverview(root, state, game) {
     }
   }
 
+  /** Scatter dressing. Each element gets its own light and shade so the tile
+      reads as painted terrain rather than a flat swatch. */
   function motif(t, kind, s) {
     const cx = PX(t.x), cy = PY(t.z);
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    const n = kind === 'dot' || kind === 'speck' ? 7 : 5;
+    const n = kind === 'dot' || kind === 'speck' ? 12 : 9;
     for (let i = 0; i < n; i++) {
       const a = hash01(t.id * 31.7 + i * 5.3) * Math.PI * 2;
-      const rr = (0.25 + hash01(t.id * 7.1 + i * 2.9) * 0.52) * HEX_SIZE * s;
-      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * 0.92;
-      const k = HEX_SIZE * s * (0.10 + hash01(i + t.id) * 0.05);
-      ctx.beginPath();
+      const rr = (0.16 + hash01(t.id * 7.1 + i * 2.9) * 0.66) * HEX_SIZE * s;
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * 0.9;
+      const k = HEX_SIZE * s * (0.10 + hash01(i * 3.3 + t.id) * 0.06);
+      ctx.save();
       if (kind === 'tree') {
-        ctx.moveTo(x, y - k * 1.5); ctx.lineTo(x + k * 0.85, y + k * 0.8);
-        ctx.lineTo(x - k * 0.85, y + k * 0.8); ctx.closePath();
-        ctx.fillStyle = '#1f4d17';
+        ctx.beginPath();
+        ctx.ellipse(x, y + k * 0.9, k * 0.9, k * 0.34, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(12,40,10,.34)'; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, y - k * 1.8); ctx.lineTo(x + k * 0.95, y + k * 0.8);
+        ctx.lineTo(x - k * 0.95, y + k * 0.8); ctx.closePath();
+        ctx.fillStyle = '#1f5a18'; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, y - k * 1.8); ctx.lineTo(x - k * 0.95, y + k * 0.8);
+        ctx.lineTo(x - k * 0.1, y + k * 0.8); ctx.closePath();
+        ctx.fillStyle = '#3d8a2c'; ctx.fill();
       } else if (kind === 'peak') {
-        ctx.moveTo(x, y - k * 1.6); ctx.lineTo(x + k, y + k * 0.7);
-        ctx.lineTo(x - k, y + k * 0.7); ctx.closePath();
-        ctx.fillStyle = '#e8eef6';
+        ctx.beginPath();
+        ctx.moveTo(x, y - k * 1.9); ctx.lineTo(x + k * 1.15, y + k * 0.8);
+        ctx.lineTo(x - k * 1.15, y + k * 0.8); ctx.closePath();
+        ctx.fillStyle = '#6d7887'; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(x, y - k * 1.9); ctx.lineTo(x - k * 1.15, y + k * 0.8);
+        ctx.lineTo(x - k * 0.15, y + k * 0.8); ctx.closePath();
+        ctx.fillStyle = '#e8eef6'; ctx.fill();
       } else if (kind === 'bump') {
-        ctx.arc(x, y, k, Math.PI, 0); ctx.closePath();
-        ctx.fillStyle = '#7d3a1a';
+        ctx.beginPath(); ctx.arc(x, y, k, Math.PI, 0); ctx.closePath();
+        ctx.fillStyle = '#8f4620'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x - k * 0.28, y - k * 0.1, k * 0.5, Math.PI, 0);
+        ctx.closePath(); ctx.fillStyle = '#c9713c'; ctx.fill();
       } else if (kind === 'stripe') {
-        ctx.rect(x - k * 1.4, y - k * 0.3, k * 2.8, k * 0.6);
-        ctx.fillStyle = '#a37c1c';
+        ctx.beginPath(); ctx.rect(x - k * 0.34, y - k * 1.5, k * 0.68, k * 3);
+        ctx.fillStyle = '#b5871a'; ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x, y - k * 1.5, k * 0.5, k * 0.95, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffdf82'; ctx.fill();
       } else if (kind === 'dot') {
-        ctx.arc(x, y, k * 0.8, 0, Math.PI * 2);
-        ctx.fillStyle = '#f4efe3';
+        ctx.beginPath(); ctx.arc(x, y + k * 0.3, k * 0.85, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(30,70,20,.3)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, k * 0.85, 0, Math.PI * 2);
+        ctx.fillStyle = '#fbf7ee'; ctx.fill();
       } else {
-        ctx.arc(x, y, k * 0.35, 0, Math.PI * 2);
-        ctx.fillStyle = '#a98f5c';
+        ctx.beginPath(); ctx.arc(x, y, k * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = '#bfa374'; ctx.fill();
       }
-      ctx.fill();
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   function drawTiles() {
     const s = proj.s;
-    const lift = HEX_SIZE * s * 0.20;
+    const lift = HEX_SIZE * s * 0.22;
+    const R = HEX_SIZE * s;
 
     // Cliff face: the whole footprint pushed down, then the tops on top.
     ctx.save();
-    ctx.fillStyle = 'rgba(6,26,48,.45)';
-    for (const t of tiles) { hexPath(t, 0.03, lift * 2.1); ctx.fill(); }
+    ctx.fillStyle = 'rgba(4,20,40,.5)';
+    for (const t of tiles) { hexPath(t, 0.04, lift * 2.3); ctx.fill(); }
     ctx.restore();
 
     for (const t of tiles) {
@@ -251,17 +277,59 @@ export function createOverview(root, state, game) {
 
     for (const t of tiles) {
       const pal = TERRAIN[t.terrain] || TERRAIN.desert;
+      const cx = PX(t.x), cy = PY(t.z);
       hexPath(t, 0);
-      const g = ctx.createLinearGradient(0, PY(t.z) - HEX_SIZE * s, 0, PY(t.z) + HEX_SIZE * s);
-      g.addColorStop(0, pal.a);
-      g.addColorStop(1, pal.b);
-      ctx.fillStyle = g;
-      ctx.fill();
       ctx.save(); ctx.clip();
+
+      const g = ctx.createLinearGradient(0, cy - R, 0, cy + R);
+      g.addColorStop(0, pal.a);
+      g.addColorStop(0.62, pal.b);
+      g.addColorStop(1, pal.rim);
+      ctx.fillStyle = g;
+      ctx.fillRect(cx - R * 1.2, cy - R * 1.2, R * 2.4, R * 2.4);
+
+      // Sun off the upper-left, the way the 3D scene is lit.
+      const sun = ctx.createRadialGradient(
+        cx - R * 0.34, cy - R * 0.42, R * 0.08, cx - R * 0.2, cy - R * 0.3, R * 1.25);
+      sun.addColorStop(0, 'rgba(255,248,214,.34)');
+      sun.addColorStop(1, 'rgba(255,248,214,0)');
+      ctx.fillStyle = sun;
+      ctx.fillRect(cx - R * 1.2, cy - R * 1.2, R * 2.4, R * 2.4);
+
+      // Two soft patches so no two tiles look stamped from the same sheet.
+      for (let i = 0; i < 2; i++) {
+        const a = hash01(t.id * 12.3 + i * 4.1) * Math.PI * 2;
+        const d = hash01(t.id * 5.9 + i) * R * 0.6;
+        ctx.globalAlpha = 0.22;
+        ctx.beginPath();
+        ctx.ellipse(cx + Math.cos(a) * d, cy + Math.sin(a) * d,
+          R * 0.5, R * 0.36, a, 0, Math.PI * 2);
+        ctx.fillStyle = i ? pal.a : pal.rim;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
       motif(t, pal.motif, s);
+
+      // Edge vignette, then a lit lip along the upper edge.
+      const vig = ctx.createRadialGradient(cx, cy, R * 0.42, cx, cy, R * 1.06);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(8,20,10,.40)');
+      ctx.fillStyle = vig;
+      ctx.fillRect(cx - R * 1.2, cy - R * 1.2, R * 2.4, R * 2.4);
+
+      ctx.save();
+      ctx.translate(0, R * 0.11);
+      hexPath(t, 0);
+      ctx.lineWidth = Math.max(2, s * 0.24);
+      ctx.strokeStyle = 'rgba(255,252,228,.34)';
+      ctx.stroke();
       ctx.restore();
-      ctx.lineWidth = Math.max(1, s * 0.09);
-      ctx.strokeStyle = 'rgba(20,40,20,.5)';
+      ctx.restore();
+
+      hexPath(t, 0);
+      ctx.lineWidth = Math.max(1.6, s * 0.13);
+      ctx.strokeStyle = 'rgba(10,26,14,.62)';
       ctx.stroke();
     }
   }
@@ -269,75 +337,90 @@ export function createOverview(root, state, game) {
   function drawToken(t) {
     if (!t.number) return;
     const s = proj.s;
-    const r = Math.max(9, HEX_SIZE * s * 0.30);
+    const r = Math.max(13, HEX_SIZE * s * 0.32);
     const cx = PX(t.x), cy = PY(t.z);
     const hot = t.number === 6 || t.number === 8;
 
-    ctx.beginPath(); ctx.arc(cx, cy + r * 0.12, r, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(cx, cy + r * 0.16, r * 1.04, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.40)'; ctx.fill();
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
     const g = ctx.createLinearGradient(0, cy - r, 0, cy + r);
-    g.addColorStop(0, '#fff6dd'); g.addColorStop(1, '#e0cba0');
+    g.addColorStop(0, '#fffaea'); g.addColorStop(0.55, '#f2e2bd'); g.addColorStop(1, '#d9c294');
     ctx.fillStyle = g; ctx.fill();
-    ctx.lineWidth = Math.max(1.2, r * 0.13);
-    ctx.strokeStyle = '#5a3a1e'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy - r * 0.16, r * 0.78, Math.PI * 1.12, Math.PI * 1.88);
+    ctx.lineWidth = Math.max(1.4, r * 0.11);
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1.8, r * 0.14);
+    ctx.strokeStyle = '#4b2f16'; ctx.stroke();
 
     ctx.fillStyle = hot ? '#c0271b' : '#3a2208';
-    ctx.font = f(800, Math.round(r * 1.12));
+    ctx.font = f(800, Math.round(r * 1.16));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(t.number), cx, cy - r * 0.12);
+    ctx.fillText(String(t.number), cx, cy - r * 0.14);
 
     const pips = pipsFor(t.number);
-    const pr = Math.max(1, r * 0.10);
+    const pr = Math.max(1.5, r * 0.115);
     for (let i = 0; i < pips; i++) {
-      const x = cx + (i - (pips - 1) / 2) * pr * 2.8;
-      ctx.beginPath(); ctx.arc(x, cy + r * 0.52, pr, 0, Math.PI * 2);
+      const x = cx + (i - (pips - 1) / 2) * pr * 2.9;
+      ctx.beginPath(); ctx.arc(x, cy + r * 0.56, pr, 0, Math.PI * 2);
       ctx.fillStyle = hot ? '#c0271b' : '#5a3a1e'; ctx.fill();
     }
   }
 
+  /** A rounded plate — the one shape every label on this map sits on. */
+  function plate(x, y, w, h, fill, stroke, rad) {
+    const r = rad === undefined ? Math.min(h / 2, 7) : rad;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + r, y - h / 2);
+    ctx.arcTo(x + w / 2, y - h / 2, x + w / 2, y + h / 2, r);
+    ctx.arcTo(x + w / 2, y + h / 2, x - w / 2, y + h / 2, r);
+    ctx.arcTo(x - w / 2, y + h / 2, x - w / 2, y - h / 2, r);
+    ctx.arcTo(x - w / 2, y - h / 2, x + w / 2, y - h / 2, r);
+    ctx.closePath();
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 7; ctx.shadowOffsetY = 3;
+    ctx.fillStyle = fill; ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 2; ctx.strokeStyle = stroke; ctx.stroke();
+  }
+
+  /** Dock tags: full-opacity plated 2:1 / 3:1 markers on a mooring line. */
   function drawPorts() {
     const s = proj.s;
     const mine = state.players[0].ports;
     for (const p of ports) {
       const e = edges[p.edge];
       const unlocked = mine.has(p.id);
-      ctx.save();
-      ctx.globalAlpha = unlocked ? 1 : 0.38;
-      ctx.setLineDash([s * 0.5, s * 0.45]);
-      ctx.lineWidth = Math.max(1, s * 0.14);
-      ctx.strokeStyle = unlocked ? '#ffe79a' : '#cfe4f2';
-      ctx.beginPath(); ctx.moveTo(PX(e.x), PY(e.z)); ctx.lineTo(PX(p.x), PY(p.z)); ctx.stroke();
-      ctx.setLineDash([]);
+      const px = PX(p.x), py = PY(p.z);
 
-      const r = Math.max(8, s * 1.02);
-      ctx.beginPath(); ctx.arc(PX(p.x), PY(p.z), r, 0, Math.PI * 2);
-      ctx.fillStyle = unlocked ? '#f6e7c6' : '#9fb6c8';
-      ctx.fill();
-      ctx.lineWidth = Math.max(1.2, r * 0.18);
-      ctx.strokeStyle = unlocked ? '#5a3a1e' : '#3d5468';
-      ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(PX(e.x), PY(e.z)); ctx.lineTo(px, py);
+      ctx.lineWidth = Math.max(3, s * 0.32);
+      ctx.strokeStyle = 'rgba(12,26,44,.7)'; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(PX(e.x), PY(e.z)); ctx.lineTo(px, py);
+      ctx.lineWidth = Math.max(1.6, s * 0.18);
+      ctx.strokeStyle = unlocked ? '#ffc93c' : '#c8b28a'; ctx.stroke();
 
-      ctx.fillStyle = '#3a2208';
-      ctx.font = f(800, Math.round(r * 0.86));
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(p.label, PX(p.x), PY(p.z));
-      if (p.resource) {
-        ctx.font = f(700, Math.round(r * 0.62));
-        ctx.fillStyle = unlocked ? '#f6e7c6' : '#c3d6e4';
-        ctx.strokeStyle = 'rgba(6,26,48,.85)';
-        ctx.lineWidth = 2.4;
-        const ty = PY(p.z) + r * 1.55;
-        ctx.strokeText(RES_LABEL[p.resource].toUpperCase(), PX(p.x), ty);
-        ctx.fillText(RES_LABEL[p.resource].toUpperCase(), PX(p.x), ty);
+      const w = 40, h = 24;
+      plate(px, py, w, h,
+        unlocked ? '#ffd764' : '#f2e6ca',
+        unlocked ? '#7a4d06' : '#5a3a1e', 8);
+      if (unlocked) {
+        ctx.beginPath();
+        ctx.rect(px - w / 2 + 3, py - h / 2 + 3, w - 6, 4);
+        ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fill();
       }
-      ctx.restore();
+      ctx.fillStyle = '#3a2208';
+      ctx.font = f(800, 14);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(p.label, px, py + 1);
     }
   }
 
   function drawRoads() {
     const s = proj.s;
-    const w = Math.max(3.4, s * 0.62);
+    const w = Math.max(6, s * 0.66);
     for (const [eid, pid] of state.roadOwner) {
       const e = edges[eid];
       const A = intersections[e.a], B = intersections[e.b];
@@ -401,16 +484,30 @@ export function createOverview(root, state, game) {
     ctx.fillRect(x - k * 0.3, y + k * 0.05, k * 0.6, k * 0.95);
   }
 
+  /** Owner-coloured pip, at least 14px across, with the piece glyph on it. */
+  function ownerPip(x, y, r, col, city) {
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = r * 0.8; ctx.shadowOffsetY = r * 0.34;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = col.css; ctx.fill();
+    ctx.restore();
+    ctx.beginPath(); ctx.arc(x, y - r * 0.22, r * 0.72, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.lineWidth = r * 0.24; ctx.strokeStyle = col.light; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, r * 0.26);
+    ctx.strokeStyle = city ? '#ffe79a' : 'rgba(8,18,30,.9)';
+    ctx.stroke();
+    const k = r * 0.56;
+    if (city) castleGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
+    else houseGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
+  }
+
   function drawBuildings() {
-    const k = Math.max(4.2, proj.s * 0.86);
+    const r = Math.max(7.5, proj.s * 0.66);
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
       const col = state.players[b.owner].color;
-      const x = PX(n.x), y = PY(n.z);
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = k * 0.9; ctx.shadowOffsetY = k * 0.3;
-      if (b.type === 'city') castleGlyph(x, y, k, col); else houseGlyph(x, y, k, col);
-      ctx.restore();
+      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.22 : r, col, b.type === 'city');
     }
   }
 
@@ -435,25 +532,66 @@ export function createOverview(root, state, game) {
     ctx.beginPath(); ctx.arc(x + k * 0.33, y - k * 0.25, k * 0.17, 0, Math.PI * 2); ctx.fill();
   }
 
+  /** Name plate: a real plated tag with an owner-colour bar, never bare text
+      floating over terrain. Plates flip above/below the marker by which half
+      of the island the settler is standing on, so rivals stop colliding. */
+  function namePlate(x, y, name, col, mine) {
+    const label = name.toUpperCase();
+    ctx.font = f(800, 12);
+    const tw = ctx.measureText(label).width;
+    const w = tw + 24, h = 21;
+    plate(x, y, w, h, mine ? '#123a66' : 'rgba(10,26,46,.94)',
+      mine ? '#ffc93c' : 'rgba(2,8,16,.9)', 7);
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2 + 2, y - h / 2 + 3);
+    ctx.lineTo(x - w / 2 + 6, y - h / 2 + 3);
+    ctx.lineTo(x - w / 2 + 6, y + h / 2 - 3);
+    ctx.lineTo(x - w / 2 + 2, y + h / 2 - 3);
+    ctx.closePath();
+    ctx.fillStyle = col.css; ctx.fill();
+    ctx.fillStyle = mine ? '#ffe79a' : '#e9f1fa';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, x + 3, y + 1);
+  }
+
   function drawSettlers() {
     const s = proj.s;
-    for (const p of state.players) {
-      const x = PX(p.x), y = PY(p.z);
-      const r = Math.max(4.2, s * (p.id === 0 ? 0.78 : 0.64));
-      ctx.beginPath(); ctx.arc(x, y + r * 0.55, r * 0.95, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(0,0,0,.32)'; ctx.fill();
+    const marks = state.players.map(p => ({
+      p, x: PX(p.x), y: PY(p.z), r: Math.max(6, s * (p.id === 0 ? 0.86 : 0.72))
+    }));
+
+    for (const m of marks) {
+      const { x, y, r, p } = m;
+      ctx.beginPath(); ctx.ellipse(x, y + r * 0.85, r * 0.95, r * 0.42, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = p.color.css; ctx.fill();
-      ctx.lineWidth = Math.max(1.4, r * 0.36);
-      ctx.strokeStyle = p.id === 0 ? '#ffc93c' : 'rgba(255,255,255,.9)';
+      ctx.beginPath(); ctx.arc(x, y - r * 0.22, r * 0.66, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.lineWidth = r * 0.26; ctx.strokeStyle = p.color.light; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(2, r * 0.32);
+      ctx.strokeStyle = p.id === 0 ? '#ffc93c' : 'rgba(6,16,28,.9)';
       ctx.stroke();
+    }
 
-      ctx.font = f(800, Math.max(9, Math.round(s * 0.92)));
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(6,20,38,.9)';
-      ctx.strokeText(p.name.toUpperCase(), x, y - r * 2.1);
-      ctx.fillStyle = p.id === 0 ? '#ffe79a' : '#f2f6fb';
-      ctx.fillText(p.name.toUpperCase(), x, y - r * 2.1);
+    // Plates last, and deconflicted: settlers cluster around the market at the
+    // opening, and two overlapping name tags is exactly the failure this
+    // replaced. Each plate steps away from the marker until it finds air.
+    const placed = [];
+    const H = 21;
+    for (const m of marks) {
+      ctx.font = f(800, 12);
+      const w = ctx.measureText(m.p.name.toUpperCase()).width + 24;
+      const dir = m.p.z <= BOUNDS.cz ? -1 : 1;
+      let py = m.y + dir * (m.r + 15);
+      for (let i = 0; i < 6; i++) {
+        const clash = placed.some(q =>
+          Math.abs(q.x - m.x) < (q.w + w) / 2 + 4 && Math.abs(q.y - py) < H + 4);
+        if (!clash) break;
+        py += dir * (H + 5);
+      }
+      placed.push({ x: m.x, y: py, w });
+      namePlate(m.x, py, m.p.name, m.p.color, m.p.id === 0);
     }
   }
 
@@ -500,10 +638,9 @@ export function createOverview(root, state, game) {
 
     if (sel !== null && mode !== 'place-robber' && mode !== 'place-road') {
       const n = intersections[sel];
-      const k = Math.max(4.2, s * 0.86);
-      ctx.save(); ctx.globalAlpha = 0.9;
-      if (mode === 'place-city') castleGlyph(PX(n.x), PY(n.z), k, state.players[0].color);
-      else houseGlyph(PX(n.x), PY(n.z), k, state.players[0].color);
+      const r = Math.max(7.5, s * 0.66) * (mode === 'place-city' ? 1.22 : 1);
+      ctx.save(); ctx.globalAlpha = 0.92;
+      ownerPip(PX(n.x), PY(n.z), r, state.players[0].color, mode === 'place-city');
       ctx.restore();
     }
   }

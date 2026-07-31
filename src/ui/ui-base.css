@@ -1,0 +1,190 @@
+/* ==========================================================================
+   Island Settlers — design tokens, reset and shared material.
+   Imported first by ui.css. Owner: UI agent.
+   ========================================================================== */
+
+:root{
+  --ff:'Trebuchet MS','Avenir Next Condensed','Segoe UI',system-ui,-apple-system,sans-serif;
+
+  --cream:#f6e7c6;  --cream-2:#e6d6b2;  --cream-3:#cdb98f;
+  --brown:#5a3a1e;  --brown-2:#7a5228;  --ink:#241505;
+  --navy:rgba(12,32,58,.86);
+  --navy-2:rgba(8,22,42,.92);
+  --navy-solid:#0c203a;
+  --gold:#ffc93c;   --gold-d:#c98f14;   --gold-l:#ffe79a;
+  --red:#d0472f;    --red-d:#8f2b18;
+  --green:#3f9a52;  --green-d:#25692f;
+  --blue:#3b7fd4;   --blue-d:#255a9d;
+  --stone:#8d97a6;  --stone-d:#5c6878;
+  --hair:rgba(255,201,60,.34);
+
+  --sat:env(safe-area-inset-top,0px);
+  --sar:env(safe-area-inset-right,0px);
+  --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px);
+
+  /* Screen gutters. The 18px floor keeps the gear and the map close button
+     clear of a notched phone's sensor housing in landscape even when the
+     browser reports no safe-area inset at all. */
+  --edge:11px;
+  --gL:max(calc(var(--edge) + var(--sal)),18px);
+  --gR:max(calc(var(--edge) + var(--sar)),18px);
+  --gT:max(calc(var(--edge) + var(--sat)),10px);
+  --gB:max(calc(var(--edge) + var(--sab)),10px);
+
+  --pad:10px;
+  --shadow:0 6px 16px rgba(0,0,0,.42);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+
+html,body{
+  margin:0;padding:0;height:100%;width:100%;overflow:hidden;
+  background:#06203c;color:#fff;font-family:var(--ff);
+  -webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;user-select:none;
+  overscroll-behavior:none;touch-action:none;
+}
+
+#app{position:fixed;inset:0;overflow:hidden;touch-action:none}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+/* The HUD layer. Its own stacking context (no z-index arms race) so it always
+   paints over the joystick layer, which sits before it in the DOM at z-index 0.
+   Containers never eat touches — only real controls opt back in. */
+#ui{
+  position:absolute;inset:0;overflow:hidden;
+  isolation:isolate;
+  pointer-events:none;
+  font-family:var(--ff);
+}
+#ui *{pointer-events:none}
+#ui [data-ui],#ui [data-ui] *{pointer-events:auto}
+/* A modal that is fading out must not keep eating touches. */
+#ui .ov:not(.on),#ui .ov:not(.on) *,
+#ui .panels:not(.on),#ui .panels:not(.on) *{pointer-events:none}
+
+.hid{display:none !important}
+
+/* ---------------------------------------------------------------- icons */
+.ico,.ico-count{display:inline-flex;align-items:center;justify-content:center;line-height:0}
+.svg-ico{display:block;filter:drop-shadow(0 1.5px 1.5px rgba(0,0,0,.55))}
+.svg-ico.avatar{filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
+.ico-count{gap:4px}
+
+.chip{
+  display:block;width:20px;height:20px;border-radius:7px;flex:0 0 auto;
+  background:linear-gradient(160deg,var(--cl,#7fb2f0),var(--c,#3b7fd4) 62%);
+  border:2px solid rgba(0,0,0,.55);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 2px 4px rgba(0,0,0,.4);
+}
+.chip.sm{width:15px;height:15px;border-radius:5px;border-width:1.5px}
+
+/* ============================================================== material
+   One shared plate. Every dark container in the game wears it: a vertical
+   gradient fill, a 1px dark outer stroke, a 2px inner top highlight and a
+   real drop shadow. This is what stops the interface reading as flat
+   translucent rectangles. */
+.plate{
+  position:relative;
+  background:linear-gradient(180deg,
+    rgba(30,66,108,.94) 0%,
+    rgba(16,42,74,.94) 46%,
+    rgba(7,22,42,.95) 100%);
+  border:1px solid rgba(3,10,20,.92);
+  border-radius:13px;
+  box-shadow:
+    0 8px 8px -2px rgba(0,0,0,.40),
+    0 2px 3px rgba(0,0,0,.35),
+    inset 0 2px 0 rgba(255,255,255,.20),
+    inset 0 0 0 1px rgba(255,201,60,.16),
+    inset 0 -9px 14px rgba(0,0,0,.30);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+}
+.plate.lift{box-shadow:
+    0 10px 22px rgba(0,0,0,.50),
+    0 2px 3px rgba(0,0,0,.4),
+    inset 0 2px 0 rgba(255,255,255,.22),
+    inset 0 0 0 1px rgba(255,201,60,.20),
+    inset 0 -10px 16px rgba(0,0,0,.32)}
+
+/* ================================================================ buttons */
+.btn{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  gap:7px;min-height:44px;min-width:44px;padding:0 15px;
+  border:2px solid #2a1a0c;border-radius:14px;
+  background:linear-gradient(180deg,var(--f1,#ffd977) 0%,var(--f2,#f0a92c) 48%,var(--f3,#e08f1c) 100%);
+  box-shadow:0 4px 0 var(--lip,#a8641a),0 8px 14px rgba(0,0,0,.42),
+             inset 0 2px 0 rgba(255,255,255,.62),inset 0 -6px 10px rgba(0,0,0,.16);
+  color:var(--fg,#3a2208);
+  font:800 13px/1 var(--ff);letter-spacing:.10em;text-transform:uppercase;
+  text-shadow:0 1px 0 rgba(255,255,255,.42);
+  cursor:pointer;touch-action:manipulation;
+  transition:transform .09s ease,box-shadow .09s ease,filter .14s ease,opacity .14s ease;
+}
+.btn:active,.btn.press{
+  transform:translateY(4px);
+  box-shadow:0 0 0 var(--lip,#a8641a),0 3px 7px rgba(0,0,0,.4),
+             inset 0 2px 0 rgba(255,255,255,.5);
+}
+.btn.off,.btn:disabled{filter:grayscale(.72) brightness(.82);opacity:.72}
+.btn.off:active,.btn:disabled:active{transform:none}
+.btn .sb-lab{white-space:nowrap}
+.btn.big{min-height:52px;padding:0 22px;font-size:15px;border-radius:16px}
+.btn.huge{min-height:60px;padding:0 34px;font-size:19px;border-radius:20px;letter-spacing:.14em}
+.btn.wide{width:100%;justify-content:flex-start;padding:0 14px}
+
+.btn.green{--f1:#8bd67c;--f2:#48a355;--f3:#358a44;--lip:#20602b;--fg:#0f2f16}
+.btn.red{--f1:#f19277;--f2:#d0472f;--f3:#b53a24;--lip:#7c2413;--fg:#fff0e8;
+  text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.btn.blue{--f1:#8dc0f7;--f2:#3b7fd4;--f3:#2e6ab5;--lip:#1c4a86;--fg:#eaf3ff;
+  text-shadow:0 1px 0 rgba(0,0,0,.3)}
+.btn.cream{--f1:#fbf3de;--f2:#f0dfb6;--f3:#e2cd9c;--lip:#a98d5c;--fg:#3f2a12}
+.btn.stone{--f1:#d3dae3;--f2:#98a3b2;--f3:#7d8998;--lip:#4c5763;--fg:#1d2833}
+.btn.gold{--f1:#ffe79a;--f2:#ffc93c;--f3:#eaad20;--lip:#a8741a;--fg:#3a2208}
+
+/* circular buttons ------------------------------------------------------- */
+.cbtn{
+  position:relative;display:inline-flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;
+  width:58px;height:58px;min-width:48px;min-height:48px;border-radius:50%;padding:0;
+  border:2px solid #2a1a0c;
+  background:radial-gradient(circle at 38% 26%,var(--f1,#ffe79a),var(--f2,#ffc93c) 52%,var(--f3,#e0a41c) 100%);
+  box-shadow:0 5px 0 var(--lip,#a8741a),0 9px 16px rgba(0,0,0,.44),
+             inset 0 3px 0 rgba(255,255,255,.55),inset 0 -6px 10px rgba(0,0,0,.18);
+  color:#3a2208;cursor:pointer;touch-action:manipulation;
+  transition:transform .09s ease,box-shadow .09s ease,filter .14s;
+}
+.cbtn:active{transform:translateY(4px);
+  box-shadow:0 1px 0 var(--lip,#a8741a),0 3px 7px rgba(0,0,0,.4),inset 0 3px 0 rgba(255,255,255,.45)}
+.cbtn .cb-lab{font:800 8.5px/1 var(--ff);letter-spacing:.10em;text-transform:uppercase;
+  text-shadow:0 1px 0 rgba(255,255,255,.4)}
+.cbtn .cb-ico{line-height:0}
+.cbtn.small{width:48px;height:48px}
+.cbtn.cream{--f1:#fbf3de;--f2:#f0dfb6;--f3:#dcc493;--lip:#a98d5c}
+.cbtn.blue{--f1:#a9d0fa;--f2:#3b7fd4;--f3:#2a63ad;--lip:#1c4a86;color:#eaf3ff}
+.cbtn.blue .cb-lab{text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.cbtn.ghost{
+  --f1:rgba(120,160,205,.55);--f2:rgba(16,40,70,.9);--f3:rgba(8,24,46,.95);--lip:#04101f;
+  border-color:rgba(255,201,60,.4);color:#ffe79a;
+}
+.cbtn.ghost.on{border-color:var(--gold);box-shadow:0 5px 0 #04101f,0 0 16px rgba(255,201,60,.55),
+  inset 0 3px 0 rgba(255,255,255,.22)}
+
+.badge{
+  position:absolute;top:-3px;right:-2px;min-width:22px;height:22px;padding:0 5px;
+  border-radius:11px;background:linear-gradient(#f2705a,#c8331c);
+  border:2px solid #2a1a0c;color:#fff;
+  font:800 12px/18px var(--ff);text-align:center;
+  box-shadow:0 2px 5px rgba(0,0,0,.55);
+}
+
+/* Legacy alias — a few panels still ask for the old glass plate. */
+.glass{
+  background:var(--navy);
+  border:1.5px solid var(--hair);
+  border-radius:14px;
+  box-shadow:0 6px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12);
+  backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+}

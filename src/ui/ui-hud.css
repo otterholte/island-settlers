@@ -1,0 +1,280 @@
+/* ==========================================================================
+   Island Settlers — the in-world heads-up display.
+   Imported by ui.css after ui-base.css. Owner: UI agent.
+   ========================================================================== */
+
+.hud{position:absolute;inset:0}
+.hud.pre .hud-bc,.hud.pre .hud-br,.hud.pre .hud-bl{
+  opacity:0;transform:translateY(26px);pointer-events:none}
+.hud-bc,.hud-br,.hud-bl{transition:opacity .34s ease,transform .34s cubic-bezier(.2,.9,.3,1)}
+
+/* --- top-left: settings, identity, clock -------------------------------- */
+.hud-tl{
+  position:absolute;left:var(--gL);top:var(--gT);
+  display:flex;flex-direction:column;gap:6px;align-items:flex-start;
+}
+.tl-row{display:flex;align-items:center;gap:8px}
+
+.idcard{
+  display:flex;align-items:center;gap:8px;height:48px;padding:0 11px 0 7px;
+  border-radius:13px;
+}
+.idc-av{line-height:0;flex:0 0 auto}
+.idc-txt{display:flex;flex-direction:column;line-height:1;gap:3px;min-width:0}
+.idc-name{font:800 14px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.idc-sub{font:700 9px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;
+  color:rgba(190,214,240,.72)}
+.idc-vp{display:flex;align-items:center;gap:4px;margin-left:1px;padding-left:9px;
+  border-left:1px solid rgba(255,201,60,.28)}
+.idc-vp .ico{line-height:0}
+.idc-vp b{font:800 22px/1 var(--ff);color:var(--gold);
+  -webkit-text-stroke:2px rgba(10,18,30,.85);paint-order:stroke fill;
+  text-shadow:0 2px 4px rgba(0,0,0,.5)}
+.idc-vp i{font:700 11px/1 var(--ff);font-style:normal;color:rgba(255,231,154,.62)}
+
+.timechip{
+  display:flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;
+  border-radius:8px;
+}
+.timechip .ico{line-height:0;opacity:.85}
+.timechip b{font:800 11px/1 var(--ff);letter-spacing:.10em;color:rgba(226,240,255,.92);
+  text-shadow:0 1px 2px rgba(0,0,0,.65)}
+
+/* --- top-centre: THE resource readout -----------------------------------
+   The most-read element in the game gets the prime slot: one beveled pill,
+   five slots, 28px objects and 20px stroked numerals that survive over bright
+   terrain. Nothing here ever scales below 20px. */
+.hud-tc{
+  position:absolute;top:var(--gT);left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+}
+.resbar{
+  display:flex;align-items:stretch;height:44px;padding:0 5px;
+  border-radius:13px;
+  background:linear-gradient(180deg,#20527f 0%,#12304f 44%,#08192e 100%);
+  border:1px solid rgba(3,10,20,.95);
+  box-shadow:
+    0 4px 4px rgba(0,0,0,.42),
+    0 6px 14px rgba(0,0,0,.34),
+    inset 0 2px 0 rgba(255,255,255,.24),
+    inset 0 0 0 1px rgba(255,201,60,.20),
+    inset 0 -10px 14px rgba(0,0,0,.34);
+}
+.res{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  gap:6px;padding:0 11px;flex:1 1 0;
+}
+.res + .res::before{
+  content:'';position:absolute;left:0;top:7px;bottom:7px;width:1px;
+  background:linear-gradient(180deg,rgba(255,201,60,0),rgba(255,201,60,.45),rgba(255,201,60,0));
+}
+.res .ico{line-height:0;flex:0 0 auto}
+.res b{
+  font:800 20px/1 var(--ff);color:#fff;min-width:13px;text-align:left;
+  -webkit-text-stroke:2px rgba(8,16,28,.92);paint-order:stroke fill;
+  text-shadow:0 2px 3px rgba(0,0,0,.6);
+}
+.res.pop{animation:resPop .46s cubic-bezier(.2,1.6,.4,1)}
+.res.pop b{color:#fff2c4}
+.res.pop .ico{animation:resIcoPop .46s cubic-bezier(.2,1.7,.4,1)}
+.res.pop::after{content:'';position:absolute;inset:2px -2px;border-radius:11px;
+  border:2px solid var(--gold);opacity:0;animation:resRing .55s ease-out}
+@keyframes resPop{0%{transform:scale(1)}34%{transform:scale(1.14)}100%{transform:scale(1)}}
+@keyframes resIcoPop{0%{transform:scale(1) rotate(0)}30%{transform:scale(1.35) rotate(-8deg)}
+  100%{transform:scale(1) rotate(0)}}
+@keyframes resRing{0%{opacity:1;transform:scale(.82)}100%{opacity:0;transform:scale(1.3)}}
+
+/* --- top-right: standings ------------------------------------------------ */
+.hud-tr{
+  position:absolute;right:var(--gR);top:var(--gT);
+  width:190px;padding:5px 6px 7px;
+}
+.rk-head{font:800 9px/1 var(--ff);letter-spacing:.24em;text-transform:uppercase;
+  color:rgba(255,231,154,.78);padding:3px 4px 6px;text-align:center}
+.ranks{display:flex;flex-direction:column;gap:4px}
+.rk{
+  position:relative;display:flex;align-items:center;gap:7px;
+  height:40px;padding:0 8px 0 6px;
+  border-radius:10px;
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.3);
+  will-change:transform;overflow:hidden;
+}
+.rk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--c,#3b7fd4);opacity:.75}
+.rk.me{background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.24));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 1px 3px rgba(0,0,0,.36)}
+.rk.me::before{width:4px;background:var(--gold);opacity:1;
+  box-shadow:0 0 8px rgba(255,201,60,.7)}
+.rk.lead .rk-vp{text-shadow:0 1px 0 #6b4405,0 0 10px rgba(255,201,60,.7)}
+.rk-pos{font:800 11px/1 var(--ff);color:rgba(196,218,242,.66);width:9px;text-align:center;
+  flex:0 0 auto}
+.rk-av{line-height:0;flex:0 0 auto}
+.rk-name{flex:1 1 auto;min-width:0;font:700 12px/1 var(--ff);letter-spacing:.04em;color:#eef4fb;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.5)}
+.rk-award{display:flex;gap:2px;line-height:0;opacity:.95;flex:0 0 auto}
+.rk-award .aw{filter:drop-shadow(0 0 3px rgba(255,201,60,.8))}
+.rk-vp{display:flex;align-items:center;gap:3px;flex:0 0 auto}
+.rk-vp .ico{line-height:0}
+.rk-vp b{font:800 20px/1 var(--ff);color:var(--gold);min-width:14px;text-align:right;
+  -webkit-text-stroke:1.6px rgba(10,18,30,.8);paint-order:stroke fill;
+  text-shadow:0 1px 3px rgba(0,0,0,.5)}
+
+/* --- bottom-centre: build cards ------------------------------------------ */
+.hud-bc{
+  position:absolute;bottom:var(--gB);left:50%;transform:translateX(-50%);
+}
+.build-row{display:flex;gap:8px;align-items:flex-end}
+.bcard{
+  position:relative;display:flex;flex-direction:column;align-items:center;
+  justify-content:flex-start;gap:2px;
+  width:96px;height:108px;padding:6px 4px 0;overflow:hidden;
+  background:linear-gradient(180deg,#fffaea 0%,#f8ebcd 34%,var(--cream-2) 100%);
+  border:2px solid var(--brown);border-radius:13px;
+  box-shadow:0 5px 0 #8b6a34,0 9px 16px rgba(0,0,0,.45),
+             inset 0 2px 0 rgba(255,255,255,.9),inset 0 -10px 14px rgba(154,116,58,.18);
+  cursor:pointer;touch-action:manipulation;
+  transition:transform .1s ease,box-shadow .1s ease,filter .18s ease,opacity .18s ease;
+}
+.bcard:active{transform:translateY(4px);
+  box-shadow:0 1px 0 #8b6a34,0 4px 8px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.7)}
+/* flex:0 0 auto matters: without it a four-resource cost row shrinks the
+   title until it is clipped in half. */
+.bc-name{flex:0 0 auto;font:800 14px/1 var(--ff);font-variant-caps:small-caps;
+  letter-spacing:.03em;color:var(--brown);text-shadow:0 1px 0 rgba(255,255,255,.9);
+  white-space:nowrap;max-width:100%;overflow:hidden}
+/* The one label long enough to need it. Small-caps buys most of the room; a
+   point of size and the letter-spacing buy the rest. */
+.bcard[data-kind="settlement"] .bc-name{font-size:13px;letter-spacing:-.01em}
+.bc-ico{flex:0 0 auto;line-height:0;margin:1px 0 2px}
+.bc-cost{
+  flex:0 0 auto;display:flex;flex-wrap:wrap;gap:2px 6px;align-items:center;justify-content:center;
+  width:calc(100% + 8px);margin:auto -4px 0;padding:4px 0 5px;
+  background:linear-gradient(180deg,#ffe6a6,#efc76d);
+  border-top:1.5px solid rgba(90,58,30,.42);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+}
+.bc-cost .cc{display:inline-flex;align-items:center;gap:2px;font-style:normal;
+  padding:0 1px;border-radius:5px}
+.bc-cost .cc em{font:800 16px/1 var(--ff);font-style:normal;color:#4a3115;
+  text-shadow:0 1px 0 rgba(255,255,255,.6)}
+.bc-cost .cc.lack em{color:#a3301a}
+.bc-cost .cc.short{background:rgba(208,71,47,.30);box-shadow:0 0 0 1.5px rgba(208,71,47,.7)}
+.bc-cost .cc.short em{color:#8f2b18}
+
+/* Affordable: full colour with a gold rim and a live under-lip.
+   Unaffordable: desaturated and dimmed — unmistakably a different state from
+   "selected". */
+.bcard.ok{border-color:#8a5c22;
+  box-shadow:0 0 0 2px rgba(255,201,60,.75),0 5px 0 #8b6a34,0 9px 18px rgba(0,0,0,.45),
+             inset 0 2px 0 rgba(255,255,255,.9),inset 0 -10px 14px rgba(154,116,58,.18)}
+.bcard.ok .bc-lip{opacity:1}
+.bcard.off{filter:grayscale(1) brightness(.86) contrast(.92);opacity:.55}
+.bcard.off .bc-lip{opacity:0}
+.bcard.off:active{transform:none}
+.bcard .bc-lip{position:absolute;left:5px;right:5px;bottom:1px;height:3px;border-radius:2px;
+  background:linear-gradient(90deg,rgba(255,201,60,0),var(--gold),rgba(255,201,60,0));
+  opacity:0;transition:opacity .2s ease}
+.bcard.nope{animation:nope .42s ease}
+.bcard.ready{animation:ready .6s ease}
+@keyframes nope{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}
+  45%{transform:translateX(5px)}70%{transform:translateX(-3px)}}
+@keyframes ready{0%{box-shadow:0 5px 0 #8b6a34,0 0 0 0 rgba(255,201,60,.9)}
+  100%{box-shadow:0 5px 0 #8b6a34,0 0 0 15px rgba(255,201,60,0)}}
+
+/* --- bottom-right ------------------------------------------------------- */
+.hud-br{
+  position:absolute;right:var(--gR);bottom:var(--gB);
+  display:flex;align-items:flex-end;gap:10px;
+}
+
+/* --- bottom-left prompt -------------------------------------------------- */
+.hud-bl{
+  position:absolute;left:var(--gL);bottom:var(--gB);
+  max-width:230px;
+}
+.prompt{
+  display:flex;align-items:center;gap:9px;min-height:48px;max-width:100%;
+  padding:6px 14px 6px 9px;border-radius:13px;
+  color:#fff;text-align:left;cursor:default;
+}
+.prompt.tappable{cursor:pointer;
+  box-shadow:0 8px 8px -2px rgba(0,0,0,.40),0 0 16px rgba(255,201,60,.4),
+    inset 0 2px 0 rgba(255,255,255,.22),inset 0 0 0 1.5px rgba(255,201,60,.65)}
+.prompt.tappable:active{transform:translateY(2px)}
+.pr-ico{line-height:0;flex:0 0 auto}
+.pr-body{display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden}
+.pr-txt{font:800 12px/1 var(--ff);letter-spacing:.11em;text-transform:uppercase;
+  color:var(--gold-l);text-shadow:0 1px 2px rgba(0,0,0,.7);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr-sub{font:700 9.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;
+  color:rgba(190,214,240,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prompt.in{animation:promptIn .3s cubic-bezier(.2,1.4,.4,1)}
+@keyframes promptIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1}}
+
+/* --- toasts: out of the playfield, stacked above the build bar ----------- */
+.hud-toasts{
+  position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(var(--gB) + 124px);
+  display:flex;flex-direction:column-reverse;gap:5px;align-items:center;
+}
+.toast{
+  display:flex;align-items:center;gap:7px;max-width:52vw;padding:6px 13px 7px 9px;
+  border-radius:11px;
+  font:700 12px/1.15 var(--ff);letter-spacing:.03em;color:#eaf2fb;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+  animation:toastIn .26s cubic-bezier(.2,1.4,.4,1);
+  transition:opacity .4s ease,transform .4s ease;
+}
+.toast .tk{width:4px;height:15px;border-radius:2px;background:var(--gold);flex:0 0 auto;
+  box-shadow:0 0 6px rgba(255,201,60,.6)}
+.toast.t-good .tk{background:#6fd07f;box-shadow:0 0 6px rgba(111,208,127,.6)}
+.toast.t-warn .tk{background:#ffc93c}
+.toast.t-bad .tk{background:#f2705a;box-shadow:0 0 6px rgba(242,112,90,.6)}
+.toast.out{opacity:0;transform:translateY(8px)}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.94)}to{opacity:1}}
+
+/* --- big centre announcement --------------------------------------------- */
+.announce{
+  position:absolute;left:0;right:0;top:31%;display:flex;justify-content:center;
+  opacity:0;
+}
+.announce.show{animation:annIn 2.6s cubic-bezier(.2,.9,.3,1) forwards}
+.ann-txt{
+  padding:8px 26px 10px;text-align:center;
+  font:800 27px/1.05 var(--ff);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ac,#ffc93c);
+  -webkit-text-stroke:1.5px rgba(12,20,34,.9);
+  text-shadow:0 3px 0 rgba(10,18,30,.55),0 6px 22px rgba(0,0,0,.6);
+}
+@supports (color:color-mix(in srgb,red 50%,transparent)){
+  .ann-txt{text-shadow:0 3px 0 rgba(10,18,30,.55),0 6px 22px rgba(0,0,0,.6),
+    0 0 26px color-mix(in srgb,var(--ac,#ffc93c) 60%,transparent)}
+}
+@keyframes annIn{
+  0%{opacity:0;transform:scale(.7)}
+  12%{opacity:1;transform:scale(1.08)}
+  20%{transform:scale(1)}
+  78%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.05) translateY(-14px)}
+}
+
+/* --- settings pop --------------------------------------------------------- */
+.pop{
+  position:absolute;left:var(--gL);top:calc(var(--gT) + 56px);
+  width:238px;max-height:74vh;overflow:auto;padding:9px;
+  display:flex;flex-direction:column;gap:7px;
+  border-radius:16px;
+  animation:popIn .18s ease-out;
+}
+@keyframes popIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1}}
+.pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.pop-title{font:800 12px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;color:var(--gold-l)}
+.pop .sb-ico{line-height:0}
+.how{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-radius:11px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+.how p{margin:0;display:flex;flex-direction:column;gap:2px}
+.how b{font:800 9.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.how span{font:400 11px/1.35 var(--ff);color:rgba(224,236,248,.86)}

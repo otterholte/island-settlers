@@ -20,7 +20,7 @@ import {
 
 import { ports } from '../board/layout.js';
 import { el, button, clear, toggle, setText, fmtTime } from './dom.js';
-import { icon, resIcon } from './icons.js';
+import { icon, resIcon, avatar } from './icons.js';
 
 const CARD_ART = { knight: 'knight', roadBuilding: 'road', victoryPoint: 'trophy' };
 
@@ -42,7 +42,7 @@ export function createPanels(root, state, game) {
   for (const r of RES) {
     const n = el('b', { text: '0' });
     tInvNums[r] = n;
-    tInv.appendChild(el('div', { class: 'inv', html: icon(resIcon(r), 20) }, n));
+    tInv.appendChild(el('div', { class: 'inv', html: icon(resIcon(r), 24) }, n));
   }
 
   const giveRow = el('div', { class: 'pickrow' });
@@ -53,7 +53,7 @@ export function createPanels(root, state, game) {
     const g = el('button', {
       class: 'pick', type: 'button', 'data-ui': '', 'data-res': r,
       on: { click: () => { give = give === r ? null : r; syncTrade(); } }
-    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 26) }),
+    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 30) }),
        el('span', { class: 'pk-name', text: RES_LABEL[r] }), gn);
     givePick[r] = { node: g, num: gn };
     giveRow.appendChild(g);
@@ -61,7 +61,7 @@ export function createPanels(root, state, game) {
     const t = el('button', {
       class: 'pick', type: 'button', 'data-ui': '', 'data-res': r,
       on: { click: () => { get = get === r ? null : r; syncTrade(); } }
-    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 26) }),
+    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 30) }),
        el('span', { class: 'pk-name', text: RES_LABEL[r] }));
     getPick[r] = { node: t };
     getRow.appendChild(t);
@@ -148,11 +148,11 @@ export function createPanels(root, state, game) {
   /* ================================================================ cards */
   const hand = el('div', { class: 'hand' });
   const vpNote = el('span', { class: 'vp-note', text: '' });
-  const buyCost = el('span', { class: 'bc-cost' });
+  const buyCost = el('span', { class: 'buy-cost' });
   for (const r of RES) {
     const n = COST.card[r];
     if (!n) continue;
-    buyCost.appendChild(el('i', { class: 'cc', html: icon(resIcon(r), 15) + `<em>${n}</em>` }));
+    buyCost.appendChild(el('i', { class: 'cc', html: icon(resIcon(r), 20) + `<em>${n}</em>` }));
   }
   const buyBtn = button('big gold', { on: { click: () => buyCard() } },
     el('span', { class: 'sb-ico', html: icon('cards', 22) }),
@@ -252,7 +252,7 @@ export function createPanels(root, state, game) {
     resBanner,
     el('div', { class: 'rs-head' }, resTitle, resSub),
     el('div', { class: 'rs-body' }, resList,
-      el('div', { class: 'rs-side' }, el('h4', { text: 'Match Report' }), resStats)),
+      el('div', { class: 'rs-side plate' }, el('h4', { text: 'Match Report' }), resStats)),
     el('div', { class: 'rs-foot' }, againBtn));
   wrap.appendChild(resultsSheet);
 
@@ -289,21 +289,21 @@ export function createPanels(root, state, game) {
       const p = entry.p;
       const bits = breakdown(p);
       const row = el('div', {
-        class: 'rs-row r' + i + (p.id === 0 ? ' me' : '') + (i === 0 ? ' win' : ''),
+        class: 'rs-row plate r' + i + (p.id === 0 ? ' me' : '') + (i === 0 ? ' win' : ''),
         style: { '--c': p.color.css, '--cl': p.color.light }
       },
         el('span', { class: 'rs-pos', text: String(i + 1) }),
-        el('span', { class: 'chip sm', style: { '--c': p.color.css, '--cl': p.color.light } }),
+        el('span', { class: 'rs-av', html: avatar(p.color.css, p.color.light, 30) }),
         el('div', { class: 'rs-mid' },
           el('b', { class: 'rs-name', text: p.name }),
           el('span', {
             class: 'rs-bd',
             html: bits.length
-              ? bits.map(b => `<i>${icon(b[2], 13)}<em>+${b[1]}</em><u>${b[0]}</u></i>`).join('')
+              ? bits.map(b => `<i>${icon(b[2], 20)}<em>+${b[1]}</em><u>${b[0]}</u></i>`).join('')
               : '<i><u>No points scored</u></i>'
           })),
         el('span', { class: 'rs-vp' }, el('b', { text: String(entry.vp) }),
-          el('i', { html: icon('trophy', 14) })));
+          el('i', { html: icon('trophy', 20) })));
       resList.appendChild(row);
       setTimeout(() => toggle(row, 'in', true), 220 + i * 170);
     });
@@ -319,7 +319,7 @@ export function createPanels(root, state, game) {
       ['knight', 'Knights played', me.knightsPlayed]
     ];
     resStats.innerHTML = rows.map(r =>
-      `<div class="rs-stat">${icon(r[0], 16)}<span>${r[1]}</span><b>${r[2]}</b></div>`).join('');
+      `<div class="rs-stat">${icon(r[0], 20)}<span>${r[1]}</span><b>${r[2]}</b></div>`).join('');
 
     show('results');
   }
