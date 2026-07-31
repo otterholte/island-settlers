@@ -313,12 +313,22 @@ function marketClothGeo() {
   return merge(parts);
 }
 
+/*
+ * BUG FIX (world pass 2) — this was the blown-out white polygon spike sitting
+ * at top-centre of every third-person screenshot.
+ *
+ * The beacon used to carry a 3.4-unit downward cone. Drawn with additive
+ * blending, depthWrite off and renderOrder 5, it painted a hard-edged wedge of
+ * pure 255,255,255 straight over the terrain and the trees, apex-down, flaring
+ * off the top of the frame. Nothing in the reference art has a light shaft over
+ * the market. The cone is gone; what is left is a small floating orb and its
+ * two halo rings, and market.js now blends it normally instead of additively.
+ */
 function beaconGeo() {
   const parts = [
-    place(tint(new THREE.IcosahedronGeometry(0.95, 1), 0xffe08a), 0, 0, 0),
-    place(tint(new THREE.RingGeometry(1.25, 1.95, 16, 1), 0xffd45a), 0, -0.35, 0, -Math.PI / 2, 0, 0),
-    place(tint(new THREE.RingGeometry(1.75, 2.55, 16, 1), 0xffb64a), 0, -0.95, 0, -Math.PI / 2, 0, 0),
-    place(cone(1.15, 3.4, 8, 0xffd884), 0, -2.1, 0, Math.PI, 0, 0)
+    place(tint(new THREE.IcosahedronGeometry(0.72, 1), 0xffe08a), 0, 0, 0),
+    place(tint(new THREE.RingGeometry(0.95, 1.35, 16, 1), 0xffd45a), 0, -0.30, 0, -Math.PI / 2, 0, 0),
+    place(tint(new THREE.RingGeometry(1.30, 1.80, 16, 1), 0xffb64a), 0, -0.72, 0, -Math.PI / 2, 0, 0)
   ];
   return merge(parts);
 }
@@ -383,12 +393,14 @@ export function buildMarket(scene) {
   clothMesh.castShadow = true;
   group.add(clothMesh);
 
+  // Normal blending, not additive: additive over a bright sky clips to pure
+  // white and nothing about it reads as a beacon any more.
   const beaconMat = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, opacity: 0.42,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+    depthWrite: false, side: THREE.DoubleSide
   });
   const beacon = new THREE.Mesh(gBeacon, beaconMat);
-  beacon.position.set(0, 11.4, 0);
+  beacon.position.set(0, 9.6, 0);
   beacon.renderOrder = 5;
   beacon.frustumCulled = false;
   group.add(beacon);
@@ -423,7 +435,7 @@ export function buildMarket(scene) {
     t += dt;
     clothMat.userData.wind.value = t;
 
-    beacon.position.y = 11.4 + Math.sin(t * 0.85) * 0.55;
+    beacon.position.y = 9.6 + Math.sin(t * 0.85) * 0.45;
     beacon.rotation.y = t * 0.35;
     const pulse = 0.34 + Math.sin(t * 1.9) * 0.12;
     beaconMat.opacity = pulse;

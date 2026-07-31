@@ -24,11 +24,16 @@ import {
   ROAD_STRIP_INNER
 } from './terrain.js';
 import { grainTexture, tokenAtlas } from './paint.js';
+import { hexBorderGeometry } from './borders.js';
+import { merge, triCount } from './geo.js';
 import { pipsFor } from '../core/constants.js';
 
 const GRID_R = 54;       // ground mesh reaches this far from the island centre
 const GRID_S = 1.0;      // vertex spacing
 const GRAIN_TILE = 13;   // world units per grain texture repeat
+/* Sea floor below this is never visible: the sea is opaque and its deepest
+   wave trough is -0.78, so -1.25 leaves half a unit of margin. */
+const DROWNED = -1.25;
 
 /* --------------------------------------------------------------- colouring */
 
@@ -131,6 +136,12 @@ function buildGround() {
     for (let i = 0; i < N; i++) {
       const a = j * stride + i, b = a + 1, cIdx = a + stride, d = cIdx + 1;
       if (!(live[a] && live[b] && live[cIdx] && live[d])) continue;
+      // The sea is opaque, so any quad that sits well under the wave troughs
+      // can never be seen. Dropping them saves ~4.5k triangles on the main
+      // pass and the same again on the shadow pass, for zero visual change.
+      const hA = pos[a * 3 + 1], hB = pos[b * 3 + 1];
+      const hC = pos[cIdx * 3 + 1], hD = pos[d * 3 + 1];
+      if (hA < DROWNED && hB < DROWNED && hC < DROWNED && hD < DROWNED) continue;
       if ((i + j) & 1) { idx.push(a, cIdx, b, b, cIdx, d); }
       else { idx.push(a, cIdx, d, a, d, b); }
     }
@@ -140,6 +151,7 @@ function buildGround() {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
   g.setIndex(idx);
   g.computeVertexNormals();
   g.computeBoundingSphere();
@@ -187,11 +199,24 @@ function overlayGeometry(tile) {
 
 /* -------------------------------------------------------- number tokens */
 
+/*
+ * Number tokens.
+ *
+ * Two things were broken. First the disc was a plain world-space billboard, so
+ * a token six units from the camera drew three times the screen area of one
+ * thirty units away and the set stopped reading as a single UI system. The
+ * vertex stage below compensates: the quad is scaled by (d / D0)^0.62, which
+ * leaves apparent size varying as d^-0.38 instead of d^-1. Over the camera's
+ * working range that collapses a 3x spread to about 1.35x, and the clamp caps
+ * it either side. Second the disc was far too big and floated too high; the
+ * reference keeps it near a fifth of the hex width, sitting ON the tile.
+ */
 const TOKEN_VERT = /* glsl */`
 attribute vec3 aCenter;
 attribute vec2 aLocal;
 uniform vec3 uCam;
 uniform float uTime;
+uniform float uRefDist;
 varying vec2 vUv;
 void main() {
   vec3 up = vec3(0.0, 1.0, 0.0);
@@ -200,9 +225,15 @@ void main() {
   float l = length(look);
   vec3 fwd = l > 0.0001 ? look / l : vec3(0.0, 0.0, 1.0);
   vec3 right = normalize(cross(up, fwd));
+
+  float d = length(uCam - aCenter);
+  float k = clamp(pow(max(d, 1.0) / uRefDist, 0.62), 0.70, 1.55);
+
+  // aCenter is the BASE of the disc and aLocal.y runs 0..2R upward, so the
+  // distance compensation grows the token off the ground instead of into it.
   vec3 c = aCenter;
-  c.y += sin(uTime * 1.35 + aCenter.x * 0.27 + aCenter.z * 0.19) * 0.13;
-  vec3 p = c + right * aLocal.x + up * aLocal.y;
+  c.y += sin(uTime * 1.15 + aCenter.x * 0.27 + aCenter.z * 0.19) * 0.07;
+  vec3 p = c + right * (aLocal.x * k) + up * (aLocal.y * k);
   vUv = uv;
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
@@ -221,7 +252,10 @@ function buildTokens(scene) {
     .map(t => ({ tile: t, number: t.number, pips: pipsFor(t.number) }));
   const atlas = tokenAtlas(specs);
 
-  const R = 2.55;
+  // Hex width (flat to flat) is 2 * APOTHEM = 15.59. At 1.85 the discs read as
+  // giant floating coins; 0.175 of the apothem puts the disc at 2.7 across,
+  // about a sixth of the hex, which is where the reference art keeps it.
+  const R = APOTHEM * 0.175;
   const n = specs.length;
   const pos = new Float32Array(n * 4 * 3);
   const nrm = new Float32Array(n * 4 * 3);
@@ -233,23 +267,25 @@ function buildTokens(scene) {
 
   specs.forEach((s, i) => {
     const t = s.tile;
-    // Float the disc a hair over whatever is actually under the tile centre —
-    // the plateau on most tiles, the flank of a peak on the mountains.
+    // Base of the disc, a hair over whatever is actually under the tile centre
+    // — the plateau on most tiles, the flank of a peak on the mountains.
     const ground = Math.max(heightAt(t.x, t.z), topOf(t));
-    const y = ground + 1.15 + R;
+    const base = ground + 0.34;
     const cell = atlas.cells[i];
-    const corners = [[-R, -R, cell.u0, cell.v0], [R, -R, cell.u1, cell.v0],
-                     [R, R, cell.u1, cell.v1], [-R, R, cell.u0, cell.v1]];
+    // aLocal.y runs 0 .. 2R so the shader can scale about the disc's base.
+    const corners = [[-R, 0, cell.u0, cell.v0], [R, 0, cell.u1, cell.v0],
+                     [R, 2 * R, cell.u1, cell.v1], [-R, 2 * R, cell.u0, cell.v1]];
     corners.forEach(([lx, ly, u, v], j) => {
       const k = i * 4 + j;
-      pos[k * 3] = t.x; pos[k * 3 + 1] = y; pos[k * 3 + 2] = t.z;
+      pos[k * 3] = t.x; pos[k * 3 + 1] = base + ly; pos[k * 3 + 2] = t.z;
       nrm[k * 3] = 0; nrm[k * 3 + 1] = 0; nrm[k * 3 + 2] = 1;
-      cen[k * 3] = t.x; cen[k * 3 + 1] = y; cen[k * 3 + 2] = t.z;
+      cen[k * 3] = t.x; cen[k * 3 + 1] = base; cen[k * 3 + 2] = t.z;
       loc[k * 2] = lx; loc[k * 2 + 1] = ly;
       uv[k * 2] = u; uv[k * 2 + 1] = v;
     });
     const b = i * 4;
     idx.set([b, b + 1, b + 2, b, b + 2, b + 3], i * 6);
+    const y = base + R;
     anchors.push({
       tileId: t.id, number: t.number, pips: s.pips, radius: R,
       x: t.x, y, z: t.z, position: new THREE.Vector3(t.x, y, t.z)
@@ -268,7 +304,10 @@ function buildTokens(scene) {
   const uniforms = {
     uMap: { value: atlas.texture },
     uCam: { value: new THREE.Vector3(0, 40, 60) },
-    uTime: { value: 0 }
+    uTime: { value: 0 },
+    // The follow camera orbits ~30 units out; that is the distance at which a
+    // token draws at exactly its authored world size.
+    uRefDist: { value: 30 }
   };
   const mat = new THREE.ShaderMaterial({
     vertexShader: TOKEN_VERT,
@@ -299,7 +338,9 @@ export function buildIsland(scene) {
   scene.add(group);
 
   const grain = grainTexture(256);
-  const groundGeo = buildGround();
+  // The hex-border beams and corner posts fold straight into the ground mesh:
+  // same material, same planar UVs, zero extra draw calls.
+  const groundGeo = merge([buildGround(), hexBorderGeometry()]);
   const groundMat = new THREE.MeshLambertMaterial({
     vertexColors: true,
     map: grain
@@ -337,9 +378,9 @@ export function buildIsland(scene) {
 
   let time = 0;
   const triangles =
-    groundGeo.index.count / 3 +
-    tileMeshes.reduce((s, m) => s + m.geometry.index.count / 3, 0) +
-    tokens.mesh.geometry.index.count / 3;
+    triCount(groundGeo) +
+    tileMeshes.reduce((s, m) => s + triCount(m.geometry), 0) +
+    triCount(tokens.mesh.geometry);
 
   return {
     group,

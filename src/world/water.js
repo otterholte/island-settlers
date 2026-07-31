@@ -20,7 +20,9 @@ import { merge, place, tint, box, cyl, triCount } from './geo.js';
 const COVER = 72;          // field texture covers [-COVER, COVER] in x and z
 const FIELD = 256;
 const PLANE = 380;
-const SEGS = 64;
+/* The swell's shortest wavelength is ~30 units, so 44 segments over 380 (8.6
+   units a quad) still resolves it and hands 4k triangles back to the budget. */
+const SEGS = 44;
 
 /* Height encodings packed into the field texture. */
 const R_LO = -3, R_HI = 3;      // near-surface detail: foam + shallows
@@ -88,9 +90,11 @@ uniform sampler2D uField;
 uniform sampler2D uNoise;
 uniform float uTime;
 uniform float uCover;
+uniform vec3 uAbyss;
 uniform vec3 uDeep;
 uniform vec3 uMid;
 uniform vec3 uShallow;
+uniform vec3 uShoal;
 uniform vec3 uFoam;
 uniform vec3 uSky;
 uniform vec3 uSunDir;
@@ -108,12 +112,19 @@ void main() {
   float depth = max(-hDeep, 0.0);
 
   // ------------------------------------------------------------ base colour
-  vec3 col = mix(uMid, uDeep, smoothstep(2.2, 6.4, depth));
-  col = mix(uShallow, col, smoothstep(0.05, 2.4, depth));
+  // A four-stop depth ramp: pale shoal over the wet sand, turquoise shallows,
+  // cobalt at the shelf edge, deep navy once the sea floor drops away.
+  vec3 col = mix(uDeep, uAbyss, smoothstep(4.6, 6.9, depth));
+  col = mix(uMid, col, smoothstep(1.9, 4.4, depth));
+  col = mix(uShallow, col, smoothstep(0.45, 3.0, depth));
+  col = mix(uShoal, col, smoothstep(0.02, 0.62, depth));
 
   // banded tonal steps keep it stylised rather than photoreal
   float band = texture2D(uNoise, vWorld * 0.013 + vec2(uTime * 0.004, uTime * 0.003)).r;
-  col *= 0.94 + 0.12 * step(0.5, band);
+  col *= 0.93 + 0.15 * step(0.5, band);
+  // a second, tighter contour band hugging the drop-off reads as a reef shelf
+  float shelf = 1.0 - smoothstep(0.0, 0.55, abs(depth - 1.55));
+  col = mix(col, uShallow * 1.06, shelf * 0.34);
 
   // ---------------------------------------------------------------- ripples
   vec2 n1 = texture2D(uNoise, vWorld * 0.0225 + vec2(uTime * 0.0090, uTime * 0.0055)).rg;
@@ -124,26 +135,36 @@ void main() {
   vec3 V = normalize(cameraPosition - vWPos);
   vec3 H = normalize(uSunDir + V);
   float spec = pow(max(dot(nrm, H), 0.0), 110.0);
-  float glint = smoothstep(0.58, 0.95, n2.r * 0.75 + n1.g * 0.55);
-  col += uSunTint * (spec * 1.35 + spec * glint * 3.2);
+  float glint = smoothstep(0.62, 0.96, n2.r * 0.75 + n1.g * 0.55);
+  // was spec*3.2 on the glint, which blew the whole shelf to white
+  col += uSunTint * (spec * 0.85 + spec * glint * 1.45);
 
   float fres = pow(1.0 - max(dot(nrm, V), 0.0), 3.2);
-  col = mix(col, uSky, fres * 0.26);
+  col = mix(col, uSky, fres * 0.13);
 
   // ------------------------------------------------------------------- foam
   float wob = texture2D(uNoise, vWorld * 0.085 + vec2(uTime * 0.020, -uTime * 0.014)).r;
   float fine = texture2D(uNoise, vWorld * 0.240 - vec2(uTime * 0.055, uTime * 0.040)).g;
 
-  // surge: the whole ring breathes in and out along the shore
-  float surge = 0.5 + 0.5 * sin(uTime * 0.75 + wob * 5.5 + vWorld.x * 0.02);
-  float reach = 0.20 + 0.62 * surge;
-  float ring = 1.0 - smoothstep(0.0, reach, abs(hNear + 0.16));
-  float foam = smoothstep(0.30, 0.86, ring * (0.55 + 0.85 * fine));
+  // 1. the swash: a narrow band that surges up and down the sand. Reach used
+  //    to run to 0.82 of sea-floor height, which on a 1:8.5 beach slope is a
+  //    seven-unit white smear. 0.34 keeps it a line you can read as a wave.
+  float surge = 0.5 + 0.5 * sin(uTime * 0.78 + wob * 5.5 + vWorld.x * 0.024);
+  float reach = 0.085 + 0.255 * surge;
+  float ring = 1.0 - smoothstep(0.0, reach, abs(hNear + 0.13));
+  float foam = smoothstep(0.34, 0.88, ring * (0.55 + 0.85 * fine));
 
-  // crisp waterline lip that is always present
-  foam += (1.0 - smoothstep(0.0, 0.20, abs(hNear + 0.03))) * 0.9;
-  // faint outer wash streaks
-  foam += (1.0 - smoothstep(0.5, 1.8, abs(hNear + 0.9))) * fine * 0.28;
+  // 2. the waterline lip: always there, always crisp
+  foam += (1.0 - smoothstep(0.0, 0.075, abs(hNear + 0.02))) * 0.95;
+
+  // 3. a breaker line further out, travelling shoreward on its own clock
+  float travel = 0.5 + 0.5 * sin(uTime * 0.52 + wob * 3.1 - vWorld.y * 0.0);
+  float breakAt = -0.30 - 0.34 * travel;
+  float brk = 1.0 - smoothstep(0.0, 0.075 + 0.05 * fine, abs(hNear - breakAt));
+  foam += brk * (0.42 + 0.5 * fine) * (0.35 + 0.65 * travel);
+
+  // 4. faint outer wash streaks so the shelf is not empty
+  foam += (1.0 - smoothstep(0.35, 1.25, abs(hNear + 0.78))) * fine * 0.20;
 
   col = mix(col, uFoam, clamp(foam, 0.0, 1.0));
 
@@ -198,9 +219,11 @@ export function buildWater(scene) {
       uNoise: { value: null },
       uTime: { value: 0 },
       uCover: { value: COVER },
+      uAbyss: { value: new THREE.Color(WATER_COLORS.abyss) },
       uDeep: { value: new THREE.Color(WATER_COLORS.deep) },
       uMid: { value: new THREE.Color(WATER_COLORS.mid) },
       uShallow: { value: new THREE.Color(WATER_COLORS.shallow) },
+      uShoal: { value: new THREE.Color(WATER_COLORS.shoal) },
       uFoam: { value: new THREE.Color(WATER_COLORS.foam) },
       uSky: { value: new THREE.Color(HORIZON) },
       uSunDir: { value: SUN_DIR.clone() },

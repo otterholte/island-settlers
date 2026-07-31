@@ -40,69 +40,67 @@ function ring(g, x, y, r, w, stroke) {
 
 /* ------------------------------------------------------- number token atlas */
 
-const HOT = '#c4372b';
-const CREAM = '#f6e7c6';
-const CREAM_HI = '#fdf6e2';
-const BROWN = '#4a2c14';
+/* The gameplay-critical colour convention: 6 and 8 are RED, everything else
+   is near-black. Both sit on a bone/cream disc with a single thin dark ring.
+   The old art stacked a dark-brown ring, a mid-brown ring and a brown numeral
+   on a cream face — brown on brown, illegible at gameplay size. */
+const HOT = '#cf2a1e';
+const HOT_DARK = '#8d1a11';
+const INK = '#16110c';
+const BONE = '#f7efdc';
+const BONE_HI = '#fffaf0';
+const RIM = '#33251a';
 
 function paintToken(g, cx, cy, R, number, pips) {
   const hot = number === 6 || number === 8;
 
-  // cast shadow under the disc
+  // contact shadow under the disc
   g.save();
-  g.globalAlpha = 0.28;
-  disc(g, cx, cy + R * 0.09, R * 0.99, '#241407');
+  g.globalAlpha = 0.30;
+  disc(g, cx, cy + R * 0.085, R * 0.985, '#1d1207');
   g.restore();
 
-  // dark brown outer ring
-  disc(g, cx, cy, R * 0.97, BROWN);
-  disc(g, cx, cy, R * 0.90, '#7a4a22');
-  // cream face
-  disc(g, cx, cy, R * 0.83, CREAM);
+  // ONE thin dark ring, then the bone face. Nothing else eats the disc.
+  disc(g, cx, cy, R * 0.965, RIM);
+  disc(g, cx, cy, R * 0.885, BONE);
 
-  // top bevel highlight
+  // gentle top bevel — kept subtle so the numeral keeps full contrast
   const grd = g.createLinearGradient(cx, cy - R, cx, cy + R);
-  grd.addColorStop(0, 'rgba(255,255,255,0.85)');
-  grd.addColorStop(0.42, 'rgba(255,255,255,0.10)');
-  grd.addColorStop(1, 'rgba(120,80,40,0.20)');
+  grd.addColorStop(0, 'rgba(255,255,255,0.75)');
+  grd.addColorStop(0.45, 'rgba(255,255,255,0.06)');
+  grd.addColorStop(1, 'rgba(150,116,74,0.22)');
   g.save();
-  g.beginPath(); g.arc(cx, cy, R * 0.83, 0, Math.PI * 2); g.clip();
+  g.beginPath(); g.arc(cx, cy, R * 0.885, 0, Math.PI * 2); g.clip();
   g.fillStyle = grd; g.fillRect(cx - R, cy - R, R * 2, R * 2);
   g.restore();
+  ring(g, cx, cy, R * 0.845, R * 0.022, 'rgba(51,37,26,0.30)');
 
-  // inner keyline
-  ring(g, cx, cy, R * 0.83, R * 0.035, 'rgba(74,44,20,0.55)');
-
-  // number
+  // ------------------------------------------------------------- numeral
   const label = String(number);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  const size = label.length > 1 ? R * 0.92 : R * 1.06;
+  // Big: the numeral is the whole point of the token.
+  const size = label.length > 1 ? R * 1.12 : R * 1.34;
   g.font = `900 ${size}px ${STACK}`;
-  const ny = cy - R * 0.12;
+  const ny = cy - R * 0.13;
   g.lineJoin = 'round';
-  g.lineWidth = R * 0.15;
-  g.strokeStyle = hot ? '#5a140c' : BROWN;
+  g.lineWidth = R * 0.10;
+  // a bone halo keeps the glyph readable over the bevel
+  g.strokeStyle = BONE_HI;
   g.strokeText(label, cx, ny);
-  g.fillStyle = hot ? HOT : '#3b2410';
+  g.lineWidth = R * 0.05;
+  g.strokeStyle = hot ? HOT_DARK : INK;
+  g.strokeText(label, cx, ny);
+  g.fillStyle = hot ? HOT : INK;
   g.fillText(label, cx, ny);
-  // glossy top half of the numeral
-  g.save();
-  g.beginPath();
-  g.rect(cx - R, ny - size * 0.62, R * 2, size * 0.42);
-  g.clip();
-  g.fillStyle = hot ? '#e2695c' : '#6d4a26';
-  g.fillText(label, cx, ny);
-  g.restore();
 
-  // pips
-  const pr = R * 0.062;
-  const gap = pr * 3.0;
-  const py = cy + R * 0.50;
+  // ---------------------------------------------------------------- pips
+  const pr = R * 0.072;
+  const gap = pr * 2.9;
+  const py = cy + R * 0.535;
   const x0 = cx - (pips - 1) * gap * 0.5;
   for (let i = 0; i < pips; i++) {
-    disc(g, x0 + i * gap, py + pr * 0.35, pr * 1.15, 'rgba(60,34,14,0.35)');
-    disc(g, x0 + i * gap, py, pr, hot ? HOT : '#4a2c14');
+    disc(g, x0 + i * gap, py, pr, hot ? HOT : INK);
   }
 }
 

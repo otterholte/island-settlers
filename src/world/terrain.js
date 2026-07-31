@@ -305,26 +305,36 @@ export function slopeAt(x, z, e = 0.6) {
 /* Three tonal bands per terrain so the tops read as painted, plus the cliff
    and shoreline colours. All values are plain hex ints. */
 
+/* The hue assignments are the ones the art direction wants — do not re-pick
+   the families. What changed is VALUE SEPARATION: forest floor sits a good two
+   steps darker than pasture so the two greens no longer read as one acidic
+   mid-tone, and every terrain's low-to-high span is widened so the tonal
+   banding in island.js has something to actually band between. */
 export const PALETTE = {
-  forest:    { deep: 0x2f6b26, low: 0x3f8a2c, mid: 0x55a637, high: 0x74c24c,
-               cliff: 0x6b5a3d, cliffTop: 0x8a7550 },
-  fields:    { deep: 0xb08a2c, low: 0xd0a63a, mid: 0xe6c256, high: 0xf5dc86,
-               cliff: 0x8d7443, cliffTop: 0xb09257 },
-  pasture:   { deep: 0x4e9430, low: 0x66b03a, mid: 0x83c94f, high: 0xa2dd6b,
+  // shaded forest floor — the darkest green on the board
+  forest:    { deep: 0x1e4a1c, low: 0x2c6a24, mid: 0x3f8a2c, high: 0x59a83c,
+               cliff: 0x5c4d33, cliffTop: 0x836e4a },
+  // ripe grain: richer than the sand it used to blend into
+  fields:    { deep: 0x8c6519, low: 0xb68a24, mid: 0xd0ac3c, high: 0xe6c96a,
+               cliff: 0x84693b, cliffTop: 0xac8b50 },
+  // open pasture — the lightest green, so sheep tiles pop off the forest
+  pasture:   { deep: 0x4a8c2c, low: 0x6cb63e, mid: 0x8fce56, high: 0xb6e57e,
                cliff: 0x6f6440, cliffTop: 0x8e8055 },
-  hills:     { deep: 0x8f4425, low: 0xb05a2d, mid: 0xc9743c, high: 0xdc9257,
-               cliff: 0x7a4526, cliffTop: 0x9c5e34 },
-  mountains: { deep: 0x5c636e, low: 0x757d89, mid: 0x8f97a3, high: 0xb0b7c1,
-               cliff: 0x565c66, cliffTop: 0x767d88 },
-  desert:    { deep: 0xc8a066, low: 0xdcb87e, mid: 0xeacf9b, high: 0xf6e3ba,
-               cliff: 0x9d8055, cliffTop: 0xc0a273 }
+  hills:     { deep: 0x7a3319, low: 0xa64f26, mid: 0xc9743c, high: 0xe29c5f,
+               cliff: 0x6d3c20, cliffTop: 0x9c5e34 },
+  mountains: { deep: 0x4a515c, low: 0x6b7480, mid: 0x8f97a3, high: 0xbcc3cd,
+               cliff: 0x474d57, cliffTop: 0x767d88 },
+  desert:    { deep: 0xbc9256, low: 0xd6b075, mid: 0xeacf9b, high: 0xf9e9c4,
+               cliff: 0x93764c, cliffTop: 0xc0a273 }
 };
 
 export const SHORE = {
-  strip:     0xd9bd86,   // tan road/border strip between hexes
-  stripWarm: 0xe6cd9c,
-  sand:      0xe8d3a0,
-  sandPale:  0xf4e6c2,
+  // The strip is the largest single area of the board after the hex tops, so
+  // it cannot sit near white or it drags the whole frame's value up with it.
+  strip:     0xc9a970,   // tan road/border strip between hexes
+  stripWarm: 0xdcbe8c,
+  sand:      0xe2caa0,
+  sandPale:  0xf0e0bc,
   wet:       0xd2b98a,
   rock:       0x6f6858,
   rockLit:    0x8e8573,
@@ -340,9 +350,11 @@ export const SKY_COLORS = {
 };
 
 export const WATER_COLORS = {
+  abyss:   0x073063,   // beyond the shelf — deep navy, reads almost black-blue
   deep:    0x0e5fa8,
   mid:     0x1a8fc4,
   shallow: 0x3fc4d8,
+  shoal:   0x8fe6e4,   // the pale rim right over the wet sand
   foam:    0xf2fbff
 };
 

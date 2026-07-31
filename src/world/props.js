@@ -23,8 +23,21 @@ import { HEX_SIZE } from '../core/constants.js';
 import { tiles, MARKET, SPAWNS } from '../board/layout.js';
 import { nodes, nodesByTile, mulberry32 } from '../board/nodes.js';
 import { heightAt, hexFrac, normalAt, PROP_MAX_FRAC } from './terrain.js';
-import { instanced, setInstance, triCount } from './geo.js';
+import { instanced, setInstance, triCount, merge } from './geo.js';
 import * as K from './propkits.js';
+
+/*
+ * Kits that never animate, always use the plain solid material and exist in
+ * modest numbers get baked into ONE static merged mesh instead of one
+ * InstancedMesh each. Triangle count is identical, but ten draw calls collapse
+ * to one — and because renderer.info counts the shadow pass too, that is worth
+ * roughly twenty calls a frame. Their per-instance tint variant is folded
+ * straight into the baked vertex colours, so they keep their variation.
+ */
+const STATIC_MERGE = new Set([
+  'mine', 'cart', 'rail', 'timber', 'clayWorks', 'spire',
+  'crate', 'hay', 'deadwood', 'fence'
+]);
 
 /* ------------------------------------------------------------- materials */
 
@@ -93,8 +106,8 @@ const NODE_KITS = {
 const RECIPE = {
   forest:    { conifer: 18, coniferShort: 11, broadleaf: 7, deadwood: 5,
                undergrowth: 16, grass: 34, rockSmall: 7, flower: 4 },
-  fields:    { wheat: 78, hay: 3, fence: 6, crate: 2, grass: 16,
-               rockSmall: 5, broadleaf: 1, undergrowth: 3 },
+  fields:    { wheat: 118, hay: 3, fence: 6, crate: 2, grass: 10,
+               rockSmall: 4, broadleaf: 1, undergrowth: 3 },
   pasture:   { grass: 58, flower: 20, fence: 4, undergrowth: 8, rockSmall: 8,
                broadleaf: 3, coniferShort: 2, hay: 2 },
   hills:     { clayWorks: 5, rockSmall: 16, boulder: 7, grass: 24,
@@ -105,12 +118,48 @@ const RECIPE = {
                deadwood: 2, coniferShort: 2 }
 };
 
+/* ------------------------------------------------------------ tint variants
+ *
+ * Every instance used to be the identical mesh in the identical colour, so a
+ * hundred spruces read as tiling rather than as a forest. instanceColor
+ * multiplies the baked vertex colours per instance (r169 folds it into
+ * <color_vertex> whenever vertexColors is on), which buys three or four
+ * distinct colour readings per prop type for zero extra draw calls and zero
+ * extra geometry. Values sit around 1.0 and shift hue as well as value.
+ */
+const TINTS = {
+  conifer:      [[1.00, 1.00, 1.00], [0.80, 0.92, 0.82], [1.16, 1.06, 0.84], [0.68, 0.84, 0.90]],
+  coniferShort: [[1.00, 1.00, 1.00], [0.84, 0.94, 0.80], [1.14, 1.08, 0.88], [0.72, 0.86, 0.86]],
+  broadleaf:    [[1.00, 1.00, 1.00], [1.22, 1.08, 0.72], [0.82, 0.94, 0.80], [1.08, 0.92, 0.86]],
+  undergrowth:  [[1.00, 1.00, 1.00], [0.84, 0.96, 0.82], [1.18, 1.08, 0.82]],
+  grass:        [[1.00, 1.00, 1.00], [0.86, 0.96, 0.84], [1.14, 1.06, 0.86], [0.94, 1.02, 0.96]],
+  flower:       [[1.00, 1.00, 1.00], [0.90, 0.98, 0.88], [1.10, 1.04, 0.90]],
+  wheat:        [[1.00, 1.00, 1.00], [1.08, 0.98, 0.80], [0.88, 0.86, 0.74], [1.04, 1.06, 0.92]],
+  hay:          [[1.00, 1.00, 1.00], [1.06, 0.98, 0.84], [0.90, 0.88, 0.80]],
+  rockSmall:    [[1.00, 1.00, 1.00], [0.84, 0.87, 0.94], [1.10, 1.04, 0.94], [0.70, 0.71, 0.74]],
+  boulder:      [[1.00, 1.00, 1.00], [0.82, 0.86, 0.94], [1.12, 1.05, 0.93], [0.72, 0.73, 0.77]],
+  spire:        [[1.00, 1.00, 1.00], [0.84, 0.88, 0.96], [1.10, 1.06, 1.00]],
+  deadwood:     [[1.00, 1.00, 1.00], [0.88, 0.84, 0.78], [1.12, 1.06, 0.94]],
+  clayWorks:    [[1.00, 1.00, 1.00], [1.10, 0.96, 0.88], [0.88, 0.84, 0.82]],
+  crate:        [[1.00, 1.00, 1.00], [1.10, 1.00, 0.88], [0.86, 0.82, 0.78]],
+  fence:        [[1.00, 1.00, 1.00], [1.12, 1.02, 0.90], [0.86, 0.82, 0.76]],
+  timber:       [[1.00, 1.00, 1.00], [1.10, 1.00, 0.88], [0.88, 0.84, 0.80]]
+};
+
+const NODE_TINTS = {
+  tree:    [[1.00, 1.00, 1.00], [0.82, 0.93, 0.82], [1.14, 1.06, 0.86], [0.72, 0.86, 0.90]],
+  wheat:   [[1.00, 1.00, 1.00], [1.08, 0.99, 0.82], [0.90, 0.88, 0.76]],
+  sheep:   [[1.00, 1.00, 1.00], [0.96, 0.95, 0.93], [1.02, 1.01, 0.98]],
+  claypit: [[1.00, 1.00, 1.00], [1.08, 0.94, 0.86], [0.90, 0.86, 0.84]],
+  orerock: [[1.00, 1.00, 1.00], [0.86, 0.89, 0.96], [1.08, 1.04, 0.98]]
+};
+
 /* Physical footprint radius. Two props may not overlap: the placement test is
    distance >= r(a) + r(b), so grass is free to grow right up under a spruce
    while two spruces still keep a respectful 1.4 units apart. */
 const FOOT = {
   conifer: 0.62, coniferShort: 0.58, broadleaf: 0.80, deadwood: 0.85,
-  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.26, hay: 0.62,
+  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.185, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
   node: 1.30
@@ -120,19 +169,19 @@ const FOOT = {
 const STYLE = {
   conifer:      { s: [0.95, 1.65], sink: 0.10, tilt: 0.16, yaw: true },
   coniferShort: { s: [0.90, 1.55], sink: 0.10, tilt: 0.18, yaw: true },
-  broadleaf:    { s: [0.90, 1.45], sink: 0.10, tilt: 0.14, yaw: true },
-  deadwood:     { s: [0.80, 1.30], sink: 0.08, tilt: 0.55, yaw: true },
+  broadleaf:    { s: [0.82, 1.52], sink: 0.10, tilt: 0.14, yaw: true },
+  deadwood:     { s: [0.75, 1.35], sink: 0.08, tilt: 0.55, yaw: true },
   undergrowth:  { s: [0.75, 1.45], sink: 0.05, tilt: 0.35, yaw: true },
   grass:        { s: [0.70, 1.50], sink: 0.04, tilt: 0.35, yaw: true },
-  flower:       { s: [0.80, 1.30], sink: 0.04, tilt: 0.35, yaw: true },
-  wheat:        { s: [0.85, 1.35], sink: 0.05, tilt: 0.25, yaw: true },
-  hay:          { s: [0.85, 1.15], sink: 0.06, tilt: 0.35, yaw: true },
+  flower:       { s: [0.75, 1.35], sink: 0.04, tilt: 0.35, yaw: true },
+  wheat:        { s: [0.78, 1.46], sink: 0.05, tilt: 0.25, yaw: true },
+  hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
   rockSmall:    { s: [0.55, 1.60], sink: 0.12, tilt: 0.85, yaw: true },
   boulder:      { s: [0.70, 1.45], sink: 0.18, tilt: 0.65, yaw: true },
   spire:        { s: [0.75, 1.60], sink: 0.20, tilt: 0.45, yaw: true },
-  clayWorks:    { s: [0.85, 1.20], sink: 0.08, tilt: 0.30, yaw: true },
-  fence:        { s: [0.90, 1.15], sink: 0.10, tilt: 0.45, yaw: true },
-  crate:        { s: [0.80, 1.15], sink: 0.06, tilt: 0.40, yaw: true },
+  clayWorks:    { s: [0.80, 1.25], sink: 0.08, tilt: 0.30, yaw: true },
+  fence:        { s: [0.92, 1.12], sink: 0.10, tilt: 0.45, yaw: true },
+  crate:        { s: [0.78, 1.26], sink: 0.06, tilt: 0.40, yaw: true },
   mine:         { s: [1.05, 1.25], sink: 0.10, tilt: 0.10, yaw: false },
   cart:         { s: [0.85, 1.00], sink: 0.06, tilt: 0.35, yaw: true },
   rail:         { s: [0.90, 1.05], sink: 0.05, tilt: 0.80, yaw: false },
@@ -140,7 +189,7 @@ const STYLE = {
 };
 
 const NODE_STYLE = {
-  tree:    { s: [0.95, 1.35], sink: 0.12 },
+  tree:    { s: [0.88, 1.42], sink: 0.12 },
   wheat:   { s: [0.95, 1.25], sink: 0.06 },
   sheep:   { s: [0.95, 1.20], sink: 0.03 },
   claypit: { s: [1.00, 1.30], sink: 0.05 },
@@ -293,9 +342,24 @@ export function buildProps(scene) {
   });
 
   // ---- shoreline dressing -------------------------------------------------
+  /*
+   * The sand met the sea on a dead-straight seam with nothing standing in it.
+   * The collar below scatters rock CLUSTERS across the waterline — a lead
+   * boulder with two to four smaller stones huddled around it, half of them
+   * sitting below y = 0 so the water shader's foam breaks over them. Reuses the
+   * existing boulder / rockSmall instanced meshes, so it costs no draw calls.
+   */
   {
     const rng = mulberry32(778811);
     const taken = [];
+    const free = (x, z, foot) => {
+      for (const t of taken) {
+        const dx = t.x - x, dz = t.z - z;
+        const rad = t.r + foot;
+        if (dx * dx + dz * dz < rad * rad) return false;
+      }
+      return true;
+    };
     const tryPlace = (kit, want, loH, hiH) => {
       const foot = FOOT[kit];
       let got = 0, guard = 0;
@@ -305,21 +369,40 @@ export function buildProps(scene) {
         const x = Math.cos(a) * r, z = Math.sin(a) * r;
         const h = heightAt(x, z);
         if (h < loH || h > hiH) continue;
-        let clash = false;
-        for (const t of taken) {
-          const dx = t.x - x, dz = t.z - z;
-          const rad = t.r + foot;
-          if (dx * dx + dz * dz < rad * rad) { clash = true; break; }
-        }
-        if (clash) continue;
+        if (!free(x, z, foot)) continue;
         taken.push({ x, z, r: foot });
         drop(kit, x, z, rng);
         got++;
       }
     };
-    tryPlace('boulder', 26, 0.10, 1.7);
+
+    // rock clusters straddling the waterline
+    let clusters = 0, guard = 0;
+    while (clusters < 34 && guard++ < 4000) {
+      const a = rng() * Math.PI * 2;
+      const r = 38 + rng() * 13;
+      const cx = Math.cos(a) * r, cz = Math.sin(a) * r;
+      const h = heightAt(cx, cz);
+      if (h < -0.85 || h > 1.15) continue;      // straddle the shoreline
+      if (!free(cx, cz, 1.5)) continue;
+      taken.push({ x: cx, z: cz, r: 1.15 });
+      drop('boulder', cx, cz, rng);
+      const n = 2 + ((rng() * 3) | 0);
+      for (let k = 0; k < n; k++) {
+        const ka = rng() * Math.PI * 2;
+        const kr = 0.95 + rng() * 1.5;
+        const sx = cx + Math.cos(ka) * kr, sz = cz + Math.sin(ka) * kr;
+        if (heightAt(sx, sz) > 1.6) continue;
+        if (!free(sx, sz, FOOT.rockSmall)) continue;
+        taken.push({ x: sx, z: sz, r: FOOT.rockSmall });
+        drop('rockSmall', sx, sz, rng);
+      }
+      clusters++;
+    }
+
+    tryPlace('boulder', 22, 0.10, 1.7);
     tryPlace('deadwood', 10, 0.20, 1.2);
-    tryPlace('rockSmall', 86, 0.02, 2.0);
+    tryPlace('rockSmall', 70, -0.35, 2.0);
     tryPlace('undergrowth', 18, 0.70, 2.0);
     tryPlace('grass', 58, 0.55, 2.0);
   }
@@ -330,20 +413,90 @@ export function buildProps(scene) {
   let triangles = 0;
   let drawCalls = 0;
 
+  /** Deterministic 0..1 from a world position — picks the tint variant. */
+  function variantOf(x, z, n) {
+    let h = Math.imul((x * 73.7) | 0, 374761393) ^ Math.imul((z * 91.3) | 0, 668265263);
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) % n;
+  }
+
+  /** Attach a per-instance colour palette to an InstancedMesh. */
+  function paintVariants(mesh, list, table) {
+    if (!table || table.length < 2) return;
+    const arr = new Float32Array(list.length * 3);
+    for (let i = 0; i < list.length; i++) {
+      const o = list[i];
+      const v = table[variantOf(o.x, o.z, table.length)];
+      arr[i * 3] = v[0]; arr[i * 3 + 1] = v[1]; arr[i * 3 + 2] = v[2];
+    }
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(arr, 3);
+    mesh.instanceColor.needsUpdate = true;
+  }
+
+  /* ---- the baked static batch ------------------------------------------- */
+  const _bm = new THREE.Matrix4();
+  const _be = new THREE.Euler();
+  const _bq = new THREE.Quaternion();
+  const _bp = new THREE.Vector3();
+  const _bs = new THREE.Vector3();
+  const bakedParts = [];
+
+  function bake(kit, geo, list) {
+    const table = TINTS[kit];
+    for (const o of list) {
+      const g = geo.clone();
+      if (table && table.length > 1) {
+        const v = table[variantOf(o.x, o.z, table.length)];
+        const col = g.attributes.color.array;
+        for (let i = 0; i < col.length; i += 3) {
+          col[i] *= v[0]; col[i + 1] *= v[1]; col[i + 2] *= v[2];
+        }
+      }
+      _be.set(o.rx || 0, o.ry, o.rz || 0, 'YXZ');
+      _bq.setFromEuler(_be);
+      _bp.set(o.x, o.y, o.z);
+      _bs.set(o.s, o.sy, o.s);
+      _bm.compose(_bp, _bq, _bs);
+      g.applyMatrix4(_bm);
+      bakedParts.push(g);
+    }
+  }
+
   for (const kit in bucket) {
     const spec = STATIC_KITS[kit];
     const list = bucket[kit];
     if (!spec || !list.length) continue;
     const geo = spec.make();
+
+    if (STATIC_MERGE.has(kit) && spec.mat === 'solid') {
+      triangles += triCount(geo) * list.length;
+      bake(kit, geo, list);
+      geo.dispose();
+      continue;
+    }
+
     geos[kit] = geo;
     const mesh = instanced(geo, mats[spec.mat], list.length, spec.cast, true);
     mesh.name = `prop-${kit}`;
     list.forEach((o, i) => setInstance(mesh, i, o.x, o.y, o.z, o.ry, o.s, o.sy, o.rx, o.rz));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    paintVariants(mesh, list, TINTS[kit]);
     group.add(mesh);
     meshes[kit] = mesh;
     triangles += triCount(geo) * list.length;
+    drawCalls++;
+  }
+
+  if (bakedParts.length) {
+    const bakedGeo = merge(bakedParts);
+    geos['__baked'] = bakedGeo;
+    const baked = new THREE.Mesh(bakedGeo, mats.solid);
+    baked.name = 'prop-static';
+    baked.castShadow = true;
+    baked.receiveShadow = true;
+    group.add(baked);
+    meshes.__baked = baked;
     drawCalls++;
   }
 
@@ -390,6 +543,7 @@ export function buildProps(scene) {
       }
       setInstance(mesh, i, rec.x, rec.y, rec.z, rec.ry, rec.s, rec.s);
     });
+    paintVariants(mesh, list, NODE_TINTS[kind]);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.instanceMatrix.needsUpdate = true;
   }

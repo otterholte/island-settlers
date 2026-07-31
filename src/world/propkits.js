@@ -16,12 +16,19 @@
 import * as THREE from 'three';
 import { merge, place, tint, gradient, box, cyl, cone, ball, rock, blade } from './geo.js';
 
+/* Canopies are deliberately DARKER than the grass and the forest floor they
+   stand on. The build's greens used to be one acidic mid-tone across terrain,
+   trees and tufts, so a forest read as a flat green field with bumps. The
+   spread now runs roughly: canopy 0x1a4524 -> forest floor 0x3f8a2c ->
+   pasture 0x8fce56 -> grass tuft highlight 0x9ada5e. */
 export const C = {
-  bark:    0x6b4a2a, barkDark: 0x4b331d, barkPale: 0x8a6338,
-  needle:  0x2c6630, needleMid: 0x3e8a38, needleHi: 0x57a848,
-  leaf:    0x3f8c2c, leafHi: 0x6cbc44,
-  grass:   0x4f9a30, grassHi: 0x94d65c,
-  wheat:   0xc99b34, wheatHi: 0xf2d982,
+  bark:    0x6b4a2a, barkDark: 0x402b18, barkPale: 0x8a6338,
+  needle:  0x1a4524, needleMid: 0x2a6b2c, needleHi: 0x3e8c38,
+  leaf:    0x2a6b23, leafHi: 0x4f9c34,
+  grass:   0x4f9a30, grassHi: 0x9ada5e,
+  // deeper, less bleached gold: at 0xf2d982 the ears blew out under the key
+  // light and the fields read as pale twigs on pale sand
+  wheat:   0xb07d1e, wheatHi: 0xe4c051,
   stone:   0x7d7768, stoneHi: 0xa39c8b, stoneDark: 0x5b564a,
   slate:   0x6e7683, slateHi: 0x99a1ae,
   clay:    0xb0562c, clayHi: 0xd47f45,
@@ -100,38 +107,42 @@ export function deadwood() {
 
 /* -------------------------------------------------------------- undergrowth */
 
-/** Fern fronds around a low bush.  (40 tris) */
+/** Fern fronds around a low bush.  (28 tris) */
 export function undergrowth() {
   const parts = [];
-  for (let i = 0; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 2 + 0.4;
-    const b = blade(0.30, 0.72, C.leaf, C.leafHi, 0.42, 2);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    const b = blade(0.34, 0.76, C.leaf, C.leafHi, 0.42, 1);
     place(b, Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12, 0, a, 0.22);
     parts.push(b);
   }
-  parts.push(gradient(place(ball(0.36, 0, C.leaf), 0.42, 0.26, -0.3), C.leaf, C.leafHi));
+  parts.push(gradient(place(ball(0.38, 0, C.leaf), 0.40, 0.26, -0.3), C.leaf, C.leafHi));
   return merge(parts);
 }
 
-/** Three tapered grass blades — the densest kit in the world.  (12 tris) */
+/**
+ * Three tapered grass blades — the densest kit in the world, so it is also the
+ * one where a triangle costs the most. Single-segment blades: at 0.5 units tall
+ * and thirty metres from the camera nobody has ever seen the bend.  (6 tris)
+ */
 export function grassTuft() {
   const parts = [];
   for (let i = 0; i < 3; i++) {
     const a = i * 1.9;
-    const b = blade(0.16, 0.52 + (i % 2) * 0.16, C.grass, C.grassHi, 0.30, 2);
+    const b = blade(0.18, 0.54 + (i % 2) * 0.18, C.grass, C.grassHi, 0.30, 1);
     place(b, Math.cos(a) * 0.06, 0, Math.sin(a) * 0.06, 0, a, 0.16);
     parts.push(b);
   }
   return merge(parts);
 }
 
-/** Grass with three painted flower heads.  (48 tris) */
+/** Grass with three painted flower heads.  (32 tris) */
 export function flowerTuft() {
   const parts = [];
   const petals = [C.petalB, C.petalC, C.petalD, C.petalA];
   for (let i = 0; i < 3; i++) {
     const a = i * 2.3;
-    const b = blade(0.14, 0.44, C.grass, C.grassHi, 0.24, 2);
+    const b = blade(0.15, 0.46, C.grass, C.grassHi, 0.24, 1);
     place(b, Math.cos(a) * 0.07, 0, Math.sin(a) * 0.07, 0, a, 0.12);
     parts.push(b);
   }
@@ -142,26 +153,35 @@ export function flowerTuft() {
     const st = blade(0.045, h, 0x6ea83c, 0x8dc855, 0.10, 1);
     place(st, x, 0, z, 0, a + 1.2, 0);
     parts.push(st);
-    parts.push(place(cone(0.115, 0.13, 5, petals[i]), x, h + 0.04, z, Math.PI, 0, 0));
+    parts.push(place(cone(0.12, 0.14, 4, petals[i]), x, h + 0.04, z, Math.PI, 0, 0));
   }
   return merge(parts);
 }
 
 /* --------------------------------------------------------------- wheat */
 
-/** Dense wheat cluster: tapered stalks topped with fat ears.  (38 tris) */
+/**
+ * Dense wheat cluster: tapered stalks topped with fat ears.  (~56 tris)
+ *
+ * Seven stalks rather than five, and every one now carries an ear. Combined
+ * with a tighter footprint in props.js the fields tiles read as a solid gold
+ * mass instead of sparse twigs on bare sand.
+ */
 export function wheatTuft() {
   const parts = [];
-  for (let i = 0; i < 5; i++) {
-    const a = i * 1.27;
-    const x = Math.cos(a) * 0.11, z = Math.sin(a) * 0.11;
-    const h = 0.72 + (i % 3) * 0.13;
-    const b = blade(0.10, h, C.wheat, C.wheatHi, 0.22, 2);
-    place(b, x, 0, z, 0, a, 0.10);
+  for (let i = 0; i < 6; i++) {
+    const a = i * 1.08;
+    const r = 0.09 + (i % 3) * 0.055;
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
+    const h = 0.78 + (i % 3) * 0.16;
+    // single-segment blades: 2 triangles each instead of 4, and at this size
+    // the bend was never visible anyway
+    const b = blade(0.19, h, C.wheat, C.wheatHi, 0.16, 1);
+    place(b, x, 0, z, 0, a, 0.11);
     parts.push(b);
-    if (i % 2 === 0) {
-      const ear = cone(0.085, 0.30, 3, C.wheatHi);
-      place(ear, x + 0.02, h + 0.08, z, 0, a, 0.14);
+    if (i % 3 !== 2) {
+      const ear = cone(0.13, 0.40, 3, C.wheatHi);
+      place(ear, x + 0.02, h + 0.06, z, 0, a, 0.14);
       parts.push(gradient(ear, C.wheat, C.wheatHi));
     }
   }

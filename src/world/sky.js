@@ -15,11 +15,16 @@ import { cloudTexture } from './paint.js';
 export const HORIZON = 0xcfe7ee;
 export const HORIZON_WARM = 0xfbe4bd;
 export const ZENITH = 0x2a86d4;
-export const SUN_COLOR = 0xfff2d0;
+/* ~4500 K key. Warmer than the old 0xfff2d0, which read as neutral white once
+   ACES had compressed it and left nothing for the cool fill to contrast with. */
+export const SUN_COLOR = 0xffdcac;
+/* Cool sky fill. Shadow interiors are tinted with this, not with grey. */
+export const SKY_FILL = 0x8fbdf2;
+export const GROUND_FILL = 0x6a5c42;
 
-/* Direction the light travels FROM (normalised, upper-left, ~50 elevation). */
+/* Direction the light travels FROM (normalised, upper-left, ~45 elevation). */
 const SUN_AZ = Math.atan2(0.58, -0.82);
-const SUN_EL = 50 * Math.PI / 180;
+const SUN_EL = 45 * Math.PI / 180;
 
 export const SUN_DIR = new THREE.Vector3(
   Math.cos(SUN_EL) * Math.cos(SUN_AZ),
@@ -89,7 +94,8 @@ export function buildSky(scene, renderer) {
       uSunTint: { value: new THREE.Color(SUN_COLOR) }
     }
   });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(430, 32, 20), domeMat);
+  // 24x14 is plenty for a pure gradient — the old 32x20 cost 1.2k triangles.
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(430, 24, 14), domeMat);
   dome.name = 'sky-dome';
   dome.frustumCulled = false;
   dome.renderOrder = -1000;
@@ -164,50 +170,66 @@ export function buildSky(scene, renderer) {
   layoutClouds(0);
 
   /* ----------------------------------------------------------- lights */
-  /* r169 lambert/standard BRDFs divide irradiance by PI, so a "sunlit" look
-     needs a key around 3. Sunlit ground lands near 1.15x albedo before ACES;
-     shadow interiors keep about 0.45x, tinted by the cool hemisphere. */
-  const sun = new THREE.DirectionalLight(SUN_COLOR, 2.80);
+  /* KEY-TO-FILL IS THE WHOLE BALL GAME.
+   *
+   * r169's lambert BRDF divides every irradiance term by PI, so a light of
+   * intensity I lands at roughly I/PI * albedo (times N.L for the directionals).
+   * The previous rig ran key 2.80 / hemi 1.15 / rim 0.68 / ambient 0.24, which
+   * works out to ~0.62 albedo of key against ~0.51 albedo of fill: shadows sat
+   * at 88% of the lit value. The shadow map WAS being rendered — it simply had
+   * nothing to darken. Everything read as flat ambient.
+   *
+   * The rig below is ~0.69 key against ~0.20 fill, so a shadow drops to about
+   * 55% of the lit value in sRGB and picks up the cool sky tint on the way.
+   */
+  const sun = new THREE.DirectionalLight(SUN_COLOR, 3.15);
   sun.name = 'sun';
   sun.position.copy(SUN_DIR).multiplyScalar(150);
   sun.target.position.set(0, 1.8, 0);
   sun.castShadow = true;
 
-  // Ortho frustum fitted tight to the island: 108 x 108 over a 2048 map is
-  // 5.3 cm per texel, so a 2-unit-tall settler is ~38 texels wide.
-  const S = 54;
+  /* Ortho frustum fitted tight to the island: 96 x 96 over a 2048 map is
+     4.7 cm per texel, so a 2-unit-tall settler is ~43 texels wide. The depth
+     range is squeezed to 195 units so the 16/24-bit depth buffer has enough
+     resolution to run a small bias without peter-panning.
+     normalBias was 0.15 — over a texel footprint of 4.7 cm that shoves the
+     comparison point a full three texels along the normal and detaches every
+     small prop from its own shadow. 0.028 is enough to kill acne. */
+  const S = 48;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -S;
   sun.shadow.camera.right = S;
   sun.shadow.camera.top = S;
   sun.shadow.camera.bottom = -S;
-  sun.shadow.camera.near = 60;
+  sun.shadow.camera.near = 65;
   sun.shadow.camera.far = 260;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.15;
+  sun.shadow.bias = -0.00035;
+  sun.shadow.normalBias = 0.028;
   sun.shadow.camera.updateProjectionMatrix();
   scene.add(sun);
   scene.add(sun.target);
 
-  // Cool sky / warm-earth fill.
-  const hemi = new THREE.HemisphereLight(0xbfe4ff, 0x6b8f4a, 1.15);
+  // Cool sky / warm-earth fill — the only thing lighting a shadow interior.
+  const hemi = new THREE.HemisphereLight(SKY_FILL, GROUND_FILL, 0.46);
   hemi.position.set(0, 60, 0);
   scene.add(hemi);
 
   // Cool rim from behind-right so silhouettes separate from the sea.
-  const rim = new THREE.DirectionalLight(0xa9d4ff, 0.68);
+  const rim = new THREE.DirectionalLight(0x9cc8ff, 0.30);
   rim.position.set(72, 34, -96);
   rim.castShadow = false;
   scene.add(rim);
 
   // A whisper of bounce so shadow interiors keep their hue.
-  const amb = new THREE.AmbientLight(0xdcefff, 0.24);
+  const amb = new THREE.AmbientLight(0xb9d6f5, 0.10);
   scene.add(amb);
 
   /* -------------------------------------------------- background + fog */
+  // Fog starts well beyond the island so the sea keeps its cobalt out to the
+  // middle distance instead of washing to a pale band a few hexes offshore.
   const horizon = new THREE.Color(HORIZON).lerp(new THREE.Color(HORIZON_WARM), 0.28);
   scene.background = horizon.clone();
-  scene.fog = new THREE.Fog(horizon.clone(), 135, 385);
+  scene.fog = new THREE.Fog(horizon.clone(), 190, 440);
 
   if (renderer) {
     renderer.shadowMap.enabled = true;
