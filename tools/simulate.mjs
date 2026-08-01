@@ -31,7 +31,9 @@ import { PORT_SPOT_REACH } from '../src/systems/botBrain.js';
 import {
   setDifficulty, getDifficulty, difficultyParams, LEVELS, DIFFICULTY_ORDER
 } from '../src/systems/difficulty.js';
-import { tileAt, ports, tiles } from '../src/board/layout.js';
+import {
+  tileAt, ports, tiles, reshuffle, currentViolations, LAYOUT_SEED
+} from '../src/board/layout.js';
 import { mulberry32, tileItemCount } from '../src/board/nodes.js';
 import {
   RES, MATCH_SOFT_CAP_SEC, BOT_PROFILES, TRADE_RADIUS, VICTORY_POINTS,
@@ -54,6 +56,14 @@ const VERBOSE = !!args.verbose;
 // the bots defer harvest timing instead of double-ticking it.
 const DRAFT_BY_BOTS = String(args.draft ?? 'flow') === 'bots';
 const EXT_GATHER = !!args.gathersys;
+// The board is shuffled per match (board/shuffle.js), so a run of 30 matches is
+// 30 different islands and the duration spread is honest about board variance.
+//   --board=<seed>   pin every match to one island (A/B a tuning change)
+//   --board=off      same thing, using whatever island the process loaded with
+const BOARD_ARG = args.board === undefined ? null : String(args.board);
+const FIXED_BOARD = BOARD_ARG !== null;
+const boardSeed = Number.isFinite(Number(BOARD_ARG))
+  ? (Number(BOARD_ARG) >>> 0) : (LAYOUT_SEED >>> 0);
 const DT = 1 / 60;
 const STRATS = BOT_PROFILES.map(b => b.strategy);          // expansion, cities, cards
 
@@ -224,6 +234,20 @@ function flag(msg) {
 
 function runMatch(index) {
   const seed = SEED0 * 1013 + index * 7919;
+
+  // Deal a fresh island first: reshuffle() re-dresses the tiles and docks in
+  // place and re-tags the item fields, and createMatch() below then resets the
+  // node state on top of it. There is no world layer here to rebuild.
+  const board = reshuffle(FIXED_BOARD ? boardSeed : (seed ^ 0x5bf03635));
+  if (!board.fair) {
+    flag(`match ${index}: board seed ${board.seed} fell back to a relaxed layout ` +
+         `(${board.violations.map(v => v.rule).join(',')})`);
+  }
+  const late = currentViolations();
+  if (late.length) {
+    flag(`match ${index}: live board violates ${late.map(v => v.rule).join(',')}`);
+  }
+
   const state = createMatch({ seed });
   state.botSeed = seed ^ 0x51f3a2;
 
@@ -406,6 +430,10 @@ function runMatch(index) {
 
   return {
     index, seed, finished,
+    boardSeed: board.seed,
+    boardPrint: tiles.map(t => `${t.terrain}${t.number}`).join('|'),
+    boardAttempts: board.attempts,
+    openingSpread: board.openingSpread,
     duration: state.time,
     winner: finished ? state.winner : -1,
     winStrategy: finished ? state.players[state.winner].strategy : null,
@@ -422,6 +450,9 @@ console.log(`Island Settlers — bot simulation: ${MATCHES} matches, ` +
             `dt=1/60, cap=${CAP}s, seed=${SEED0}, target=${VP_TARGET} VP`);
 console.log(`DIFFICULTY: ${DIFF}` +
   (NOVICE ? '  |  seat 0 = novice (mediocre-human stand-in)' : '  |  all four seats at this level'));
+console.log(`BOARD: ${FIXED_BOARD
+  ? `pinned to seed ${boardSeed} for every match`
+  : 'reshuffled every match (terrain, tokens and dock resources)'}`);
 if (TUNED_D) console.log('DIFFICULTY OVERRIDES:' + TUNED_D);
 if (TUNED.length) {
   console.log('EXPERIMENTAL ECONOMY (simulator-side overrides, src/ untouched):');
@@ -436,7 +467,7 @@ for (let i = 0; i < MATCHES; i++) {
   if (r) results.push(r);
   if (VERBOSE && r) {
     const w = r.rows[r.winner] || null;
-    console.log(`  #${String(i).padStart(2)}  ${fmt(r.duration)}s  ` +
+    console.log(`  #${String(i).padStart(2)}  ${fmt(r.duration)}s  b=${r.boardSeed}  ` +
       `win=${r.winStrategy ?? 'NONE'}  ` +
       r.rows.map(x => `${x.strategy.slice(0, 3)}:${x.vp}`).join(' ') +
       (w ? `  | winner ${w.settlements}S ${w.cities}C ${w.vpCards}vpc ` +
@@ -452,7 +483,25 @@ const done = results.filter(r => r.finished);
 const durations = done.map(r => r.duration).sort((a, b) => a - b);
 const unfinished = results.filter(r => !r.finished);
 
-console.log('=== MATCH DURATION (finished matches) ===');
+console.log('=== BOARDS ===');
+{
+  const prints = new Set(results.map(r => r.boardPrint));
+  const spreads = results.map(r => r.openingSpread).sort((a, b) => a - b);
+  const att = results.map(r => r.boardAttempts).sort((a, b) => a - b);
+  console.log(table(
+    ['stat', 'value'],
+    [
+      ['islands played', String(results.length)],
+      ['distinct islands', String(prints.size)],
+      ['opening-seat spread (median/max)',
+        `${fmt(quantile(spreads, 0.5), 0)} / ${spreads[spreads.length - 1] ?? 0} pips`],
+      ['shuffle attempts (mean/max)',
+        `${fmt(att.reduce((s, v) => s + v, 0) / (att.length || 1))} / ${att[att.length - 1] ?? 0}`]
+    ]
+  ));
+}
+
+console.log('\n=== MATCH DURATION (finished matches) ===');
 if (durations.length) {
   console.log(table(
     ['stat', 'seconds'],

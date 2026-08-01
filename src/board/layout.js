@@ -1,5 +1,5 @@
 /**
- * Island Settlers — fixed island layout + board graph.
+ * Island Settlers — island layout + board graph.
  *
  * Pure data / pure math. No three.js, no DOM. Imported by the renderer,
  * the rules engine, the bots and the headless simulator alike.
@@ -10,9 +10,67 @@
  * Corner i (0..5) sits at angle (60*i - 30) degrees.
  * Edge  i (0..5) spans corner i -> corner i+1 and faces angle 60*i,
  *   which corresponds to neighbour direction DIRS[i].
+ *
+ * =============================================================================
+ * THE BOARD IS SHUFFLED EVERY MATCH
+ * =============================================================================
+ * The GEOMETRY is fixed forever: nineteen hexes at the axial positions in
+ * `shuffle.js`, the 54 intersections and 72 edges that fall out of them, the
+ * coastline, the nine dock berths, the Great Market on the centre hex and the
+ * four spawn points around it. `MARKET`, `SPAWNS` and `BOUNDS` never move.
+ *
+ * The DRESSING is rolled fresh: which terrain sits on each position, which
+ * number token it carries, and which resource each dock trades. That happens
+ * once, at module load, *before any importer's body runs* — ES modules
+ * guarantee this file is fully evaluated before `nodes.js`, `rules.js`,
+ * `world/*` or the bots get a look at it. So every downstream module builds
+ * itself from the shuffled board without knowing a shuffle happened, and a
+ * page load is always a new island.
+ *
+ * The fairness rules the roll must satisfy are stated in full in the header of
+ * `src/board/shuffle.js`.
+ *
+ * ORDER OF OPERATIONS if you need a *new* board without reloading the page:
+ *
+ *     reshuffle(seed?)          // 1. re-dresses `tiles` and `ports` IN PLACE
+ *                               //    (never replaces the objects — every
+ *                               //     module holds direct references)
+ *                               // 2. fires the onBoardChanged listeners, which
+ *                               //    is how nodes.js re-tags its item fields
+ *     <rebuild the world layer>  // 3. YOUR JOB. island.js, props.js,
+ *                               //    regions.js and ovmap.js bake terrain,
+ *                               //    colour and prop geometry when they are
+ *                               //    constructed; they do not poll. Anything
+ *                               //    already built still shows the old board.
+ *
+ * The headless tools do steps 1-2 only (there is no world layer), which is why
+ * `tools/simulate.mjs` can play thirty matches on thirty different islands.
+ *
+ * IN THE BROWSER nothing does step 3 today, so a *replay* needs a reload to get
+ * a fresh island. `main.js`'s `game.restart()` currently prefers the in-place
+ * path, which keeps the board:
+ *
+ *     restart() {
+ *       if (game.flow && game.flow.restartInPlace && game.flow.restartInPlace()) return;
+ *       location.reload();
+ *     }
+ *
+ * Drop the fast path — `restart() { location.reload(); }` — and Play Again
+ * deals a new island. That is the ONLY change outside this file's own area that
+ * the shuffle needs. (The alternative, wiring `reshuffle()` + a world rebuild
+ * into `systems/flowRestart.js`, keeps the reload away but is world-layer work.)
+ *
+ * PINNING A BOARD, for a screenshot or a bug repro:
+ *   - browser:  index.html?board=123456789
+ *   - browser:  globalThis.__ISLAND_LAYOUT_SEED__ = 123456789  (before boot)
+ *   - node:     ISLAND_LAYOUT_SEED=123456789 node tools/…
+ *   - anywhere: reshuffle(123456789)
  */
 
 import { HEX_SIZE, TERRAIN_RES, pipsFor } from '../core/constants.js';
+import {
+  TILE_POSITIONS, DESERT_INDEX, FAIRNESS, generateBoard, boardViolations
+} from './shuffle.js';
 
 export const DIRS = [
   [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]
@@ -33,37 +91,10 @@ export function cornerOffset(i) {
 }
 
 /* ------------------------------------------------------------------ tiles */
-/* Hand-authored so the island always plays and reads the same way.
-   Numbers follow the classic 18-token distribution (2,12 x1; 3-6,8-11 x2).
-   No two 5-pip tiles (6 / 8) touch. Desert sits dead centre and hosts
-   the great market. */
-
-const TILE_SPEC = [
-  // r = -2  (far side)
-  { q: 0,  r: -2, terrain: 'mountains', number: 10 },
-  { q: 1,  r: -2, terrain: 'pasture',   number: 2  },
-  { q: 2,  r: -2, terrain: 'forest',    number: 9  },
-  // r = -1
-  { q: -1, r: -1, terrain: 'fields',    number: 12 },
-  { q: 0,  r: -1, terrain: 'hills',     number: 6  },
-  { q: 1,  r: -1, terrain: 'pasture',   number: 4  },
-  { q: 2,  r: -1, terrain: 'mountains', number: 10 },
-  // r = 0  (middle row)
-  { q: -2, r: 0,  terrain: 'forest',    number: 9  },
-  { q: -1, r: 0,  terrain: 'fields',    number: 11 },
-  { q: 0,  r: 0,  terrain: 'desert',    number: 0  },
-  { q: 1,  r: 0,  terrain: 'forest',    number: 3  },
-  { q: 2,  r: 0,  terrain: 'hills',     number: 8  },
-  // r = 1
-  { q: -2, r: 1,  terrain: 'pasture',   number: 8  },
-  { q: -1, r: 1,  terrain: 'mountains', number: 4  },
-  { q: 0,  r: 1,  terrain: 'fields',    number: 5  },
-  { q: 1,  r: 1,  terrain: 'pasture',   number: 11 },
-  // r = 2  (near side)
-  { q: -2, r: 2,  terrain: 'hills',     number: 3  },
-  { q: -1, r: 2,  terrain: 'fields',    number: 6  },
-  { q: 0,  r: 2,  terrain: 'forest',    number: 5  }
-];
+/* Positions are fixed; terrain and numbers are dealt by shuffle.js further
+   down (see `applyBoard`). The tiles start out blank so the intersection and
+   edge graph — which depends only on geometry — can be built first and handed
+   to the fairness test. */
 
 /* Elevation profile: mountains stand tall, hills bump up, fields/pasture sit
    low. Gives the island real silhouette variation instead of a flat slab. */
@@ -76,17 +107,17 @@ const TERRAIN_ELEVATION = {
   desert: 0.6
 };
 
-export const tiles = TILE_SPEC.map((t, i) => {
+export const tiles = TILE_POSITIONS.map((t, i) => {
   const w = hexToWorld(t.q, t.r);
   return {
     id: i,
     q: t.q,
     r: t.r,
-    terrain: t.terrain,
-    number: t.number,
-    resource: TERRAIN_RES[t.terrain],
-    pips: pipsFor(t.number),
-    elevation: TERRAIN_ELEVATION[t.terrain],
+    terrain: 'desert',   // dealt by applyBoard() before this module finishes
+    number: 0,
+    resource: null,
+    pips: 0,
+    elevation: TERRAIN_ELEVATION.desert,
     x: w.x,
     z: w.z,
     corners: [],   // intersection ids, filled below
@@ -97,7 +128,10 @@ export const tiles = TILE_SPEC.map((t, i) => {
 
 export const tileByAxial = new Map(tiles.map(t => [`${t.q},${t.r}`, t]));
 export function getTile(q, r) { return tileByAxial.get(`${q},${r}`) || null; }
-export const DESERT = tiles.find(t => t.terrain === 'desert');
+
+/* The desert never moves: the Great Market is built on it and MARKET is derived
+   from its position. It is always the centre (0,0) hex. */
+export const DESERT = tiles[DESERT_INDEX];
 
 /* ----------------------------------------------------- intersections/edges */
 
@@ -183,20 +217,13 @@ for (const e of edges) {
 
 /* ------------------------------------------------------------------ ports */
 /* Nine ports spaced around the coastline: four generic 3:1 and five
-   resource-specific 2:1. Chosen by sweeping the coastal edges by bearing so
-   they are always legal and always evenly distributed. */
+   resource-specific 2:1. The BERTHS are geographic — chosen by sweeping the
+   coastal edges by bearing so they are always legal and always evenly
+   distributed — and they never move, because the coastline never changes.
+   WHICH RESOURCE each berth trades is dealt by `applyBoard` below, so the same
+   corner is not the wheat dock every match. */
 
-const PORT_KINDS = [
-  { kind: 'generic', resource: null,    ratio: 3 },
-  { kind: 'special', resource: 'wheat', ratio: 2 },
-  { kind: 'generic', resource: null,    ratio: 3 },
-  { kind: 'special', resource: 'ore',   ratio: 2 },
-  { kind: 'special', resource: 'wool',  ratio: 2 },
-  { kind: 'generic', resource: null,    ratio: 3 },
-  { kind: 'special', resource: 'brick', ratio: 2 },
-  { kind: 'generic', resource: null,    ratio: 3 },
-  { kind: 'special', resource: 'wood',  ratio: 2 }
-];
+const PORT_COUNT = 9;
 
 export const ports = [];
 {
@@ -204,7 +231,7 @@ export const ports = [];
     .map(e => ({ e, bearing: Math.atan2(e.z, e.x) }))
     .sort((p, q) => p.bearing - q.bearing);
 
-  const want = PORT_KINDS.length;
+  const want = PORT_COUNT;
   const minGap = (Math.PI * 2) / want * 0.72;
   const picked = [];
   let cursor = 0;
@@ -227,8 +254,7 @@ export const ports = [];
   }
   picked.sort((p, q) => p.bearing - q.bearing);
 
-  picked.forEach((p, i) => {
-    const spec = PORT_KINDS[i % PORT_KINDS.length];
+  picked.forEach((p) => {
     const e = p.e;
     const land = tiles[e.tiles[0]];
     // Push the dock outward, away from the island centre.
@@ -238,13 +264,13 @@ export const ports = [];
       id: ports.length,
       edge: e.id,
       intersections: [e.a, e.b],
-      kind: spec.kind,
-      resource: spec.resource,
-      ratio: spec.ratio,
+      kind: 'generic',      // dealt by applyBoard()
+      resource: null,
+      ratio: 3,
       x: e.x + (outx / m) * HEX_SIZE * 0.62,
       z: e.z + (outz / m) * HEX_SIZE * 0.62,
       bearing: Math.atan2(outz, outx),
-      label: spec.kind === 'generic' ? '3:1' : `2:1`
+      label: '3:1'
     };
     ports.push(port);
     e.port = port.id;
@@ -290,6 +316,129 @@ export const BOUNDS = (() => {
     radius: Math.max(maxX - minX, maxZ - minZ) / 2
   };
 })();
+
+/* =========================================================== board shuffle */
+
+/**
+ * The corner graph, reduced to what the fairness test needs. Geometry only —
+ * it is valid before a single terrain has been dealt and never changes.
+ */
+export const TOPOLOGY = {
+  desertIndex: DESERT_INDEX,
+  corners: intersections.map(n => ({
+    tiles: n.tiles.slice(),
+    neighbors: n.neighbors.slice()
+  }))
+};
+
+/** Seed of the board currently dealt. Live binding — read it after a
+ *  `reshuffle()` to log or reproduce the island. */
+export let LAYOUT_SEED = 0;
+
+/** The full result from shuffle.js for the board on the table right now:
+ *  `{ seed, terrain, numbers, pips, ports, attempts, fair, violations,
+ *     openingPicks, openingSpread }`. */
+export let LAYOUT = null;
+
+const boardListeners = [];
+
+/**
+ * Subscribe to board re-deals. `nodes.js` uses this to re-tag its item fields;
+ * anything else that caches per-tile data should too.
+ * Returns an unsubscribe function. Listeners never fire for the initial deal —
+ * at that point every module is still loading and builds from the new board
+ * anyway.
+ */
+export function onBoardChanged(fn) {
+  if (typeof fn !== 'function') return () => {};
+  boardListeners.push(fn);
+  return () => {
+    const i = boardListeners.indexOf(fn);
+    if (i >= 0) boardListeners.splice(i, 1);
+  };
+}
+
+/**
+ * Stamp a generated board onto the live `tiles` and `ports`.
+ *
+ * Mutates in place and never replaces an object: every module in the build —
+ * rules.js, the bots, hud.js, the renderer — captured references to these exact
+ * tile and port objects, so swapping them would point half the game at a dead
+ * board.
+ */
+function applyBoard(board) {
+  for (let i = 0; i < tiles.length; i++) {
+    const t = tiles[i];
+    t.terrain = board.terrain[i];
+    t.number = board.numbers[i];
+    t.resource = TERRAIN_RES[t.terrain];
+    t.pips = pipsFor(t.number);
+    t.elevation = TERRAIN_ELEVATION[t.terrain];
+  }
+  for (let i = 0; i < ports.length; i++) {
+    const spec = board.ports[i % board.ports.length];
+    const p = ports[i];
+    p.kind = spec.kind;
+    p.resource = spec.resource;
+    p.ratio = spec.ratio;
+    p.label = spec.kind === 'generic' ? '3:1' : '2:1';
+  }
+  LAYOUT = board;
+  LAYOUT_SEED = board.seed;
+  return board;
+}
+
+/** Where the opening seed comes from. `?board=` on the URL,
+ *  `globalThis.__ISLAND_LAYOUT_SEED__` or the ISLAND_LAYOUT_SEED env var pin the
+ *  island for a screenshot or a repro; otherwise every load deals a new one. */
+function defaultSeed() {
+  const g = typeof globalThis === 'undefined' ? {} : globalThis;
+  let forced = g.__ISLAND_LAYOUT_SEED__;
+  if (forced === undefined && g.location && typeof g.location.search === 'string') {
+    const m = /[?&]board=([^&]+)/.exec(g.location.search);
+    if (m) forced = decodeURIComponent(m[1]);
+  }
+  if (forced === undefined && typeof process !== 'undefined' && process.env) {
+    forced = process.env.ISLAND_LAYOUT_SEED;
+  }
+  if (forced !== undefined && forced !== null && forced !== '' && Number.isFinite(Number(forced))) {
+    return Number(forced) >>> 0;
+  }
+  return (Math.random() * 4294967296) >>> 0;
+}
+
+/**
+ * Deal a fresh island.
+ *
+ * Re-dresses `tiles` and `ports` in place, then notifies `onBoardChanged`
+ * listeners. Presentation code that baked geometry from the old board must be
+ * rebuilt afterwards — see the ORDER OF OPERATIONS note at the top of the file.
+ *
+ * @param {number} [seed]  omit for a random island
+ * @returns the generated board record (also on `LAYOUT`)
+ */
+export function reshuffle(seed) {
+  const s = seed === undefined || seed === null ? defaultSeed() : (Number(seed) >>> 0);
+  const board = applyBoard(generateBoard(TOPOLOGY, s, FAIRNESS));
+  for (const fn of boardListeners.slice()) {
+    try { fn(board); } catch (err) { /* a listener must never break the deal */ }
+  }
+  return board;
+}
+
+/** Re-run the fairness test against whatever is on the table. Empty = fair. */
+export function currentViolations() {
+  return boardViolations(
+    tiles.map(t => t.terrain), tiles.map(t => t.number), TOPOLOGY, FAIRNESS
+  );
+}
+
+// Deal the opening board. This runs while layout.js is still evaluating, which
+// is before any importer's body has executed — so nodes.js, rules.js, the bots
+// and the whole world layer all read an already-shuffled island.
+applyBoard(generateBoard(TOPOLOGY, defaultSeed(), FAIRNESS));
+
+export { FAIRNESS };
 
 /* ------------------------------------------------------------- graph utils */
 
@@ -338,7 +487,10 @@ export function clampToIsland(x, z) {
 }
 
 export const BOARD = {
-  tiles, intersections, edges, ports, MARKET, SPAWNS, BOUNDS, DESERT
+  tiles, intersections, edges, ports, MARKET, SPAWNS, BOUNDS, DESERT,
+  reshuffle, onBoardChanged,
+  get seed() { return LAYOUT_SEED; },
+  get layout() { return LAYOUT; }
 };
 
 export default BOARD;

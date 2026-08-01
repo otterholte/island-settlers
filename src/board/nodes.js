@@ -63,10 +63,15 @@
  *   restored   { tile }
  *
  * -----------------------------------------------------------------------------
- * Deterministic: the same island every match. Never mutate positions.
+ * Deterministic: the field is built from the board `layout.js` has already
+ * dealt by the time this module runs, so a given layout seed always produces
+ * the same scatter. Never mutate positions — if the board is re-dealt at
+ * runtime, `refreshFieldsFromBoard()` (registered on `onBoardChanged`) re-tags
+ * every item's resource and kind and leaves the positions and ids alone, so
+ * anything holding an item reference stays valid.
  */
 
-import { tiles } from './layout.js';
+import { tiles, onBoardChanged } from './layout.js';
 import {
   HEX_SIZE, NODE_CAPACITY, TILE_ITEMS, TILE_REGEN, TILE_ITEM_POOL, PICKUP_RADIUS
 } from '../core/constants.js';
@@ -479,6 +484,40 @@ export function depleteNode() { return false; }
 
 // Prime the live counts.
 restoreAll();
+
+/* ==================================================== board re-deal support */
+
+/**
+ * Re-point the item field at a freshly shuffled board.
+ *
+ * The desert is always the centre hex, so the set of tiles that carry an item
+ * pool never changes and neither do the scatter positions, item ids or legacy
+ * node links. All that moves is what each item *is* — a hex that was pasture
+ * and is now forest keeps its 24 slots and starts growing trees in them — plus
+ * the item counts and regen timers, which `tileItemCount` / `tileRegenSeconds`
+ * already read live off `tile.pips`.
+ *
+ * Registered on `onBoardChanged` below, so `layout.reshuffle()` is all a caller
+ * has to do. Safe to call directly too.
+ */
+export function refreshFieldsFromBoard() {
+  for (const tile of tiles) {
+    const pool = itemsByTile.get(tile.id);
+    if (!pool) continue;
+    const kind = ITEM_KIND[tile.terrain];
+    for (const it of pool) { it.resource = tile.resource; it.kind = kind; }
+  }
+  for (const n of nodes) {
+    const t = tiles[n.tile];
+    if (!t) continue;
+    n.resource = t.resource;
+    n.kind = ITEM_KIND[t.terrain];
+  }
+  resetNodes();
+  return items.length;
+}
+
+onBoardChanged(refreshFieldsFromBoard);
 
 /** The enabled (drawable, collectable) items on a tile. */
 export function tileItems(tileId) {
