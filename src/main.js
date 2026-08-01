@@ -192,6 +192,10 @@ async function boot() {
           break;
         case 'trade':     audio.sfx('trade'); break;
         case 'cardDrawn': audio.sfx('card'); break;
+        case 'roadBuilding':
+          audio.sfx('card');
+          if (ev.player === 0) hud.toast('Road Building — place two roads free');
+          break;
         case 'knight':
           structures.setRobber(ev.tile);
           audio.sfx('horn');
@@ -266,6 +270,19 @@ async function boot() {
     }
 
     handleEvents();
+
+    // Road Building credits the player two free roads, but nothing was ever
+    // opening the map to spend them — the card was played and the player was
+    // left owed roads with no way to place them. Driving it from the event
+    // proved unreliable, so this reconciles from state instead: any frame the
+    // player is owed a road and nothing else is in the way, offer the map.
+    // Self-healing, so cancelling and finishing later works too.
+    if (ecoM && ecoM.placeFreeRoads && state.phase === 'play' &&
+        (state.players[0].freeRoads | 0) > 0 &&
+        !overview.isOpen && !(panels.kind) &&
+        !(flow.stage && flow.stage !== 'play')) {
+      ecoM.placeFreeRoads(game);
+    }
 
     props.update(dt);
     structures.update(dt);

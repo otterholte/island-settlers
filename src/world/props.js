@@ -245,10 +245,13 @@ function makePlacer(tile, rng) {
   for (const it of tileItems(tile.id)) {
     blocked.push({ x: it.x, z: it.z, r: FOOT.item });
   }
-  if (tile.terrain === 'desert') {
-    // The plaza is nearly as wide as the prop zone; leave just the outer ring.
-    blocked.push({ x: MARKET.x, z: MARKET.z, r: MARKET.radius * 1.08 });
-  }
+  // Keep the market clear — on EVERY tile, not just the desert it stands on.
+  // The plaza floor reaches 6.6 and its steps 7.95, but the real problem was the
+  // neighbours: at PROP_MAX_FRAC 0.78 with centres 15.59 apart, a conifer on the
+  // next hex could stand 9.51 from the market and cut straight across the
+  // pavilion at play pitch. 11.0 pushes the treeline back far enough that the
+  // island's centrepiece is never occluded.
+  blocked.push({ x: MARKET.x, z: MARKET.z, r: 11.0 });
   for (const s of SPAWNS) {
     if (Math.hypot(s.x - tile.x, s.z - tile.z) < HEX_SIZE * 1.1) {
       blocked.push({ x: s.x, z: s.z, r: 2.4 });
