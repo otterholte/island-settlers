@@ -36,7 +36,7 @@
  */
 
 import * as THREE from 'three';
-import { HEX_SIZE, PLAYER_COLORS } from '../core/constants.js';
+import { HEX_SIZE, PLAYER_COLORS, PIECE_LIMIT } from '../core/constants.js';
 import { tiles, intersections, edges } from '../board/layout.js';
 import { heightAt, topOf } from './terrain.js';
 import { instanced, setInstance, hideInstance, triCount } from './geo.js';
@@ -47,12 +47,22 @@ import { createOwnerRings } from './ownring.js';
 import * as T from './buildtown.js';
 
 const ROAD_L = HEX_SIZE * 0.88;
-/* Piece limits are 12 roads / 5 buildings / 4 cities per player, so the board
-   can never hold more than 48 roads or 20 buildings at once. */
+/* Instance capacity, DERIVED from the rules rather than written down.
+   These were once hard-coded for a 12/5/4 piece limit; when the limits were
+   retuned to 18/7/5 the caps were missed, so on a long board every road past
+   the 48th and every village past the 22nd silently failed to appear. Deriving
+   them means the renderer can never fall behind the rules again.
+   Capacity is only an allocation — an instance costs nothing to draw until a
+   piece actually occupies it. */
+const SEATS = PLAYER_COLORS.length;
+const MAX_ROADS = SEATS * PIECE_LIMIT.road;              // 72
+const MAX_BUILDINGS = SEATS * PIECE_LIMIT.settlement;    // 28
+const MAX_CITIES = SEATS * PIECE_LIMIT.city;             // 20
+
 const CAP = {
-  bed: 48, plank: 144, trim: 48,
-  village: 22, city: 18, tower: 36,
-  folk: 92, puff: 220
+  bed: MAX_ROADS, plank: MAX_ROADS * 3, trim: MAX_ROADS,
+  village: MAX_BUILDINGS, city: MAX_CITIES, tower: MAX_CITIES * 2,
+  folk: MAX_BUILDINGS * 4, puff: 220
 };
 
 const _col = new THREE.Color();
