@@ -72,7 +72,18 @@ export function createTradeCue(root, state, game) {
   );
 
   const sub = el('span', { class: 'tc-sub', text: '' });
-  const cta = el('span', { class: 'tc-cta', text: 'TAP TO TRADE' });
+
+  /*
+   * Two routes, both spelled out. The keyboard route is the fast one and it is
+   * invisible unless something says so, so the key cap leads; "or tap" keeps
+   * the touch route obvious on a phone that has no Enter key at all.
+   * panels.js listens for the key press — it already knows, via economy.js,
+   * whether the player is standing at a post.
+   */
+  const cta = el('span', { class: 'tc-cta' },
+    el('i', { text: 'Press' }),
+    el('b', { class: 'tc-key', text: 'Enter' }),
+    el('i', { text: 'or tap' }));
 
   const card = el('button', {
     class: 'tc-card', type: 'button', 'data-ui': '',

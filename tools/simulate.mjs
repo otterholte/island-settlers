@@ -2,7 +2,7 @@
  * Island Settlers — headless match simulator.
  *
  *   node tools/simulate.mjs [--matches=30] [--seed=1] [--cap=420] [--verbose]
- *                          [--difficulty=easy|medium|hard] [--novice]
+ *                          [--difficulty=easy|medium|hard|expert] [--novice]
  *
  * Runs full bot-vs-bot matches at a fixed 1/60 s step with no renderer, using
  * the real rules.js. Seat 0 (normally the human) is handed one of the three

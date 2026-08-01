@@ -60,7 +60,7 @@ const STUCK_SEC = 2.2;
 const BLACKLIST_SEC = 9.0;
 const SETUP_FALLBACK_SEC = 3.5;    // only fires if matchflow.js never shows up
 
-/* Anti-stall, and the reason even a barely-trying field still ends a match.
+/* Anti-stall, and the reason even the slowest field still ends a match.
    A dawdling field grinds: everybody on ten or eleven points, nobody able to
    close, and the clock runs into the soft cap.
 
@@ -98,7 +98,14 @@ const SETUP_FALLBACK_SEC = 3.5;    // only fires if matchflow.js never shows up
    than a 13-point win is 15% easy / 12% medium / 11% hard, against 12% / 5% /
    0% before this pass. That is the price of a field this much weaker, and it is
    paid in matches that finish on points at seven minutes rather than in matches
-   that hang. */
+   that hang.
+
+   Expert, added later, reaches the net least often of the four — 3 of 120, on
+   the same rig at seeds 101/202/303 — because a field that dithers less closes
+   on its own before either ramp has much to do. Note that the simulator is not
+   bit-reproducible (rules.js and the draft fall back to Math.random in places),
+   so any single 25-match run of it carries a ±10-point band on these shares;
+   the numbers above are pooled. */
 const RAMP_SPAN = 80;           // seconds the soft ramp takes to run in
 const RAMP_SAFE_VP = 2;
 const RAMP_GRACE = 65;          // extra seconds when the player is on match point
@@ -274,6 +281,14 @@ export function createBots(state, world, opts = {}) {
    * Every knob travels `k * RAMP_WEIGHT[knob]` of the way to `hard`, so the
    * things the player can feel stay handicapped even at full soft ramp; `panic`
    * scales those weights toward 1 and pulls the result on toward the ceiling.
+   *
+   * `hard` is the soft ramp's target because it is the level the anti-stall
+   * pass was measured against, not because it is the top of the ladder — Expert
+   * sits above it. A ramp is only ever allowed to SHARPEN: for each knob we ask
+   * which of `d` and `hard` already sits nearer RAMP_CEILING, which is what
+   * "playing better" means for that knob whichever way its numbers run, and
+   * leave the knob alone if blending would walk it back. So Expert never gets
+   * slower, or more hesitant, at 3:00 for having started out ahead of Hard.
    */
   function sharpen(d, k, panic) {
     if (k <= 0 && panic <= 0) return d;
@@ -282,6 +297,8 @@ export function createBots(state, world, opts = {}) {
     for (const key in H) {
       const a = d[key], h = H[key];
       if (typeof a !== 'number' || typeof h !== 'number') continue;
+      const c = RAMP_CEILING[key];
+      if (typeof c === 'number' && Math.abs(h - c) > Math.abs(a - c)) continue;
       const w = RAMP_WEIGHT[key] === undefined ? 1 : RAMP_WEIGHT[key];
       // Panic un-caps the weight: at panic 1 every knob travels the full way.
       const eff = w + (1 - w) * panic;

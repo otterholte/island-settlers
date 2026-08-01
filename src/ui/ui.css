@@ -147,7 +147,10 @@
 .inv{display:flex;align-items:center;gap:5px}
 .inv b{font:800 17px/1 var(--ff);color:#3f2a12;text-shadow:0 1px 0 rgba(255,255,255,.6)}
 
-.trade-body{display:flex;align-items:stretch;gap:10px}
+/* The foot carries the deal and the key legend and must never be the thing
+   that gets clipped when the sheet meets a 375px-tall viewport. */
+.sheet-foot{flex:0 0 auto}
+.trade-body{display:flex;align-items:stretch;gap:10px;min-height:0}
 .tcol{flex:1 1 0;min-width:0}
 .tmid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   flex:0 0 92px;padding:0 4px}
@@ -159,6 +162,53 @@
   color:var(--brown-2);text-align:center}
 .ratio-note{font:700 8px/1.15 var(--ff);letter-spacing:.06em;text-transform:uppercase;
   color:#9a6b2c;text-align:center;min-height:9px}
+
+/* how many — the up/down arrows the keyboard drives, as real 44px buttons */
+.amt{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:3px}
+.amt-b{
+  width:46px;height:34px;padding:0;border-radius:9px;cursor:pointer;
+  background:linear-gradient(180deg,#fffaee,#e9d6ac);
+  border:2px solid rgba(90,58,30,.55);
+  box-shadow:0 2px 0 rgba(90,58,30,.35),inset 0 2px 0 rgba(255,255,255,.85);
+  display:flex;align-items:center;justify-content:center;
+  touch-action:manipulation;position:relative;
+}
+/* the hit area is 46x44 even though the plate is 34 tall */
+.amt-b::after{content:'';position:absolute;left:0;right:0;top:-5px;bottom:-5px}
+.amt-b::before{content:'';width:0;height:0;border-left:9px solid transparent;
+  border-right:9px solid transparent}
+.amt-b.up::before{border-bottom:11px solid var(--brown)}
+.amt-b.dn::before{border-top:11px solid var(--brown)}
+.amt-b:active{transform:translateY(2px);box-shadow:0 0 0 rgba(90,58,30,.35)}
+.amt-b.off{opacity:.4}
+.amt-b.off:active{transform:none}
+.amt-n{font:800 26px/1 var(--ff);color:#3f2a12;
+  text-shadow:0 2px 0 rgba(255,255,255,.7)}
+.amt-lab{font:800 7.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brown-2)}
+
+/* the live readout: what leaves, what arrives */
+.tfoot{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.tdeal{display:flex;align-items:center;gap:8px}
+.td-side{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 3px;
+  border-radius:9px;background:rgba(90,58,30,.12);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.td-side b{font:800 17px/1 var(--ff);color:#3f2a12}
+.td-side u{font:800 8.5px/1 var(--ff);text-decoration:none;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--brown-2)}
+.td-side svg{margin:0 -1px}
+.td-side.get{background:rgba(37,105,47,.16)}
+.td-side.get b{color:#1d5c26}
+.td-arrow{line-height:0;color:#8a5a1c}
+.sheet.trade.done .tdeal{animation:dealPop .5s cubic-bezier(.2,1.4,.4,1)}
+@keyframes dealPop{0%{transform:scale(1)}35%{transform:scale(1.07)}100%{transform:scale(1)}}
+
+/* the keyboard legend — never the only route, always spelled out */
+.kbhint{font:700 8.5px/1.3 var(--ff);letter-spacing:.06em;text-transform:uppercase;
+  color:#8a6a44}
+.kbhint i{font-style:normal;display:inline-block;margin:0 2px 0 0;padding:1px 5px 2px;
+  border-radius:5px;color:#fff6e4;background:linear-gradient(180deg,#6b4826,#43290f);
+  box-shadow:0 1px 0 rgba(90,58,30,.5)}
 
 .pickrow{display:flex;gap:5px}
 .pick{
@@ -177,6 +227,12 @@
   box-shadow:0 3px 0 #a8741a,0 0 15px rgba(255,201,60,.55),inset 0 2px 0 rgba(255,255,255,.8)}
 .pick.off{filter:grayscale(1) brightness(.9);opacity:.55}
 .pick.off:active{transform:none}
+/* `.on` is the chosen resource for that row; `.cur` says which row the arrow
+   keys are steering right now, so the keyboard cursor is never guesswork. */
+.pick.cur{box-shadow:0 3px 0 #a8741a,0 0 0 3px var(--gold-l),0 0 18px rgba(255,201,60,.7),
+  inset 0 2px 0 rgba(255,255,255,.8)}
+.pick.cur .pk-name{color:#6b3d05}
+.pk-lots{color:#1d5c26 !important}
 .pk-ico{line-height:0}
 .pk-name{font:800 8px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:var(--brown)}
 .pick em{position:absolute;top:2px;right:4px;font:800 11px/1 var(--ff);font-style:normal;
@@ -285,7 +341,75 @@
 .rs-stat span{flex:1 1 auto;font:700 9.5px/1.15 var(--ff);letter-spacing:.06em;
   text-transform:uppercase;color:rgba(206,226,246,.85)}
 .rs-stat b{font:800 13px/1 var(--ff);color:#fff}
-.rs-foot{display:flex;justify-content:center;padding-top:2px}
+.rs-foot{display:flex;justify-content:center;gap:10px;padding-top:2px}
+/* The scoreboard is a stop, not a wall: both of these put the island back. */
+.rs-x{position:absolute;top:var(--gT);right:var(--gR);z-index:3}
+
+/* ============================================== end of match, over the board
+   The announcement and the paper play while the match is still on screen —
+   pointer-events:none throughout, and nothing over the middle of the frame. */
+.endwin{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:6}
+.endwin.hid{display:none}
+.ew-plate{
+  position:absolute;left:50%;top:calc(var(--gT) + 4px);transform:translateX(-50%);
+  display:flex;align-items:center;gap:11px;padding:9px 20px 11px;border-radius:16px;
+  background:linear-gradient(180deg,rgba(12,32,58,.94),rgba(6,20,40,.94));
+  border:2.5px solid var(--wc,#ffc93c);
+  box-shadow:0 10px 26px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.18),
+             0 0 34px rgba(255,201,60,.34);
+  white-space:nowrap;
+}
+.endwin.in .ew-plate{animation:ewDrop .6s cubic-bezier(.2,1.35,.35,1) both}
+@keyframes ewDrop{from{opacity:0;transform:translateX(-50%) translateY(-64px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.ew-ico{line-height:0;color:var(--wl,#ffe79a)}
+.ew-words{display:flex;flex-direction:column;gap:2px}
+.ew-title{margin:0;font:800 23px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--gold);-webkit-text-stroke:1.6px rgba(8,14,26,.7);paint-order:stroke fill;
+  text-shadow:0 0 22px rgba(255,201,60,.5)}
+.endwin.lost .ew-title{color:#e3ecf6}
+.ew-sub{margin:0;font:700 9.5px/1 var(--ff);letter-spacing:.13em;text-transform:uppercase;
+  color:rgba(198,220,242,.82)}
+
+.ew-paper{position:absolute;inset:0}
+.ew-paper i{
+  position:absolute;left:var(--x);top:-24px;width:9px;height:14px;border-radius:2px;
+  background:linear-gradient(180deg,var(--wl,#ffe79a),var(--wc,#ffc93c));
+  box-shadow:0 1px 3px rgba(0,0,0,.35);opacity:0;
+}
+.endwin.in .ew-paper i{animation:ewFall var(--t,3s) linear var(--d,0ms) 1 both}
+@keyframes ewFall{
+  0%{opacity:0;transform:translateY(0) rotate(var(--r)) scale(var(--s))}
+  8%{opacity:1}
+  85%{opacity:1}
+  100%{opacity:0;transform:translateY(112vh) rotate(calc(var(--r) + 540deg)) scale(var(--s))}
+}
+
+/* --------------------------------------------------- the end-of-match bar */
+.endbar{
+  position:absolute;left:50%;bottom:var(--gB);transform:translateX(-50%);
+  display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:17px;
+  background:linear-gradient(180deg,rgba(12,32,58,.92),rgba(6,20,40,.92));
+  border:2px solid rgba(255,201,60,.5);
+  box-shadow:0 8px 22px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.16);
+  pointer-events:auto;z-index:7;
+  animation:ebIn .3s cubic-bezier(.2,1.3,.35,1) both;
+}
+.endbar.hid{display:none}
+@keyframes ebIn{from{opacity:0;transform:translateX(-50%) translateY(18px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.eb-tag{font:800 9px/1.1 var(--ff);letter-spacing:.18em;text-transform:uppercase;
+  color:rgba(255,231,154,.8);max-width:56px}
+.eb-hint{display:flex;align-items:center;gap:6px;
+  font:700 8.5px/1.2 var(--ff);letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(198,220,242,.72);max-width:104px}
+.eb-hint i{font-style:normal}
+.endbar .btn{min-height:46px}
+
+/* With the bar up, the build cards and the ground prompt have nothing left to
+   say — the match is over. Their space becomes board. */
+#ui.endgame .hud-bc,#ui.endgame .hud-bl,#ui.endgame .hud-br{
+  opacity:0;pointer-events:none;transition:opacity .2s ease}
 
 /* The boot splash lives in ui-boot.css. */
 
@@ -396,6 +520,30 @@
   .hand{min-height:140px}
   .tmid{flex-basis:76px}
   .ratio b{font-size:25px}
+  .ratio i{font-size:18px}
+  /* The stepper plate shrinks; its 46x44 hit area (the ::after) does not. */
+  /* Every pixel the trade sheet gives back here is a pixel the key legend in
+     the foot keeps: at 375px tall it was the line being clipped off. */
+  .sheet{gap:6px;padding:9px 12px 10px}
+  .inv-strip{padding:4px 10px}
+  .inv b{font-size:16px}
+  .pick{min-height:58px}
+  .amt{margin-top:1px}
+  .amt-b{width:44px;height:29px}
+  .amt-b::after{top:-8px;bottom:-8px}
+  .amt-n{font-size:23px}
+  .amt-lab{display:none}
+  .td-side b{font-size:15px}
+  .td-side{padding:1px 6px 2px}
+  .kbhint{font-size:8px;letter-spacing:.03em}
+  .kbhint i{padding:1px 4px 2px}
+  .rs-foot{gap:8px}
+  .ew-plate{padding:7px 15px 9px;gap:9px;border-radius:14px}
+  .ew-title{font-size:19px}
+  .ew-sub{font-size:8.5px}
+  .endbar{gap:7px;padding:6px 8px}
+  .eb-tag{display:none}
+  .eb-hint{max-width:92px;font-size:8px}
 }
 
 /* Very short viewports: reclaim vertical space without shrinking any icon. */

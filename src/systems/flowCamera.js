@@ -4,7 +4,7 @@
  *   createFlowCamera(game) ->
  *     { capture(), release(), setActive(on), snap(x,z), look(x,z,ease),
  *       arc(a0,a1,r0,r1,dur), overview(on), shake(a), celebrate(p),
- *       update(dt), isActive, pos }
+ *       endCelebrate(), update(dt), isActive, pos }
  *
  * `systems/camera.js` is owned by the Character agent and is deliberately
  * narrow: it follows a ground point, eases to a whole-island framing, orbits a
@@ -121,6 +121,20 @@ export function createFlowCamera(game) {
     }
   }
 
+  /**
+   * Stop the victory orbit.
+   *
+   * The orbit blends to full over 1.4s and then owns the camera outright — it
+   * is applied after the overview blend, so it wins. The end-of-match sequence
+   * therefore has to be able to hand the camera back before it pulls out to the
+   * whole-board framing, or the player never sees the finished island.
+   */
+  function endCelebrate() {
+    if (cam && typeof cam.endCelebrate === 'function') {
+      try { cam.endCelebrate(); } catch (e) { /* optional */ }
+    }
+  }
+
   /* ----------------------------------------------------------------- update */
 
   function update(dt) {
@@ -146,7 +160,7 @@ export function createFlowCamera(game) {
 
   return {
     capture, release, setActive, snap, look, arc,
-    overview, shake, celebrate, update,
+    overview, shake, celebrate, endCelebrate, update,
     get isActive() { return active; },
     get isPatched() { return patched; },
     get pos() { return cur; }

@@ -14,8 +14,10 @@
  *   3. the handoff into third-person play, plus the pacing beats that keep a
  *      real-time match legible (halfway, match point, final minute);
  *   4. the stalemate safety net at MATCH_SOFT_CAP_SEC;
- *   5. the victory sequence — freeze, hold a beat, pull to the board overview,
- *      light up the winner's network, then release the results panel.
+ *   5. the victory sequence — freeze, announce and celebrate over the live
+ *      board, pull out to the whole island, light up the winner's network, and
+ *      only then release the results panel. See `WIN` for the timeline: the
+ *      player is never taken off the board to be shown a score.
  *
  * All rules mutation goes through rules.js; all speech goes through hud.js and
  * overview.js. `state.flowActive` is set immediately so the 3.5s draft
@@ -57,11 +59,25 @@ const T = {
   handoff: 2.30
 };
 
+/*
+ * The last ten seconds, and why they are spaced like this.
+ *
+ * The old sequence gave the finished island 2.2 seconds and then covered it
+ * with a scoreboard. You never got to look at the thing you had just spent a
+ * match building. Now the announcement and the celebration play over the LIVE
+ * board — close third-person first, so the win reads on the settler — and the
+ * camera only pulls out to the whole island afterwards, where it sits for
+ * several seconds while the winner's network lights up hex by hex. The
+ * scoreboard is last, and it is dismissible (panels.js), so the player can go
+ * back to either view for as long as they like.
+ */
 const WIN = {
-  overview: 0.34,      // pull to the board framing
-  firstTile: 0.62,     // begin lighting the winner's network
+  celebrate: 0.30,     // orbit the winner's holdings, still close in
+  endOrbit: 2.45,      // hand the camera back so the pull-out can be seen
+  overview: 2.55,      // pull to the board framing
+  firstTile: 2.95,     // begin lighting the winner's network
   tileStep: 0.12,
-  reveal: 2.20         // results panel + celebration orbit
+  reveal: 6.00         // results panel — a long look at the island first
 };
 
 const HALF_TARGET = Math.ceil(VICTORY_POINTS / 2);
@@ -115,7 +131,8 @@ export function createMatchFlow(state, game) {
 
   const win = {
     active: false, done: false, t: 0, wid: -1,
-    byTime: false, tiles: [], lit: 0
+    byTime: false, tiles: [], lit: 0,
+    celebrated: false, orbitEnded: false, board: true
   };
 
   const beats = { half: false, matchPoint: new Set(), finalCall: false };
@@ -356,6 +373,9 @@ export function createMatchFlow(state, game) {
     win.wid = (wid === undefined || wid === null || wid < 0)
       ? (ranked ? ranked.p.id : 0) : wid;
     win.tiles = winnerTiles(win.wid);
+    win.celebrated = false;
+    win.orbitEnded = false;
+    win.board = true;
     stage = 'over';
 
     freezeMatch();
@@ -367,8 +387,28 @@ export function createMatchFlow(state, game) {
         ? `Match called on points · ${scoreOf(state, w)} VP`
         : `${w.name} reached ${scoreOf(state, w)} points`, 'good');
     }
+    // The end-game moment, played over the board rather than across it: a
+    // win/lose plate and a shower of paper that take no pointer events and
+    // leave the middle of the screen — and the island — completely clear.
+    const panels = g.panels;
+    if (panels && typeof panels.endBanner === 'function') {
+      try { panels.endBanner(win.wid); } catch (e) { warn(e); }
+    }
     cam.shake(0.6);
     sfx('horn');
+  }
+
+  /**
+   * Which framing the player is looking at once the scoreboard has been put
+   * away. hud-end.js drives this from its BOARD VIEW / CLOSE VIEW button; the
+   * cinematic camera has already been released by then, so the close framing is
+   * the ordinary third-person one, following the settler.
+   */
+  function setEndView(mode) {
+    if (!win.active) return false;
+    win.board = mode !== 'close';
+    cam.overview(win.board);
+    return win.board;
   }
 
   /** Nothing may mutate the match after this point. */
@@ -400,6 +440,21 @@ export function createMatchFlow(state, game) {
     win.t += d;
     if (state.phase !== 'over') state.phase = 'over';
 
+    // 1. celebrate where the match was won — close in, on the winner's holdings
+    if (!win.celebrated && win.t >= WIN.celebrate) {
+      win.celebrated = true;
+      const w = state.players[win.wid];
+      if (realCelebrate) realCelebrate(w);
+    }
+
+    // 2. release the orbit, then pull out. The orbit is applied after the
+    //    overview blend inside camera.js, so it has to stop first or the
+    //    board framing never appears.
+    if (!win.orbitEnded && win.t >= WIN.endOrbit) {
+      win.orbitEnded = true;
+      cam.endCelebrate();
+    }
+
     if (win.t >= WIN.overview) cam.overview(true);
 
     if (win.t >= WIN.firstTile && win.lit < win.tiles.length) {
@@ -420,8 +475,12 @@ export function createMatchFlow(state, game) {
 
     if (win.t >= WIN.reveal) {
       win.done = true;
-      const w = state.players[win.wid];
-      if (realCelebrate) realCelebrate(w);
+      // Hand the camera back before the scoreboard lands. From here the player
+      // owns the view: BOARD VIEW / CLOSE VIEW on the end-of-match bar toggles
+      // the overview blend, and the close framing follows the settler through
+      // playerController's own follow() calls, exactly as in play.
+      cam.release();
+      cam.overview(win.board);
       if (realShowResults) realShowResults(win.wid);
       setInput(false);
     }
@@ -515,6 +574,7 @@ export function createMatchFlow(state, game) {
     // draft, not the credits.
     win.active = false; win.done = false; win.t = 0; win.wid = -1;
     win.byTime = false; win.tiles = []; win.lit = 0;
+    win.celebrated = false; win.orbitEnded = false; win.board = true;
     beats.half = false; beats.finalCall = false; beats.matchPoint.clear();
     draft.reset();
     started = true;
@@ -542,7 +602,8 @@ export function createMatchFlow(state, game) {
   /* ------------------------------------------------------------------ api */
 
   return {
-    update, begin, skipIntro, restartInPlace,
+    update, begin, skipIntro, restartInPlace, setEndView,
+    get endView() { return win.board ? 'board' : 'close'; },
     get stage() { return stage; },
     get elapsed() { return elapsed; },
     get isWinSequence() { return win.active; },

@@ -10,7 +10,7 @@
  *   crest + title      ISLAND / SETTLERS, bevelled, sitting on the sea
  *   objective ribbon   FIRST TO 13 POINTS
  *   identity plate     one slim plate: your colour, your portrait, YOU
- *   difficulty picker  EASY / MEDIUM / HARD — how good the rivals are
+ *   difficulty picker  EASY / MEDIUM / HARD / EXPERT — how the rivals play
  *   two buttons        BEGIN THE DRAFT (green, primary) · TUTORIAL (cream)
  *   one line of help   how a turn actually works
  *
@@ -145,8 +145,15 @@ export const INTRO_CSS = `
   background:linear-gradient(90deg,rgba(255,201,60,0),rgba(255,201,60,.75));
 }
 .mf-i-dlab::after{background:linear-gradient(270deg,rgba(255,201,60,0),rgba(255,201,60,.75))}
-.mf-i-drow{display:flex;gap:clamp(5px,1.2vw,10px)}
+/* Four rungs, not three. They fit on one line at both shipping sizes — see the
+   measurements against .btn.mf-diff below — but the row wraps and re-centres
+   rather than overflowing if a narrower viewport ever turns up. */
+.mf-i-drow{display:flex;flex-wrap:wrap;justify-content:center;
+  gap:clamp(5px,1.2vw,10px)}
 
+/* Sized for four across. At 960x444 that is 4x152 + 3x10 of gap = 638px inside
+   a 940px content box; the floor of 102px keeps four on one line down to a
+   ~440px-wide viewport before .mf-i-drow wraps them 2x2. */
 .btn.mf-diff{
   flex-direction:column;gap:2px;
   min-height:48px;width:clamp(102px,19vw,152px);
@@ -245,7 +252,8 @@ export const INTRO_CSS = `
   .mf-play{min-height:48px}
   .mf-tut{min-height:48px}
   /* Still a 46px tap target at 667x375 — the guideline floor, not a whisker
-     under it. The blurb is what gives, not the button. */
+     under it. The blurb is what gives, not the button. Four of these at 667
+     wide come to 4x116.7 + 3x8 of gap = 491px inside a 647px content box. */
   .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
@@ -283,9 +291,12 @@ export function buildIntro(state, onBegin) {
   ];
 
   /* ----------------------------------------------------------- difficulty */
-  // Three chunky, obviously-tappable options. The choice goes straight into
-  // difficulty.js; bots.js re-reads it every planning tick, and it is what a
-  // replay re-applies, so there is nothing else to wire up.
+  // One chunky, obviously-tappable option per rung of DIFFICULTY_ORDER — four
+  // of them — so adding or removing a level never needs an edit here. Each
+  // button carries the level's label and its blurb, which says what the rivals
+  // do rather than passing comment on whoever picked it. The choice goes
+  // straight into difficulty.js; bots.js re-reads it every planning tick, and
+  // it is what a replay re-applies, so there is nothing else to wire up.
   const diffButtons = DIFFICULTY_ORDER.map(key => {
     const level = LEVELS[key];
     const b = button('cream mf-diff', {

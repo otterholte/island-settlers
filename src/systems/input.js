@@ -13,6 +13,13 @@
  * Keyboard fallback for desktop / headless testing:
  *   WASD + arrows -> stick, Space -> actionPressed, Tab -> mapPressed.
  *
+ * While a modal panel owns the keyboard (the trade sheet drives its selection
+ * with the arrow keys) the UI calls `setKeyboardCapture(true)`. Movement keys
+ * are then swallowed here — preventDefault'd, but never recorded — so the
+ * settler cannot run off while the player is picking a resource, and Tab cannot
+ * throw the board map up behind an open sheet. Releasing capture clears the
+ * held-key set, so a key pressed before the panel opened can never stay stuck.
+ *
  * `stick` is normalised with magnitude clamped to 1; +y is "up the screen"
  * (away from the camera). Edge flags are true for exactly one update().
  *
@@ -89,7 +96,8 @@ export function createInput(domRoot) {
     mapPressed: false,
     frame: 0,
     active: false,
-    update, dispose, setEnabled
+    update, dispose, setEnabled, setKeyboardCapture,
+    get keyboardCaptured() { return keyCapture; }
   };
 
   /* ------------------------------------------------------------------ DOM */
@@ -113,6 +121,7 @@ export function createInput(domRoot) {
 
   /* ---------------------------------------------------------------- state */
   let enabled = true;
+  let keyCapture = false;
   let stickId = null;
   let originX = 0, originY = 0;
   let curX = 0, curY = 0;
@@ -255,6 +264,9 @@ export function createInput(domRoot) {
     if (!code) return;
     if (code === 'Space' || code === 'Tab') { if (ev.preventDefault) ev.preventDefault(); }
     if (MOVE_KEYS.has(code) && ev.preventDefault) ev.preventDefault();
+    // A panel owns the keyboard: the key is eaten here (so the browser does
+    // nothing with it either) and never reaches the movement state.
+    if (keyCapture) return;
     if (keys.has(code)) return;                  // ignore auto-repeat
     keys.add(code);
     if (code === 'Space') actionPending = true;
@@ -334,6 +346,22 @@ export function createInput(domRoot) {
   function setEnabled(v) {
     enabled = !!v;
     if (!enabled) endStick();
+  }
+
+  /**
+   * Hand the keyboard to a modal panel (and take it back).
+   *
+   * Both edges drop every held key and zero the stick: opening a sheet while
+   * running must not leave a direction latched, and closing one must not
+   * inherit a key whose keyup the panel swallowed.
+   */
+  function setKeyboardCapture(v) {
+    const on = !!v;
+    if (on === keyCapture) return;
+    keyCapture = on;
+    keys.clear();
+    stick.x = 0; stick.y = 0;
+    if (on) endStick();
   }
 
   function dispose() {

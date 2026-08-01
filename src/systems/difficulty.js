@@ -1,7 +1,7 @@
 /**
  * Island Settlers — difficulty levels.
  *
- *   getDifficulty() -> 'easy' | 'medium' | 'hard'
+ *   getDifficulty() -> 'easy' | 'medium' | 'hard' | 'expert'
  *   setDifficulty(key) -> key            (persisted, notifies listeners)
  *   difficultyParams(key?) -> LEVEL      (the tuning block bots.js reads)
  *   onDifficultyChange(fn) -> off()
@@ -21,7 +21,7 @@
  */
 
 /** Order the selector renders them in. `novice` is deliberately not listed. */
-export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard'];
+export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard', 'expert'];
 
 export const DEFAULT_DIFFICULTY = 'easy';
 
@@ -54,16 +54,28 @@ export const DEFAULT_DIFFICULTY = 'easy';
  *                   real for the whole match. The separate panic ramp, which is
  *                   on a fixed clock, is the last resort. See bots.js.
  *
- * The whole ladder was moved down a rung after playtesting: the level that used
- * to be Hard is gone, Hard is now roughly the old Medium, Medium is roughly the
- * old Easy, and Easy is a long way below anything that shipped before. Nobody
- * on this island is trying to win a tournament.
+ * The bottom three rungs were moved down after playtesting and then measured, so
+ * they are fixed points and nothing here reopens them. Expert was added on top
+ * afterwards; re-measuring all four together over 120 matches each
+ * (`tools/simulate.mjs --matches=40 --novice --difficulty=…`, seeds 101/202/303)
+ * puts the novice stand-in's win rate at:
+ *
+ *     easy 94.6%   medium 52.5%   hard 20.2%   expert 8.5%
+ *
+ * which reproduces the three published figures (94-98 / 53 / 18) and leaves the
+ * new rung a clear step above Hard without putting a match out of reach. Fewer
+ * matches than that is not a measurement: the simulator is not bit-reproducible,
+ * and a 25-match run swings ten points either way on its own.
+ *
+ * Each level's `blurb` describes what the rivals do — their pace, how quickly
+ * they expand, how much pressure they apply. It is a description of the
+ * opposition, not a comment on whoever picked it.
  */
 export const LEVELS = {
   easy: {
     key: 'easy',
     label: 'Easy',
-    blurb: 'Barely trying',
+    blurb: 'Slow pace, late expansion',
     // Half the run speed, a second of loitering before every build, and
     // roughly a third of their affordable purchases postponed in favour of yet
     // more gathering. A beginner still finding the thumbstick beats this field:
@@ -81,7 +93,7 @@ export const LEVELS = {
   medium: {
     key: 'medium',
     label: 'Medium',
-    blurb: 'Slow and clumsy',
+    blurb: 'Steady pace, some pressure',
     // Where Easy used to sit.
     speed: 0.69, accel: 0.76,
     replan: 2.00, hesitate: 0.42, pause: 0.95, actDelay: 0.55,
@@ -96,9 +108,8 @@ export const LEVELS = {
   hard: {
     key: 'hard',
     label: 'Hard',
-    blurb: 'An even contest',
-    // Where Medium used to sit, shaded down a little further. Nothing in the
-    // build is as strong as the old Hard any more.
+    blurb: 'Brisk pace, presses early',
+    // Where Medium used to sit, shaded down a little further.
     speed: 0.78, accel: 0.84,
     replan: 1.60, hesitate: 0.28, pause: 0.62, actDelay: 0.38,
     noise: 2.1, secondBest: 0.18, routeSlop: 0.28, tileSlop: 0.26,
@@ -108,6 +119,33 @@ export const LEVELS = {
     knight: 0.56, knightAim: 0.48, knightGap: 11,
     endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
     rampFrom: 180
+  },
+  expert: {
+    key: 'expert',
+    label: 'Expert',
+    blurb: 'Fast pace, constant pressure',
+    // The top rung, and the only level above the one the anti-stall ramp was
+    // built around. Every knob is a step past Hard rather than a leap: they run
+    // about 6% quicker, re-plan a little sooner, loiter for two thirds as long
+    // before a build, postpone fewer purchases they can already afford, trade
+    // more readily and land the Raider more accurately. It is still a long way
+    // short of RAMP_CEILING below — nothing a player can pick plays perfectly.
+    //
+    // Tuned by sweeping `--dset` before it was written down: a first pass sat
+    // halfway again as far past Hard as this one and held the novice stand-in
+    // to 4% of 95 matches, which is closer to hopeless than to hard. These
+    // numbers are the midpoint between that pass and Hard, and the novice wins
+    // 10% of 150 (seeds 1/7/13/23) — a real step down from Hard's 19% without
+    // taking the match away.
+    speed: 0.83, accel: 0.88,
+    replan: 1.45, hesitate: 0.22, pause: 0.50, actDelay: 0.30,
+    noise: 1.85, secondBest: 0.14, routeSlop: 0.22, tileSlop: 0.20,
+    wander: 0.04, wanderSec: 1.6,
+    hoard: 0.05,
+    trade: 0.74,
+    knight: 0.63, knightAim: 0.55, knightGap: 10,
+    endgame: true, award: 0.85, setupNoise: 1.7, desperate: 19,
+    rampFrom: 175
   },
 
   /**
@@ -141,9 +179,13 @@ export const LEVELS = {
 /**
  * NOT a difficulty either, and deliberately not in `LEVELS`: the profile the
  * anti-stall ramp in bots.js blends toward once a match has run so long it has
- * to be brought to an end. It is roughly the old Hard, and it is the only thing
- * in the build that still plays that sharply — a player never meets it unless
- * the clock is past five and a half minutes with nobody able to close.
+ * to be brought to an end. It is flawless play, well above Expert — a player
+ * never meets it unless the clock is past five and a half minutes with nobody
+ * able to close.
+ *
+ * bots.js also uses it as the compass for "which way is sharper?" when it works
+ * out whether a soft-ramp blend would strengthen a level or weaken it, so every
+ * numeric knob in LEVELS needs an entry here.
  */
 export const RAMP_CEILING = {
   key: 'ceiling',
@@ -157,9 +199,13 @@ export const RAMP_CEILING = {
   endgame: true, award: 1.00, setupNoise: 1.0, desperate: 14
 };
 
-export const DIFFICULTY_LABEL = {
-  easy: LEVELS.easy.label, medium: LEVELS.medium.label, hard: LEVELS.hard.label
-};
+/** Derived, so a new rung in DIFFICULTY_ORDER never leaves a label behind. */
+export const DIFFICULTY_LABEL = Object.fromEntries(
+  DIFFICULTY_ORDER.map(k => [k, LEVELS[k].label]));
+
+/** Same, for anywhere that wants the one-line description of the rivals. */
+export const DIFFICULTY_BLURB = Object.fromEntries(
+  DIFFICULTY_ORDER.map(k => [k, LEVELS[k].blurb]));
 
 const STORE_KEY = 'island-settlers.difficulty';
 
@@ -167,6 +213,14 @@ function isLevel(key) {
   return typeof key === 'string' && Object.prototype.hasOwnProperty.call(LEVELS, key);
 }
 
+/**
+ * Every key this game has ever written to storage — easy, medium and hard —
+ * is still a level, so a returning player keeps their choice when Expert
+ * appears above it. Anything else (a hand-edited value, a key from a future
+ * build someone rolled back from) is not guessed at: it falls through to
+ * DEFAULT_DIFFICULTY rather than dropping someone onto a rung they never
+ * asked for.
+ */
 function readStored() {
   try {
     const s = globalThis.localStorage;
@@ -214,6 +268,6 @@ export function difficultyParams(key) {
 }
 
 export default {
-  DIFFICULTY_ORDER, LEVELS, RAMP_CEILING, getDifficulty, setDifficulty,
-  onDifficultyChange, difficultyParams
+  DIFFICULTY_ORDER, DIFFICULTY_LABEL, DIFFICULTY_BLURB, LEVELS, RAMP_CEILING,
+  getDifficulty, setDifficulty, onDifficultyChange, difficultyParams
 };
