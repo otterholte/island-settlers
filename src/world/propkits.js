@@ -130,9 +130,16 @@ export function heroTree() {
   return merge(parts);
 }
 
-/** What a felled tree leaves behind — a pale sawn top on a dark stump. (24 tris) */
+/**
+ * What a felled tree leaves behind — a pale sawn top on a dark stump. (20 tris)
+ *
+ * There are now up to 224 of these (every harvestable sub-unit AND every
+ * decorative tree that can be felled), so the radial segment count is down to
+ * five: a worked-out forest tile carries fifty-odd of them at maybe fifteen
+ * pixels across, and nobody has ever counted the sides of one.
+ */
 export function stump() {
-  const g = cyl(0.30, 0.40, 0.44, 6, C.barkDark);
+  const g = cyl(0.30, 0.40, 0.44, 5, C.barkDark);
   place(g, 0, 0.22, 0);
   return gradient(g, C.barkDark, C.barkPale);
 }

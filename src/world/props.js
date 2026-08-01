@@ -36,16 +36,19 @@ import * as K from './propkits.js';
 import { buildNodeLife } from './nodelife.js';
 import { buildGatherFX } from './gatherfx.js';
 import { buildRegions } from './regions.js';
+import { countFellable } from './stand.js';
 
 /*
- * Dressing kits that answer to the harvest. Every instance of these is assigned
- * to its nearest gather node by `regions.js` and topples / gets cropped / goes
- * straw-coloured as that node is emptied, so a region visibly clears section by
- * section instead of standing untouched around seven gaps. Nothing is deleted
- * and no count changes — it is instance matrices and instance colours only, and
- * it all reverses when the region grows back. Baked (STATIC_MERGE) kits cannot
- * animate, which is why fences, clay works and mine portals stay put: they are
- * the works, not the crop.
+ * Dressing kits that are part of the STAND, not scenery around it. Every
+ * instance of these joins its region's harvest pool in `stand.js` and topples /
+ * gets cropped / goes straw-coloured as the region is worked, choosing which
+ * ones by how close they are to the settler who swung. A forest tile therefore
+ * clears along the path you walked and ends up as stumps, not as a full forest
+ * with seven gaps in it. Nothing is deleted and no count changes — it is
+ * instance matrices and instance colours only, and it all reverses when the
+ * region grows back. Baked (STATIC_MERGE) kits cannot animate, which is why
+ * fences, clay works and mine portals stay put: they are the works, not the
+ * crop, and an empty paddock still has to read as a paddock.
  */
 const RESPONSIVE = new Set([
   'conifer', 'coniferShort', 'broadleaf', 'undergrowth',
@@ -118,21 +121,28 @@ const STATIC_KITS = {
 };
 
 /* Per-tile dressing recipe. Counts are per tile of that terrain. A forest tile
-   therefore carries 18 + 11 + 7 = 36 dressing trees on top of its 7 hero
-   trees, plus undergrowth, deadwood, rocks and grass. */
+   carries 18 + 11 + 7 = 36 standing trees on top of its 21 harvestable ones,
+   which is what makes the hex read as a solid stand rather than as scattered
+   copses — and all 57 of them come down over the region's 21 harvest events.
+ *
+ * The OFF-TERRAIN entries have been culled. A clay hill with spruces, fences
+ * and crates on it, a mountain with packing crates, a wheat field with a
+ * broadleaf in it: each of those was a second silhouette competing with the
+ * one thing the hex is supposed to say. Density on the terrain's own kit is
+ * untouched; the visitors are gone, so each hex now groups as one idea. */
 const RECIPE = {
-  forest:    { conifer: 18, coniferShort: 11, broadleaf: 7, deadwood: 5,
-               undergrowth: 16, grass: 34, rockSmall: 7, flower: 4 },
-  fields:    { wheat: 118, hay: 3, fence: 6, crate: 2, grass: 10,
-               rockSmall: 4, broadleaf: 1, undergrowth: 3 },
-  pasture:   { grass: 58, flower: 20, fence: 4, undergrowth: 8, rockSmall: 8,
-               broadleaf: 3, coniferShort: 2, hay: 2 },
-  hills:     { clayWorks: 5, rockSmall: 16, boulder: 7, grass: 24,
-               undergrowth: 6, crate: 3, coniferShort: 3, fence: 4, deadwood: 2 },
-  mountains: { spire: 7, boulder: 10, rockSmall: 18, conifer: 5, coniferShort: 4,
-               grass: 14, crate: 2, timber: 3 },
-  desert:    { rockSmall: 16, boulder: 4, crate: 6, grass: 12, hay: 2,
-               deadwood: 2, coniferShort: 2 }
+  forest:    { conifer: 24, coniferShort: 15, broadleaf: 8, deadwood: 5,
+               undergrowth: 16, grass: 34, rockSmall: 5 },
+  fields:    { wheat: 118, hay: 3, fence: 6, crate: 2, grass: 8,
+               rockSmall: 2, undergrowth: 3 },
+  pasture:   { grass: 58, flower: 14, fence: 4, undergrowth: 8, rockSmall: 4,
+               broadleaf: 2, hay: 2 },
+  hills:     { clayWorks: 5, rockSmall: 14, boulder: 7, grass: 24,
+               undergrowth: 6, crate: 2, deadwood: 1 },
+  mountains: { spire: 7, boulder: 8, rockSmall: 14, conifer: 3, coniferShort: 2,
+               grass: 10, timber: 3 },
+  desert:    { rockSmall: 9, boulder: 4, crate: 3, grass: 8, hay: 2,
+               deadwood: 2, coniferShort: 1 }
 };
 
 /* ------------------------------------------------------------ tint variants
@@ -166,8 +176,11 @@ const TINTS = {
 /* Physical footprint radius. Two props may not overlap: the placement test is
    distance >= r(a) + r(b), so grass is free to grow right up under a spruce
    while two spruces still keep a respectful 1.4 units apart. */
+/* Canopies are allowed to overlap now — a stand of trees IS overlapping
+   canopies, and the old 1.24-unit minimum between two spruces is what made a
+   forest tile read as scattered copses with lawn between them. */
 const FOOT = {
-  conifer: 0.62, coniferShort: 0.58, broadleaf: 0.80, deadwood: 0.85,
+  conifer: 0.54, coniferShort: 0.48, broadleaf: 0.72, deadwood: 0.85,
   undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.185, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
@@ -413,11 +426,15 @@ export function buildProps(scene) {
       clusters++;
     }
 
-    tryPlace('boulder', 22, 0.10, 1.7);
-    tryPlace('deadwood', 10, 0.20, 1.2);
-    tryPlace('rockSmall', 70, -0.35, 2.0);
-    tryPlace('undergrowth', 18, 0.70, 2.0);
-    tryPlace('grass', 58, 0.55, 2.0);
+    // Thinned by a third from what it used to be. The clusters above already
+    // break the seam; the loose scatter on top of them was pure litter on a
+    // band of beach the play camera barely looks at, and it was costing more
+    // triangles than the forests it was competing with.
+    tryPlace('boulder', 16, 0.10, 1.7);
+    tryPlace('deadwood', 8, 0.20, 1.2);
+    tryPlace('rockSmall', 46, -0.35, 2.0);
+    tryPlace('undergrowth', 12, 0.70, 2.0);
+    tryPlace('grass', 40, 0.55, 2.0);
   }
 
   /* ------------------------------------------------------- build meshes */
@@ -516,12 +533,23 @@ export function buildProps(scene) {
   /* ------------------------------------------------------------- the nodes
    *
    * The 126 gather nodes are not props — they are the game. Their geometry,
-   * their three-sub-unit harvest life and their regrowth live in nodelife.js;
-   * the "you can pick this up" affordances live in gatherfx.js. Both build into
-   * this same group and share these same materials, so the whole gathering
-   * layer costs six InstancedMeshes plus three unlit overlays.
+   * their harvest life and their regrowth live in nodelife.js; the "you can
+   * pick this up" affordances live in gatherfx.js. Both build into this same
+   * group and share these same materials.
+   *
+   * `extraStumps` is the deal that keeps a clear-cut free: nodelife sizes its
+   * stump batch to cover the decorative timber as well as the harvestable
+   * copses, and hands the spare instances to the stand. Fifty-seven trees on a
+   * forest tile become fifty-seven stumps without a second draw call.
    */
-  const life = buildNodeLife(group, mats);
+  const dressing = {};
+  for (const kit in bucket) {
+    if (!RESPONSIVE.has(kit)) continue;
+    const mesh = meshes[kit];
+    if (mesh) dressing[kit] = { mesh, list: bucket[kit] };
+  }
+
+  const life = buildNodeLife(group, mats, { extraStumps: countFellable(bucket) });
   triangles += life.triangles;
   drawCalls += life.drawCalls;
 
@@ -531,17 +559,11 @@ export function buildProps(scene) {
 
   /* --------------------------------------------------------- the regions
    *
-   * Region-scale legibility: worked ground, the dressing answering to the
-   * harvest, an exhausted badge with a live countdown, and the regrowth beat.
+   * Region-scale legibility: whose region is this, worked ground, the stand
+   * answering to the harvest, a countdown badge and the regrowth beat.
    * Two draw calls for all nineteen hexes.
    */
-  const dressing = {};
-  for (const kit in bucket) {
-    if (!RESPONSIVE.has(kit)) continue;
-    const mesh = meshes[kit];
-    if (mesh) dressing[kit] = { mesh, list: bucket[kit] };
-  }
-  const regions = buildRegions(group, dressing);
+  const regions = buildRegions(group, dressing, life.stumps);
   triangles += regions.triangles;
   drawCalls += regions.drawCalls;
 

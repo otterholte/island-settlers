@@ -1,7 +1,7 @@
 /**
  * Island Settlers — the life of a REGION.
  *
- *   buildRegions(group, dressing) -> {
+ *   buildRegions(group, dressing, stumps) -> {
  *     update(dt), drawCalls, triangles, dispose()
  *   }
  *
@@ -10,54 +10,50 @@
  * ---------------------------------------------------------------------------
  * The player said it plainly:
  *
- *   "What I need to be obvious is when you can no longer pick up resources
- *    from a specific tile, and when that timer resets, so I know when I can
- *    go back."
+ *   "I should be easily able to tell the specific hexes I'm allowed to get
+ *    resources from. Right now they're all the same appearance. NOTHING is
+ *    currently differentiating them."
  *
- *   "When I collect all of the wood from a wood tile ... it disappears
- *    slightly for each section I walk over, until that tile has no more
- *    visible tree resources — they all look cut down."
+ * You can in fact work any region — owning a settlement or a city on one of its
+ * corners MULTIPLIES what you get there (x2 / x3, `ownershipMultiplier` in
+ * rules.js). So the honest read is not "locked out", it is "these are your
+ * high-yield regions", and this file is what says it, at region scale:
  *
- * `board/nodes.js` now scopes recovery to the whole region: a felled node stays
- * down until every node on its tile is down, the tile then goes dormant for
- * TILE_REGROW_SEC and the whole region comes back at once. That gives a region
- * a real life cycle. This file is the READ on that cycle, at region scale:
+ *   1. TONAL GROUPING. One terrain-conforming decal per hex. A region you own
+ *      gets a warm lift and a clean rim in YOUR colour; a region you do not
+ *      gets a cool, quiet mute. That is the Whiteout Survival separation
+ *      between active and inactive territory, and it holds with six hexes on
+ *      screen at once.
  *
- *   1. WORKED GROUND. A terrain-conforming decal over each hex that churns up
- *      as the region is worked — patches of bare, dug, trampled earth spreading
- *      out from the nodes you have emptied. One merged mesh, one draw call.
+ *   2. WORKED GROUND. The same decal churns up as the region is worked —
+ *      patches of bare, dug, trampled earth spreading out from where you have
+ *      been standing — and drops to ash when the region is worked out.
  *
- *   2. THE DRESSING RESPONDS. The ~36 decorative spruces on a forest tile, the
- *      118 wheat tufts on a fields tile, the pasture grass: every one of them is
- *      assigned to its NEAREST gather node, and comes down / gets cropped / goes
- *      straw-coloured as THAT node is emptied. Walk the tile harvesting and it
- *      clears section by section under your feet. Nothing is ever deleted and no
- *      prop count changes — it is all instance matrices and instance colours,
- *      and it all reverses on regrowth.
+ *   3. THE BADGE (regionmark.js). Silent unless it has something to say:
+ *      the multiplier on a region you own, the SECONDS LEFT on one that is
+ *      worked out, a bar on one the Raider has shut. Nothing else.
  *
- *   3. THE MARKER (regionmark.js). One shader-driven instanced quad per tile.
- *      While a region still has stock it shows a quiet segmented ring in the
- *      resource colour — one lit segment per standing node. The moment the
- *      region is exhausted it turns ash and ember, and shows the SECONDS LEFT
- *      as a big number with a countdown arc sweeping around it. 19 markers,
- *      one draw call.
+ *   4. THE STAND (stand.js). The trees, wheat, ferns and grass answering to
+ *      the harvest, felled nearest the settler who swung.
  *
- *   4. THE RECOVERY BEAT. When the region comes back the ground flashes green
- *      from the centre outward, the toppled dressing stands back up in a wave,
- *      rings pop over every node and the marker bursts and fades.
+ *   5. THE RECOVERY BEAT. When the region comes back the ground flashes from
+ *      the centre outward, the stand rises again in a wave and the badge fades.
+ *
+ * Two draw calls for all nineteen hexes.
  *
  * Owner: World agent.
  */
 
 import * as THREE from 'three';
-import { NODE_CAPACITY, RES_COLOR } from '../core/constants.js';
+import { NODE_CAPACITY, RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
 import {
   nodesByTile, tileRemaining, tileRecovery, isTileExhausted, TILE_REGROW_SEC
 } from '../board/nodes.js';
+import { ownershipMultiplier } from '../core/rules.js';
 import { heightAt, APOTHEM } from './terrain.js';
-import { setInstance } from './geo.js';
-import { buildMarkers, markerAtlas } from './regionmark.js';
+import { buildMarkers, markerAtlas, GLYPH } from './regionmark.js';
+import { buildStand } from './stand.js';
 
 const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -72,7 +68,7 @@ function match() {
  * crop is off it. Deliberately a long way from the tile's own painted colour —
  * a clear-cut has to read as churned earth, not as slightly darker forest. */
 const WORN = {
-  forest:    0x4a3524,   // duff, sawdust and root-torn soil
+  forest:    0x5e4630,   // duff, sawdust and root-torn soil
   fields:    0xa98b3f,   // stubble and chaff
   pasture:   0x8a8b4a,   // cropped, trodden turf
   hills:     0x6b3216,   // spoil and wet clay
@@ -92,10 +88,18 @@ const LIVE = {
   desert:    0xffe9b8
 };
 
+/* The two tones that carry the whole "mine / not mine" read. */
+const WARM = 0xffe9b0;    // sunlit lift over a region you own
+const MUTE = 0x121b2c;    // cool, quiet dark over one you do not
+
 /* =========================================================== ground overlay */
 
 const SEGS = 12;                       // hex corners land on 30 degree steps
-const RINGS = [0.34, 0.66, 0.90];
+/* Absolute hex fractions, not normalised: the shader bands against them
+   directly. 0.795 is the owner rim — just inside the tan road strip (0.81) so
+   the glow reads as the hex being lit, never as paint on somebody's road. */
+const RINGS = [0.24, 0.46, 0.66, 0.775, 0.865];
+const RIM_AT = 0.775;
 
 /** Distance from a hex centre to its boundary along `a`, in world units. */
 function hexReach(a) {
@@ -115,7 +119,7 @@ function buildOverlay(list) {
   const rim = new Float32Array(vtx);
   const worn = new Float32Array(vtx * 3);
   const live = new Float32Array(vtx * 3);
-  const state = new Float32Array(vtx * 3);
+  const state = new Float32Array(vtx * 4);
 
   const triPerTile = SEGS + (RINGS.length - 1) * SEGS * 2;
   const idx = new Uint16Array(list.length * triPerTile * 3);
@@ -138,9 +142,9 @@ function buildOverlay(list) {
     rec.vn = new Int32Array(perTile);
 
     const put = (x, z, r) => {
-      // Lifted well clear of the tile top: the decal is a coarse 37-vertex fan
-      // and the painted undulation under it runs +-0.19, so a tighter offset
-      // sinks whole wedges of it below the ground and the depth test eats them.
+      // Lifted well clear of the tile top: the decal is a coarse fan and the
+      // painted undulation under it runs +-0.19, so a tighter offset sinks
+      // whole wedges of it below the ground and the depth test eats them.
       pos[v * 3] = x; pos[v * 3 + 1] = heightAt(x, z) + 0.30; pos[v * 3 + 2] = z;
       rim[v] = r;
       worn[v * 3] = cw.r; worn[v * 3 + 1] = cw.g; worn[v * 3 + 2] = cw.b;
@@ -160,7 +164,7 @@ function buildOverlay(list) {
       for (let s = 0; s < SEGS; s++) {
         const a = (s / SEGS) * TAU;
         const d = RINGS[r] * hexReach(a);
-        put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, RINGS[r] / RINGS[RINGS.length - 1]);
+        put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, RINGS[r]);
       }
     }
 
@@ -187,7 +191,7 @@ function buildOverlay(list) {
   geo.setAttribute('aRim', new THREE.BufferAttribute(rim, 1));
   geo.setAttribute('aWorn', new THREE.BufferAttribute(worn, 3));
   geo.setAttribute('aLive', new THREE.BufferAttribute(live, 3));
-  const stateAttr = new THREE.BufferAttribute(state, 3);
+  const stateAttr = new THREE.BufferAttribute(state, 4);
   stateAttr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('aState', stateAttr);
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
@@ -198,12 +202,19 @@ function buildOverlay(list) {
     // AWAY from a camera looking down +y, because (x, z) is left-handed from
     // above. Front-side only and the whole decal is invisible.
     transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
-    uniforms: { uTime: { value: 0 } },
+    uniforms: {
+      uTime: { value: 0 },
+      uRim:  { value: new THREE.Color(0x3b7fd4) },
+      uWarm: { value: new THREE.Color(WARM) },
+      uMute: { value: new THREE.Color(MUTE) }
+    },
     vertexShader: /* glsl */`
       attribute float aRim;
-      attribute vec3 aWorn, aLive, aState;
+      attribute vec3 aWorn, aLive;
+      attribute vec4 aState;
       varying float vRim;
-      varying vec3 vWorn, vLive, vState;
+      varying vec3 vWorn, vLive;
+      varying vec4 vState;
       varying vec2 vW;
       void main() {
         vRim = aRim; vWorn = aWorn; vLive = aLive; vState = aState;
@@ -213,8 +224,10 @@ function buildOverlay(list) {
     `,
     fragmentShader: /* glsl */`
       uniform float uTime;
+      uniform vec3 uRim, uWarm, uMute;
       varying float vRim;
-      varying vec3 vWorn, vLive, vState;
+      varying vec3 vWorn, vLive;
+      varying vec4 vState;
       varying vec2 vW;
 
       float h21(vec2 p) {
@@ -228,45 +241,87 @@ function buildOverlay(list) {
         return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
       }
 
-      void main() {
-        float work = vState.x, spent = vState.y, flash = vState.z;
-        if (work < 0.004 && spent < 0.004 && flash < 0.004) discard;
+      /* Standard source-over composite, so the tonal wash, the churn, the ash
+         and the owner rim stack in a defined order instead of fighting for the
+         same lerp. */
+      void over(inout vec3 col, inout float a, vec3 c2, float a2) {
+        if (a2 <= 0.0005) return;
+        float o = a2 + a * (1.0 - a2);
+        col = (c2 * a2 + col * a * (1.0 - a2)) / max(o, 1e-5);
+        a = o;
+      }
 
-        float edge = 1.0 - smoothstep(0.66, 1.0, vRim);
+      void main() {
+        float work = vState.x, spent = vState.y, flash = vState.z, own = vState.w;
+
+        // The wash fills the whole prop zone and stops at the tan road strip.
+        float plate = 1.0 - smoothstep(0.72, 0.865, vRim);
+        float rim = smoothstep(${(RIM_AT - 0.075).toFixed(3)}, ${RIM_AT.toFixed(3)}, vRim)
+                  * (1.0 - smoothstep(${RIM_AT.toFixed(3)}, ${(RIM_AT + 0.070).toFixed(3)}, vRim));
         float n = vn(vW * 0.62) * 0.62 + vn(vW * 1.9 + 7.3) * 0.38;
 
-        // Churned patches spread out of the noise field as the work level
-        // climbs, so a half-worked region looks blotchy rather than uniformly
-        // tinted — it reads as ground somebody has actually walked over.
-        // ('patch' is a reserved word in GLSL ES 3.00 — do not rename this back)
+        vec3 col = vec3(0.0);
+        float a = 0.0;
+
+        // ---- 1. tonal grouping: is this region worth your time right now?
+        if (own > 0.004) {
+          // sunlit lift, strongest out toward the rim so the hex reads as lit
+          // from its own border inward
+          float lift = 0.065 + 0.15 * smoothstep(0.15, 0.80, vRim);
+          over(col, a, uWarm, lift * own * plate);
+        } else if (spent < 0.5) {
+          // Deliberately restrained: fifteen of the eighteen regions are
+          // unowned at any moment, so anything heavier here drags the whole
+          // island out of its saturated tropical palette.
+          float mute = 0.25 * (1.0 - 0.35 * work);
+          over(col, a, uMute, mute * plate);
+          // and the border goes dark, which is what actually separates two
+          // neighbouring hexes at a glance
+          over(col, a, uMute, rim * 0.34 * (1.0 - 0.5 * work));
+        }
+
+        // ---- 2. churned patches spread out of the noise field as the work
+        // level climbs, so a half-worked region looks blotchy rather than
+        // uniformly tinted — ground somebody has actually walked over.
+        // ('patch' is a reserved word in GLSL ES 3.00 — do not rename to it)
         float churn = smoothstep(0.0, 0.30, work * 1.42 - n * 0.82);
-        float a = churn * (0.44 + 0.26 * work);
+        over(col, a, vWorn, churn * (0.54 + 0.30 * work) * plate);
 
-        vec3 col = vWorn;
+        // ---- 3. worked out: desaturated and dug over. Kept deliberately
+        // light on the grey — the hex still has to read as the FOREST it was,
+        // and a full ash plate buries the duff, the slash and the stumps under
+        // one flat slate tone.
+        if (spent > 0.004) {
+          over(col, a, vec3(0.58, 0.585, 0.60), spent * (0.20 + 0.10 * n) * plate);
+          float scar = smoothstep(0.52, 0.92, vn(vW * 1.05 + 21.0)) * spent;
+          over(col, a, vWorn * 0.52, scar * 0.42 * plate);
+        }
 
-        // Exhausted: the whole hex drops to ash. Mixing a neutral grey over the
-        // painted terrain is literal desaturation, which is what we want.
-        vec3 ash = vec3(0.60, 0.605, 0.625);
-        col = mix(col, ash, spent * 0.80);
-        a = mix(a, max(a, 0.50 + 0.12 * n), spent);
+        // ---- 4. the owner's rim, drawn last so nothing mutes it. This is the
+        // loudest thing on the board that is not a number token, and it is the
+        // one signal that survives a hex being completely covered in trees.
+        if (own > 0.004) {
+          float pulse = 0.86 + 0.14 * sin(uTime * 2.0);
+          over(col, a, uRim, rim * rim * (0.62 + 0.32 * own) * pulse);
+          // a soft inward bleed so the rim reads as light spilling into the
+          // region, not as a decal someone stuck on the edge
+          over(col, a, uRim, smoothstep(0.30, 0.775, vRim) * 0.17 * own * plate);
+          if (own > 0.75) {
+            float band2 = smoothstep(0.038, 0.0, abs(vRim - 0.640));
+            over(col, a, uRim, band2 * 0.46 * pulse);
+          }
+        }
 
-        // dug scars / drag marks, only once the place is spent
-        float scar = smoothstep(0.52, 0.92, vn(vW * 1.05 + 21.0)) * spent;
-        col = mix(col, vWorn * 0.48, scar * 0.65);
-        a += scar * 0.14;
-
-        a *= edge;
-
+        // ---- 5. the recovery beat
         if (flash > 0.004) {
-          float ringR = (1.0 - flash) * 1.30;
-          float band = smoothstep(0.30, 0.0, abs(vRim - ringR));
+          float ringR = (1.0 - flash) * 1.10;
+          float band = smoothstep(0.26, 0.0, abs(vRim - ringR));
           float glow = flash * flash;
-          col = mix(col, vLive, min(1.0, band + glow * 0.85));
-          a = max(a * (1.0 - glow), (band * 0.92 + glow * 0.50) * edge);
+          over(col, a, vLive, min(1.0, band * 0.92 + glow * 0.55) * plate);
         }
 
         if (a < 0.008) discard;
-        gl_FragColor = vec4(col, min(a, 0.88));
+        gl_FragColor = vec4(col, min(a, 0.90));
       }
     `
   });
@@ -279,65 +334,9 @@ function buildOverlay(list) {
   return { mesh, geo, mat, state, stateAttr, triangles: list.length * triPerTile };
 }
 
-
-/* ================================================================ dressing */
-/*
- * How each dressing kit answers to the harvest, per terrain. `fell` topples the
- * prop flat (a spruce lying over is exactly what slash looks like), `crop` cuts
- * it down to stubble, `flatten` mashes it into the ground, `wilt` only changes
- * colour. Nothing is hidden, nothing is removed, and every one of them is a
- * pure instance-matrix / instance-colour change that reverses on regrowth.
- */
-const ROLE = {
-  forest: {
-    conifer: 'fell', coniferShort: 'fell', broadleaf: 'fell',
-    undergrowth: 'flatten', grass: 'crop', flower: 'crop', rockSmall: 'wilt'
-  },
-  fields: {
-    wheat: 'crop', grass: 'crop', undergrowth: 'flatten',
-    broadleaf: 'wilt', rockSmall: 'wilt', flower: 'crop'
-  },
-  pasture: {
-    grass: 'crop', flower: 'crop', undergrowth: 'flatten',
-    coniferShort: 'wilt', broadleaf: 'wilt', rockSmall: 'wilt'
-  },
-  hills: {
-    grass: 'crop', undergrowth: 'flatten', coniferShort: 'fell',
-    rockSmall: 'wilt', boulder: 'wilt', flower: 'crop'
-  },
-  mountains: {
-    grass: 'crop', conifer: 'wilt', coniferShort: 'wilt',
-    rockSmall: 'wilt', boulder: 'wilt'
-  }
-};
-
-/* Vertical squash and horizontal pinch a `crop` leaves behind. */
-const CROP = {
-  wheat:  [0.90, 0.13],
-  grass:  [0.94, 0.38],
-  flower: [0.78, 0.22],
-  undergrowth: [0.90, 0.26]
-};
-
-/* What a felled prop shrinks to. A whole spruce laid flat keeps its canopy
-   pointing at the sun and reads BRIGHTER than it did standing — which is the
-   opposite of the intent. Cut down to half and gone brown it reads as brash. */
-const FELL = [0.56, 0.44];
-
-/* instanceColor multiplier at full response — straw, dust and dead wood. */
-const WORN_MUL = {
-  conifer: [0.40, 0.33, 0.23], coniferShort: [0.40, 0.33, 0.23],
-  broadleaf: [0.46, 0.38, 0.26], undergrowth: [0.62, 0.54, 0.38],
-  grass: [0.80, 0.68, 0.40], flower: [0.74, 0.66, 0.46],
-  wheat: [0.80, 0.70, 0.48], rockSmall: [0.76, 0.74, 0.72],
-  boulder: [0.76, 0.74, 0.72]
-};
-
-const RATE = { fell: 2.3, crop: 1.9, flatten: 2.1, wilt: 1.5 };
-
 /* ================================================================= factory */
 
-export function buildRegions(group, dressing) {
+export function buildRegions(group, dressing, stumps) {
   /* ------------------------------------------------------- region records */
   const regions = [];
   const byTile = new Map();
@@ -349,11 +348,12 @@ export function buildRegions(group, dressing) {
       // Clear of the tallest trees, the mountain skyline and — the one that
       // actually bit — the hero's own carry columns, which stack to 5.3.
       y: heightAt(t.x, t.z) + (t.terrain === 'mountains' ? 10.6 : 9.9),
-      work: 0, spent: 0, flash: 0,
+      work: 0, spent: 0, flash: 0, own: 0, ownWant: 0,
+      mult: 1, blocked: false,
       fraction: 1, seconds: 0, progress: 1, exhausted: false,
       wasExhausted: false, alpha: 0, bob: (t.id * 0.7) % TAU,
       accent: RES_COLOR[t.resource] || 0xffc93c,
-      vStart: 0, vCount: 0, sweep: 0,
+      vStart: 0, vCount: 0,
       lvl: new Float32Array(list.length)
     };
     regions.push(rec);
@@ -367,112 +367,23 @@ export function buildRegions(group, dressing) {
   const marker = buildMarkers(regions, atlas);
   group.add(marker.mesh);
 
-  /* Two accents per badge: the resource colour while the region still has
-     stock, and a hot ember while it is counting itself back in. */
+  /* The human's colour drives both the rim on the ground and the badge. */
   const _c = new THREE.Color();
+  // The player's LIGHT variant, not the base hex: the base blue is a mid tone
+  // and a mid tone laid over grass and clay at 60% alpha reads as a smudge.
+  // #7fb2f0 holds against every terrain on the board and against the sea.
+  const MINE = (PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#7fb2f0';
+  ground.mat.uniforms.uRim.value.set(MINE).convertSRGBToLinear();
+  marker.mat.uniforms.uOwn.value.copy(ground.mat.uniforms.uRim.value);
+
   const EMBER = new THREE.Color().setHex(0xff9c2a, THREE.SRGBColorSpace);
-  regions.forEach((r, i) => {
+  regions.forEach((r) => {
     _c.setHex(r.accent, THREE.SRGBColorSpace);
     r.rgb = [_c.r, _c.g, _c.b];
   });
 
-  /* ------------------------------------------------------------ dressing */
-  const items = [];
-  const byNode = new Map();
-  const kitMeshes = [];
-  const kitDirty = new Set();
-
-  if (dressing) {
-    for (const kit in dressing) {
-      const { mesh, list } = dressing[kit];
-      if (!mesh || !list || !mesh.instanceColor) continue;
-      let used = false;
-      const base = mesh.instanceColor.array;
-      for (let i = 0; i < list.length; i++) {
-        const o = list[i];
-        const reg = byTile.get(o.tile);
-        if (!reg) continue;
-        const role = (ROLE[reg.tile.terrain] || {})[kit];
-        if (!role) continue;
-
-        // Every prop belongs to the gather node it stands closest to, so the
-        // region empties around the node you are actually working.
-        let owner = null, bd = 1e9;
-        for (const nd of reg.nodes) {
-          const d = (nd.x - o.x) * (nd.x - o.x) + (nd.z - o.z) * (nd.z - o.z);
-          if (d < bd) { bd = d; owner = nd; }
-        }
-        if (!owner) continue;
-
-        const hash = ((o.x * 71.3 + o.z * 137.9) * 1000) | 0;
-        const r01 = ((hash ^ (hash >>> 11)) >>> 0) % 997 / 997;
-        const it = {
-          kit, mesh, i, role, owner, reg,
-          x: o.x, y: o.y, z: o.z, ry: o.ry, s: o.s, sy: o.sy,
-          rx: o.rx || 0, rz: o.rz || 0,
-          br: base[i * 3], bg: base[i * 3 + 1], bb: base[i * 3 + 2],
-          cur: 0, tgt: 0, wait: 0,
-          // discrete props come down one node-cycle at a time; continuous ones
-          // (grass, wheat) just follow the level
-          step: (role === 'fell' || role === 'flatten')
-            ? (Math.floor(r01 * NODE_CAPACITY) + 1) / NODE_CAPACITY : 0,
-          lean: (r01 < 0.5 ? -1 : 1) * (1.24 + r01 * 0.42),
-          spin: (r01 - 0.5) * 0.9,
-          d: Math.hypot(o.x - reg.tile.x, o.z - reg.tile.z) / APOTHEM
-        };
-        items.push(it);
-        let arr = byNode.get(owner.id);
-        if (!arr) byNode.set(owner.id, arr = []);
-        arr.push(it);
-        used = true;
-      }
-      if (used) {
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        kitMeshes.push(mesh);
-      }
-    }
-  }
-
-  const active = new Set();
-
-  function writeItem(it) {
-    const c = it.cur;
-    let s = it.s, sy = it.sy, rz = it.rz, ry = it.ry, y = it.y;
-    if (c > 0.0005) {
-      if (it.role === 'fell') {
-        rz += it.lean * c;
-        ry += it.spin * c;
-        y -= 0.10 * c;
-        s = it.s * (1 + (FELL[0] - 1) * c);
-        sy = it.sy * (1 + (FELL[1] - 1) * c);
-      } else if (it.role === 'crop' || it.role === 'flatten') {
-        const k = CROP[it.kit] || [0.9, 0.3];
-        s = it.s * (1 + (k[0] - 1) * c);
-        sy = it.sy * (1 + (k[1] - 1) * c);
-        if (it.role === 'flatten') rz += it.lean * 0.35 * c;
-      }
-    }
-    setInstance(it.mesh, it.i, it.x, y, it.z, ry, Math.max(s, 1e-4), Math.max(sy, 1e-4), it.rx, rz);
-
-    const w = WORN_MUL[it.kit] || [0.8, 0.75, 0.6];
-    const arr = it.mesh.instanceColor.array;
-    arr[it.i * 3] = it.br * (1 + (w[0] - 1) * c);
-    arr[it.i * 3 + 1] = it.bg * (1 + (w[1] - 1) * c);
-    arr[it.i * 3 + 2] = it.bb * (1 + (w[2] - 1) * c);
-    kitDirty.add(it.mesh);
-  }
-
-  function retarget(node, level, sweep) {
-    const arr = byNode.get(node.id);
-    if (!arr) return;
-    for (const it of arr) {
-      const want = it.step > 0 ? (level >= it.step - 1e-4 ? 1 : 0) : level;
-      if (Math.abs(want - it.tgt) < 1e-3) continue;
-      it.tgt = want;
-      it.wait = sweep ? it.d * 0.62 + (it.step * 0.11) : 0;
-      active.add(it);
-    }
-  }
+  /* --------------------------------------------------------------- stand */
+  const stand = buildStand(group, dressing, stumps);
 
   /* -------------------------------------------------------- recovery beat */
 
@@ -483,12 +394,6 @@ export function buildRegions(group, dressing) {
     if (!w) return;
     try {
       const t = rec.tile;
-      if (w.effects && w.effects.ring) {
-        for (let k = 0; k < rec.nodes.length; k += 2) {
-          const n = rec.nodes[k];
-          w.effects.ring(n.x, n.z, n.resource);
-        }
-      }
       if (w.effects && w.effects.burst) w.effects.burst(t.x, t.z, t.resource);
       const p = I.state && I.state.players && I.state.players[0];
       const d = p ? Math.hypot(p.x - t.x, p.z - t.z) : 999;
@@ -520,11 +425,14 @@ export function buildRegions(group, dressing) {
 
   let clock = 0;
   let poll = 0;
-  const lastLevel = new Map();
 
   function sample() {
     const I = match();
-    const now = I && I.state ? I.state.time : clock;
+    const state = I && I.state;
+    const now = state ? state.time : clock;
+    const playing = !!state && state.phase === 'play';
+    const robber = state ? state.robberTile : -1;
+    const robberMine = state ? state.robberOwner === 0 : false;
 
     for (const rec of regions) {
       const rem = tileRemaining(rec.tile.id);
@@ -533,6 +441,16 @@ export function buildRegions(group, dressing) {
       rec.exhausted = isTileExhausted(rec.tile.id);
       rec.seconds = rc.secondsLeft;
       rec.progress = rc.progress;
+      rec.blocked = playing && robber === rec.tile.id && !robberMine;
+
+      // Ownership: settlement = x2, city = x3. Read-only, straight off the
+      // frozen rule so the picture can never disagree with the payout.
+      let mult = 1;
+      if (state && state.buildings) {
+        try { mult = ownershipMultiplier(state, 0, rec.tile.id); } catch (e) { mult = 1; }
+      }
+      rec.mult = mult;
+      rec.ownWant = (playing && !rec.blocked && mult > 1) ? (mult >= 3 ? 1 : 0.62) : 0;
 
       if (rec.exhausted && !rec.wasExhausted) {
         rec.wasExhausted = true;
@@ -540,16 +458,7 @@ export function buildRegions(group, dressing) {
       } else if (!rec.exhausted && rec.wasExhausted) {
         rec.wasExhausted = false;
         rec.flash = 1;
-        rec.sweep = clock;
         celebrate(rec);
-      }
-
-      const sweeping = clock - rec.sweep < 2.4;
-      for (const n of rec.nodes) {
-        const level = 1 - clamp01(Math.max(0, n.remaining) / NODE_CAPACITY);
-        if (lastLevel.get(n.id) === level) continue;
-        lastLevel.set(n.id, level);
-        retarget(n, level, sweeping && level === 0);
       }
     }
   }
@@ -560,28 +469,15 @@ export function buildRegions(group, dressing) {
     marker.mat.uniforms.uTime.value = clock;
 
     if ((poll -= dt) <= 0) { poll = 0.12; sample(); }
-
-    /* ---- dressing --------------------------------------------------- */
-    if (active.size) {
-      for (const it of Array.from(active)) {
-        if (it.wait > 0) { it.wait -= dt; continue; }
-        const k = Math.min(1, dt * (RATE[it.role] || 1.6));
-        it.cur += (it.tgt - it.cur) * k;
-        if (Math.abs(it.tgt - it.cur) < 0.004) { it.cur = it.tgt; active.delete(it); }
-        writeItem(it);
-      }
-      for (const m of kitDirty) {
-        m.instanceMatrix.needsUpdate = true;
-        if (m.instanceColor) m.instanceColor.needsUpdate = true;
-      }
-      kitDirty.clear();
-    }
+    stand.update(dt);
 
     /* ---- ground + markers -------------------------------------------- */
     const st = ground.state;
     const md = marker.aData.array;
     const mp = marker.aPos.array;
     const ms = marker.aSize.array;
+    const mo = marker.aOwn.array;
+    const mc = marker.aCol.array;
     let groundDirty = false;
 
     for (let i = 0; i < regions.length; i++) {
@@ -590,17 +486,20 @@ export function buildRegions(group, dressing) {
       // How worked-over the region looks: the standing stock drives it, and an
       // exhausted region is pinned at fully worked.
       const wantWork = r.exhausted ? 1 : clamp01(1 - r.fraction);
-      const wantSpent = r.exhausted ? 1 : 0;
+      const wantSpent = r.exhausted || r.blocked ? 1 : 0;
       const kw = Math.min(1, dt * (wantWork > r.work ? 3.0 : 2.2));
       r.work += (wantWork - r.work) * kw;
       r.spent += (wantSpent - r.spent) * Math.min(1, dt * (wantSpent ? 3.4 : 4.2));
+      r.own += (r.ownWant - r.own) * Math.min(1, dt * 3.2);
       if (r.flash > 0) r.flash = Math.max(0, r.flash - dt * 0.52);
 
       // Per-node churn levels, smoothed, then splashed onto the vertices that
       // node owns. `r.work` acts as a floor so the hex still reads as a single
       // worked region rather than seven unrelated puddles.
-      let moved = Math.abs(st[r.vStart * 3 + 1] - r.spent) > 0.0015
-        || Math.abs(st[r.vStart * 3 + 2] - r.flash) > 0.0015;
+      const o0 = r.vStart * 4;
+      let moved = Math.abs(st[o0 + 1] - r.spent) > 0.0015
+        || Math.abs(st[o0 + 2] - r.flash) > 0.0015
+        || Math.abs(st[o0 + 3] - r.own) > 0.0015;
       const floor = r.work * 0.42;
       for (let k = 0; k < r.nodes.length; k++) {
         const want = 1 - clamp01(Math.max(0, r.nodes[k].remaining) / NODE_CAPACITY);
@@ -610,29 +509,37 @@ export function buildRegions(group, dressing) {
       }
       if (moved) {
         for (let v = 0; v < r.vCount; v++) {
-          const o = (r.vStart + v) * 3;
+          const o = (r.vStart + v) * 4;
           st[o] = Math.max(floor, r.lvl[r.vn[v]]);
           st[o + 1] = r.spent;
           st[o + 2] = r.flash;
+          st[o + 3] = r.own;
         }
         groundDirty = true;
       }
 
-      /* ---- the marker ---- */
-      // Untouched regions stay silent; the board should only carry a badge
-      // where there is something to say.
-      // Quad size, not disc size: the disc is 0.66 of the quad and the rest is
-      // the pointer tail.
-      let wantA = 0, size = 4.4, fill = r.fraction, cell = 22, spent = 0;
+      /* ---- the badge ----
+       * Silent unless it has something to say. This is the single biggest cut
+       * to on-screen clutter: nineteen permanent floating tabs became two or
+       * three. */
+      let wantA = 0, size = 5.0, fill = r.fraction, cell = GLYPH.sprout, spent = 0;
+      let accent = r.rgb, own = 0;
       if (r.exhausted) {
         wantA = 1; size = 6.8; spent = 1;
         fill = clamp01(r.progress);
         cell = Math.max(0, Math.min(20, Math.ceil(r.seconds - 0.001)));
-      } else if (r.fraction < 0.999) {
-        wantA = 0.9; size = 4.6;
-      } else if (r.flash > 0.01) {
-        wantA = r.flash;
+        accent = [EMBER.r, EMBER.g, EMBER.b];
+      } else if (r.blocked) {
+        wantA = 1; size = 6.0; spent = 1; fill = 0;
+        cell = GLYPH.blocked;
+        accent = [EMBER.r, EMBER.g, EMBER.b];
+      } else if (r.mult > 1) {
+        wantA = 1; size = 5.4 + (r.mult >= 3 ? 0.5 : 0);
+        cell = r.mult >= 3 ? GLYPH.mult3 : GLYPH.mult2;
+        own = r.own;
       }
+      // A region that has simply grown back says so with the green wave on the
+      // ground and a toast. It does not need a badge as well.
       r.alpha += (wantA - r.alpha) * Math.min(1, dt * (wantA > r.alpha ? 7 : 3.4));
 
       r.bob += dt * 1.5;
@@ -646,12 +553,10 @@ export function buildRegions(group, dressing) {
       md[i * 4 + 1] = r.alpha;
       md[i * 4 + 2] = spent;
       md[i * 4 + 3] = cell;
-
-      const mc = marker.aCol.array;
-      const c = spent ? EMBER : null;
-      mc[i * 3] = c ? c.r : r.rgb[0];
-      mc[i * 3 + 1] = c ? c.g : r.rgb[1];
-      mc[i * 3 + 2] = c ? c.b : r.rgb[2];
+      mo[i] = own;
+      mc[i * 3] = accent[0];
+      mc[i * 3 + 1] = accent[1];
+      mc[i * 3 + 2] = accent[2];
     }
 
     if (groundDirty) ground.stateAttr.needsUpdate = true;
@@ -659,27 +564,18 @@ export function buildRegions(group, dressing) {
     marker.aPos.needsUpdate = true;
     marker.aSize.needsUpdate = true;
     marker.aCol.needsUpdate = true;
+    marker.aOwn.needsUpdate = true;
   }
 
   return {
     update,
     regions,
+    stand,
     drawCalls: 2,
     triangles: ground.triangles + marker.triangles,
 
-    /** Debug / capture hook: how much dressing has answered the harvest. */
-    debug(tileId) {
-      let total = 0, moved = 0, mid = 0;
-      const roles = {};
-      for (const it of items) {
-        if (tileId !== undefined && it.reg.tile.id !== tileId) continue;
-        total++;
-        roles[it.role] = (roles[it.role] || 0) + 1;
-        if (it.cur > 0.8) moved++;
-        else if (it.cur > 0.05) mid++;
-      }
-      return { total, moved, mid, active: active.size, roles };
-    },
+    /** Debug / capture hook: how much of the stand has answered the harvest. */
+    debug(tileId) { return stand.debug(tileId); },
 
     /** Debug / capture hook: what the badge is currently saying. */
     readout() {
@@ -687,6 +583,7 @@ export function buildRegions(group, dressing) {
         tile: r.tile.id, terrain: r.tile.terrain,
         fraction: +r.fraction.toFixed(2),
         work: +r.work.toFixed(2), spent: +r.spent.toFixed(2),
+        own: +r.own.toFixed(2), mult: r.mult, blocked: r.blocked,
         exhausted: r.exhausted, seconds: +r.seconds.toFixed(1)
       }));
     },
@@ -694,6 +591,7 @@ export function buildRegions(group, dressing) {
     dispose() {
       ground.geo.dispose(); ground.mat.dispose();
       marker.geo.dispose(); marker.quad.dispose(); marker.mat.dispose();
+      stand.dispose();
       if (atlas) atlas.dispose();
     }
   };

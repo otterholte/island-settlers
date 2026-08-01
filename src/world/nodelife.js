@@ -1,33 +1,35 @@
 /**
  * Island Settlers — the life of a gather node.
  *
- *   buildNodeLife(group, mats) -> {
- *     meshes, triangles, drawCalls,
+ *   buildNodeLife(group, mats, opts) -> {
+ *     meshes, stumps, triangles, drawCalls,
  *     update(dt), playHarvest(id), setDepleted(id, on), nodeAnchor(id), dispose()
  *   }
  *
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
- * A node used to be one object that shrank to nothing the instant its third and
- * final cycle landed. From the play camera that read as "something blinked", so
- * the player could not tell they were harvesting at all.
- *
- * A node is now THREE sub-units — three trees, three sheep, three sheaves,
- * three diggings, three ore chunks — one per `NODE_CAPACITY` cycle. Every
- * completed cycle consumes exactly one of them, with a real per-resource
- * animation, and leaves a per-resource residue behind:
+ * A region is a STAND, not seven objects with gaps between them. `board/nodes.js`
+ * gives a tile 7 nodes x NODE_CAPACITY 3 = 21 harvest events and recovers the
+ * whole region together. This file spends those 21 events on the visible stand:
  *
  *   tree     shakes, TOPPLES about its base with a dust puff, leaves a stump
- *   sheep    startles, bolts away from the settler and is gone from the field
+ *   sheep    startles, bolts away from the settler and is gone from the flock
  *   wheat    is cut down in stages, leaving stubble and one bound sheaf
  *   claypit  sinks, its spoil heap shrinking, leaving a dug scar
  *   orerock  cracks, breaks apart and the crystal glint dies
  *
- * Regrowth reverses it: saplings pop and grow, a new sheep trots in from the
- * field edge, sheaves spring back. All of it rides the SAME InstancedMeshes the
- * nodes always used — three times the instances, a third of the geometry each,
- * and not one extra draw call.
+ * WHICH one falls is the point. The economy is per-node, but the VISUAL is per
+ * TILE and per PLAYER: when a cycle lands we fell whatever is standing nearest
+ * the settler who swung, not whatever happens to belong to the abstract node.
+ * Walk through a forest and it clears behind you; the tile's 21 sub-units come
+ * down wherever your feet were.
+ *
+ * Regrowth reverses it, sweeping outward from the middle of the hex: saplings
+ * pop and grow, new sheep trot in from the field edge, sheaves spring back.
+ * All of it rides the SAME InstancedMeshes — no extra draw call, and the stump
+ * mesh carries spare instances for `stand.js` so the decorative timber can
+ * leave stumps too without a second batch.
  *
  * Owner: World agent.
  */
@@ -35,7 +37,7 @@
 import * as THREE from 'three';
 import { NODE_CAPACITY } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
-import { nodes, mulberry32, isTileExhausted } from '../board/nodes.js';
+import { nodes, nodesByTile, mulberry32 } from '../board/nodes.js';
 import { heightAt, hexFrac, APOTHEM } from './terrain.js';
 import { instanced, setInstance, triCount } from './geo.js';
 import * as K from './propkits.js';
@@ -54,14 +56,14 @@ const KIT = {
 };
 
 /*
- * Node tints deliberately run LIGHTER and warmer than the dressing kits they
- * stand among. A forest tile carries thirty-six decorative spruces in the deep
- * 0x1a4524 needle green; the seven harvestable copses on it are sunlit, so the
- * eye separates "I can chop that" from "that is scenery" before the ground ring
- * even registers.
+ * Node tints run a shade lighter and warmer than the dressing kits they stand
+ * among, so a copse reads as the same species of thing but sunlit. The old
+ * separation was much wider because a ground ring had to be justified; with the
+ * rings gone the stand wants to read as ONE mass, so these sit close to the
+ * dressing and let silhouette do the work.
  */
 const TINTS = {
-  tree:    [[1.00, 1.02, 0.94], [1.10, 1.00, 0.82], [0.94, 1.06, 1.00], [1.14, 1.04, 0.88]],
+  tree:    [[1.00, 1.02, 0.96], [1.07, 1.00, 0.86], [0.95, 1.04, 0.99], [1.10, 1.03, 0.90]],
   wheat:   [[1.00, 1.00, 1.00], [1.08, 0.99, 0.82], [0.90, 0.88, 0.76]],
   sheep:   [[1.00, 1.00, 1.00], [0.95, 0.94, 0.92], [1.03, 1.02, 0.99]],
   claypit: [[1.00, 1.00, 1.00], [1.08, 0.94, 0.86], [0.90, 0.86, 0.84]],
@@ -77,45 +79,50 @@ const SCALE   = { tree: [1.32, 1.72], wheat: [0.98, 1.24], sheep: [0.86, 1.08],
                   claypit: [0.94, 1.20], orerock: [0.92, 1.22] };
 const SINK    = { tree: 0.10, wheat: 0.05, sheep: 0.03, claypit: 0.05, orerock: 0.12 };
 
-/* Seconds a consume / regrow animation runs for. */
-const DIE  = { tree: 1.55, wheat: 0.80, sheep: 1.45, claypit: 0.85, orerock: 0.90 };
+/* Seconds a consume / regrow animation runs for. Felling is deliberately quick:
+   you should feel the tree go the moment you walk into it. */
+const DIE  = { tree: 1.05, wheat: 0.70, sheep: 1.30, claypit: 0.75, orerock: 0.80 };
 const GROW = { tree: 1.25, wheat: 0.95, sheep: 1.75, claypit: 0.85, orerock: 0.85 };
 
 /* What is left standing once a sub-unit has been worked out. Trees and sheep
-   leave nothing (the stump mesh covers the tree); the rest leave a scar. */
-/* A clear-cut is not just stumps: it is stumps AND the slash left lying beside
-   them. One tree in every three stays down as a sawn trunk on the ground rather
-   than fading out, so a worked-out forest tile reads as timber operation rather
-   than as a lawn with posts in it. */
-const LOG = { s: 0.62, sy: 0.44, dy: -0.18 };
+   leave nothing standing — the stump mesh covers the tree — but one felled tree
+   in three stays down as SAWN SLASH rather than fading out, so a clear-cut
+   reads as a timber operation and not as a lawn with posts in it. The log is
+   kept small and re-tinted to bark brown; a full canopy lying on its side is
+   brighter than the tree was standing and turns the hex into green litter. */
+const LOG = { s: 0.30, sy: 0.17, dy: -0.16 };
+/* instanceColor multiplier a felled trunk lands on. */
+const LOG_RGB = [0.72, 0.55, 0.36];
 
 const RESIDUE = {
   tree:    { s: 0.0001, sy: 0.0001, dy: 0 },
   sheep:   { s: 0.0001, sy: 0.0001, dy: 0 },
-  wheat:   { s: 0.94,   sy: 0.13,   dy: 0 },
+  wheat:   { s: 1.02,   sy: 0.26,   dy: 0 },
   claypit: { s: 1.14,   sy: 0.17,   dy: -0.05 },
   orerock: { s: 0.48,   sy: 0.42,   dy: -0.03 }
 };
 
 /* Read-only peek at the running match, used for the two things a prop system
-   cannot know on its own: where the settlers are (sheep flee from them) and
-   which effects pool to fire a dust puff into. Always optional. */
+   cannot know on its own: where the settlers are (they are what the stand
+   answers to) and which effects pool to fire a dust puff into. Always optional. */
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
   return (g && g.__ISLAND__) || null;
 }
 
-export function buildNodeLife(group, mats) {
+export function buildNodeLife(group, mats, opts = {}) {
   const byKind = { tree: [], wheat: [], sheep: [], claypit: [], orerock: [] };
   for (const n of nodes) if (byKind[n.kind]) byKind[n.kind].push(n);
 
   const mesh = {};
+  const tintAttr = {};
   const geos = {};
   const slots = [];                       // every sub-unit, flat
   const byNode = new Map();               // node id -> slot[]
   const sheepSlots = [];
   const active = new Set();
   const dirty = new Set();
+  const tintDirty = new Set();
   let triangles = 0;
   let drawCalls = 0;
 
@@ -143,7 +150,7 @@ export function buildNodeLife(group, mats) {
     drawCalls++;
 
     const table = TINTS[kind];
-    const tintArr = new Float32Array(count * 3);
+    const tint = new Float32Array(count * 3);
     const spread = SPREAD[kind];
     const sc = SCALE[kind];
 
@@ -161,6 +168,7 @@ export function buildNodeLife(group, mats) {
         let z = n.z + Math.sin(a) * r;
         if (hexFrac(x - tile.x, z - tile.z) > 0.76) { x = n.x; z = n.z; }
         const s = (sc[0] + rng() * (sc[1] - sc[0])) * (0.82 + (n.scale - 0.85) * 0.75);
+        const v = table[variantOf(x, z, table.length)];
         const sl = {
           node: n, kind, i, k,
           hx: x, hz: z,                    // home
@@ -168,6 +176,8 @@ export function buildNodeLife(group, mats) {
           ry: rng() * TAU, s,
           alive: true, phase: 0, t: 0,     // phase 0 idle, 1 dying, 2 growing
           punch: 0, fallA: rng() * TAU, thudded: false,
+          tint: v, worn: 0,
+          tdist: tile ? Math.hypot(x - tile.x, z - tile.z) / APOTHEM : 0,
           rng
         };
         if (kind === 'sheep') {
@@ -178,36 +188,51 @@ export function buildNodeLife(group, mats) {
         slots.push(sl);
         mine.push(sl);
         if (kind === 'sheep') sheepSlots.push(sl);
-        const v = table[variantOf(x, z, table.length)];
-        tintArr[i * 3] = v[0]; tintArr[i * 3 + 1] = v[1]; tintArr[i * 3 + 2] = v[2];
+        tint[i * 3] = v[0]; tint[i * 3 + 1] = v[1]; tint[i * 3 + 2] = v[2];
         writeSlot(sl);
       }
       byNode.set(n.id, mine);
     });
 
-    m.instanceColor = new THREE.InstancedBufferAttribute(tintArr, 3);
+    m.instanceColor = new THREE.InstancedBufferAttribute(tint, 3);
+    m.instanceColor.setUsage(THREE.DynamicDrawUsage);
     m.instanceColor.needsUpdate = true;
     m.instanceMatrix.needsUpdate = true;
+    tintAttr[kind] = m.instanceColor;
   }
 
-  /* Stumps: one per tree sub-unit, hidden until that tree comes down. */
+  /* Stumps: one per tree sub-unit, plus however many spares `stand.js` asked
+     for so the decorative timber can leave stumps on the SAME batch. Sharing
+     the mesh is the whole trick — a forest goes from 57 standing trees to 57
+     stumps for zero extra draw calls. */
   let stumpMesh = null;
+  let stumpBase = 0;
+  const stumpSpare = Math.max(0, opts.extraStumps | 0);
   {
     const treeSlots = slots.filter(s => s.kind === 'tree');
-    if (treeSlots.length) {
+    const total = treeSlots.length + stumpSpare;
+    if (total) {
       const geo = K.stump();
       geos.stump = geo;
-      stumpMesh = instanced(geo, mats.solid, treeSlots.length, true, true);
+      // No shadow pass. There are 224 of these, they are 0.4 units tall, and
+      // for most of a match most of them are scaled to nothing — paying a
+      // second full pass to cast a two-pixel shadow off a stump is the worst
+      // triangle in the frame.
+      stumpMesh = instanced(geo, mats.solid, total, false, true);
       stumpMesh.name = 'node-stump';
       stumpMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       group.add(stumpMesh);
-      triangles += triCount(geo) * treeSlots.length;
+      triangles += triCount(geo) * total;
       drawCalls++;
       treeSlots.forEach((sl, i) => {
         sl.stump = i;
         sl.stumpS = 0;
         setInstance(stumpMesh, i, sl.x, sl.y, sl.z, sl.ry + 0.7, 0.0001, 0.0001);
       });
+      stumpBase = treeSlots.length;
+      for (let i = stumpBase; i < total; i++) {
+        setInstance(stumpMesh, i, 0, -60, 0, 0, 0.0001, 0.0001);
+      }
       stumpMesh.instanceMatrix.needsUpdate = true;
     }
   }
@@ -220,6 +245,18 @@ export function buildNodeLife(group, mats) {
     setInstance(stumpMesh, sl.stump, sl.hx, heightAt(sl.hx, sl.hz) - 0.06,
       sl.hz, sl.ry + 0.7, g, g);
     dirty.add('stump');
+  }
+
+  /** Bark-brown a felled trunk as it comes down; back to green as it regrows. */
+  function writeTint(sl) {
+    const a = tintAttr[sl.kind];
+    if (!a) return;
+    const w = sl.worn;
+    const b = sl.tint;
+    a.array[sl.i * 3] = b[0] * (1 + (LOG_RGB[0] - 1) * w);
+    a.array[sl.i * 3 + 1] = b[1] * (1 + (LOG_RGB[1] - 1) * w);
+    a.array[sl.i * 3 + 2] = b[2] * (1 + (LOG_RGB[2] - 1) * w);
+    tintDirty.add(sl.kind);
   }
 
   /**
@@ -243,13 +280,13 @@ export function buildNodeLife(group, mats) {
       const u = clamp01(sl.t / DIE[sl.kind]);
       if (sl.kind === 'tree') {
         // wind up, then accelerate over like a real fall, land, settle, sink
-        const fall = clamp01((u - 0.12) / 0.46);
+        const fall = clamp01((u - 0.10) / 0.44);
         const ang = 1.62 * (fall * fall * (1.18 - 0.18 * fall));
-        const kick = u < 0.12 ? -0.10 * Math.sin((u / 0.12) * Math.PI) : 0;
-        const bounce = u > 0.58 ? Math.sin((u - 0.58) * 26) * 0.055 * (1 - clamp01((u - 0.58) / 0.22)) : 0;
+        const kick = u < 0.10 ? -0.10 * Math.sin((u / 0.10) * Math.PI) : 0;
+        const bounce = u > 0.56 ? Math.sin((u - 0.56) * 26) * 0.055 * (1 - clamp01((u - 0.56) / 0.22)) : 0;
         ry = sl.ry + sl.fallA + shake * 0.4;
         rz = ang + kick + bounce;
-        const gone = clamp01((u - 0.78) / 0.22);
+        const gone = clamp01((u - 0.70) / 0.30);
         if (sl.k === 0) {
           // this one is left lying where it fell — sawn slash, not vapour
           s = sl.s * (1 - gone * (1 - LOG.s));
@@ -260,11 +297,12 @@ export function buildNodeLife(group, mats) {
           sy = s;
           y = sl.y - gone * 0.55;
         }
+        if (sl.worn !== gone) { sl.worn = gone; writeTint(sl); }
       } else if (sl.kind === 'sheep') {
         const hop = u < 0.16 ? Math.sin((u / 0.16) * Math.PI) : 0;
         y = sl.y + hop * 0.42;
         ry = sl.ry + shake;
-        const gone = clamp01((u - 0.66) / 0.34);
+        const gone = clamp01((u - 0.60) / 0.40);
         s = sl.s * (1 - gone * gone);
         sy = s * (1 + hop * 0.10);
         rx = 0; rz = -0.06 - hop * 0.30;
@@ -285,7 +323,7 @@ export function buildNodeLife(group, mats) {
         ry = sl.ry + shake * 1.4;
       } else {
         // ore: shudder hard, crack apart, glint dies with the shrink
-        const crack = u < 0.24 ? 0 : easeOut((u - 0.24) / 0.76);
+        const crack = u < 0.22 ? 0 : easeOut((u - 0.22) / 0.78);
         s = sl.s * (1 + (res.s - 1) * crack);
         sy = sl.s * (1 + (res.sy - 1) * crack);
         y = sl.y + res.dy * crack;
@@ -296,6 +334,7 @@ export function buildNodeLife(group, mats) {
       /* -------------------------------------------------------- growing */
       const u = clamp01(sl.t / GROW[sl.kind]);
       const pop = easeOut(u) * (1 + Math.sin(u * Math.PI) * 0.16);
+      if (sl.worn > 0) { sl.worn = Math.max(0, 1 - u * 2); writeTint(sl); }
       if (sl.kind === 'sheep') {
         // a new sheep trots in from off the node and settles into the flock
         const walk = easeOut(clamp01((u - 0.10) / 0.90));
@@ -374,7 +413,7 @@ export function buildNodeLife(group, mats) {
       const d = Math.hypot(p.x - sl.x, p.z - sl.z);
       if (d > 18) return;                       // a rival felling one, far away
       const near = 1 - d / 18;
-      if (w.camera && w.camera.shake) w.camera.shake(0.18 * near * near);
+      if (w.camera && w.camera.shake) w.camera.shake(0.16 * near * near);
       // Three trees can come down inside a second when a whole copse is worked
       // out; one thud is a landing, three at once is a landslide.
       if (w.audio && w.audio.sfx && clock - lastThud > 0.4) {
@@ -414,49 +453,106 @@ export function buildNodeLife(group, mats) {
     active.add(sl);
   }
 
-  /* ------------------------------------------------------- regrowth sweep
+  /* =============================================================== the stand
    *
-   * Recovery is scoped to the whole region, so the whole region comes back in
-   * the same instant. Popping 21 trees on one frame is a glitch; letting the
-   * life run outward from the middle of the hex over half a second is a
-   * moment. Each node carries its own delay, measured from the tile centre. */
-  const nodeSweep = new Map();
-  for (const n of nodes) {
-    const t = tiles[n.tile];
-    if (!t) continue;
-    nodeSweep.set(n.id, Math.hypot(n.x - t.x, n.z - t.z) / APOTHEM * 0.78);
-  }
-  const wasSpent = new Map();
-  const sweepAt = new Map();
-
-  function sweepDelay(n) {
-    const now = isTileExhausted(n.tile);
-    const was = wasSpent.get(n.tile);
-    if (was && !now) sweepAt.set(n.tile, clock);
-    if (was !== now) wasSpent.set(n.tile, now);
-    const at = sweepAt.get(n.tile);
-    return at !== undefined && clock - at < 2.0 ? (nodeSweep.get(n.id) || 0) : 0;
+   * Every sub-unit on a tile, pooled. The economy still counts per node; the
+   * PICTURE counts per region, and picks which unit dies by where the settler
+   * is standing. */
+  const tileSlots = new Map();
+  for (const sl of slots) {
+    let a = tileSlots.get(sl.node.tile);
+    if (!a) tileSlots.set(sl.node.tile, a = []);
+    a.push(sl);
   }
 
-  /** Bring one node's three sub-units in line with `node.remaining`. */
-  function reconcile(n, instant) {
-    const list = byNode.get(n.id);
+  /** How many sub-units this region should still have standing. */
+  function tileWant(tileId) {
+    const list = nodesByTile.get(tileId) || [];
+    let w = 0;
+    for (const n of list) w += Math.max(0, Math.min(SUB, n.remaining | 0));
+    return w;
+  }
+
+  function aliveOn(list) {
+    let a = 0;
+    for (const sl of list) if (sl.alive) a++;
+    return a;
+  }
+
+  /** Where the felling is happening: the settler working this region. */
+  const _o = { x: 0, z: 0 };
+  function harvestOrigin(tileId) {
+    const t = tiles[tileId];
+    _o.x = t ? t.x : 0; _o.z = t ? t.z : 0;
+    const I = match();
+    const ps = I && I.state && I.state.players;
+    if (!ps) return _o;
+    let best = null, bd = 1e9;
+    for (const p of ps) {
+      if (p.gatherNode && p.gatherNode.tile === tileId) { _o.x = p.x; _o.z = p.z; return _o; }
+      const d = (p.x - _o.x) * (p.x - _o.x) + (p.z - _o.z) * (p.z - _o.z);
+      if (d < bd) { bd = d; best = p; }
+    }
+    const R = APOTHEM * 1.55;
+    if (best && bd < R * R) { _o.x = best.x; _o.z = best.z; }
+    return _o;
+  }
+
+  const scratch = [];
+
+  /** Bring a whole region's stand in line with what its nodes still hold. */
+  function reconcileTile(tileId, instant) {
+    const list = tileSlots.get(tileId);
     if (!list) return;
-    const left = Math.max(0, Math.min(SUB, n.remaining | 0));
-    const sweep = instant ? 0 : sweepDelay(n);
-    for (let k = 0; k < list.length; k++) {
-      const sl = list[k];
-      // sub-units are consumed front to back, so the last `left` survive
-      const shouldLive = k >= SUB - left;
-      if (shouldLive === sl.alive && sl.phase === 0) continue;
-      if (shouldLive && !sl.alive) {
-        if (instant) { sl.alive = true; sl.phase = 0; sl.t = 0; sl.stumpS = 0; writeSlot(sl); writeStump(sl); }
-        else startGrow(sl, sweep + (SUB - 1 - k) * 0.22);
-      } else if (!shouldLive && sl.alive) {
-        if (instant) { sl.alive = false; sl.phase = 0; sl.t = 0; sl.stumpS = 1; writeSlot(sl); writeStump(sl); }
-        else startDie(sl);
+    const want = tileWant(tileId);
+    const alive = aliveOn(list);
+    if (alive === want) return;
+
+    scratch.length = 0;
+    if (alive > want) {
+      const o = harvestOrigin(tileId);
+      const ox = o.x, oz = o.z;
+      for (const sl of list) if (sl.alive) scratch.push(sl);
+      scratch.sort((a, b) =>
+        ((a.x - ox) * (a.x - ox) + (a.z - oz) * (a.z - oz)) -
+        ((b.x - ox) * (b.x - ox) + (b.z - oz) * (b.z - oz)));
+      const n = Math.min(scratch.length, alive - want);
+      for (let i = 0; i < n; i++) {
+        const sl = scratch[i];
+        if (instant) {
+          sl.alive = false; sl.phase = 0; sl.t = 0; sl.stumpS = 1;
+          if (sl.kind === 'tree') { sl.worn = 1; writeTint(sl); }
+          writeSlot(sl); writeStump(sl);
+        } else startDie(sl);
+      }
+    } else {
+      for (const sl of list) if (!sl.alive) scratch.push(sl);
+      // outward from the middle of the hex, so a whole region coming back is a
+      // wave rather than 21 things popping on one frame
+      scratch.sort((a, b) => a.tdist - b.tdist);
+      const n = Math.min(scratch.length, want - alive);
+      for (let i = 0; i < n; i++) {
+        const sl = scratch[i];
+        if (instant) {
+          sl.alive = true; sl.phase = 0; sl.t = 0; sl.stumpS = 0;
+          if (sl.kind === 'tree') { sl.worn = 0; writeTint(sl); }
+          writeSlot(sl); writeStump(sl);
+        } else startGrow(sl, sl.tdist * 0.70 + i * 0.035);
       }
     }
+  }
+
+  /** The standing unit closest to a point on this tile. */
+  function nearestAlive(tileId, x, z) {
+    const list = tileSlots.get(tileId);
+    if (!list) return null;
+    let best = null, bd = 1e9;
+    for (const sl of list) {
+      if (!sl.alive || sl.phase === 1) continue;
+      const d = (sl.x - x) * (sl.x - x) + (sl.z - z) * (sl.z - z);
+      if (d < bd) { bd = d; best = sl; }
+    }
+    return best;
   }
 
   function moveSheep(sl, dt) {
@@ -511,8 +607,8 @@ export function buildNodeLife(group, mats) {
       if (sl.phase === 1) {
         const D = DIE[sl.kind];
         if (sl.kind === 'tree') {
-          if (!sl.thudded && sl.t >= D * 0.58) { sl.thudded = true; thud(sl); }
-          sl.stumpS = clamp01((sl.t / D - 0.60) / 0.30);
+          if (!sl.thudded && sl.t >= D * 0.52) { sl.thudded = true; thud(sl); }
+          sl.stumpS = clamp01((sl.t / D - 0.50) / 0.28);
         }
         if (sl.t >= D) { sl.phase = 0; sl.t = 0; } else live = true;
       } else if (sl.phase === 2) {
@@ -535,14 +631,9 @@ export function buildNodeLife(group, mats) {
     // Catch regrowth (and anything that changed `remaining` behind our back).
     poll -= dt;
     if (poll <= 0) {
-      poll = 0.2;
-      for (const n of nodes) {
-        const list = byNode.get(n.id);
-        if (!list) continue;
-        const left = Math.max(0, Math.min(SUB, n.remaining | 0));
-        let seen = 0;
-        for (const sl of list) if (sl.alive) seen++;
-        if (seen !== left) reconcile(n, false);
+      poll = 0.16;
+      for (const [tileId, list] of tileSlots) {
+        if (aliveOn(list) !== tileWant(tileId)) reconcileTile(tileId, false);
       }
     }
 
@@ -551,6 +642,8 @@ export function buildNodeLife(group, mats) {
       else if (mesh[kind]) mesh[kind].instanceMatrix.needsUpdate = true;
     }
     dirty.clear();
+    for (const kind of tintDirty) if (tintAttr[kind]) tintAttr[kind].needsUpdate = true;
+    tintDirty.clear();
   }
 
   /* ----------------------------------------------------------------- api */
@@ -561,45 +654,43 @@ export function buildNodeLife(group, mats) {
     return nodes[id] && nodes[id].id === id ? nodes[id] : (nodes.find(n => n.id === id) || null);
   }
 
-  /** The sub-unit a settler is currently working on — the next one to fall. */
-  function frontSlot(n) {
-    const list = byNode.get(n.id);
-    if (!list) return null;
-    for (const sl of list) if (sl.alive && sl.phase === 0) return sl;
-    for (const sl of list) if (sl.alive) return sl;
-    return list[list.length - 1];
-  }
-
   return {
     meshes: mesh,
     stumpMesh,
+    /** Spare stump instances `stand.js` may drive for the decorative timber. */
+    stumps: { mesh: stumpMesh, base: stumpBase, count: stumpSpare },
     triangles,
     drawCalls,
     update,
 
-    /** A cycle landed: shake the sub-unit that took the hit, then reconcile. */
+    /** A cycle landed: shake whatever the settler just hit, then reconcile. */
     playHarvest(ref) {
       const n = resolve(ref);
       if (!n) return;
-      const sl = frontSlot(n);
+      const o = harvestOrigin(n.tile);
+      const sl = nearestAlive(n.tile, o.x, o.z);
       if (sl) { sl.punch = 1; active.add(sl); }
-      reconcile(n, false);
+      reconcileTile(n.tile, false);
     },
 
-    setDepleted(ref, on = true) {
+    setDepleted(ref) {
       const n = resolve(ref);
       if (!n) return;
-      // `remaining` is authoritative; `on` only disambiguates a hard reset.
-      if (!on && n.remaining <= 0) return;
-      reconcile(n, false);
+      reconcileTile(n.tile, false);
     },
 
-    /** Where the node's live geometry actually stands right now. */
+    /** Where the region's live geometry actually stands right now. */
     nodeAnchor(ref) {
       const n = resolve(ref);
       if (!n) return null;
-      const sl = frontSlot(n);
+      const sl = nearestAlive(n.tile, n.x, n.z);
       return sl ? { x: sl.x, y: sl.y, z: sl.z } : { x: n.x, y: heightAt(n.x, n.z), z: n.z };
+    },
+
+    /** Debug hook: how much of a region is still standing, visually. */
+    debug(tileId) {
+      const list = tileSlots.get(tileId) || [];
+      return { units: list.length, standing: aliveOn(list), want: tileWant(tileId) };
     },
 
     dispose() {

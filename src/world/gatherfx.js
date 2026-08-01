@@ -3,20 +3,28 @@
  *
  *   buildGatherFX(group) -> { update(dt), drawCalls, triangles, dispose() }
  *
- * Three jobs, three draw calls, no shadows, no per-frame allocation:
+ * ---------------------------------------------------------------------------
+ * WHAT IS NOT HERE ANY MORE
+ * ---------------------------------------------------------------------------
+ * Every one of the 126 gather nodes used to wear a pale breathing ring on the
+ * ground. The player's verdict was blunt:
  *
- *   1. IDLE GLINT — every live gather node wears a soft ground ring in its own
- *      resource colour, breathing slowly. Pure scenery has none, so the eye can
- *      separate "harvestable" from "dressing" without a tutorial. The ring dims
- *      and shrinks to a scar when the node is worked out and swells back as it
- *      regrows, and turns a dead charcoal-red on a region the Raider blocks.
- *      One InstancedMesh, 126 instances, 252 triangles.
+ *   "This is WAYYY too visually busy ... instead of having like 5 small circles
+ *    inside of it, the whole tile is split into individual trees."
  *
- *   2. TARGET RING — the node the human is about to latch onto (or is actively
- *      working) gets a fat animated ring with a radial progress sweep that
- *      fills over GATHER_TIME. One shader-driven disc.
+ * They were right: 126 UI decals scattered across nineteen hexes read as litter,
+ * and they were doing a job the OBJECTS should do. Harvestability is now said by
+ * the thing itself — a standing tree is choppable, a stump is not — and by the
+ * region tone in `regions.js`. The rings are gone, and with them a draw call,
+ * 126 instance writes a frame and most of the screen's visual noise.
  *
- *   3. PROMPT — a small painted tab floating over that node naming the
+ * What is left is the player's OWN action, and only that:
+ *
+ *   1. TARGET RING — the node the human is about to latch onto (or is actively
+ *      working) gets one ring with a radial progress sweep that fills over
+ *      GATHER_TIME. One shader-driven disc, one colour, no dashes.
+ *
+ *   2. PROMPT — a small painted tab floating over that node naming the
  *      resource, or warning that the Raider has the region shut.
  *
  * Rivals get none of this: the player asked to stop tracking bot activity in
@@ -27,18 +35,11 @@
 
 import * as THREE from 'three';
 import { RES_COLOR, RES_LABEL, INTERACT_RADIUS } from '../core/constants.js';
-import { nodes, isTileExhausted } from '../board/nodes.js';
+import { nodes } from '../board/nodes.js';
 import { heightAt } from './terrain.js';
-import { instanced, setInstance } from './geo.js';
 
-const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const KINDS = ['wood', 'brick', 'wool', 'wheat', 'ore', 'blocked'];
-const BLOCKED_RGB = [0.44, 0.16, 0.13];
-/* An exhausted REGION is not the same statement as a single emptied node: the
-   ring drops all its colour and shrinks to a cold scar, so the ground under a
-   spent tile stops advertising a resource it cannot give you. */
-const SPENT_RGB = [0.30, 0.30, 0.32];
 
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
@@ -62,36 +63,6 @@ function texture(w, h, paint) {
   t.anisotropy = 4;
   t.needsUpdate = true;
   return t;
-}
-
-/* -------------------------------------------------------------- the glint */
-
-/** Soft double ring with a faint fill — reads as "worked ground" from above. */
-function glintTexture() {
-  return texture(128, 128, (ctx, w, h) => {
-    const cx = w / 2, cy = h / 2, R = w / 2;
-    ctx.clearRect(0, 0, w, h);
-    const g = ctx.createRadialGradient(cx, cy, R * 0.10, cx, cy, R);
-    g.addColorStop(0.00, 'rgba(255,255,255,0.26)');
-    g.addColorStop(0.42, 'rgba(255,255,255,0.10)');
-    g.addColorStop(0.60, 'rgba(255,255,255,0.62)');
-    g.addColorStop(0.74, 'rgba(255,255,255,0.95)');
-    g.addColorStop(0.86, 'rgba(255,255,255,0.30)');
-    g.addColorStop(1.00, 'rgba(255,255,255,0.00)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
-    // four tick marks so it never reads as a plain shadow
-    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-    ctx.lineWidth = w * 0.035;
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 4; i++) {
-      const a = i * (TAU / 4) + Math.PI / 4;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a) * R * 0.80, cy + Math.sin(a) * R * 0.80);
-      ctx.lineTo(cx + Math.cos(a) * R * 0.96, cy + Math.sin(a) * R * 0.96);
-      ctx.stroke();
-    }
-  });
 }
 
 /* ------------------------------------------------------------- the prompt */
@@ -160,43 +131,8 @@ export function buildGatherFX(group) {
   let drawCalls = 0;
   let triangles = 0;
 
-  /* ---- 1. per-node idle glints ---------------------------------------- */
-  const quad = new THREE.PlaneGeometry(1, 1);
-  quad.rotateX(-Math.PI / 2);
-  const glintTex = glintTexture();
-  // Normal blending, not additive: an additive ring over the gold of a wheat
-  // tile blew straight out to white and read as a lens flare.
-  const glintMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, depthWrite: false, opacity: 0.92
-  });
-  if (glintTex) glintMat.map = glintTex;
-
-  const glints = instanced(quad, glintMat, nodes.length, false, false);
-  glints.name = 'node-glint';
-  glints.renderOrder = 2;
-  glints.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  glints.visible = !!glintTex;
-  const gcol = new Float32Array(nodes.length * 3);
-  glints.instanceColor = new THREE.InstancedBufferAttribute(gcol, 3);
-  group.add(glints);
-  if (glintTex) { drawCalls++; triangles += nodes.length * 2; }
-
-  const base = new THREE.Color();
-  const glintRGB = nodes.map(n => {
-    base.setHex(RES_COLOR[n.resource] || 0xffc93c, THREE.SRGBColorSpace);
-    // lifted toward white so the ring holds against both dark forest floor and
-    // pale sand without going neon
-    return [base.r * 0.62 + 0.34, base.g * 0.62 + 0.34, base.b * 0.62 + 0.34];
-  });
-  const glintY = nodes.map(n => heightAt(n.x, n.z) + 0.14);
-  /* A tree node is a copse with a canopy over it, so its ring has to reach out
-     past the branches to be seen at all. */
-  const glintR = nodes.map(n => (n.kind === 'tree' ? 3.35 : n.kind === 'sheep' ? 2.9 : 2.5));
-  const glintAmp = nodes.map((n, i) => (i * 0.618) % 1);
-  const shown = new Float32Array(nodes.length);
-
-  /* ---- 2. the target ring --------------------------------------------- */
-  const ringGeo = new THREE.CircleGeometry(1, 44);
+  /* ---- 1. the target ring --------------------------------------------- */
+  const ringGeo = new THREE.CircleGeometry(1, 40);
   ringGeo.rotateX(-Math.PI / 2);
   const ringMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: true,
@@ -222,27 +158,24 @@ export function buildGatherFX(group) {
         float d = length(vP);
         if (d > 1.0) discard;
 
-        // outer selection ring, gently breathing
-        float rr = 0.80 + sin(uTime * 3.4) * 0.018;
-        float ring = smoothstep(0.10, 0.0, abs(d - rr) - 0.045);
-
-        // dashed inner guide so it never reads as a flat decal
-        float ang = atan(vP.y, vP.x);
-        float dash = step(0.42, fract((ang / 6.2831853) * 16.0 + uTime * 0.28));
-        float guide = smoothstep(0.05, 0.0, abs(d - 0.60) - 0.018) * dash * 0.55;
+        // ONE ring, gently breathing. The dashed inner guide that used to sit
+        // inside it was a second competing highlight on an already busy screen.
+        float rr = 0.82 + sin(uTime * 3.4) * 0.018;
+        float ring = smoothstep(0.10, 0.0, abs(d - rr) - 0.050);
 
         // radial progress sweep filling clockwise from straight ahead
+        float ang = atan(vP.y, vP.x);
         float t = fract((-ang + 1.5707963) / 6.2831853);
-        float sweep = step(t, uProgress) * step(0.30, d) * step(d, 0.74);
-        float head = smoothstep(0.055, 0.0, abs(t - uProgress)) * step(0.28, d) * step(d, 0.78);
+        float sweep = step(t, uProgress) * step(0.34, d) * step(d, 0.76);
+        float head = smoothstep(0.055, 0.0, abs(t - uProgress)) * step(0.32, d) * step(d, 0.80);
 
-        float fill = (1.0 - smoothstep(0.0, 0.86, d)) * 0.16;
-        float a = (ring + guide + sweep * 0.55 + head * 0.9 + fill) * uFade;
+        float fill = (1.0 - smoothstep(0.0, 0.86, d)) * 0.13;
+        float a = (ring + sweep * 0.50 + head * 0.9 + fill) * uFade;
         if (a < 0.006) discard;
 
         vec3 c = mix(uColor, vec3(1.0), head * 0.6 + sweep * 0.18);
         c = mix(c, vec3(0.86, 0.20, 0.14), uWarn);
-        gl_FragColor = vec4(c, clamp(a, 0.0, 0.95));
+        gl_FragColor = vec4(c, clamp(a, 0.0, 0.92));
       }
     `
   });
@@ -252,9 +185,9 @@ export function buildGatherFX(group) {
   ring.frustumCulled = false;
   ring.visible = false;
   group.add(ring);
-  drawCalls++; triangles += 44;
+  drawCalls++; triangles += 40;
 
-  /* ---- 3. the floating prompt ----------------------------------------- */
+  /* ---- 2. the floating prompt ----------------------------------------- */
   const promptTex = promptTexture();
   const promptMat = new THREE.MeshBasicMaterial({
     transparent: true, depthWrite: false, depthTest: false, opacity: 0
@@ -296,32 +229,6 @@ export function buildGatherFX(group) {
       if (state) { robber = state.robberTile; robberOwner = state.robberOwner; }
     }
 
-    /* ---- glints ------------------------------------------------------- */
-    if (glints.visible) {
-      const blockAll = robberOwner === 0 ? -1 : robber;
-      for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i];
-        const blocked = n.tile === blockAll;
-        const spent = !blocked && n.remaining <= 0 && isTileExhausted(n.tile);
-        const live = n.remaining > 0 && !blocked;
-        const want = blocked ? 0.62 : (n.remaining > 0 ? 1 : (spent ? 0.34 : 0.22));
-        const cur = shown[i] + (want - shown[i]) * Math.min(1, dt * 4.5);
-        shown[i] = cur;
-        if (cur < 0.02) { setInstance(glints, i, n.x, glintY[i], n.z, 0, 0.0001, 0.0001); continue; }
-        const pulse = live
-          ? 1 + Math.sin(clock * 1.9 + glintAmp[i] * TAU) * 0.085
-          : (blocked ? 1 + Math.sin(clock * 1.15 + glintAmp[i] * TAU) * 0.03 : 0.86);
-        const s = (blocked ? glintR[i] * 1.15 : spent ? glintR[i] * 0.68 : glintR[i]) * cur * pulse;
-        setInstance(glints, i, n.x, glintY[i], n.z, glintAmp[i] * TAU, s, s);
-        const c = blocked ? BLOCKED_RGB : spent ? SPENT_RGB : glintRGB[i];
-        const k = cur * (live ? 1 : 0.75);
-        gcol[i * 3] = c[0] * k; gcol[i * 3 + 1] = c[1] * k; gcol[i * 3 + 2] = c[2] * k;
-      }
-      glints.instanceMatrix.needsUpdate = true;
-      glints.instanceColor.needsUpdate = true;
-    }
-
-    /* ---- target ring + prompt (human only) ---------------------------- */
     const me = state && state.players && state.players[0];
     let target = null, working = false, blockedTarget = false;
     if (me && state.phase === 'play') {
@@ -350,7 +257,7 @@ export function buildGatherFX(group) {
       const az = anchor ? anchor.z : target.z;
       ring.visible = true;
       ring.position.set(ax, heightAt(ax, az) + 0.16, az);
-      ring.scale.setScalar(2.5);
+      ring.scale.setScalar(2.3);
       ringMat.uniforms.uTime.value = clock;
       ringMat.uniforms.uFade.value = ringFade;
       ringMat.uniforms.uWarn.value = blockedTarget ? 1 : 0;
@@ -381,9 +288,8 @@ export function buildGatherFX(group) {
   return {
     group, update, drawCalls, triangles,
     dispose() {
-      quad.dispose(); ringGeo.dispose(); prompt.geometry.dispose();
-      glintMat.dispose(); ringMat.dispose(); promptMat.dispose();
-      if (glintTex) glintTex.dispose();
+      ringGeo.dispose(); prompt.geometry.dispose();
+      ringMat.dispose(); promptMat.dispose();
       if (promptTex) promptTex.dispose();
     }
   };
