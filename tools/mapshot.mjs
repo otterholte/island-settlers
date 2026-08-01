@@ -1,15 +1,21 @@
 /**
- * Board-map / opening-screen capture rig.
+ * Board-map / boot-splash capture rig.
  *
  * A lean sibling of tools/shoot.mjs. Two jobs the general rig cannot do:
  *
  *   1. photograph the *draft* board directly (all four settlers standing at
  *      their spawns, the placement overlay live) without waiting out the
  *      opening cinematic, so it fits in one short shell call;
- *   2. MEASURE the name-plate layout — every plate rectangle against every
- *      number-token rectangle — and fail loudly if any pair intersects.
+ *   2. photograph the `#boot` splash, which is gone by the time shoot.mjs's
+ *      "has the game published __ISLAND__ yet" gate opens. The `boot` stage
+ *      captures on a timer from the moment of navigation instead, and pins the
+ *      splash open so a slow-to-fade screen is still photographable.
  *
- *   node tools/mapshot.mjs --stage=draft|map|intro [--w=960] [--h=444] [--tag=x]
+ *   node tools/mapshot.mjs --stage=boot|draft|map|intro [--w=960] [--h=444]
+ *
+ * The board no longer carries name plates, so there is nothing left to measure
+ * here: "no text sits on a hex" is now true by construction (src/ui/ovmap.js
+ * paints one pin for the human and nothing else).
  */
 
 import { spawn } from 'node:child_process';
@@ -107,10 +113,6 @@ const ev = async (expr, awaitPromise = false) => {
 const NOSHOT = arg('noshot', '0') === '1';
 
 const shot = async name => {
-  // A capture takes ~20s of wall clock and the match keeps running underneath,
-  // so the layout has to be measured on the frame that is about to be
-  // photographed, not on whatever the board looks like once the PNG lands.
-  console.log('  MEASURE ' + JSON.stringify(await measure()));
   if (NOSHOT) { console.log(`  (skipped ${name})`); return; }
   const t0 = Date.now();
   console.log(`  capturing ${name} at +${at()}`);
@@ -123,6 +125,51 @@ const shot = async name => {
 };
 
 await send('Page.enable'); await send('Runtime.enable');
+
+/* --------------------------------------------------------------- boot stage
+   The splash is torn down the instant main.js finishes, so this stage cannot
+   use the "wait for __ISLAND__" gate every other stage relies on. Instead the
+   page is asked, on document-start, to hold `#boot` open: a MutationObserver
+   strips the `done` class back off, and the page is photographed on a plain
+   timer. `--hold=0` lets the handoff run for real so the cross-fade into the
+   opening screen can be watched. */
+if (STAGE === 'boot') {
+  const HOLD = arg('hold', '1') === '1';
+  const WAIT = +arg('wait', 2200);
+  if (HOLD) {
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(()=>{const keep=()=>{const b=document.getElementById('boot');
+        if(b&&b.classList.contains('done'))b.classList.remove('done');};
+        setInterval(keep,50);})()`
+    });
+  }
+  const t0 = Date.now();
+  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await sleep(WAIT);
+  console.log(`boot splash at +${((Date.now() - t0) / 1000).toFixed(1)}s (held=${HOLD})`);
+  console.log('  STATE ' + JSON.stringify(await ev(`(()=>{const b=document.getElementById('boot');
+    if(!b) return {err:'no #boot'};
+    const r=b.getBoundingClientRect(); const cs=getComputedStyle(b);
+    const tip=document.querySelector('.bs-tip');
+    const fill=document.querySelector('.bs-fill');
+    return {cls:b.className, box:[Math.round(r.width),Math.round(r.height)],
+      opacity:cs.opacity, tip:tip?tip.textContent.trim():null,
+      fill:fill?getComputedStyle(fill).width:null,
+      scrollW:document.documentElement.scrollWidth,
+      scrollH:document.documentElement.scrollHeight,
+      vw:innerWidth, vh:innerHeight};})()`)));
+  const b = await send('Page.captureScreenshot', { format: 'png' });
+  if (b?.data) {
+    const buf = Buffer.from(b.data, 'base64');
+    writeFileSync(resolve(OUT, `boot-${TAG}.png`), buf);
+    console.log(`  shot boot-${TAG}.png (${(buf.length / 1024).toFixed(0)} KB)`);
+  } else console.log('  shot boot FAILED');
+  console.log(`${exceptions.length} exception(s), ${warnings.length} console error/warning(s)`);
+  for (const e of exceptions.slice(0, 6)) console.log('  EXC ' + String(e).split('\n')[0].slice(0, 200));
+  ws.close(); chrome.kill('SIGKILL');
+  process.exit(exceptions.length === 0 ? 0 : 1);
+}
+
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
 
 let booted = false;
@@ -136,6 +183,7 @@ console.log(`booted ${W}x${H} at ${(process.uptime()).toFixed(1)}s`);
 const at = () => ((Date.now() - T0) / 1000).toFixed(1) + 's';
 
 await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m}).then(()=>1)`, true);
+await ev(`import('/src/board/nodes.js').then(m=>{window.__N__=m}).then(()=>1)`, true);
 
 const finishDraft = async () => ev(`(()=>{const {state}=window.__ISLAND__,R=window.__R__;
   let g=0;
@@ -151,32 +199,22 @@ const finishDraft = async () => ev(`(()=>{const {state}=window.__ISLAND__,R=wind
   }
   return state.phase;})()`);
 
-/** Plate-vs-token intersection report, straight out of the live layout. */
+/**
+ * What is actually painted over the board. There are no name plates left to
+ * measure, so this reports the thing that replaced them: the overview's own
+ * canvas, its mode, and every interface node that sits over the map — proof
+ * that the hexes carry no text.
+ */
 const measure = async () => ev(`(()=>{
   const ov=window.__ISLAND__.game.overview;
-  if(!ov||!ov.debugLabels) return {err:'no debugLabels'};
-  const {plates,obstacles}=ov.debugLabels();
-  const tokens=obstacles.filter(o=>o.kind==='token');
-  const ports=obstacles.filter(o=>o.kind==='port');
-  const R=r=>({l:r.x-r.w/2,r:r.x+r.w/2,t:r.y-r.h/2,b:r.y+r.h/2});
-  const hit=(a,b)=>{const A=R(a),B=R(b);
-    const ox=Math.min(A.r,B.r)-Math.max(A.l,B.l), oy=Math.min(A.b,B.b)-Math.max(A.t,B.t);
-    return (ox>0&&oy>0)?+(ox*oy).toFixed(1):0;};
-  const clashes=[];let minGap=1e9;
-  for(const p of plates) for(const t of tokens){
-    const a=hit(p,t);
-    if(a>0) clashes.push({plate:p.name,area:a,at:[Math.round(t.x),Math.round(t.y)]});
-    const A=R(p),B=R(t);
-    const gx=Math.max(B.l-A.r,A.l-B.r), gy=Math.max(B.t-A.b,A.t-B.b);
-    minGap=Math.min(minGap,Math.max(gx,gy));
-  }
-  let pclash=0;
-  for(const p of plates) for(const q of ports) if(hit(p,q)>0) pclash++;
+  if(!ov) return {err:'no overview'};
+  const over=[...document.querySelectorAll('.ov *')]
+    .filter(n=>{const t=(n.textContent||'').trim();
+      return t && n.children.length===0 && n.getBoundingClientRect().width>1;})
+    .map(n=>String(n.className).split(' ')[0]||n.tagName);
   return {open:ov.isOpen,mode:ov.mode,phase:window.__ISLAND__.state.phase,
-    plates:plates.map(p=>({n:p.name,x:Math.round(p.x),y:Math.round(p.y),
-      w:p.w,h:p.h})),
-    tokens:tokens.length, tokenClashes:clashes, portClashes:pclash,
-    minPlateTokenGapPx:+minGap.toFixed(1)};})()`);
+    hasDebugLabels:typeof ov.debugLabels==='function',
+    textNodesOverMap:[...new Set(over)]};})()`);
 
 if (STAGE === 'intro') {
   await sleep(2600);
@@ -198,6 +236,80 @@ if (STAGE === 'intro') {
   await sleep(350);
   await shot(`ov-draft-${TAG}`);
   console.log('  MEASURE-after ' + JSON.stringify(await measure()));
+
+} else if (STAGE === 'hud') {
+  /* The in-world HUD with the ground report live. The settler is walked onto a
+     hex they actually own so the bottom-left plate is showing, which is the
+     state check 18 has to survive: `.hud-bl` and `.hud-bc` on screen together.
+     Every gather status is then read straight out of the DOM. */
+  await finishDraft();
+  await ev(`(()=>{const {state,game}=window.__ISLAND__;
+    const L=window.__L__; return 1})()`);
+  await ev(`import('/src/board/layout.js').then(m=>{window.__L__=m}).then(()=>1)`, true);
+  /* `where`: mine | other | raider | swept. Every case is produced the way the
+     game produces it — walk there, and for `swept` actually collect the field
+     through rules.collectItem rather than poking a flag. */
+  const stand = async where => ev(`(()=>{const {state,game}=window.__ISLAND__;
+    const L=window.__L__,N=window.__N__,W=${JSON.stringify(where)};
+    const me=state.players[0]; const owned=new Set();
+    state.robberTile=L.DESERT.id; state.robberOwner=-1;
+    for(const iid of me.settlements) for(const t of L.intersections[iid].tiles) owned.add(t);
+    for(const t of L.tiles) if(t.resource) N.restoreTile(t.id);
+    const pick = W==='other'
+      ? L.tiles.find(t=>t.resource&&!owned.has(t.id))
+      : L.tiles.find(t=>t.resource&&owned.has(t.id));
+    if(!pick) return 'no tile';
+    me.x=pick.x; me.z=pick.z; me.vx=0; me.vz=0;
+    if(W==='raider'){ state.robberTile=pick.id; state.robberOwner=1; }
+    if(W==='swept') for(const it of N.tileItems(pick.id)) N.collectItem(it,state.time,0);
+    for(let i=0;i<20;i++){ game.gathering.update(1/60); game.hud.update(1/60); }
+    const g=game.gathering;
+    return {tile:pick.id, terrain:pick.terrain, status:g.statusHere(0),
+      left:g.tileItemsRemaining(pick.id),
+      txt:(document.querySelector('.pr-txt')||{}).textContent,
+      sub:(document.querySelector('.pr-sub')||{}).textContent,
+      hidden:(document.querySelector('.prompt')||{className:''}).className.indexOf('hid')>=0};})()`);
+  console.log('  MINE     ' + JSON.stringify(await stand('mine')));
+  console.log('  UNOWNED  ' + JSON.stringify(await stand('other')));
+  console.log('  RAIDER   ' + JSON.stringify(await stand('raider')));
+  console.log('  SWEPT    ' + JSON.stringify(await stand('swept')));
+  console.log('  MINE     ' + JSON.stringify(await stand('mine')));
+
+  /* The layout assertion behind check 18, run in the state check 18 does not
+     reach on its own: the bottom-left ground report AND the bottom-centre
+     build row on screen at the same time, at both supported sizes. */
+  for (const [w, h] of [[960, 444], [667, 375]]) {
+    await send('Emulation.setDeviceMetricsOverride', {
+      width: w, height: h, deviceScaleFactor: 1, mobile: true
+    });
+    await ev(`dispatchEvent(new Event('resize'))`);
+    await sleep(450);
+    await stand('mine');
+    await sleep(250);
+    console.log(`  FIT ${w}x${h} ` + JSON.stringify(await ev(`(()=>{
+      const r=s=>{const n=document.querySelector(s); if(!n) return null;
+        const b=n.getBoundingClientRect();
+        return {t:Math.round(b.top),b:Math.round(b.bottom),l:Math.round(b.left),r:Math.round(b.right)};};
+      const shown=n=>n.checkVisibility?n.checkVisibility({opacityProperty:true,
+        visibilityProperty:true,contentVisibilityAuto:true}):!!n.offsetParent;
+      const off=[];
+      for(const n of document.querySelectorAll('#ui *')){
+        const b=n.getBoundingClientRect();
+        if(b.width<2||b.height<2||!shown(n))continue;
+        if(b.right>innerWidth+2||b.bottom>innerHeight+2||b.left<-2||b.top<-2)
+          off.push(String(n.className).slice(0,32)+':'+Math.round(b.bottom));}
+      return {vh:innerHeight,vw:innerWidth,app:r('#app'),bl:r('.hud-bl'),
+        bc:r('.hud-bc'),br:r('.hud-br'),
+        promptShown:!(document.querySelector('.prompt')||{className:'hid'})
+          .className.includes('hid'),
+        offscreen:off};})()`)));
+  }
+  await send('Emulation.clearDeviceMetricsOverride');
+  await ev(`dispatchEvent(new Event('resize'))`);
+  await sleep(500);
+  await stand('mine');
+  await sleep(400);
+  await shot(`hud-${TAG}`);
 
 } else if (STAGE === 'map') {
   await finishDraft();

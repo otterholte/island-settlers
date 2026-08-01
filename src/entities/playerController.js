@@ -8,8 +8,8 @@
  *   1. Movement — smooth accel / decel toward the joystick direction, mapped
  *      through the camera yaw, clamped to the island with coastline sliding.
  *   2. Contextual intent — writes `nearTarget` / `nearTrade` onto player 0 so
- *      the gathering and economy systems can act on them. It never gathers or
- *      trades itself.
+ *      the economy and interface can act on them. It never gathers or trades
+ *      itself; pickup is contact-based and belongs to rules.sweepPickups.
  *   3. Driving the camera (follow + impact shake).
  *
  * Runs inside main.js's fixed 60 Hz step, up to 4 times per rendered frame.
@@ -21,14 +21,13 @@ import {
   PLAYER_SPEED, PLAYER_ACCEL, INTERACT_RADIUS, TRADE_RADIUS
 } from '../core/constants.js';
 import { clampToIsland, MARKET } from '../board/layout.js';
-import { nearestNode } from '../board/nodes.js';
-import { nearestPortFor } from '../core/rules.js';
+import { nearestItem } from '../board/nodes.js';
+import { nearestPortFor, canGatherTile } from '../core/rules.js';
 import { useHeightSampler } from './ground.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const RUN_THRESHOLD = 0.6;      // world units/sec before we call it running
-const LATCH_SPEED = 1.4;        // must be nearly stopped to latch a node
 
 export function createPlayerController(state, settler, gameCamera, input, world) {
   if (world && typeof world.heightAt === 'function') useHeightSampler(world.heightAt);
@@ -80,17 +79,16 @@ export function createPlayerController(state, settler, gameCamera, input, world)
     }
   }
 
-  function updateIntent(spd) {
-    const still = spd < LATCH_SPEED;
-
-    // --- gather node ---------------------------------------------------
-    if (still) {
-      const blocked = state.robberOwner === 0 ? -1 : state.robberTile;
-      const n = nearestNode(p.x, p.z, null, INTERACT_RADIUS, blocked);
-      p.nearTarget = n && n.remaining > 0 ? n : null;
-    } else {
-      p.nearTarget = null;
-    }
+  function updateIntent() {
+    // --- the thing you are about to run over ----------------------------
+    // Pickup is contact-based, so this is no longer a lease on a node: it is
+    // purely "what is in front of me", and it stays live while running because
+    // that is exactly when it is true. `nearTarget` is advisory — rules.js
+    // sweeps by proximity and does not consult it.
+    p.nearTarget = nearestItem(p.x, p.z, {
+      maxDist: INTERACT_RADIUS,
+      filter: it => canGatherTile(state, 0, it.tile)
+    });
 
     // --- trading -------------------------------------------------------
     const dm = Math.hypot(p.x - MARKET.x, p.z - MARKET.z);
@@ -148,15 +146,13 @@ export function createPlayerController(state, settler, gameCamera, input, world)
     if (!Number.isFinite(p.facing)) p.facing = 0;
 
     /* ---------------------------------------------------------- action */
-    if (spd > RUN_THRESHOLD && moved > 1e-5) {
-      if (p.action === 'gather') { p.gatherNode = null; p.gatherProgress = 0; }
-      p.action = 'run';
-    } else if (p.action === 'run') {
-      p.action = 'idle';
-    }
+    // Two states, and only two: running or standing. There is no 'gather'
+    // action left to clear — collecting is a side effect of moving.
+    if (spd > RUN_THRESHOLD && moved > 1e-5) p.action = 'run';
+    else if (p.action === 'run') p.action = 'idle';
 
     /* ---------------------------------------------------------- intent */
-    updateIntent(spd);
+    updateIntent();
 
     /* ---------------------------------------------------------- camera */
     if (gameCamera) {

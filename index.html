@@ -24,15 +24,159 @@
         <span>Island Settlers plays in landscape</span>
       </div>
     </div>
+    <!-- ================================================== the cold open =====
+         The first thing anyone ever sees, and the only screen in the build
+         that is allowed to be expensive: nothing is being rendered behind it,
+         so it can afford a painted sky, a silhouetted island, drifting cloud
+         and a moving glint on the water. All of it is CSS gradients and one
+         inline SVG — no images, no fonts, no requests. Styling lives in
+         src/ui/ui-boot.css; the wordmark deliberately shares its bevel with
+         the opening screen in src/systems/flowIntro.js. -->
     <div id="boot">
-      <div class="boot-logo">
-        <span class="boot-island">ISLAND</span>
-        <span class="boot-settlers">SETTLERS</span>
+      <div class="bs-sky"></div>
+      <div class="bs-sun"></div>
+      <div class="bs-clouds"><i></i><i></i><i></i><i></i></div>
+      <div class="bs-sea"><span class="bs-swell"></span><span class="bs-glint"></span></div>
+      <!-- The silhouette. The viewBox is a deliberate 1200x132 letterbox: the
+           element is ~9x as wide as it is tall on both target sizes, so the
+           aspect agrees and nothing is stretched or cropped. -->
+      <svg class="bs-isle" viewBox="0 0 1200 132" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+        <defs>
+          <linearGradient id="bsRim" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffe0a0" stop-opacity=".9" />
+            <stop offset="1" stop-color="#ffab3c" stop-opacity="0" />
+          </linearGradient>
+          <!-- The land is not one flat ink: it catches a little sky along the
+               ridge and goes almost black where it meets the water. -->
+          <linearGradient id="bsLandG" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#143a5b" />
+            <stop offset="0.5" stop-color="#0a2138" />
+            <stop offset="1" stop-color="#04101c" />
+          </linearGradient>
+          <g id="bsPalm">
+            <path d="M0 0 C-1.5 -12 -3.5 -22 -8 -32" stroke-width="3.4"
+                  fill="none" stroke-linecap="round" />
+            <path d="M-8 -32 C-20 -40 -30 -39 -36 -33 C-27 -36 -17 -35 -8 -32 Z" />
+            <path d="M-8 -32 C-18 -44 -15 -53 -8 -57 C-11 -49 -10 -40 -8 -32 Z" />
+            <path d="M-8 -32 C2 -45 12 -47 19 -43 C10 -42 1 -38 -8 -32 Z" />
+            <path d="M-8 -32 C4 -32 13 -27 16 -20 C9 -26 0 -30 -8 -32 Z" />
+            <path d="M-8 -32 C-16 -27 -21 -21 -22 -14 C-19 -22 -14 -28 -8 -32 Z" />
+          </g>
+        </defs>
+        <!-- a further range, sitting back in the haze; it only shows through
+             the dips in the near ridge, which is what makes the near ridge
+             read as near -->
+        <path class="bs-far" d="M0 132 L0 92 C80 88 140 80 210 84 C290 88 330 100 410 96
+                 C510 91 580 70 680 66 C780 62 850 80 940 78
+                 C1030 76 1120 70 1200 78 L1200 132 Z" />
+        <!-- the island itself -->
+        <path class="bs-land" d="M0 132 L0 104 C64 102 122 106 178 100 C216 96 238 84 274 78
+                 C308 72 332 80 358 74 C394 66 406 50 450 42 C498 33 536 47 568 59
+                 C598 70 628 77 666 75 C702 73 718 60 758 54 C802 48 840 63 874 74
+                 C908 85 948 92 998 94 C1054 96 1130 93 1200 97 L1200 132 Z" />
+        <!-- the sun-side edge of the ridge, caught by the light -->
+        <path class="bs-lip" fill="none" stroke="url(#bsRim)" stroke-width="2.2"
+              d="M358 74 C394 66 406 50 450 42 C498 33 536 47 568 59
+                 C598 70 628 77 666 75 C702 73 718 60 758 54 C802 48 840 63 874 74
+                 C908 85 948 92 998 94 C1054 96 1130 93 1200 97" />
+        <g class="bs-palms">
+          <use href="#bsPalm" transform="translate(440 44) scale(.5)" />
+          <use href="#bsPalm" transform="translate(496 47) scale(.36)" />
+          <use href="#bsPalm" transform="translate(752 56) scale(.44)" />
+          <use href="#bsPalm" transform="translate(232 86) scale(.34)" />
+        </g>
+        <g class="bs-birds">
+          <path d="M0 0 q5 -4 9 0 q4 -4 9 0" />
+          <path d="M26 9 q3.5 -3 6.5 0 q3 -3 6.5 0" />
+        </g>
+      </svg>
+      <div class="bs-boat">
+        <svg viewBox="0 0 64 44" aria-hidden="true">
+          <path d="M6 34 L58 34 L50 41 L14 41 Z" />
+          <path d="M33 30 L33 7 L52 30 Z" />
+          <path d="M29 30 L29 12 L15 30 Z" />
+        </svg>
       </div>
-      <div class="boot-bar"><i></i></div>
-      <div class="boot-tip">Fast. Build. Win.</div>
+      <div class="bs-vig"></div>
+      <div class="bs-flash"></div>
+      <div class="bs-fore">
+        <div class="bs-crest">Island</div>
+        <div class="bs-title">Settlers</div>
+      </div>
+      <!-- Parked on the deep water at the foot of the frame, well clear of the
+           horizon, where a bevelled gold bar has something dark to sit on. -->
+      <div class="bs-load">
+        <div class="bs-bar"><span class="bs-fill"><i></i></span></div>
+        <div class="bs-tip"><span>Charting the coastline</span></div>
+      </div>
     </div>
   </div>
+  <script>
+  /* The splash is alive before a single module has parsed, so its two moving
+     parts live here rather than in the build: the flavour line rotates, and
+     the bar eases toward 92% because there is no honest byte counter to read.
+     main.js sets `done` on #boot when the world exists — that is intercepted
+     for one beat so the fill can land on 100 and the screen can hand over
+     with a bloom instead of a cut. Defensive throughout: if any of it is
+     missing the game still boots. */
+  (function () {
+    var boot = document.getElementById('boot');
+    if (!boot || !boot.querySelector) return;
+    var fill = boot.querySelector('.bs-fill');
+    var tip = boot.querySelector('.bs-tip');
+    var LINES = [
+      'Charting the coastline',
+      'Counting sheep in the pastures',
+      'Weighing ore in the mountains',
+      'Stamping the number tokens',
+      'Mooring the docks against the tide',
+      'Waking three rival settlers'
+    ];
+    var i = 1, p = 4, done = false, handing = false;
+
+    function say(text) {
+      if (!tip) return;
+      while (tip.firstChild) tip.removeChild(tip.firstChild);
+      var s = document.createElement('span');
+      s.textContent = text;
+      tip.appendChild(s);
+    }
+    var tipT = setInterval(function () {
+      if (done) return;
+      say(LINES[i++ % LINES.length]);
+    }, 2300);
+
+    var barT = setInterval(function () {
+      if (done) return;
+      p += (92 - p) * 0.055 + 0.35;
+      if (p >= 91.9) { p = 92; clearInterval(barT); }
+      if (fill) fill.style.width = p.toFixed(1) + '%';
+    }, 90);
+
+    function finish() {
+      if (done) return;
+      done = true;
+      clearInterval(barT); clearInterval(tipT);
+      if (fill) fill.style.width = '100%';
+      say('Make landfall');
+    }
+
+    function watch() {
+      if (handing || !boot.classList.contains('done')) return;
+      handing = true;
+      boot.classList.remove('done');          // hold for the last beat
+      finish();
+      setTimeout(function () { boot.classList.add('done'); }, 430);
+    }
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(watch).observe(boot, {
+        attributes: true, attributeFilter: ['class']
+      });
+    } else {
+      setInterval(watch, 120);
+    }
+  })();
+  </script>
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

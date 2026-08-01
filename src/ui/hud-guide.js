@@ -17,9 +17,14 @@ import {
   RES, RES_LABEL, COST, VICTORY_POINTS, PIECE_LIMIT, TRADE_RADIUS
 } from '../core/constants.js';
 
-import { legalRoads, legalSettlements, legalCities, scoreOf } from '../core/rules.js';
+import {
+  legalRoads, legalSettlements, legalCities, scoreOf,
+  playerOwnsTile, canGatherTile
+} from '../core/rules.js';
 import { tiles, tileAt, MARKET } from '../board/layout.js';
-import { nodes, tileRemaining, tileRecovery, TILE_REGROW_SEC } from '../board/nodes.js';
+import {
+  tileItemsRemaining, tileItemCount, tileRecovery, nearestItem
+} from '../board/nodes.js';
 
 /* The four purchases, in the order the build bar shows them. */
 export const BUILD_KINDS = [
@@ -33,6 +38,12 @@ export const BUILD_KINDS = [
 export const REGION_OF = {
   wood: 'forests', brick: 'clay hills', wool: 'pastures',
   wheat: 'wheat fields', ore: 'mountains'
+};
+
+/** The same, for the one hex you are standing on. */
+export const REGION_ONE = {
+  wood: 'forest', brick: 'clay hill', wool: 'pasture',
+  wheat: 'wheat field', ore: 'mountain'
 };
 
 const KIND_LABEL = { road: 'Road', settlement: 'Settlement', city: 'City', card: 'Card' };
@@ -90,7 +101,9 @@ const RES_TILES = (() => {
 })();
 
 /**
- * Island-wide availability per resource.
+ * Island-wide availability per resource. Counted in ITEMS, which is the only
+ * unit the field has left — a hex is full, part-swept, or spent and counting
+ * down as a whole.
  *   live/total  regions still carrying something
  *   stock       0..1 share of the standing crop across those regions
  *   recovery    0..1 progress of the soonest region on its way back (dry only)
@@ -103,9 +116,9 @@ export function regionReport(state) {
     const list = RES_TILES[r] || [];
     let live = 0, units = 0, maxUnits = 0, soonest = Infinity, rec = 0;
     for (const t of list) {
-      const rem = tileRemaining(t.id);
-      units += rem.units; maxUnits += rem.maxUnits;
-      if (rem.live > 0) { live++; continue; }
+      const left = tileItemsRemaining(t.id);
+      units += left; maxUnits += tileItemCount(t.id);
+      if (left > 0) { live++; continue; }
       const rc = tileRecovery(t.id, now);
       if (rc.exhausted && rc.secondsLeft < soonest) {
         soonest = rc.secondsLeft; rec = rc.progress;
@@ -121,33 +134,39 @@ export function regionReport(state) {
   return out;
 }
 
-/** The region the player is standing in, with its recovery clock. */
-export function standingRegion(state, p) {
+/**
+ * The hex the player is standing on: what it grows, how much of it is still
+ * standing, whether this player may take any of it, and — if the hex has been
+ * swept clean — how long until the whole field returns.
+ *
+ * `mine` and `blocked` are the two reasons the ground can be giving you
+ * nothing while it plainly still has things on it.
+ */
+export function standingRegion(state, p, pid = 0) {
   const t = tileAt(p.x, p.z);
   if (!t || !t.resource) return null;
-  const rem = tileRemaining(t.id);
+  const units = tileItemsRemaining(t.id);
+  const total = tileItemCount(t.id);
   const rc = tileRecovery(t.id, state.time || 0);
+  const mine = playerOwnsTile(state, pid, t.id);
   return {
     tile: t, resource: t.resource,
-    live: rem.live, total: rem.total, units: rem.units,
-    fraction: rem.fraction,
+    units, total,
+    live: units,                       // legacy alias: items, not sub-nodes
+    fraction: total ? units / total : 0,
+    mine,
+    blocked: mine && !canGatherTile(state, pid, t.id),
+    workable: mine && !rc.exhausted && units > 0 && canGatherTile(state, pid, t.id),
     exhausted: rc.exhausted,
     secondsLeft: rc.secondsLeft,
     recovery: rc.progress,
-    total_sec: TILE_REGROW_SEC
+    total_sec: rc.total
   };
 }
 
-/** Nearest still-standing node of a resource, and which way it lies. */
+/** Nearest still-standing item of a resource, and which way it lies. */
 export function nearestLive(p, resource) {
-  let best = null, bd = Infinity;
-  for (const n of nodes) {
-    if (n.remaining <= 0) continue;
-    if (resource && n.resource !== resource) continue;
-    const d = (n.x - p.x) ** 2 + (n.z - p.z) ** 2;
-    if (d < bd) { bd = d; best = n; }
-  }
-  return best;
+  return nearestItem(p.x, p.z, resource ? { resource } : {});
 }
 
 /**
@@ -254,11 +273,18 @@ export function createGuide(state, game) {
     }
 
     const here = standingRegion(state, me);
-    if (here && here.exhausted) {
+    if (here && here.mine && here.exhausted) {
       return {
         key: 'spent-' + here.tile.id, ico: here.resource,
         lead: 'Region worked out',
         tail: `back in ${Math.ceil(here.secondsLeft)}s — move on`, tone: 'wait'
+      };
+    }
+    if (here && here.blocked) {
+      return {
+        key: 'raider-' + here.tile.id, ico: 'knight',
+        lead: 'The raider holds this hex',
+        tail: 'nothing comes off it while it sits there', tone: 'wait'
       };
     }
 
@@ -272,11 +298,12 @@ export function createGuide(state, game) {
     const lead = `${need} more ${lower(RES_LABEL[short])}`;
     const goalName = lower(KIND_LABEL[g.kind]);
 
-    // Already standing in the right region: say so, and say what it buys.
-    if (me.action === 'gather' && me.gatherNode && me.gatherNode.resource === short) {
+    // Already standing on a hex of theirs that grows it: say so, and say what
+    // it buys. Pickup is contact, so the instruction is "keep running".
+    if (here && here.workable && here.resource === short) {
       return {
         key: 'keep-' + short + '-' + g.kind, ico: short, lead,
-        tail: `keep gathering — then a ${goalName}`, tone: 'go'
+        tail: `run over them — then a ${goalName}`, tone: 'go'
       };
     }
 

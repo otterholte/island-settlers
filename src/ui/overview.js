@@ -15,8 +15,10 @@
  * World (x, z) maps to canvas (x, y) with a single uniform scale, so the
  * pointy-top hexes stay pointy-top.
  *
- * Painting lives in ./ovmap.js; the name plates solve their own positions in
- * ./ovlabels.js so they can never sit on a number token.
+ * Painting lives in ./ovmap.js. Nothing writes text onto the hexes: the board
+ * carries the terrain, the number tokens, the docks, everybody's pieces and a
+ * single gold pin for where you are standing. Who the other settlers are, what
+ * colour they play and how they are doing is the right-hand rail's job.
  *
  * Owner: UI agent.
  */
@@ -30,7 +32,6 @@ import {
 import { el, button, toggle, setText, clamp, onTap } from './dom.js';
 import { icon, avatar } from './icons.js';
 import { createPainter } from './ovmap.js';
-import { createLabeller } from './ovlabels.js';
 
 const MODE_INFO = {
   'view':              { title: 'Island Map', hint: 'Tap the map to look around' },
@@ -82,7 +83,6 @@ export function createOverview(root, state, game) {
   const proj = { s: 1, ox: 0, oy: 0, w: 0, h: 0, frame: { x: 0, y: 0, w: 0, h: 0 } };
 
   const paint = ctx ? createPainter(ctx, proj) : null;
-  const labels = ctx ? createLabeller(ctx, proj, paint) : null;
   const PX = x => x * proj.s + proj.ox;
   const PY = z => z * proj.s + proj.oy;
 
@@ -327,41 +327,8 @@ export function createOverview(root, state, game) {
       paint.drawRobber(state);
     }
     drawTargets(pulse);
-    labels.draw(state, proj.frame,
-      paint.tokenRects().concat(paint.portRects(), chromeRects()),
-      { x: PX(BOUNDS.cx), y: PY(BOUNDS.cz) });
+    paint.drawSettlers(state);
     paint.drawFrame(proj.frame);
-  }
-
-  /**
-   * The interface furniture that floats over the canvas — the title plate, the
-   * confirm bar, the draft strip the flow module parks bottom-left. Plates
-   * dodge these too, otherwise a name disappears under a panel it has no way
-   * of knowing about.
-   */
-  function chromeRects() {
-    const out = [];
-    if (!cv.getBoundingClientRect) return out;
-    const base = cv.getBoundingClientRect();
-    const add = (node, weight) => {
-      if (!node || !node.getBoundingClientRect) return;
-      const r = node.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      out.push({
-        x: r.left - base.left + r.width / 2,
-        y: r.top - base.top + r.height / 2,
-        w: r.width + 6, h: r.height + 6, weight, kind: 'chrome'
-      });
-    };
-    add(wrap.querySelector('.ov-top'), 40);
-    add(closeBtn, 40);
-    if (mode !== 'view') add(bar, 40);
-    const doc = root.ownerDocument || (typeof document !== 'undefined' ? document : null);
-    if (doc && doc.querySelector) {
-      add(doc.querySelector('.mf-draft'), 40);
-      add(doc.querySelector('.mf-obj'), 40);
-    }
-    return out;
   }
 
   /* -------------------------------------------------------------- picking */
@@ -530,16 +497,6 @@ export function createOverview(root, state, game) {
     get isOpen() { return openFlag; },
     get mode() { return mode; },
     select, commit,
-    /**
-     * Measurement hook for tools/mapshot.mjs. Returns the name-plate
-     * rectangles and every rectangle they were solved against, in canvas css
-     * pixels, so "no plate covers a number" is a checked fact rather than a
-     * claim. Costs nothing when nobody asks.
-     */
-    debugLabels() {
-      if (!labels) return { plates: [], obstacles: [] };
-      return { plates: labels.plateRects, obstacles: labels.obstacleRects };
-    },
     destroy() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
   };
 }

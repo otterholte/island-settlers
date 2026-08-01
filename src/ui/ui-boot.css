@@ -1,0 +1,340 @@
+/* ==========================================================================
+   Island Settlers — the boot splash (`#boot` in index.html).
+
+   This screen is the game's cold open. It carries the whole first impression
+   on its own, so unlike every other surface in the build it is allowed to be
+   expensive: nothing is being rendered behind it, and it is gone inside three
+   seconds. Everything here is gradients, one inline SVG silhouette and CSS
+   animation — no images, no webfonts, no requests.
+
+   Composition, back to front:
+     .bs-sky      dusk gradient, indigo overhead down to a warm horizon
+     .bs-sun      low sun just above the waterline, breathing
+     .bs-clouds   four soft bands drifting at four different speeds
+     .bs-sea      the water: horizon glow, swell texture, sun glint column
+     .bs-isle     the island in silhouette, lit along its sun-side ridge
+     .bs-boat     one small sail, bobbing, for scale
+     .bs-vig      vignette — dark at the edges, clear through the middle
+     .bs-flash    the gold bloom that fires on the handoff, invisible until
+     .bs-fore     wordmark, progress bar, rotating flavour line
+
+   The wordmark is deliberately the SAME treatment as the opening screen in
+   src/systems/flowIntro.js (`.mf-i-crest` / `.mf-i-title`): gold #ffd34e,
+   dark stroke, a three-step bevel underneath. Two title styles in one game is
+   one too many, so if that one moves, this one moves with it.
+
+   Verified at 667x375 and 960x444. Nothing here can produce a scrollbar: the
+   splash clips its own overflow and the root is `overflow:hidden !important`
+   in ui-base.css.
+
+   Owner: UI agent.
+   ========================================================================== */
+
+#boot{
+  position:absolute;inset:0;z-index:50;overflow:hidden;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:#04101f;
+  transform-origin:50% 54%;
+  animation:bsWake .5s ease both;
+}
+@keyframes bsWake{from{opacity:0}to{opacity:1}}
+
+#boot > .bs-sky,#boot > .bs-sun,#boot > .bs-clouds,#boot > .bs-sea,
+#boot > .bs-isle,#boot > .bs-boat,#boot > .bs-vig,#boot > .bs-flash,
+#boot > .bs-load{
+  position:absolute;pointer-events:none;
+}
+
+/* ------------------------------------------------------------------- sky */
+.bs-sky{
+  left:0;right:0;top:0;bottom:0;
+  background:
+    radial-gradient(64% 46% at 76% 56%,rgba(255,198,120,.5),rgba(255,196,116,0) 66%),
+    linear-gradient(180deg,
+      #061024 0%, #0a1c36 14%, #123659 32%, #24567c 44%,
+      #4d7590 51%, #7f8a8c 56%, #a2907c 58.6%, #bda283 60.4%);
+}
+/* Dusk, not night: a handful of the brightest stars in the top third, only
+   just there. It costs one pseudo-element and it stops the sky above the
+   wordmark reading as an empty black rectangle. */
+.bs-sky::after{
+  content:'';position:absolute;left:0;right:0;top:0;height:44%;
+  background-image:
+    radial-gradient(1.6px 1.6px at 9% 16%,rgba(255,255,255,.85),transparent),
+    radial-gradient(1.2px 1.2px at 21% 34%,rgba(255,246,222,.6),transparent),
+    radial-gradient(1.4px 1.4px at 33% 11%,rgba(255,255,255,.7),transparent),
+    radial-gradient(1.1px 1.1px at 44% 27%,rgba(226,240,255,.5),transparent),
+    radial-gradient(1.7px 1.7px at 57% 8%,rgba(255,255,255,.8),transparent),
+    radial-gradient(1.2px 1.2px at 66% 22%,rgba(255,246,222,.45),transparent),
+    radial-gradient(1.4px 1.4px at 78% 13%,rgba(255,255,255,.6),transparent),
+    radial-gradient(1.1px 1.1px at 88% 30%,rgba(226,240,255,.4),transparent),
+    radial-gradient(1.5px 1.5px at 15% 45%,rgba(255,255,255,.4),transparent),
+    radial-gradient(1.2px 1.2px at 71% 41%,rgba(255,255,255,.3),transparent);
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.5) 62%,transparent 100%);
+  mask-image:linear-gradient(180deg,#000 0%,rgba(0,0,0,.5) 62%,transparent 100%);
+  animation:bsTwinkle 5.5s ease-in-out infinite alternate;
+}
+@keyframes bsTwinkle{from{opacity:.55}to{opacity:1}}
+/* Low and off to the right, where the ridge dips — it has to clear the land
+   for the glint on the water underneath it to make any sense. */
+.bs-sun{
+  left:76%;top:53.5%;width:min(200px,26vw);height:min(200px,26vw);
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  background:
+    radial-gradient(circle at 50% 50%,
+      rgba(255,251,236,1) 0%,rgba(255,238,190,.86) 17%,
+      rgba(255,206,126,.42) 34%,rgba(255,176,86,.14) 58%,rgba(255,170,80,0) 78%);
+  animation:bsSun 7s ease-in-out infinite;
+}
+@keyframes bsSun{
+  0%,100%{opacity:.88;transform:translate(-50%,-50%) scale(1)}
+  50%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}
+}
+
+/* ----------------------------------------------------------------- cloud
+   Four soft bands, all the same shape, all at different heights, widths and
+   speeds. Nothing about a cloud needs to be more literal than that at this
+   size, and a blurred ellipse reads as one from the first frame. */
+.bs-clouds{left:0;right:0;top:0;height:60%;overflow:hidden}
+.bs-clouds i{
+  position:absolute;left:0;display:block;border-radius:50%;
+  background:radial-gradient(closest-side ellipse at 50% 50%,
+    rgba(255,232,198,.26),rgba(255,224,186,.08) 54%,rgba(255,220,180,0) 100%);
+  filter:blur(5px);
+  animation:bsDrift linear infinite;
+}
+@keyframes bsDrift{from{transform:translateX(-70%)}to{transform:translateX(260%)}}
+.bs-clouds i:nth-child(1){top:12%;width:40%;height:30px;animation-duration:78s;animation-delay:-12s}
+.bs-clouds i:nth-child(2){top:29%;width:30%;height:20px;opacity:.75;animation-duration:104s;animation-delay:-58s}
+.bs-clouds i:nth-child(3){top:47%;width:52%;height:15px;opacity:.55;animation-duration:136s;animation-delay:-30s}
+.bs-clouds i:nth-child(4){top:5%;width:24%;height:14px;opacity:.45;animation-duration:92s;animation-delay:-74s}
+
+/* ------------------------------------------------------------------- sea */
+.bs-sea{
+  left:0;right:0;top:60%;bottom:0;overflow:hidden;
+  background:
+    radial-gradient(34% 56% at 76% 0%,rgba(255,206,138,.5),rgba(255,206,138,0) 72%),
+    linear-gradient(180deg,
+      #2f6182 0%, #1b4d72 4%, #123c5c 14%, #0a2a45 34%, #051a2e 64%, #020c17 100%);
+}
+/* Swell: two repeating rules at different periods, drifting at different
+   rates, masked out toward the horizon so the lines converge instead of
+   marching. Cheap parallax, and it stops the water reading as a flat fill. */
+.bs-swell,.bs-glint{position:absolute;display:block}
+.bs-swell{
+  inset:0;
+  background-image:
+    repeating-linear-gradient(180deg,rgba(226,244,255,.08) 0 1px,rgba(226,244,255,0) 1px 8px),
+    repeating-linear-gradient(180deg,rgba(4,20,38,.07) 0 2px,rgba(4,20,38,0) 2px 17px);
+  background-size:100% 8px,100% 17px;
+  -webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,.1) 0%,rgba(0,0,0,.85) 22%,rgba(0,0,0,.18) 72%,rgba(0,0,0,0) 100%);
+  mask-image:linear-gradient(180deg,rgba(0,0,0,.1) 0%,rgba(0,0,0,.85) 22%,rgba(0,0,0,.18) 72%,rgba(0,0,0,0) 100%);
+  animation:bsSwell 6.5s linear infinite;
+}
+@keyframes bsSwell{to{background-position:0 8px,0 17px}}
+/* The glint is the one piece of real luxury on this screen: a column of light
+   under the sun, broken into ripples, breathing on its own clock. */
+.bs-glint{
+  left:76%;top:0;bottom:0;width:min(260px,34vw);
+  transform:translateX(-50%);
+  background:
+    repeating-linear-gradient(180deg,
+      rgba(255,242,208,.85) 0 2.5px,rgba(255,242,208,0) 2.5px 9px);
+  -webkit-mask-image:radial-gradient(46% 82% at 50% 0%,#000 0%,rgba(0,0,0,.55) 34%,transparent 78%);
+  mask-image:radial-gradient(46% 82% at 50% 0%,#000 0%,rgba(0,0,0,.55) 34%,transparent 78%);
+  animation:bsGlint 5.2s ease-in-out infinite;
+}
+@keyframes bsGlint{
+  0%,100%{opacity:.6;background-position:0 0}
+  50%{opacity:1;background-position:0 4.5px}
+}
+
+/* ---------------------------------------------------------------- island */
+.bs-isle{
+  left:50%;bottom:40%;width:min(1500px,150%);height:auto;
+  transform:translateX(-50%);
+  display:block;
+  filter:drop-shadow(0 3px 10px rgba(2,8,18,.55));
+}
+.bs-isle .bs-far{fill:#1e4468;opacity:.5}
+.bs-isle .bs-land{fill:url(#bsLandG)}
+.bs-isle .bs-palms path{fill:#081c31;stroke:#081c31}
+.bs-isle .bs-lip{opacity:.9}
+.bs-isle .bs-birds{
+  fill:none;stroke:rgba(8,26,45,.7);stroke-width:1.5;stroke-linecap:round;
+  animation:bsBirds 28s ease-in-out infinite alternate;
+}
+@keyframes bsBirds{
+  from{transform:translate(520px,24px)}
+  to{transform:translate(660px,6px)}
+}
+
+/* ------------------------------------------------------------------ boat */
+.bs-boat{
+  left:22%;top:65.5%;width:min(40px,5.4vw);line-height:0;opacity:.66;
+  animation:bsBob 5.6s ease-in-out infinite;
+}
+.bs-boat svg{width:100%;height:auto;display:block;fill:#061a2e;stroke:#061a2e}
+@keyframes bsBob{
+  0%,100%{transform:translateY(0) rotate(-1.4deg)}
+  50%{transform:translateY(3px) rotate(1.4deg)}
+}
+
+/* --------------------------------------------------------------- framing */
+.bs-vig{
+  inset:0;
+  background:
+    radial-gradient(128% 96% at 50% 44%,rgba(4,14,28,0) 30%,
+      rgba(3,11,24,.5) 74%,rgba(2,7,16,.88) 100%),
+    linear-gradient(180deg,rgba(3,11,24,.44) 0%,rgba(3,11,24,0) 26%,
+      rgba(3,11,24,0) 58%,rgba(2,7,16,.72) 100%);
+}
+.bs-flash{
+  inset:0;opacity:0;
+  background:radial-gradient(72% 92% at 50% 52%,
+    rgba(255,240,200,.92),rgba(255,201,60,.30) 44%,rgba(255,201,60,0) 76%);
+}
+
+/* ============================================================== foreground */
+/* The wordmark rides high, over the sky and the ridge line; the loader is
+   parked on the deep water at the foot of the frame. Splitting them is what
+   lets the island read as a horizon rather than as a band behind some text. */
+.bs-fore{
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;
+  gap:clamp(4px,1.2vh,9px);
+  padding:0 16px;
+  margin-bottom:clamp(34px,15vh,96px);
+  animation:bsIn .95s cubic-bezier(.2,1.1,.35,1) both;
+}
+@keyframes bsIn{
+  from{opacity:0;transform:translateY(24px) scale(.94)}
+  to{opacity:1;transform:none}
+}
+
+/* --- the wordmark. Same bevel as flowIntro.js, on purpose. --------------- */
+.bs-crest{
+  display:flex;align-items:center;gap:clamp(8px,1.8vw,16px);
+  font:800 clamp(12px,2.2vw,19px)/1 var(--ff);letter-spacing:.46em;text-indent:.46em;
+  text-transform:uppercase;color:#fff;
+  -webkit-text-stroke:2px #23150a;paint-order:stroke fill;
+  text-shadow:0 3px 0 rgba(48,30,12,.9),0 6px 16px rgba(0,0,0,.75);
+}
+.bs-crest::before,.bs-crest::after{
+  content:'';width:clamp(22px,6vw,64px);height:3px;border-radius:2px;
+  background:linear-gradient(90deg,rgba(255,201,60,0),var(--gold,#ffc93c));
+  box-shadow:0 1px 2px rgba(0,0,0,.7);
+}
+.bs-crest::after{background:linear-gradient(270deg,rgba(255,201,60,0),var(--gold,#ffc93c))}
+.bs-title{
+  margin:-4px 0 1px;
+  font:800 clamp(34px,7.6vw,64px)/.92 var(--ff);letter-spacing:.055em;
+  text-transform:uppercase;color:#ffd34e;
+  -webkit-text-stroke:clamp(2px,.5vw,3.4px) #23150a;paint-order:stroke fill;
+  text-shadow:
+    0 3px 0 #b0730c, 0 5px 0 #8a5607, 0 7px 0 #5e3a05,
+    0 12px 22px rgba(0,0,0,.7), 0 0 44px rgba(255,201,60,.45);
+  animation:bsGlow 4.2s ease-in-out infinite;
+}
+@keyframes bsGlow{
+  0%,100%{text-shadow:0 3px 0 #b0730c,0 5px 0 #8a5607,0 7px 0 #5e3a05,
+    0 12px 22px rgba(0,0,0,.7),0 0 34px rgba(255,201,60,.34)}
+  50%{text-shadow:0 3px 0 #b0730c,0 5px 0 #8a5607,0 7px 0 #5e3a05,
+    0 12px 22px rgba(0,0,0,.7),0 0 56px rgba(255,201,60,.62)}
+}
+
+/* --- the loader ----------------------------------------------------------
+   An inset track with a real lip, a bevelled gold fill that keeps its own
+   highlight and shadow, and one sheen crossing it. The width is driven from
+   the inline script in index.html. */
+.bs-load{
+  left:50%;bottom:clamp(14px,6vh,32px);z-index:2;
+  transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:clamp(6px,1.6vh,11px);
+  animation:bsLoadIn .8s .2s cubic-bezier(.2,1.1,.35,1) both;
+}
+@keyframes bsLoadIn{
+  from{opacity:0;transform:translateX(-50%) translateY(20px)}
+  to{opacity:1;transform:translateX(-50%)}
+}
+.bs-bar{
+  position:relative;width:min(330px,52vw);height:18px;padding:2.5px;
+  border-radius:10px;overflow:hidden;
+  background:linear-gradient(180deg,#03101d 0%,#0b2437 100%);
+  border:1.5px solid rgba(2,8,16,.95);
+  box-shadow:
+    inset 0 3px 7px rgba(0,0,0,.8),
+    inset 0 0 0 1px rgba(255,201,60,.20),
+    0 1px 0 rgba(255,255,255,.10),
+    0 7px 18px rgba(0,0,0,.55);
+}
+.bs-fill{
+  position:relative;display:block;height:100%;width:4%;border-radius:7px;
+  overflow:hidden;
+  background:linear-gradient(180deg,#fff6da 0%,#ffd863 30%,#f2ad2f 64%,#c8810f 100%);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255,255,255,.9),
+    inset 0 -3px 5px rgba(122,74,8,.55),
+    0 0 13px rgba(255,201,60,.6);
+  transition:width .45s cubic-bezier(.3,.8,.3,1);
+}
+.bs-fill i{
+  position:absolute;top:0;bottom:0;left:-45%;width:40%;
+  background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.8),rgba(255,255,255,0));
+  animation:bsSheen 1.9s ease-in-out infinite;
+}
+@keyframes bsSheen{0%{left:-45%}62%,100%{left:120%}}
+.bs-tip{min-height:13px;text-align:center;max-width:min(420px,74vw)}
+.bs-tip span{
+  display:inline-block;
+  font:800 clamp(8.5px,1.3vw,10.5px)/1.2 var(--ff);
+  letter-spacing:.28em;text-indent:.28em;text-transform:uppercase;
+  color:rgba(238,247,255,.9);text-shadow:0 1px 5px rgba(0,0,0,.95),0 0 18px rgba(0,0,0,.7);
+  animation:bsTip .45s ease both;
+}
+@keyframes bsTip{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ============================================================== the handoff
+   main.js sets `done` the moment the world exists. The inline script in
+   index.html steals that for ~430ms so the bar can land on 100, then puts it
+   back — and this is what "putting it back" looks like: a gold bloom, the
+   wordmark lifting away, and the whole scene pushing past the camera into the
+   opening screen, which is already fading up underneath. Never a cut. */
+#boot.done{
+  pointer-events:none;
+  animation:bsOut .82s cubic-bezier(.42,0,.2,1) forwards;
+}
+@keyframes bsOut{
+  0%{opacity:1;transform:scale(1);filter:blur(0)}
+  20%{opacity:1;transform:scale(1.012)}
+  100%{opacity:0;visibility:hidden;transform:scale(1.12);filter:blur(5px)}
+}
+#boot.done .bs-fore{animation:bsForeOut .82s cubic-bezier(.42,0,.2,1) forwards}
+@keyframes bsForeOut{
+  0%{opacity:1;transform:translateY(0) scale(1)}
+  100%{opacity:0;transform:translateY(-30px) scale(1.05)}
+}
+#boot.done .bs-load{animation:bsLoadOut .82s cubic-bezier(.42,0,.2,1) forwards}
+@keyframes bsLoadOut{
+  0%{opacity:1;transform:translateX(-50%)}
+  100%{opacity:0;transform:translateX(-50%) translateY(22px)}
+}
+#boot.done .bs-flash{animation:bsFlash .82s ease-out forwards}
+@keyframes bsFlash{0%{opacity:0}16%{opacity:.9}100%{opacity:0}}
+
+/* ============================================================ compact phone
+   Verified at 667x375. The scene keeps every layer; only the spacing gives. */
+@media (max-height:400px),(max-width:760px){
+  .bs-fore{gap:3px}
+  .bs-load{margin-top:clamp(10px,3.4vh,22px)}
+  .bs-bar{width:min(280px,54vw);height:16px}
+  .bs-tip span{letter-spacing:.22em;text-indent:.22em}
+  .bs-isle{bottom:37%;height:24%}
+  .bs-boat{width:min(38px,6vw)}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .bs-clouds i,.bs-swell,.bs-glint,.bs-sun,.bs-boat,.bs-isle .bs-birds,
+  .bs-title,.bs-fill i{animation:none !important}
+}

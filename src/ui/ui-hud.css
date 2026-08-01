@@ -617,10 +617,33 @@
   .hud .tc-cta{font-size:8.5px;padding:2px 9px 3px;letter-spacing:.12em}
 }
 
-/* Very short viewports: reclaim vertical space without shrinking any object. */
+/* Very short viewports: reclaim vertical space without shrinking any object.
+   ------------------------------------------------------------------------
+   MEASURED BUG, and why every number below is what it is.
+   At 667x375 the four cost chips wrap to two rows, and `.bc-cost` carries
+   `margin-top:auto` so it is pushed to the foot of the card. An auto margin
+   does not clamp: when the stacked content is taller than the card, the band
+   is pushed straight through the bottom of it, and `.bc-cost` was measuring
+   y≈389 in a 375px viewport — 14px past the fold, with `.hud-bl` visible
+   beside it. The card clips its own overflow so it never *looked* wrong, but
+   the rectangle is real and check 18 counts rectangles.
+
+   The fix is to make the content fit rather than to hide the symptom: 4px
+   more card, a tighter name, a tighter cost band and shorter numerals. The
+   20px resource object is the one thing that does not move — it is the floor
+   the whole interface is built on (COST_ICON_PX in hud-build.js).
+   Budget at 375px tall: 98px card = 4 pad + 11 name + 25 icon row + 45 cost
+   band, with 13px of slack. */
 @media (max-height:380px){
-  .hud .bcard{height:94px}
+  .hud .bcard{height:98px;padding:4px 3px 0}
+  .hud .bc-name{font-size:11px}
+  .hud .bcard[data-kind="settlement"] .bc-name{font-size:10px}
   .hud .bc-row{margin:0 0 1px}
   .hud .bc-ico svg{width:24px;height:24px}
-  .hud .hud-toasts{bottom:calc(var(--gB) + 104px)}
+  .hud .bc-vp{font-size:7px;padding:1px 2px 1px}
+  .hud .bc-vp::after{font-size:5.5px}
+  .hud .bc-cost{padding:2px 0 3px;gap:0 3px}
+  .hud .cc .ccn b{font-size:10px}
+  .hud .cc .ccn em{font-size:7.5px;margin-top:0;padding-top:1px}
+  .hud .hud-toasts{bottom:calc(var(--gB) + 108px)}
 }

@@ -23,27 +23,28 @@
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL, INTERACT_RADIUS,
+  CARD_LABEL,
   canAfford, missingFrom
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
 
-import { nodes } from '../board/nodes.js';
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
 import { createBuildBar } from './hud-build.js';
 import { createTradeCue } from './hud-trade.js';
 import {
-  createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere
+  createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere,
+  REGION_ONE
 } from './hud-guide.js';
 
 const RES_ICON_PX = 28;
 
 const HOW_TO = [
   ['Move', 'Drag anywhere on the left half of the screen to run.'],
-  ['Gather', 'Stand in a region and hold — trees, clay, sheep, wheat and ore.'],
-  ['Regions', 'Work a region dry and it rests for 20 seconds. The bars under the resource pill show what is still standing.'],
+  ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
+  ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.'],
+  ['Regions', 'Sweep a hex clean and the whole field rests, then comes back at once. The bars under the resource pill show what is still standing.'],
   ['Build', 'Each card fills as you gather. When it glows gold you can afford it — tap it, then pick a glowing spot.'],
   ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
   ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
@@ -309,50 +310,59 @@ export function createHUD(root, state, game) {
     toggle(gearBtn, 'on', settingsOpen);
   }
 
-  /* --------------------------------------------------------------- prompt */
-  let promptKey = '';
+  /* --------------------------------------------------------------- prompt
+     The ground report. Gathering is contact-based now — you run over a thing
+     and it is yours — so there is nothing here to hold, nothing to fill and no
+     `action === 'gather'` to branch on. What is left are the three facts the
+     player actually needs about the hex under their feet:
 
-  function nearestNode() {
-    let best = null, bd = (INTERACT_RADIUS * 1.9) ** 2;
-    for (const n of nodes) {
-      if (n.remaining <= 0) continue;
-      const d = (n.x - me.x) ** 2 + (n.z - me.z) ** 2;
-      if (d < bd) { bd = d; best = n; }
-    }
-    return best;
-  }
+        is it mine        you may only collect where you own a corner
+        what is left      items still standing, out of a full field
+        why nothing       not yours / raider sitting on it / swept clean
+
+     `statusHere` (src/systems/gathering.js) answers the first and third;
+     `standingRegion` (hud-guide.js) answers the second and carries the
+     recovery clock. Off a resource hex entirely, the chip stands down — the
+     joystick lives in this corner and an empty plate is just an obstacle. */
+  let promptKey = '';
 
   function refreshPrompt() {
     if (state.phase !== 'play') { setPrompt(null); return; }
 
-    if (me.action === 'gather' && me.gatherNode) {
-      const here = standingRegion(state, me);
-      setPrompt('gather', resIcon(me.gatherNode.resource), 'Gathering',
-        here ? `${RES_LABEL[me.gatherNode.resource]} · ${here.units} left`
-             : RES_LABEL[me.gatherNode.resource], null, -1);
+    const here = standingRegion(state, me);
+    if (!here) { setPrompt(null); return; }        // desert, market lawn, shore
+
+    const g = game.gathering;
+    const status = g && g.statusHere
+      ? g.statusHere(0)
+      : (!here.mine ? 'unowned' : here.blocked ? 'raider' : here.exhausted ? 'empty' : 'ok');
+
+    const label = RES_LABEL[here.resource];
+    const ico = resIcon(here.resource);
+
+    // Standing on land nobody has settled for you. This is the single most
+    // common reason a new player collects nothing, so it is named outright.
+    // Both lines are kept short on purpose: this plate is 158px wide on a
+    // 667px phone, and a sentence that ellipsises is a sentence nobody reads.
+    if (status === 'unowned') {
+      setPrompt('un' + here.tile.id, ico, 'Not your land',
+        'Settle a corner', null, -1);
       return;
     }
-
-    // A worked-out region is the thing the player most wanted spelled out.
-    const here = standingRegion(state, me);
-    if (here && here.exhausted) {
-      setPrompt('spent' + here.tile.id, resIcon(here.resource), 'Worked out',
+    if (status === 'raider') {
+      setPrompt('raid' + here.tile.id, 'knight', 'Raider is here',
+        'It gives nothing', null, -1);
+      return;
+    }
+    if (status === 'empty' || here.exhausted || here.units <= 0) {
+      setPrompt('spent' + here.tile.id, ico, 'Worked out',
         `Back in ${Math.ceil(here.secondsLeft)}s`, null, here.recovery);
       return;
     }
 
-    // Trading is no longer announced down here. Walk into range of the market
-    // or one of your docks and the offer rises over the building itself
-    // (hud-trade.js) — a corner chip was never going to be read.
-    const n = nearestNode();
-    if (n) {
-      const rem = here && here.resource === n.resource ? here : null;
-      setPrompt('node' + n.resource, resIcon(n.resource), 'Hold to gather',
-        rem ? `${RES_LABEL[n.resource]} · ${rem.live} of ${rem.total} left`
-            : RES_LABEL[n.resource], null, -1);
-      return;
-    }
-    setPrompt(null);
+    // Yours, standing, and there is something on it. Say what and how much.
+    setPrompt('ok' + here.tile.id, ico, 'Your ' + REGION_ONE[here.resource],
+      `${here.units} ${label} left`, null, -1);
   }
 
   /** `bar` < 0 hides the recovery meter; 0..1 shows it filling. */

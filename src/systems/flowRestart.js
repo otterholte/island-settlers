@@ -22,7 +22,7 @@
 
 import { START_RESOURCES } from '../core/constants.js';
 import { SPAWNS, DESERT } from '../board/layout.js';
-import { nodes, resetNodes, mulberry32 } from '../board/nodes.js';
+import { resetNodes, mulberry32 } from '../board/nodes.js';
 
 const SETUP_ORDER = [0, 1, 2, 3, 3, 2, 1, 0];
 
@@ -76,11 +76,10 @@ function resyncWorld(state, game, world) {
   if (world.island && typeof world.island.clearHighlights === 'function') {
     try { world.island.clearHighlights(); } catch (e) { /* optional */ }
   }
-  if (world.props && typeof world.props.setDepleted === 'function') {
-    for (const n of nodes) {
-      try { world.props.setDepleted(n.id, false); } catch (e) { /* optional */ }
-    }
-  }
+  // The item field is put back by `resetNodes()` above, and the prop renderer
+  // polls the item flags every frame (world/nodelife.js) rather than being
+  // told. The old per-node `setDepleted(id,false)` sweep across the deprecated
+  // `nodes` array had nothing left to talk to and is gone.
 
   const avatars = game.avatars || world.avatars;
   if (Array.isArray(avatars)) {

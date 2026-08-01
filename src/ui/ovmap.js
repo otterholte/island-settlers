@@ -544,10 +544,46 @@ export function createPainter(ctx, proj) {
     ctx.beginPath(); ctx.arc(x + k * 0.33, y - k * 0.25, k * 0.17, 0, Math.PI * 2); ctx.fill();
   }
 
+  /**
+   * Where you are standing, and nothing else.
+   *
+   * The board used to carry a solved name plate for all four settlers. The
+   * player was unambiguous about it — "I don't want to see the players' names
+   * on the board at all while picking positions" — so the plates, their leader
+   * lines and the collision solver behind them are gone. What is left is one
+   * gold-ringed pin for the human, because "which end of the island am I on"
+   * is the one question the map cannot answer any other way. Rivals are named,
+   * scored and coloured in the right-hand rail; they need nothing on the hexes.
+   */
+  function drawSettlers(state) {
+    const p = state.players && state.players[0];
+    if (!p) return;
+    const s = proj.s;
+    const r = Math.max(6.5, s * 0.9);
+    const x = PX(p.x), y = PY(p.z);
+
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.9, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.fill();
+
+    ctx.beginPath(); ctx.arc(x, y, r * 1.75, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,201,60,.16)'; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,201,60,.55)'; ctx.stroke();
+
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = p.color.css; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - r * 0.22, r * 0.66, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.lineWidth = r * 0.28; ctx.strokeStyle = p.color.light; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2, r * 0.34); ctx.strokeStyle = '#ffc93c'; ctx.stroke();
+    ctx.restore();
+  }
+
   return {
     PX, PY, hexPath, plate, rounded,
     drawSea, drawFrame, drawShelf, drawTiles, drawTokens, tokenRects,
-    drawPorts, portRects, drawRoads, drawBuildings, drawRobber, ownerPip
+    drawPorts, portRects, drawRoads, drawBuildings, drawRobber, ownerPip,
+    drawSettlers
   };
 }
 

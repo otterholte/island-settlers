@@ -2,16 +2,18 @@
    Island Settlers — interface styling (entry point).
    Landscape mobile web. System faces only, no webfonts, no remote assets.
 
-   Split across three files to stay well inside the per-file line budget:
+   Split across four files to stay well inside the per-file line budget:
      ui-base.css  design tokens, reset, shared material, buttons
      ui-hud.css   the in-world heads-up display
-     ui.css       board overview, modal panels, results, boot, responsive
+     ui-boot.css  the boot splash — the cold open, before anything exists
+     ui.css       board overview, modal panels, results, responsive
 
    Owner: UI agent.
    ========================================================================== */
 
 @import './ui-base.css';
 @import './ui-hud.css';
+@import './ui-boot.css';
 
 /* ======================================================== opening screen
    The match-flow module sets `mf-introlive` on the interface root while the
@@ -283,50 +285,7 @@
 .rs-stat b{font:800 13px/1 var(--ff);color:#fff}
 .rs-foot{display:flex;justify-content:center;padding-top:2px}
 
-/* ============================================================ boot splash */
-#boot{
-  position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:20px;
-  background:
-    radial-gradient(ellipse at 50% 34%,rgba(63,196,216,.30),transparent 58%),
-    linear-gradient(180deg,#0b3f76 0%,#0e5fa8 46%,#083257 100%);
-  transition:opacity .55s ease,visibility .55s;
-}
-#boot::after{
-  content:'';position:absolute;left:50%;bottom:-14%;width:150%;height:46%;
-  transform:translateX(-50%);
-  background:radial-gradient(ellipse at 50% 0%,rgba(232,211,160,.30),transparent 62%);
-}
-#boot.done{opacity:0;visibility:hidden;pointer-events:none}
-.boot-logo{display:flex;flex-direction:column;align-items:center;line-height:.9;
-  animation:bootIn .8s cubic-bezier(.2,1.2,.35,1) both}
-.boot-island{
-  font:800 20px/1 var(--ff);letter-spacing:.62em;text-indent:.62em;text-transform:uppercase;
-  color:var(--gold-l);text-shadow:0 2px 0 #6b4405,0 3px 12px rgba(0,0,0,.5);
-}
-.boot-settlers{
-  font:800 54px/1 var(--ff);letter-spacing:.06em;text-transform:uppercase;
-  color:#fff6e0;-webkit-text-stroke:3px #26150a;
-  text-shadow:0 6px 0 rgba(90,58,30,.85),0 10px 0 rgba(38,21,10,.6),
-              0 16px 30px rgba(0,0,0,.55);
-}
-@keyframes bootIn{from{opacity:0;transform:translateY(22px) scale(.9)}to{opacity:1}}
-.boot-bar{
-  position:relative;width:min(280px,54vw);height:14px;border-radius:8px;overflow:hidden;
-  background:rgba(6,22,42,.6);border:2px solid rgba(255,201,60,.55);
-  box-shadow:0 4px 12px rgba(0,0,0,.45),inset 0 2px 6px rgba(0,0,0,.4);
-}
-.boot-bar i{
-  display:block;height:100%;width:20%;border-radius:6px;
-  background:linear-gradient(90deg,#3fc4d8,var(--gold));
-  box-shadow:0 0 12px rgba(255,201,60,.7);
-  animation:bootBar 1.5s cubic-bezier(.4,.1,.3,1) infinite;
-}
-@keyframes bootBar{0%{width:6%}55%{width:78%}100%{width:98%}}
-.boot-tip{
-  font:800 10px/1 var(--ff);letter-spacing:.34em;text-transform:uppercase;
-  color:rgba(226,242,255,.72);text-shadow:0 1px 3px rgba(0,0,0,.6);
-}
+/* The boot splash lives in ui-boot.css. */
 
 /* ============================================================ rotate gate */
 #rotate-gate{
@@ -435,8 +394,6 @@
   .hand{min-height:140px}
   .tmid{flex-basis:76px}
   .ratio b{font-size:25px}
-  .boot-settlers{font-size:40px;-webkit-text-stroke-width:2.5px}
-  .boot-island{font-size:16px}
 }
 
 /* Very short viewports: reclaim vertical space without shrinking any icon. */

@@ -47,7 +47,22 @@ html,body{
   overscroll-behavior:none;touch-action:none;
 }
 
-#app{position:fixed;inset:0;overflow:hidden;touch-action:none}
+/* The one box everything else is measured against.
+   `inset:0` on a fixed element resolves against the initial containing block,
+   which is NOT always the viewport the interface is being judged by: an
+   emulated device, a collapsing browser bar or a headless window whose content
+   box runs a few pixels past `--window-size` all leave the ICB taller than
+   `innerHeight`. Every bottom-anchored HUD cluster then lands below the fold
+   together — `.hud-bl` and `.hud-bc` at y≈453 in a 444px viewport, which is
+   exactly the overflow check 18 catches. An explicit dynamic-viewport height
+   pins the box to the viewport that is actually visible; `100vh` stays as the
+   fallback for engines without `dvh`. */
+#app{
+  position:fixed;left:0;top:0;right:0;
+  height:100vh;
+  height:100dvh;
+  overflow:hidden;touch-action:none;
+}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 
 /* The HUD layer. Its own stacking context (no z-index arms race) so it always

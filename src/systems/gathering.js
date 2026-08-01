@@ -16,10 +16,15 @@
  *   rules.js       — `sweepPickups`, ownership gating (`canGatherTile`), and
  *                    the `gained` / `exhausted` / `restored` / `blocked` events.
  *   main.js        — turns those events into floating text, bursts and sound.
- *   here           — calls the sweep once per player per step, keeps the
- *                    deprecated prop layer in sync with regrowth, and exposes
- *                    the readouts the HUD wants (what am I standing on, may I
- *                    work it, how long until it comes back).
+ *   here           — calls the sweep once per player per step and exposes the
+ *                    readouts the HUD wants (what am I standing on, may I work
+ *                    it, how long until it comes back).
+ *
+ * Nothing in here reconciles the field any more. The old regrowth loop walked
+ * the deprecated `nodes` array every step looking for a `justRegrew` flag to
+ * hand to the prop renderer; both ends of that are gone. Recovery is whole-hex
+ * and the world layer polls the item flags (world/nodelife.js), so the field
+ * self-reconciles and this module never touches it.
  *
  * ---------------------------------------------------------------------------
  * BOTS
@@ -35,7 +40,7 @@
 import { PICKUP_RADIUS } from '../core/constants.js';
 import { sweepPickups, canGatherTile, playerOwnsTile } from '../core/rules.js';
 import {
-  nodes, itemsNear, nearestItem, tileRecovery,
+  itemsNear, nearestItem, tileRecovery,
   tileItemsRemaining, tileItemCount, isTileExhausted
 } from '../board/nodes.js';
 import { tileAt } from '../board/layout.js';
@@ -43,28 +48,9 @@ import { tileAt } from '../board/layout.js';
 const RECENT_PICK = 0.35;   // seconds a settler still counts as "harvesting"
 
 export function createGathering(state, world) {
-  const W = world || {};
-
-  function safe(fn) {
-    try { return fn(); } catch (e) { return undefined; }
-  }
-
-  /* ---------------------------------------------------------------- regrowth
-   * Nobody else consumes the deprecated `node.justRegrew` flag, so an old
-   * renderer's stumps would stay stumps. Clear it and put the prop back. */
-  function syncRegrowth() {
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      if (!n.justRegrew) continue;
-      n.justRegrew = false;
-      safe(() => W.props && W.props.setDepleted && W.props.setDepleted(n.id, false));
-    }
-  }
-
   /* -------------------------------------------------------------------- loop */
 
   function update(dt) {
-    syncRegrowth();
     if (!state || !state.players) return;
     if (state.phase !== 'play') {
       for (const p of state.players) p.gatherPct = 0;
