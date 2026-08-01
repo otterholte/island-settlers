@@ -4,13 +4,19 @@
  *   buildMarket(scene) -> { group, update(dt) }
  *   buildPorts(scene, state) -> { group, update(dt), setUnlocked(portId, pid) }
  *
- * The market is the island's landmark and gets the biggest single geometry
- * budget on the board: a two-storey trading house with a balcony, a bell
- * cupola and a lit interior, a ring of six awninged stalls each laden with one
- * of the five trade goods, a well, palms, tethered pack camels and a crowd of
- * merchants working the plaza — plus a painted trade banner floating above the
- * mast that can be read from the far shore. Four draw calls: solid, cloth,
- * beacon, crowd.
+ * The market is the island's landmark, and it earns that by being the one
+ * clean silhouette on the board rather than the busiest square metre on it.
+ * One trading pavilion under a single tiled hip roof, an empty paved plaza,
+ * four plain stalls, a painted "TRADE 4:1" board over the door and the same
+ * legend flying from the mast where it can be read from the far shore. Six
+ * merchants work the floor. Three objects: solid, sign, crowd.
+ *
+ * What used to be here and is not any more: the second storey and its balcony,
+ * the bell cupola, the dormer, the gate arch, two of the six stalls, the well
+ * and its benches, four palms, four banner poles with pennants, twenty bunting
+ * flags, two hung carpets, three rolled carpets, two braziers, two pack camels
+ * and a hitching rail, a laden hand cart, two goods heaps and four loose
+ * crates. The plaza is the point; the clutter was hiding it.
  *
  * Each port is one instanced kit (see buildport.js) placed at the wet-sand
  * anchor found by walking outward along `port.bearing` until the ground drops
@@ -22,254 +28,63 @@ import * as THREE from 'three';
 import { MARKET, ports, edges } from '../board/layout.js';
 import { PLAYER_COLORS } from '../core/constants.js';
 import { heightAt } from './terrain.js';
-import { merge, place, tint, gradient, box, cyl, cone, instanced, setInstance, hideInstance, triCount } from './geo.js';
-import { PAL, prism, cloth, crate, palmTree, villagerGeo, glowSolidMaterial, clothMaterial, rng } from './buildkit.js';
+import { merge, place, instanced, setInstance, hideInstance, triCount } from './geo.js';
+import { villagerGeo, glowSolidMaterial, clothMaterial, rng } from './buildkit.js';
 import * as MKT from './mktkit.js';
 import * as P from './buildport.js';
 
 const _c = new THREE.Color();
-const MK = MKT.MK;
 
 /* ======================================================== market geometry */
 
-const PLAZA_R = 6.30;
-/** Stall ring: angle (radians) and which trade good each stall deals in. */
+const PLAZA_R = 6.60;
+/** How high the paved apron stands proud of the flattened desert. */
+const PLAZA_LIFT = 0.12;
+/** The trading house sits back on -X and faces the +X approach. */
+const HOUSE_X = -2.40;
+
+/**
+ * Four stalls, not a ring of six: a wide pair flanking the approach and a
+ * narrow pair tucked either side of the pavilion. Angle, trade good, and the
+ * two colours of its awning — cream with one muted band, nothing shouting.
+ */
+const CREAM = 0xf4ead2;
 const STALLS = [
-  { a: 0.838, kind: 0 },   // 48deg  — timber
-  { a: 1.571, kind: 1 },   // 90deg  — brick
-  { a: 2.304, kind: 2 },   // 132deg — wool
-  { a: -2.304, kind: 3 },  //        — grain
-  { a: -1.571, kind: 4 },  //        — ore
-  { a: -0.838, kind: 5 }   //        — cloth
+  { a: 0.95, kind: 0, c: 0x3f7fa8 },   // timber
+  { a: -0.95, kind: 3, c: 0x3f7fa8 },  // grain
+  { a: 2.05, kind: 2, c: 0xc0562f },   // wool
+  { a: -2.05, kind: 4, c: 0xc0562f }   // ore
 ];
-const STALL_R = 4.95;
-const AWNING = [
-  [0xf6efe1, 0xc23f2c], [0xf6efe1, 0x2f7fa8], [0xf6e7c6, 0x3f8a3c],
-  [0xfaf2e2, 0xd98b2b], [0xf6efe1, 0x8552c4], [0xf6e7c6, 0xc23f2c]
-];
-
-/** Paved apron: sunken slab, radial joints, kerb ring and the entrance steps. */
-function plazaGeo() {
-  const parts = [];
-  parts.push(place(gradient(new THREE.CylinderGeometry(PLAZA_R, PLAZA_R + 0.34, 2.1, 12),
-    0x8f7448, MK.paveLo), 0, -1.05, 0));
-  parts.push(place(tint(new THREE.CircleGeometry(PLAZA_R - 0.22, 12), MK.paveHi, 0.045),
-    0, 0.02, 0, -Math.PI / 2, 0, 0));
-  for (let i = 0; i < 6; i++) {
-    parts.push(place(box((PLAZA_R - 0.3) * 2, 0.05, 0.24, MK.paveLo, 0.05), 0, 0.05, 0, 0, (Math.PI / 6) * i, 0));
-  }
-  parts.push(place(tint(new THREE.RingGeometry(3.30, 3.62, 12, 1), MK.paveLo, 0.05),
-    0, 0.06, 0, -Math.PI / 2, 0, 0));
-  parts.push(place(tint(new THREE.RingGeometry(PLAZA_R - 0.86, PLAZA_R - 0.28, 12, 1), MK.stoneWarm, 0.05),
-    0, 0.06, 0, -Math.PI / 2, 0, 0));
-  // kerb blocks, with a gap left open at the +X entrance
-  for (let i = 0; i < 16; i++) {
-    const a = (Math.PI * 2 * i) / 16;
-    if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.30) continue;
-    parts.push(place(gradient(new THREE.BoxGeometry(0.42, 0.40, 1.90), MK.stoneDeep, MK.stoneWarm),
-      Math.cos(a) * (PLAZA_R + 0.05), 0.10, Math.sin(a) * (PLAZA_R + 0.05), 0, -a, 0));
-  }
-  // entrance steps down to the sand
-  for (let i = 0; i < 3; i++) {
-    parts.push(place(gradient(new THREE.BoxGeometry(0.44, 0.20, 3.6 - i * 0.5), MK.stoneDeep, MK.paveHi),
-      PLAZA_R + 0.18 + i * 0.44, -0.08 - i * 0.20, 0));
-  }
-  return merge(parts);
-}
-
-/** Gate arch over the entrance, with a hitching rail for the pack animals. */
-function gateGeo() {
-  return merge([
-    place(gradient(new THREE.BoxGeometry(0.52, 3.60, 0.52), MK.stoneDeep, MK.stoneWarm), 0, 1.80, 1.85),
-    place(gradient(new THREE.BoxGeometry(0.52, 3.60, 0.52), MK.stoneDeep, MK.stoneWarm), 0, 1.80, -1.85),
-    place(box(0.64, 0.56, 4.35, MK.stoneWarm, 0.05), 0, 3.85, 0),
-    place(prism(0.92, 0.40, 4.60, MK.tile, MK.tileLo), 0, 4.13, 0),
-    place(box(0.30, 0.26, 1.10, MK.timber), 0, 3.30, 1.20, 0, 0, 0.5),
-    place(box(0.30, 0.26, 1.10, MK.timber), 0, 3.30, -1.20, 0, 0, -0.5)
-  ]);
-}
-
-function benchGeo() {
-  return merge([
-    place(gradient(new THREE.BoxGeometry(1.40, 0.15, 0.46), 0x8a6338, 0xb2854b), 0, 0.46, 0),
-    place(box(0.16, 0.40, 0.40, 0x6b4526, 0.05), -0.52, 0.20, 0),
-    place(box(0.16, 0.40, 0.40, 0x6b4526, 0.05), 0.52, 0.20, 0)
-  ]);
-}
+const STALL_R = 4.85;
+/** Middle of the open half of the plaza — where the roundel and the milling go. */
+const HUB_X = 3.10;
 
 function marketSolidGeo() {
-  const parts = [plazaGeo()];
-  const r = rng(7717);
+  const parts = [MKT.plazaGeo(PLAZA_R, HUB_X)];
 
-  parts.push(place(MKT.tradingHouse(), -2.20, 0, 0));
+  parts.push(place(MKT.tradingHouse(), HOUSE_X, 0, 0));
 
   // Stall local +Z is the counter front, so -a - PI/2 turns it to face the
   // middle of the plaza from anywhere on the ring.
   for (const s of STALLS) {
-    parts.push(place(MKT.stall(s.kind, s.kind + 3),
+    parts.push(place(MKT.stall(s.kind, CREAM, s.c),
       Math.cos(s.a) * STALL_R, 0, Math.sin(s.a) * STALL_R, 0, -s.a - Math.PI / 2, 0));
   }
 
-  parts.push(place(MKT.plazaWell(), 2.45, 0, 2.35));
-  for (const a of [-0.35, 0.95]) {
-    parts.push(place(benchGeo(), 2.45 + Math.cos(a) * 1.85, 0, 2.35 + Math.sin(a) * 1.85, 0, -a + Math.PI / 2, 0));
-  }
-
-  parts.push(place(gateGeo(), PLAZA_R + 0.55, -0.20, 0));
-
-  // palms in the gaps between the stalls
-  for (const a of [1.20, 2.00, -1.20, -2.00]) {
-    parts.push(place(palmTree(4.1 + (a > 0 ? 0.3 : 0), Math.round(Math.abs(a) * 7)),
-      Math.cos(a) * 5.90, -0.05, Math.sin(a) * 5.90, 0, a * 1.7, 0));
-  }
-
-  // cargo waiting to be traded, kept in two tidy heaps
-  parts.push(place(MKT.goodsPile(11), Math.cos(1.20) * 4.25, 0, Math.sin(1.20) * 4.25, 0, 0.6, 0));
-  parts.push(place(MKT.goodsPile(29), Math.cos(-1.98) * 4.20, 0, Math.sin(-1.98) * 4.20, 0, -1.1, 0));
-
-  // pack camels tied to the gate rail
-  parts.push(place(MKT.packCamel(11), 5.05, 0, -2.55, 0, 1.9, 0, 0.94));
-  parts.push(place(MKT.packCamel(23), 5.35, 0, -1.35, 0, 2.3, 0, 0.88));
-  parts.push(place(merge([
-    place(cyl(0.09, 0.11, 1.10, 5, MK.timber), -1.05, 0.55, 0),
-    place(cyl(0.09, 0.11, 1.10, 5, MK.timber), 1.05, 0.55, 0),
-    place(box(2.30, 0.10, 0.10, MK.timberLo), 0, 1.02, 0)
-  ]), 4.35, 0, -2.05, 0, 1.25, 0));
-
-  // laden hand cart parked by the timber stall
-  parts.push(place(merge([
-    place(gradient(new THREE.BoxGeometry(1.50, 0.48, 1.00), 0x7a5732, 0xa9793f), 0, 0.64, 0),
-    place(box(1.56, 0.10, 0.10, PAL.woodDark), 0, 0.90, 0.48),
-    place(box(1.56, 0.10, 0.10, PAL.woodDark), 0, 0.90, -0.48),
-    place(gradient(new THREE.CylinderGeometry(0.42, 0.42, 0.13, 7), 0x4a3a24, 0x8a6338), -0.34, 0.42, 0.57, Math.PI / 2, 0, 0),
-    place(gradient(new THREE.CylinderGeometry(0.42, 0.42, 0.13, 7), 0x4a3a24, 0x8a6338), -0.34, 0.42, -0.57, Math.PI / 2, 0, 0),
-    place(box(1.30, 0.10, 0.10, 0x6b4526), 1.06, 0.58, 0.31, 0, 0, 0.14),
-    place(box(1.30, 0.10, 0.10, 0x6b4526), 1.06, 0.58, -0.31, 0, 0, 0.14),
-    place(crate(0.52), -0.14, 0.88, 0, 0, 0.4, 0),
-    place(box(0.52, 0.32, 0.44, MK.tile, 0.12), 0.46, 1.04, 0.06)
-  ]), 3.55, 0, 3.55, 0, -0.95, 0));
-
-  // braziers flanking the trading-house steps
-  for (const z of [2.35, -2.35]) {
-    parts.push(place(merge([
-      place(gradient(new THREE.CylinderGeometry(0.36, 0.24, 0.36, 6), 0x4a4038, 0x776a5c), 0, 0.96, 0),
-      place(tint(new THREE.BoxGeometry(0.10, 1.00, 0.10), 0x4a4038), 0, 0.50, 0),
-      place(cone(0.29, 0.56, 5, 0xffa03a, 0.14), 0, 1.36, 0)
-    ]), 0.95, 0, z));
-  }
-
-  // banner poles — the pennants themselves belong to the cloth mesh
-  for (const a of [0.38, -0.38, 1.92, -1.92]) {
-    parts.push(place(cyl(0.07, 0.11, 5.10, 5, MK.timber, false, 0.04),
-      Math.cos(a) * (PLAZA_R - 0.55), 2.55, Math.sin(a) * (PLAZA_R - 0.55)));
-    parts.push(place(tint(new THREE.OctahedronGeometry(0.13, 0), MK.gold, 0.06),
-      Math.cos(a) * (PLAZA_R - 0.55), 5.16, Math.sin(a) * (PLAZA_R - 0.55)));
-  }
-
-  // rolled carpets propped against the cloth stall
-  for (let k = 0; k < 3; k++) {
-    parts.push(place(gradient(new THREE.CylinderGeometry(0.13, 0.15, 1.35, 6),
-      [0xb8452f, 0x2f6b8b, 0xc98a2c][k], 0x5a2a18),
-      3.05 + k * 0.28, 0.74, -3.95 + k * 0.1, 0, 0.2, 0.32 + k * 0.05));
-  }
-  // a couple of loose crates by the well
-  parts.push(place(crate(0.54), 0.95, 0, 3.95, 0, r() * 2, 0));
-  parts.push(place(crate(0.42), 1.45, 0, 4.28, 0, r() * 2, 0));
-
   return merge(parts);
-}
-
-function marketClothGeo() {
-  const parts = [];
-
-  // stall awnings, angled forward over each counter
-  STALLS.forEach((s, i) => {
-    const c = AWNING[i % AWNING.length];
-    const ry = -s.a - Math.PI / 2;
-    const g = MKT.stripedAwning(2.24, 1.52, c[0], c[1]);
-    place(g, 0, 2.24, 0.62, -0.98, 0, 0);
-    place(g, Math.cos(s.a) * STALL_R, 0, Math.sin(s.a) * STALL_R, 0, ry, 0);
-    parts.push(g);
-    const v = MKT.valance(2.24, 0.36, c[0], c[1]);
-    place(v, 0, 1.80, 1.24, -0.20, 0, 0);
-    place(v, Math.cos(s.a) * STALL_R, 0, Math.sin(s.a) * STALL_R, 0, ry, 0);
-    parts.push(v);
-  });
-
-  // pennants on the four poles
-  for (const a of [0.38, -0.38, 1.92, -1.92]) {
-    const f = cloth(1.15, 0.78, 0xffd45a, 0xd98b2b, 0.12, 3);
-    place(f, 0.60, 4.66, 0);
-    place(f, Math.cos(a) * (PLAZA_R - 0.55), 0, Math.sin(a) * (PLAZA_R - 0.55), 0, -a, 0);
-    parts.push(f);
-  }
-
-  // twin pennants on the trading-house mast
-  for (const s of [1, -1]) {
-    const f = cloth(0.62, 1.35, s > 0 ? 0xc23f2c : 0x2f7fa8, 0xf2e0b4, 0.10, 2);
-    place(f, 0, 11.28, s * 0.78);
-    place(f, -2.20, 0, 0);
-    parts.push(f);
-  }
-
-  // bunting strung around the stall ring
-  const N = 20;
-  for (let i = 0; i < N; i++) {
-    const a = (Math.PI * 2 * i) / N + 0.16;
-    const sag = Math.abs(Math.sin(a * N * 0.5)) * 0.0;
-    const f = cloth(0.30, 0.40, [0xffd45a, 0xc23f2c, 0x3f8a3c, 0x2f7fa8][i % 4], 0xf6efe1, 0.05, 2);
-    place(f, Math.cos(a) * (STALL_R + 0.42), 2.62 - Math.abs(Math.sin(i * 1.7)) * 0.18 - sag,
-      Math.sin(a) * (STALL_R + 0.42), 0, -a, 0);
-    parts.push(f);
-  }
-
-  // carpets hung to air off the trading-house balcony
-  for (let i = 0; i < 2; i++) {
-    const c = cloth(1.05, 1.25, [0xb8452f, 0x2f6b8b][i], 0x53291a, 0.10, 3);
-    place(c, 0.36, 2.62, -1.35 + i * 2.60);
-    place(c, -2.20, 0, 0);
-    parts.push(c);
-  }
-
-  return merge(parts);
-}
-
-/* --------------------------------------------------------- cloth wind mat */
-
-function windClothMaterial(amount) {
-  const m = clothMaterial();
-  m.userData.wind = { value: 0 };
-  m.onBeforeCompile = (sh) => {
-    sh.uniforms.uWind = m.userData.wind;
-    sh.uniforms.uAmp = { value: amount };
-    sh.vertexShader = 'uniform float uWind;\nuniform float uAmp;\n' + sh.vertexShader;
-    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', [
-      '#include <begin_vertex>',
-      'float ph = uWind * 2.05 + transformed.x * 0.62 + transformed.z * 0.44;',
-      '#ifdef USE_INSTANCING',
-      '  ph += instanceMatrix[ 3 ].x * 0.21 + instanceMatrix[ 3 ].z * 0.17;',
-      '#endif',
-      'float amp = uAmp * (0.55 + 0.45 * sin(transformed.y * 1.9));',
-      'transformed.x += sin(ph) * amp;',
-      'transformed.z += cos(ph * 0.87) * amp * 0.72;',
-      'transformed.y += sin(ph * 1.31) * amp * 0.34;'
-    ].join('\n'));
-  };
-  m.customProgramCacheKey = () => 'islandClothWind' + amount;
-  return m;
 }
 
 /* ================================================================= market */
 
-/** Where the crowd wants to be: stall fronts, the well, and the house door. */
+/**
+ * Where the crowd wants to be: one shopper at each counter and two by the
+ * pavilion door. `face = -a` turns a villager's local +X out along the radius,
+ * i.e. toward the stall they have stopped in front of.
+ */
 function crowdSpots() {
-  const spots = [];
-  // facing = -a turns a villager's local +X out along the radius, i.e. toward
-  // the stall they have stopped in front of.
-  for (const s of STALLS) {
-    spots.push([Math.cos(s.a) * (STALL_R - 1.45), Math.sin(s.a) * (STALL_R - 1.45), -s.a]);
-  }
-  spots.push([1.15, 2.30, 2.2], [1.30, -0.05, Math.PI], [3.30, 1.10, 3.0], [3.10, -1.65, 2.6]);
+  const spots = STALLS.map(s =>
+    [Math.cos(s.a) * (STALL_R - 1.55), Math.sin(s.a) * (STALL_R - 1.55), -s.a]);
+  spots.push([HOUSE_X + 4.6, 1.05, Math.PI], [HOUSE_X + 5.1, -1.20, Math.PI]);
   return spots;
 }
 
@@ -278,78 +93,82 @@ export function buildMarket(scene) {
   group.name = 'market';
   if (scene) scene.add(group);
 
-  // The plaza is deliberately flattened by terrain.js; sit on its high point.
+  // The plaza is deliberately flattened by terrain.js; sit on its high point,
+  // then stand the paving a hand's width proud so the apron has a clean edge.
   let baseY = heightAt(MARKET.x, MARKET.z);
   for (let i = 0; i < 24; i++) {
     const a = (Math.PI * 2 * i) / 24;
-    for (const rr of [2.6, 4.6, 6.4]) {
+    for (const rr of [2.6, 4.6, 6.6]) {
       const h = heightAt(MARKET.x + Math.cos(a) * rr, MARKET.z + Math.sin(a) * rr);
       if (h > baseY) baseY = h;
     }
   }
-  group.position.set(MARKET.x, baseY, MARKET.z);
+  group.position.set(MARKET.x, baseY + PLAZA_LIFT, MARKET.z);
   /*
-   * Turn the whole plaza so the trading-house frontage, the balcony, the lit
-   * doorway and the entrance gate all face into the key light. Built facing
-   * +X, the landmark's best side sat in permanent shadow — the sun runs from
+   * Turn the whole plaza so the pavilion frontage, the porch, the lit doorway
+   * and the painted board all face into the key light. Built facing +X, the
+   * landmark's best side sat in permanent shadow — the sun runs from
    * (-0.82, +0.58) in the XZ plane, so -atan2(0.58, -0.82) points the front
    * straight at it.
    */
   group.rotation.y = -Math.atan2(0.58, -0.82);
 
-  const solid = glowSolidMaterial();
-  const clothMat = windClothMaterial(0.070);
+  /*
+   * The awnings used to be a second, two-sided, wind-animated mesh. With the
+   * bunting, the pennants and the hung carpets gone there were four small
+   * panels left in it, so the whole cloth pass folded back into the solid
+   * geometry and the solid material simply went two-sided. One less mesh, one
+   * less shadow-caster, one less shader.
+   */
+  const solid = glowSolidMaterial({ side: THREE.DoubleSide });
 
   const gSolid = marketSolidGeo();
-  const gCloth = marketClothGeo();
-  const gBeacon = MKT.beaconQuad(4.3);
   const gFolk = villagerGeo(true);
-  const beaconTex = MKT.beaconTexture();
+  const signTex = MKT.signTexture();
 
   const solidMesh = new THREE.Mesh(gSolid, solid);
   solidMesh.castShadow = true;
   solidMesh.receiveShadow = true;
   group.add(solidMesh);
 
-  const clothMesh = new THREE.Mesh(gCloth, clothMat);
-  clothMesh.castShadow = true;
-  group.add(clothMesh);
-
   /*
-   * The beacon is a single tone-mapped billboard, not a light shaft.
+   * Both painted boards are one two-triangle-per-board mesh sharing one atlas.
    *
-   * An earlier version drew a 3.4-unit additive cone with depthWrite off, which
-   * painted a hard wedge of pure 255,255,255 over the terrain and flared off the
-   * top of every screenshot. Nothing here is additive and nothing is authored
-   * above #f2e0b4, so the banner rolls off through ACES like the rest of the
-   * frame instead of clipping.
+   * The mast banner is a camera-facing billboard so it reads from any approach;
+   * the shop board is a fixed plane hung under the porch beam. Neither is
+   * additive and nothing on the canvas is authored above #fff2d2, so they roll
+   * off through ACES like the rest of the frame instead of clipping the way the
+   * old light-shaft beacon did.
    */
-  const beaconMat = MKT.beaconMaterial(beaconTex);
-  const beacon = new THREE.Mesh(gBeacon, beaconMat);
-  beacon.position.set(-2.20, 14.3, 0);
-  beacon.renderOrder = 5;
-  beacon.frustumCulled = false;
-  group.add(beacon);
+  const signMat = MKT.signMaterial(signTex);
+  const gSign = MKT.signGeo(
+    { x: HOUSE_X + 0.45, y: 9.75, z: 0, w: 3.00, h: 3.00 },
+    { x: HOUSE_X + 3.22, y: 3.20, z: 0, w: 2.70, h: 1.32 }
+  );
+  const sign = new THREE.Mesh(gSign, signMat);
+  sign.renderOrder = 5;
+  sign.frustumCulled = false;
+  group.add(sign);
 
-  const CROWD = 12;
+  const CROWD = 6;
   const crowd = instanced(gFolk, solid, CROWD, true, false);
   crowd.instanceColor =
     new THREE.InstancedBufferAttribute(new Float32Array(CROWD * 3).fill(1), 3);
   group.add(crowd);
 
-  const TONES = [0xd0472f, 0x3b7fd4, 0x3f9a52, 0x8552c4, 0xe0c27a, 0xdfe4ea];
+  const TONES = [0xd0472f, 0x3b7fd4, 0x3f9a52, 0xe0c27a, 0xdfe4ea, 0x8552c4];
   const SPOTS = crowdSpots();
   const folk = [];
   const r = rng(90210);
   for (let i = 0; i < CROWD; i++) {
     const s = SPOTS[i % SPOTS.length];
     const a = (Math.PI * 2 * i) / CROWD + 0.3;
-    const rr = 1.9 + r() * 1.7;
+    const rr = 1.1 + r() * 1.5;
     folk.push({
-      x: s[0] + (r() - 0.5) * 0.8, z: s[1] + (r() - 0.5) * 0.8,
-      tx: Math.cos(a) * rr, tz: Math.sin(a) * rr,
+      x: s[0] + (r() - 0.5) * 0.6, z: s[1] + (r() - 0.5) * 0.6,
+      tx: HUB_X + Math.cos(a) * rr, tz: Math.sin(a) * rr,
       ry: s[2], face: s[2], wait: r() * 3.0, phase: r() * 6.28,
-      speed: 0.72 + r() * 0.6, scale: 0.94 + r() * 0.22
+      speed: 0.62 + r() * 0.45, scale: 0.94 + r() * 0.20
     });
     _c.set(TONES[i % TONES.length]).lerp(new THREE.Color(0xffffff), 0.28);
     crowd.instanceColor.setXYZ(i, _c.r, _c.g, _c.b);
@@ -361,16 +180,11 @@ export function buildMarket(scene) {
   function update(dt) {
     if (!(dt > 0)) dt = 0;
     t += dt;
-    clothMat.userData.wind.value = t;
-
-    beacon.position.y = 14.3 + Math.sin(t * 0.72) * 0.28;
-    beaconMat.opacity = 0.88 + Math.sin(t * 1.55) * 0.10;
-    const bs = 1 + Math.sin(t * 1.55) * 0.035;
-    beacon.scale.set(bs, bs, bs);
+    signMat.userData.time.value = t;
 
     for (let i = 0; i < folk.length; i++) {
       const f = folk[i];
-      f.phase += dt * 3.6;
+      f.phase += dt * 3.2;
       let moving = false;
       if (f.wait > 0) {
         f.wait -= dt;
@@ -384,10 +198,10 @@ export function buildMarket(scene) {
         const d = Math.hypot(dx, dz);
         if (d < 0.16) {
           const s = SPOTS[(Math.random() * SPOTS.length) | 0];
-          f.tx = s[0] + (Math.random() - 0.5) * 1.1;
-          f.tz = s[1] + (Math.random() - 0.5) * 1.1;
-          f.face = s[2] + (Math.random() - 0.5) * 0.5;
-          f.wait = 0.9 + Math.random() * 3.4;
+          f.tx = s[0] + (Math.random() - 0.5) * 0.9;
+          f.tz = s[1] + (Math.random() - 0.5) * 0.9;
+          f.face = s[2] + (Math.random() - 0.5) * 0.4;
+          f.wait = 1.6 + Math.random() * 4.2;
         } else {
           moving = true;
           const k = Math.min(1, (dt * f.speed) / d);
@@ -400,8 +214,8 @@ export function buildMarket(scene) {
         }
       }
       // walking bob, or a slow gesture while haggling at a stall
-      const bob = moving ? Math.abs(Math.sin(f.phase)) * 0.09 : Math.sin(f.phase * 0.5) * 0.03;
-      const lean = moving ? Math.sin(f.phase) * 0.13 : Math.sin(f.phase * 0.9) * 0.09;
+      const bob = moving ? Math.abs(Math.sin(f.phase)) * 0.08 : Math.sin(f.phase * 0.5) * 0.025;
+      const lean = moving ? Math.sin(f.phase) * 0.11 : Math.sin(f.phase * 0.9) * 0.07;
       setInstance(crowd, i, f.x, 0.03 + bob, f.z, f.ry, f.scale, f.scale, 0, lean);
     }
     crowd.instanceMatrix.needsUpdate = true;
@@ -409,15 +223,15 @@ export function buildMarket(scene) {
 
   update(0);
 
-  const triangles = triCount(gSolid) + triCount(gCloth) + 2 + CROWD * triCount(gFolk);
+  const triangles = triCount(gSolid) + 4 + CROWD * triCount(gFolk);
 
   return {
-    group, solidMesh, clothMesh, beacon, crowd,
-    baseY, triangles, drawCalls: 4,
+    group, solidMesh, sign, beacon: sign, crowd,
+    baseY, triangles, drawCalls: 3,
     update,
     dispose() {
-      gSolid.dispose(); gCloth.dispose(); gBeacon.dispose(); gFolk.dispose();
-      solid.dispose(); clothMat.dispose(); beaconMat.dispose(); beaconTex.dispose();
+      gSolid.dispose(); gSign.dispose(); gFolk.dispose();
+      solid.dispose(); signMat.dispose(); signTex.dispose();
     }
   };
 }
