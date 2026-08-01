@@ -127,7 +127,9 @@ async function boot() {
     openTrade(portId) { panels.openTrade(portId ?? null); },
     openCards() { panels.openCards(); },
     restart() {
-      if (game.flow && game.flow.restartInPlace && game.flow.restartInPlace()) return;
+      // A full reload, deliberately. The board is dealt fresh at module load,
+      // so restarting in place would replay the same island — and a new island
+      // every match is the whole point. Costs about a second of rebuild.
       location.reload();
     },
     toast(msg, kind) { hud.toast(msg, kind); }
