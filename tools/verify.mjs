@@ -1,6 +1,6 @@
 // Structural self-test for the frozen contracts. Run: node tools/verify.mjs
 import { tiles, intersections, edges, ports, BOUNDS } from '../src/board/layout.js';
-import { nodes } from '../src/board/nodes.js';
+import { items, tileItemCount, tileRegenSeconds } from '../src/board/nodes.js';
 import {
   createMatch, legalSettlements, legalRoads, setupCurrentPlayer,
   setupPlaceSettlement, setupPlaceRoad, scoreOf, longestRoadFor
@@ -16,7 +16,21 @@ ok(tiles.length === 19, 'tiles = 19', String(tiles.length));
 ok(intersections.length === 54, 'intersections = 54', String(intersections.length));
 ok(edges.length === 72, 'edges = 72', String(edges.length));
 ok(ports.length === 9, 'ports = 9', String(ports.length));
-ok(nodes.length === 126, 'gather nodes = 126', String(nodes.length));
+ok(items.length >= 280 && items.length <= 460, 'harvestable field items', String(items.length));
+
+// The number on a hex means two things and only two: how much it holds, and
+// how fast it comes back. Both must move monotonically with the pips.
+{
+  const hot = tiles.filter(t => t.pips === 5);
+  const cold = tiles.filter(t => t.pips === 1);
+  ok(hot.length > 0 && cold.length > 0, 'board has 5-pip and 1-pip regions');
+  ok(tileItemCount(hot[0].id) > tileItemCount(cold[0].id),
+     'a high number holds more items',
+     `${tileItemCount(hot[0].id)} vs ${tileItemCount(cold[0].id)}`);
+  ok(tileRegenSeconds(hot[0].id) < tileRegenSeconds(cold[0].id),
+     'a high number regrows faster',
+     `${tileRegenSeconds(hot[0].id)}s vs ${tileRegenSeconds(cold[0].id)}s`);
+}
 
 const nums = tiles.filter(t => t.number).map(t => t.number).sort((a, b) => a - b);
 ok(nums.length === 18, 'number tokens = 18');
