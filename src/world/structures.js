@@ -7,18 +7,27 @@
  *     ghostSettlement(iid, pid), clearGhost(), update(dt)
  *   }
  *
- * Everything the players build shares fourteen meshes:
+ * Everything the players build shares fifteen meshes:
  *
- *   roads      bed (kerbs + sleeper) | three plank groups | owner trim
- *   villages   body | owner banner and ridge caps
- *   cities     core | curtain wall | corner towers | owner banners
+ *   roads      bed (kerbs + sleeper) | three plank groups | OWNER DECK
+ *   villages   plaster walls and yard | OWNER ROOFS + banner
+ *   cities     walls and hall | curtain wall | OWNER TOWERS | OWNER ROOFS,
+ *              steeple and banners
+ *   ground     one pooled mesh of painted owner rings, terrain-following
  *   people     one villager InstancedMesh for every settlement and city
  *   fx         one billboarded puff pool for chimney smoke and build dust
  *   raider     hooded figure, red ground vignette
  *   ghost      one translucent preview mesh, geometry swapped per request
  *
- * Owner colour never costs a draw call: the coloured geometry is authored
- * white and tinted through InstancedMesh.setColorAt.
+ * OWNERSHIP IS THE SILHOUETTE, NOT A TRIM. The player could not find their own
+ * pieces because the owner colour was a 5cm stripe on a brown plank and a
+ * hand-sized flag. Now the owner's colour is the road's whole deck, every roof
+ * on every building, the city's towers, and a painted band on the ground under
+ * the pad — so a piece reads as *whose* before it reads as *what*. It still
+ * costs nothing: all of that geometry is authored pure white and tinted
+ * through InstancedMesh.setColorAt, one instance colour per piece.
+ *
+ * The human's pieces get a brighter, wider ground band than any rival's.
  *
  * Placement: a village/city pad sits on the HIGHEST ground under its footprint
  * and its plinth sinks far enough to swallow the drop to the lowest. Roads sit
@@ -34,6 +43,7 @@ import { instanced, setInstance, hideInstance, triCount } from './geo.js';
 import {
   villagerGeo, solidMaterial, clothMaterial, puffTexture, puffMaterial
 } from './buildkit.js';
+import { createOwnerRings } from './ownring.js';
 import * as T from './buildtown.js';
 
 const ROAD_L = HEX_SIZE * 0.88;
@@ -46,6 +56,7 @@ const CAP = {
 };
 
 const _col = new THREE.Color();
+const WHITE = new THREE.Color(0xffffff);
 
 /** Owner colour, safe against a stray player id. */
 function playerHex(pid) {
@@ -166,7 +177,10 @@ export function buildStructures(scene, state) {
   /* ---------------------------------------------------------------- meshes */
   const M = {
     bed: instanced(G.bed, solid, CAP.bed, false, true),
-    plank: instanced(G.plank, solid, CAP.plank, true, true),
+    // The planks no longer cast: the painted deck now covers them, a road lies
+    // flat on the ground so its shadow was a hairline nobody could see, and the
+    // shadow pass was costing more triangles than the whole road kit.
+    plank: instanced(G.plank, solid, CAP.plank, false, true),
     trim: instanced(G.trim, banner, CAP.trim, false, false),
     village: instanced(G.village, solid, CAP.village, true, true),
     villageTint: instanced(G.villageTint, banner, CAP.village, false, false),
@@ -181,12 +195,19 @@ export function buildStructures(scene, state) {
   // Every instanced mesh that carries an owner colour needs its colour buffer
   // to exist up front, otherwise the first write reallocates mid-frame.
   const TINTED = {
-    trim: CAP.trim, villageTint: CAP.village, cityTint: CAP.city, folk: CAP.folk
+    trim: CAP.trim, villageTint: CAP.village, cityTint: CAP.city,
+    cityTower: CAP.tower, folk: CAP.folk
   };
   for (const k in TINTED) {
     M[k].instanceColor =
       new THREE.InstancedBufferAttribute(new Float32Array(TINTED[k] * 3).fill(1), 3);
   }
+
+  /* Painted ground band under every village and city. One draw call, but the
+     vertices are sampled off `heightAt` so the band creases with the ground
+     instead of hovering over the low side of a hex corner. */
+  const rings = createOwnerRings({ slots: CAP.village + 4 });
+  group.add(rings.mesh);
 
   /* ------------------------------------------------------------------ puffs */
   const puffTex = puffTexture();
@@ -431,6 +452,31 @@ export function buildStructures(scene, state) {
     mesh.instanceColor.needsUpdate = true;
   }
 
+  /* The two corner towers take a slightly lifted owner colour: the tower kit is
+     authored pale precisely so this lands on clean coloured stone. */
+  function tintTowers(slot, pid) {
+    if (slot < 0) return;
+    _col.set(playerHex(pid)).lerp(WHITE, 0.20);
+    M.cityTower.instanceColor.setXYZ(slot * 2, _col.r, _col.g, _col.b);
+    M.cityTower.instanceColor.setXYZ(slot * 2 + 1, _col.r, _col.g, _col.b);
+    M.cityTower.instanceColor.needsUpdate = true;
+  }
+
+  /** The painted ground band. The human's is brighter than any rival's. */
+  function setRing(rec, instant) {
+    const city = rec.type === 'city';
+    const mine = rec.pid === 0;
+    const r = city ? T.CITY_RADIUS : T.SET_RADIUS;
+    rings.set(rec.iid, {
+      x: rec.x, z: rec.z,
+      rIn: r * (city ? 0.98 : 0.95),
+      rOut: r * (city ? 1.64 : 1.72) * (mine ? 1.12 : 1),
+      color: playerHex(rec.pid),
+      emphasis: mine,
+      instant
+    });
+  }
+
   function writeVillage(rec) {
     const t = rec.t;
     const p = rec.anim ? clamp01(t / 0.52) : 1;
@@ -438,9 +484,10 @@ export function buildStructures(scene, state) {
     const sy = rec.anim ? s * (1 + 0.16 * Math.sin(Math.PI * clamp01(t / 0.36))) : 1;
     if (rec.slot < 0) return;
     setInstance(M.village, rec.slot, rec.x, rec.y, rec.z, rec.yaw, s, sy);
-    const u = rec.anim ? clamp01((t - 0.46) / 0.34) : 1;
+    // The owner mesh is now the roofs, not a flag hung on afterwards, so it
+    // rides the body's transform exactly instead of unfurling on its own clock.
     setInstance(M.villageTint, rec.slot, rec.x, rec.y, rec.z, rec.yaw,
-      Math.max(0.001, s), Math.max(0.001, s * easeOutCubic(u)));
+      Math.max(0.001, s), Math.max(0.001, sy));
     M.village.instanceMatrix.needsUpdate = true;
     M.villageTint.instanceMatrix.needsUpdate = true;
   }
@@ -467,10 +514,8 @@ export function buildStructures(scene, state) {
         rec.x + Math.cos(ang) * tr, rec.y + 0.22, rec.z + Math.sin(ang) * tr,
         rec.yaw, 1, Math.max(0.02, easeOutBack(tp)));
     }
-    // banners unfurl last
-    const bp = A ? clamp01((t - 0.82) / 0.38) : 1;
-    setInstance(M.cityTint, rec.slot, rec.x, rec.y, rec.z, rec.yaw,
-      1, Math.max(0.02, easeOutCubic(bp)));
+    // roofs, steeple and banners all belong to the core mass now
+    setInstance(M.cityTint, rec.slot, rec.x, rec.y + cy, rec.z, rec.yaw, cs, cs);
     M.cityCore.instanceMatrix.needsUpdate = true;
     M.cityWall.instanceMatrix.needsUpdate = true;
     M.cityTower.instanceMatrix.needsUpdate = true;
@@ -493,6 +538,7 @@ export function buildStructures(scene, state) {
       }
     }
     rec.slot = -1;
+    rings.clear(rec.iid);
     removeFolk(rec);
   }
 
@@ -505,6 +551,7 @@ export function buildStructures(scene, state) {
     rec.anim = !instant;
     builds.set(iid, rec);
     tintSlotColor(M.villageTint, rec.slot, pid);
+    setRing(rec, instant);
     addFolk(rec, 2, rec.y + 0.22);
     syncCounts();
     if (!instant) dustRing(rec.x, rec.y, rec.z, T.SET_RADIUS * 1.5, 9, { life: 0.9, s1: 2.0 });
@@ -522,6 +569,8 @@ export function buildStructures(scene, state) {
     rec.anim = !instant;
     builds.set(iid, rec);
     tintSlotColor(M.cityTint, rec.slot, pid);
+    tintTowers(rec.slot, pid);
+    setRing(rec, instant);
     addFolk(rec, 4, rec.y + 0.22);
     syncCounts();
     if (!instant) {
@@ -662,6 +711,7 @@ export function buildStructures(scene, state) {
       for (const s of rec.seg) if (s >= 0) { hideInstance(M.plank, s); alloc.plank.give(s); }
     }
     roads.clear();
+    rings.clearAll();
     for (const k in alloc) alloc[k].reset();
     syncCounts();
     flagRoads();
@@ -772,6 +822,7 @@ export function buildStructures(scene, state) {
 
     stepRobber(dt);
     stepPuffs(dt);
+    rings.update(dt);
 
     if (ghost.visible) {
       ghostT += dt;
@@ -801,7 +852,8 @@ export function buildStructures(scene, state) {
     };
     let tris = 0;
     for (const k in counts) tris += counts[k] * per[k];
-    return { per, counts, triangles: Math.round(tris), drawCalls: 14 };
+    tris += rings.triangles;
+    return { per, counts, rings: rings.triangles, triangles: Math.round(tris), drawCalls: 15 };
   }
 
   syncFromState();
@@ -812,9 +864,10 @@ export function buildStructures(scene, state) {
     puffMesh,
     raider,
     ghost,
+    rings,
     materials: { solid, banner, ghostMat, vignetteMat, puffMat },
     geometries: G,
-    drawCalls: 14,
+    drawCalls: 15,
     stats,
 
     syncFromState,
@@ -836,6 +889,7 @@ export function buildStructures(scene, state) {
 
     dispose() {
       for (const k in G) G[k].dispose();
+      rings.dispose();
       solid.dispose(); banner.dispose(); ghostMat.dispose();
       vignetteMat.dispose(); puffMat.dispose(); puffTex.dispose();
     }

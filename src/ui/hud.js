@@ -23,17 +23,17 @@
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL, TRADE_RADIUS, INTERACT_RADIUS,
+  CARD_LABEL, INTERACT_RADIUS,
   canAfford, missingFrom
 } from '../core/constants.js';
 
-import { scoreOf, rankings, drawCard, nearestPortFor } from '../core/rules.js';
+import { scoreOf, rankings, drawCard } from '../core/rules.js';
 
-import { MARKET } from '../board/layout.js';
 import { nodes } from '../board/nodes.js';
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
 import { createBuildBar } from './hud-build.js';
+import { createTradeCue } from './hud-trade.js';
 import {
   createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere
 } from './hud-guide.js';
@@ -71,9 +71,20 @@ export function createHUD(root, state, game) {
     const c = el('i', { class: i === VICTORY_POINTS - 1 ? 'goal' : '' });
     vpCells.push(c); vpTrack.appendChild(c);
   }
-  const idCard = el('div', { class: 'idcard plate' },
+  /* The identity chip carries the player's colour hard: a full-height banner
+     down its edge, a coloured frame and a coloured wash behind the name. The
+     whole point is that "me" and "the blue buildings out there" are obviously
+     the same thing, without a word of explanation. */
+  const idCard = el('div', {
+    class: 'idcard plate mine',
+    style: { '--me': me.color.css, '--mel': me.color.light }
+  },
+    el('span', { class: 'idc-banner' }),
     el('span', { class: 'idc-av', html: avatar(me.color.css, me.color.light, 32) }),
-    el('div', { class: 'idc-txt' }, el('b', { class: 'idc-name', text: me.name }), vpTrack),
+    el('div', { class: 'idc-txt' },
+      el('b', { class: 'idc-name', text: me.name }),
+      el('span', { class: 'idc-hue' }, el('i'), el('em', { text: me.color.key })),
+      vpTrack),
     el('div', { class: 'idc-vp' }, iconEl('trophy', 20), vpNum)
   );
 
@@ -195,6 +206,10 @@ export function createHUD(root, state, game) {
   hud.appendChild(bl); hud.appendChild(bc); hud.appendChild(br);
   hud.appendChild(toastWrap); hud.appendChild(annWrap); hud.appendChild(settings);
   root.appendChild(hud);
+
+  /* The world-anchored trade banner. It lives inside the HUD layer so it can
+     measure itself against the same box everything else is laid out in. */
+  const tradeCue = createTradeCue(hud, state, game);
 
   /* ---------------------------------------------------------------- toast */
   const liveToasts = [];
@@ -326,18 +341,9 @@ export function createHUD(root, state, game) {
       return;
     }
 
-    const dm = Math.hypot(me.x - MARKET.x, me.z - MARKET.z);
-    if (dm < TRADE_RADIUS + MARKET.radius) {
-      setPrompt('market', 'swap', 'Open Market', 'Trade 4 : 1', () => game.openTrade(null), -1);
-      return;
-    }
-    const port = nearestPortFor(state, 0, me.x, me.z, TRADE_RADIUS + 3);
-    if (port) {
-      setPrompt('port' + port.id, 'ship', `Trade ${port.ratio} : 1`,
-        port.resource ? RES_LABEL[port.resource] + ' dock' : 'Any resource',
-        () => game.openTrade(port.id), -1);
-      return;
-    }
+    // Trading is no longer announced down here. Walk into range of the market
+    // or one of your docks and the offer rises over the building itself
+    // (hud-trade.js) — a corner chip was never going to be read.
     const n = nearestNode();
     if (n) {
       const rem = here && here.resource === n.resource ? here : null;
@@ -501,6 +507,8 @@ export function createHUD(root, state, game) {
     }
 
     if (annT > 0) { annT -= d; if (annT <= 0) toggle(annWrap, 'show', false); }
+
+    tradeCue.update(d);
   }
 
   function onPlayBegan() {
@@ -518,7 +526,10 @@ export function createHUD(root, state, game) {
     update, toast, announce, pulseResource, flashCost, requestBuild, onPlayBegan,
     get root() { return hud; },
     openSettings: () => toggleSettings(true),
-    destroy() { if (hud.parentNode) hud.parentNode.removeChild(hud); }
+    destroy() {
+      tradeCue.destroy();
+      if (hud.parentNode) hud.parentNode.removeChild(hud);
+    }
   };
 }
 

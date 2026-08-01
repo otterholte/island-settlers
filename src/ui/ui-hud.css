@@ -23,8 +23,42 @@
   display:flex;align-items:center;gap:8px;height:48px;padding:0 11px 0 7px;
   border-radius:13px;
 }
+/* --- this is you, and this is your colour -------------------------------
+   The chip wears the player's colour the way their buildings do: a solid
+   banner down the leading edge, a coloured frame, a wash behind the name and
+   a matching ring on the portrait. Nothing else on screen is this colour
+   except the pieces they own. */
+.idcard.mine{
+  position:relative;overflow:hidden;padding-left:15px;
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb,var(--me,#3b7fd4) 42%,transparent) 0%,
+      color-mix(in srgb,var(--me,#3b7fd4) 12%,transparent) 46%,
+      rgba(12,32,58,0) 78%),
+    linear-gradient(180deg,rgba(20,48,80,.9),rgba(8,22,40,.92));
+  border:1.5px solid var(--mel,#7fb2f0);
+  box-shadow:
+    0 5px 5px -1px rgba(0,0,0,.45),0 9px 20px rgba(0,0,0,.34),
+    inset 0 2px 0 rgba(255,255,255,.24),
+    0 0 14px color-mix(in srgb,var(--me,#3b7fd4) 55%,transparent);
+}
+@supports not (color:color-mix(in srgb,red 50%,transparent)){
+  .idcard.mine{background:linear-gradient(180deg,rgba(20,48,80,.92),rgba(8,22,40,.94))}
+}
+.idc-banner{
+  position:absolute;left:0;top:0;bottom:0;width:8px;
+  background:linear-gradient(180deg,var(--mel,#7fb2f0),var(--me,#3b7fd4));
+  box-shadow:1px 0 0 rgba(4,12,24,.8),0 0 10px color-mix(in srgb,var(--me,#3b7fd4) 80%,transparent);
+}
+.idcard.mine .idc-av{position:relative;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--me,#3b7fd4) 85%,transparent))}
+.idc-hue{display:flex;align-items:center;gap:4px}
+.idc-hue i{width:9px;height:9px;border-radius:3px;flex:0 0 auto;
+  background:var(--me,#3b7fd4);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 0 1.3px rgba(4,12,24,.85)}
+.idc-hue em{font:800 8.5px/1 var(--ff);font-style:normal;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--mel,#7fb2f0);text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .idc-av{line-height:0;flex:0 0 auto}
-.idc-txt{display:flex;flex-direction:column;line-height:1;gap:4px;min-width:0}
+.idc-txt{display:flex;flex-direction:column;line-height:1;gap:3px;min-width:0}
 .idc-name{font:800 14px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .idc-vp{display:flex;align-items:center;gap:4px;margin-left:1px;padding-left:9px;
@@ -168,8 +202,10 @@
   background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.22));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 3px rgba(0,0,0,.34);
 }
-.rk.me::before{top:0;bottom:0;width:3px;border-radius:0;background:var(--gold);opacity:1;
-  box-shadow:0 0 8px rgba(255,201,60,.7)}
+/* Your row is banded in your own colour, not in gold: the standings and the
+   board then agree about which player you are. */
+.rk.me::before{top:0;bottom:0;width:5px;border-radius:0;background:var(--c,#3b7fd4);opacity:1;
+  box-shadow:1px 0 0 rgba(4,12,24,.7),0 0 9px var(--c,#3b7fd4)}
 .rk-av{line-height:0;flex:0 0 auto;opacity:.9}
 .rk.me .rk-av{opacity:1}
 .rk-name{flex:1 1 auto;min-width:0;font:700 11px/1 var(--ff);letter-spacing:.04em;
@@ -340,6 +376,106 @@
 .prompt.in{animation:promptIn .3s cubic-bezier(.2,1.4,.4,1)}
 @keyframes promptIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1}}
 
+/* --- the trade approach banner -------------------------------------------
+   Anchored over the trading post in the 3D world (hud-trade.js projects the
+   landmark's position every frame and writes it to `transform`). It rises,
+   shimmers once, states the exchange in objects rather than words, and is gone
+   the moment you walk away. It is the only HUD element allowed to sit over the
+   middle of the playfield, and only while you are standing at a trading post. */
+/* `min-height/padding/max-width` are reset because this element also wears the
+   `.prompt` class while it is up (see hud-trade.js) and must not inherit the
+   bottom-left chip's box. */
+.tradecue{
+  position:absolute;left:0;top:0;width:0;height:0;
+  min-height:0;padding:0;max-width:none;background:none;
+  display:flex;flex-direction:column;align-items:center;
+  will-change:transform;
+}
+.tradecue.hid,.tradecue.off{display:none}
+
+.tc-card{
+  position:relative;transform:translate(-50%,-100%);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:8px 16px 9px;border-radius:15px;
+  background:linear-gradient(180deg,#fdf3d9 0%,#f2dfb0 52%,#e2c78c 100%);
+  border:2.5px solid #5a3a1e;
+  box-shadow:0 6px 0 #9a7134,0 12px 24px rgba(0,0,0,.5),
+    inset 0 2px 0 rgba(255,255,255,.85),0 0 26px rgba(255,201,60,.5);
+  cursor:pointer;touch-action:manipulation;white-space:nowrap;
+}
+.tc-card:active{transform:translate(-50%,-100%) translateY(3px);
+  box-shadow:0 3px 0 #9a7134,0 6px 12px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.85)}
+
+.tc-head{
+  font:800 11px/1 var(--ff);letter-spacing:.20em;text-transform:uppercase;
+  color:#7a4a15;text-shadow:0 1px 0 rgba(255,255,255,.75);
+}
+.tc-deal{display:flex;align-items:center;gap:10px}
+.tc-side{display:flex;flex-direction:column;align-items:center;gap:2px}
+.tc-tag{font:800 8px/1 var(--ff);letter-spacing:.18em;text-transform:uppercase;color:#9c7433}
+.tc-num{display:flex;align-items:center;gap:5px}
+.tc-num > b{
+  font:800 32px/1 var(--ff);color:#3a2410;
+  -webkit-text-stroke:1px rgba(255,255,255,.5);paint-order:stroke fill;
+  text-shadow:0 2px 0 rgba(255,255,255,.6);
+}
+.tc-row{display:flex;align-items:center;gap:-2px;line-height:0}
+.tc-row svg{margin-left:-6px;filter:drop-shadow(0 1px 1px rgba(60,40,18,.5))}
+.tc-row svg:first-child{margin-left:0}
+.tc-side.get .tc-num > b{color:#1d5c26}
+.tc-arrow{line-height:0;color:#7a4a15;opacity:.9}
+.tc-arrow svg{filter:drop-shadow(0 1px 0 rgba(255,255,255,.6))}
+.tc-sub{
+  font:700 9.5px/1.1 var(--ff);letter-spacing:.05em;text-transform:uppercase;
+  color:#7d5b2c;max-width:280px;overflow:hidden;text-overflow:ellipsis;
+}
+.tc-cta{
+  margin-top:2px;padding:3px 12px 4px;border-radius:8px;
+  font:800 9.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  color:#3a2410;background:linear-gradient(180deg,#ffe08e,#f0b73c);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 1px 0 rgba(120,84,26,.7);
+  animation:tcCta 1.9s ease-in-out infinite;
+}
+@keyframes tcCta{0%,100%{opacity:.82}50%{opacity:1}}
+
+/* the stem that ties the banner to the building it belongs to */
+.tc-stem{position:absolute;left:-1.5px;top:-4px;width:3px;height:26px;border-radius:2px;
+  background:linear-gradient(180deg,rgba(90,58,30,.95),rgba(90,58,30,0))}
+.tc-pin{position:absolute;left:-5px;top:20px;width:10px;height:10px;border-radius:50%;
+  background:radial-gradient(circle,#fff3cf 0%,rgba(255,201,60,.75) 45%,rgba(255,201,60,0) 72%)}
+
+/* a dock is the same idea, one size down and without the fanfare */
+.tradecue.port .tc-card{padding:6px 13px 7px;border-radius:13px}
+.tradecue.port .tc-num > b{font-size:26px}
+.tradecue.port .tc-head{font-size:10px}
+
+/* entrance: rise, overshoot, settle. Plus one shimmer burst, once. */
+.tradecue.in .tc-card{animation:tcIn .46s cubic-bezier(.18,1.5,.36,1)}
+@keyframes tcIn{
+  0%{opacity:0;transform:translate(-50%,-100%) translateY(26px) scale(.72)}
+  60%{opacity:1;transform:translate(-50%,-100%) translateY(-4px) scale(1.05)}
+  100%{opacity:1;transform:translate(-50%,-100%) translateY(0) scale(1)}
+}
+.tradecue.out .tc-card{animation:tcOut .34s ease forwards}
+.tradecue.out .tc-spark{display:none}
+@keyframes tcOut{
+  to{opacity:0;transform:translate(-50%,-100%) translateY(12px) scale(.9)}
+}
+
+.tc-spark{position:absolute;left:0;top:-46px;width:0;height:0;opacity:0}
+.tradecue.in .tc-spark{opacity:1}
+.tc-spark i{
+  position:absolute;left:-3px;top:-3px;width:6px;height:6px;border-radius:2px;
+  background:#fff2c4;box-shadow:0 0 8px rgba(255,215,120,.95);
+  transform:rotate(var(--a)) translateX(0) scale(0);
+}
+.tradecue.in .tc-spark i{animation:tcSpark .85s cubic-bezier(.15,.85,.3,1) var(--d) 1 both}
+@keyframes tcSpark{
+  0%{opacity:0;transform:rotate(var(--a)) translateX(4px) scale(.2)}
+  25%{opacity:1;transform:rotate(var(--a)) translateX(26px) scale(1.15)}
+  100%{opacity:0;transform:rotate(var(--a)) translateX(62px) scale(.25)}
+}
+
 /* --- toasts ---------------------------------------------------------------
    Anchored to the left column, stacked above the gather prompt. Centring
    these put them on top of the settler, who sits just below frame centre. */
@@ -465,6 +601,20 @@
   .hud .hud-toasts{bottom:calc(var(--gB) + 54px);max-width:44vw}
   .hud .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
   .hud .ann-txt{font-size:22px}
+
+  .hud .idcard.mine{padding-left:13px}
+  .hud .idc-banner{width:6px}
+  .hud .idc-hue i{width:8px;height:8px}
+  .hud .idc-hue em{font-size:8px;letter-spacing:.13em}
+
+  /* The banner keeps its objects at full size; the chrome around them gives. */
+  .hud .tc-card{padding:6px 12px 7px;gap:2px;border-radius:13px}
+  .hud .tc-head{font-size:10px;letter-spacing:.15em}
+  .hud .tc-deal{gap:7px}
+  .hud .tc-num > b{font-size:26px}
+  .hud .tradecue.port .tc-num > b{font-size:22px}
+  .hud .tc-sub{font-size:8.5px;max-width:216px}
+  .hud .tc-cta{font-size:8.5px;padding:2px 9px 3px;letter-spacing:.12em}
 }
 
 /* Very short viewports: reclaim vertical space without shrinking any object. */

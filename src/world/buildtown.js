@@ -19,8 +19,8 @@
 import * as THREE from 'three';
 import { merge, place, tint, gradient, box, cyl, cone } from './geo.js';
 import {
-  PAL, prism, decal, cloth, crate, cottage, roundTower, wallPanel,
-  plinth, faceGeo, rng
+  PAL, prism, decal, cloth, crate, roundTower, wallPanel,
+  plinth, rng
 } from './buildkit.js';
 
 /* ------------------------------------------------------------------ scales */
@@ -88,42 +88,73 @@ export function roadPlankGeo(len) {
 }
 
 /**
- * Owner-coloured dressing: a painted stripe capping each kerb plus a pennant
- * on a short staff. Pure white — the instance colour does the work.
+ * Owner-coloured dressing — and on this board that is most of the road.
+ *
+ * A hairline of trim on top of brown planks was invisible at play distance, so
+ * the owner's colour now IS the road surface: a full-length painted deck plate
+ * laid over the planking, a bold painted cap on each kerb, and a pennant at
+ * each end so a run of road reads as a coloured line even from the overview.
+ * Everything here is authored white; the instance colour does the work.
  */
 export function roadTrimGeo(len) {
   const parts = [
-    place(box(len, 0.055, 0.17, 0xffffff), 0, ROAD_DECK_Y + 0.155, ROAD_W / 2 - 0.09),
-    place(box(len, 0.055, 0.17, 0xffffff), 0, ROAD_DECK_Y + 0.155, -ROAD_W / 2 + 0.09)
+    // painted decking — the single biggest block of owner colour on the board
+    place(box(len, 0.10, ROAD_W - 0.52, 0xffffff), 0, ROAD_DECK_Y + 0.10, 0),
+    // kerb caps, chunky enough to survive a 40-pixel road
+    place(box(len, 0.15, 0.32, 0xffffff), 0, ROAD_DECK_Y + 0.195, ROAD_W / 2 - 0.09),
+    place(box(len, 0.15, 0.32, 0xffffff), 0, ROAD_DECK_Y + 0.195, -ROAD_W / 2 + 0.09)
   ];
-  // pennant staff (neutral) + triangular flag (white)
-  const h = 1.35;
-  parts.push(place(tint(new THREE.BoxGeometry(0.07, h, 0.07), 0xdedede), len * 0.28, h / 2 + 0.1, ROAD_W / 2 - 0.08));
-  const flag = faceGeo(null, [
-    [[0, h, 0], [0.52, h - 0.13, 0], [0, h - 0.36, 0]],
-    [[0, h, 0], [0, h - 0.36, 0], [0.52, h - 0.13, 0]]
-  ]);
-  tint(flag, 0xffffff);
-  parts.push(place(flag, len * 0.28 + 0.03, 0.1, ROAD_W / 2 - 0.08));
+  // a pennant at each end, on opposite kerbs, so junctions never look bare
+  const h = 1.78;
+  for (const s of [1, -1]) {
+    const px = s * len * 0.40;
+    const pz = s > 0 ? ROAD_W / 2 - 0.10 : -ROAD_W / 2 + 0.10;
+    parts.push(place(tint(new THREE.BoxGeometry(0.085, h, 0.085), 0x9a9a9a),
+      px, ROAD_DECK_Y + h / 2, pz));
+    const flag = cloth(0.74, 0.58, 0xffffff, 0xeaeaea, 0.07, 2);
+    place(flag, px + 0.40, ROAD_DECK_Y + h - 0.34, pz);
+    parts.push(flag);
+  }
   return merge(parts);
 }
 
 /* ================================================================= village */
 
+/*
+ * The village is authored as two halves that share one transform: cream
+ * plastered walls in the neutral mesh, and every roof in the owner-coloured
+ * mesh. Blocking the roofs in the player's colour is what makes a village
+ * readable as *yours* from the far side of the island — a thin flag never was.
+ */
+const V_SPEC = [
+  { a: 0.55, r: 1.02, w: 1.02, h: 0.80, d: 0.84 },
+  { a: 2.05, r: 1.05, w: 0.88, h: 0.68, d: 0.76 },
+  { a: 3.55, r: 1.00, w: 0.96, h: 0.74, d: 0.80 },
+  { a: 5.05, r: 1.08, w: 0.80, h: 0.62, d: 0.72 }
+];
+
+/** Walls, door and window only — the roof belongs to the owner mesh. */
+function houseBody(w, h, d, body, dim, win) {
+  const parts = [
+    place(gradient(new THREE.BoxGeometry(w, h, d), dim, body), 0, h / 2, 0),
+    place(decal(w * 0.3, h * 0.55, PAL.woodDark), 0, h * 0.275, d / 2 + 0.012)
+  ];
+  if (win) parts.push(place(decal(w * 0.22, h * 0.24, 0x5f7c8c), w * 0.3, h * 0.66, d / 2 + 0.012));
+  return merge(parts);
+}
+
+/** Pitched roof plus its ridge cap, pure white, sitting on a body of height h. */
+function houseRoof(w, h, d, pitch) {
+  return merge([
+    place(prism(w * 1.16, pitch, d * 1.14, 0xffffff, 0xe4e4e4), 0, h, 0),
+    place(box(0.15, 0.10, d * 1.20, 0xffffff), 0, h + pitch - 0.02, 0)
+  ]);
+}
+
 function villageCottages() {
   const parts = [];
-  const spec = [
-    { a: 0.55, r: 1.02, w: 1.02, h: 0.80, d: 0.84, roof: PAL.terra },
-    { a: 2.05, r: 1.05, w: 0.88, h: 0.68, d: 0.76, roof: PAL.terraLight },
-    { a: 3.55, r: 1.00, w: 0.96, h: 0.74, d: 0.80, roof: PAL.terraDark },
-    { a: 5.05, r: 1.08, w: 0.80, h: 0.62, d: 0.72, roof: PAL.terra }
-  ];
-  spec.forEach((s, i) => {
-    const g = cottage(s.w, s.h, s.d, {
-      roof: s.roof,
-      body: i % 2 ? PAL.plaster : 0xe8d6b0,
-      window: i < 3
-    });
+  V_SPEC.forEach((s, i) => {
+    const g = houseBody(s.w, s.h, s.d, i % 2 ? PAL.plaster : 0xe8d6b0, PAL.plasterDim, i < 3);
     place(g, Math.cos(s.a) * s.r, 0.22, Math.sin(s.a) * s.r, 0, -s.a + Math.PI / 2, 0);
     parts.push(g);
   });
@@ -166,47 +197,48 @@ export function villageBaseGeo() {
   return merge(parts);
 }
 
-/** Owner colour: the tall banner and painted roof ridges. */
+/** Owner colour: every roof in the village, plus one tall banner over it. */
 export function villageTintGeo() {
-  const h = 2.55;
-  const parts = [
-    place(tint(new THREE.BoxGeometry(0.10, h, 0.10), 0xffffff), -1.16, 0.22 + h / 2, 0.52),
-    place(box(0.19, 0.19, 0.19, 0xffffff), -1.16, 0.22 + h + 0.06, 0.52)
-  ];
-  const flag = cloth(0.92, 1.30, 0xffffff, 0xe4e4e4, 0.10, 3);
-  place(flag, -1.16 + 0.51, 0.22 + h - 0.72, 0.52);
+  const parts = [];
+  V_SPEC.forEach((s) => {
+    const g = houseRoof(s.w, s.h, s.d, s.h * 0.62);
+    place(g, Math.cos(s.a) * s.r, 0.22, Math.sin(s.a) * s.r, 0, -s.a + Math.PI / 2, 0);
+    parts.push(g);
+  });
+  // the banner: tall enough to clear the roofs and wide enough to be a shape
+  const h = 3.30;
+  parts.push(place(tint(new THREE.BoxGeometry(0.12, h, 0.12), 0xffffff), -1.28, 0.22 + h / 2, 0.56));
+  parts.push(place(box(0.23, 0.23, 0.23, 0xffffff), -1.28, 0.22 + h + 0.08, 0.56));
+  const flag = cloth(1.34, 1.72, 0xffffff, 0xe4e4e4, 0.12, 3);
+  place(flag, -1.28 + 0.72, 0.22 + h - 0.94, 0.56);
   parts.push(flag);
-  // painted ridge caps — the cap's long axis must follow the cottage ridge,
-  // which runs along the cottage's local Z, hence yaw = cottageYaw - PI/2.
-  parts.push(place(box(0.96, 0.08, 0.10, 0xffffff), Math.cos(0.55) * 1.02, 1.50, Math.sin(0.55) * 1.02, 0, -0.55, 0));
-  parts.push(place(box(0.90, 0.08, 0.10, 0xffffff), Math.cos(3.55) * 1.00, 1.41, Math.sin(3.55) * 1.00, 0, -3.55, 0));
   return merge(parts);
 }
 
 /* ==================================================================== city */
 
+const C_SPEC = [
+  { a: 0.35, r: 1.15, w: 1.20, h: 1.42, d: 1.00 },
+  { a: 1.40, r: 1.25, w: 1.00, h: 1.05, d: 0.92 },
+  { a: 2.55, r: 1.20, w: 1.10, h: 1.28, d: 0.96 },
+  { a: 3.70, r: 1.30, w: 0.94, h: 0.96, d: 0.88 },
+  { a: 4.85, r: 1.18, w: 1.06, h: 1.18, d: 0.94 }
+];
+
 function cityBuildings() {
   const parts = [];
-  const spec = [
-    { a: 0.35, r: 1.15, w: 1.20, h: 1.42, d: 1.00, roof: PAL.terra },
-    { a: 1.40, r: 1.25, w: 1.00, h: 1.05, d: 0.92, roof: PAL.terraLight },
-    { a: 2.55, r: 1.20, w: 1.10, h: 1.28, d: 0.96, roof: PAL.terraDark },
-    { a: 3.70, r: 1.30, w: 0.94, h: 0.96, d: 0.88, roof: PAL.terra },
-    { a: 4.85, r: 1.18, w: 1.06, h: 1.18, d: 0.94, roof: PAL.terraLight }
-  ];
-  spec.forEach((s, i) => {
-    const g = cottage(s.w, s.h, s.d, {
-      roof: s.roof,
-      body: i % 2 ? PAL.plaster : 0xe6d3ab,
-      pitch: s.h * 0.48
-    });
+  C_SPEC.forEach((s, i) => {
+    const g = houseBody(s.w, s.h, s.d, i % 2 ? PAL.plaster : 0xe6d3ab, PAL.plasterDim, true);
     place(g, Math.cos(s.a) * s.r, 0.26, Math.sin(s.a) * s.r, 0, -s.a + Math.PI / 2, 0);
     parts.push(g);
   });
-  // the spired hall in the middle
+  // the spired hall in the middle — its steeple belongs to the owner mesh
   parts.push(place(gradient(new THREE.BoxGeometry(1.05, 1.35, 1.05), 0xd9c8a4, PAL.plaster), 0, 0.94, 0));
   parts.push(place(gradient(new THREE.CylinderGeometry(0.34, 0.40, 1.20, 6), PAL.stoneDark, PAL.stoneLight), 0, 2.20, 0));
-  parts.push(place(cone(0.50, 1.15, 6, 0x8e4a86, 0.07), 0, 3.35, 0));
+  // gold: the one thing a village never has. A collar on the belfry and a
+  // finial over the steeple say "city" before you have counted a single roof.
+  parts.push(place(cyl(0.44, 0.44, 0.13, 6, PAL.gold, true, 0.04), 0, 2.82, 0));
+  parts.push(place(tint(new THREE.OctahedronGeometry(0.20, 0), PAL.gold, 0.05), 0, 4.06, 0));
   // chimneys
   parts.push(place(tint(new THREE.BoxGeometry(0.18, 0.5, 0.18), PAL.stone, 0.08),
     Math.cos(0.35) * 1.15 + 0.3, 2.00, Math.sin(0.35) * 1.15));
@@ -247,23 +279,38 @@ export function cityWallGeo() {
   return merge(parts);
 }
 
-/** One corner tower — instanced twice per city so they telescope up. */
+/**
+ * One corner tower — instanced twice per city so they telescope up.
+ *
+ * Authored pale on purpose: structures.js gives this mesh a per-instance owner
+ * colour, and instance colour can only ever darken, so a pale tower lands on a
+ * clean owner-coloured stone instead of a muddy bruise.
+ */
 export function cityTowerGeo() {
-  return roundTower(0.52, 2.05, { roofH: 0.95, roof: 0x9b4023 });
+  return roundTower(0.52, 2.05, {
+    roofH: 0.95, roof: 0xffffff, body: 0xd8dce2, bodyDark: 0xaeb5be
+  });
 }
 
-/** Owner colour: three banners, on the towers and over the gate. */
+/** Owner colour: five roofs, the steeple, and three banners over them. */
 export function cityTintGeo() {
   const parts = [];
+  C_SPEC.forEach((s) => {
+    const g = houseRoof(s.w, s.h, s.d, s.h * 0.48);
+    place(g, Math.cos(s.a) * s.r, 0.26, Math.sin(s.a) * s.r, 0, -s.a + Math.PI / 2, 0);
+    parts.push(g);
+  });
+  parts.push(place(cone(0.50, 1.15, 6, 0xffffff, 0.06), 0, 3.35, 0));
+
   const mk = (x, y, z, w, hh) => {
-    parts.push(place(tint(new THREE.BoxGeometry(0.07, hh, 0.07), 0xffffff), x, y + hh / 2, z));
-    const f = cloth(w, hh * 0.62, 0xffffff, 0xe2e2e2, 0.08, 3);
-    place(f, x + w / 2 + 0.03, y + hh * 0.66, z);
+    parts.push(place(tint(new THREE.BoxGeometry(0.09, hh, 0.09), 0xffffff), x, y + hh / 2, z));
+    const f = cloth(w, hh * 0.66, 0xffffff, 0xe2e2e2, 0.09, 3);
+    place(f, x + w / 2 + 0.04, y + hh * 0.68, z);
     parts.push(f);
   };
-  mk(CITY_RADIUS * 0.94 - 0.02, 2.28, 0, 0.72, 1.05);
-  mk(0, 4.45, 0, 0.80, 1.15);
-  mk(-CITY_RADIUS * 0.62, 2.60, CITY_RADIUS * 0.55, 0.60, 0.90);
+  mk(CITY_RADIUS * 0.94 - 0.02, 2.28, 0, 1.05, 1.55);
+  mk(0, 4.30, 0, 1.20, 1.70);
+  mk(-CITY_RADIUS * 0.62, 2.60, CITY_RADIUS * 0.55, 0.92, 1.35);
   return merge(parts);
 }
 

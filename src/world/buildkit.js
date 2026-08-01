@@ -310,12 +310,17 @@ export function cottage(w, h, d, opts = {}) {
   return merge(parts);
 }
 
-/** Round stone tower with a conical roof and a corbel band. */
+/**
+ * Round stone tower with a conical roof and a corbel band.
+ * `body`/`bodyDark` let a caller author the stone pale, which is what a mesh
+ * that will be multiplied by a per-instance owner colour needs.
+ */
 export function roundTower(r, h, opts = {}) {
   const roofH = opts.roofH ?? r * 1.5;
   return merge([
-    place(gradient(new THREE.CylinderGeometry(r * 0.94, r, h, 8), PAL.stoneDark, PAL.stone), 0, h / 2, 0),
-    place(cyl(r * 1.14, r * 1.14, h * 0.09, 8, PAL.stoneLight, true), 0, h * 0.94, 0),
+    place(gradient(new THREE.CylinderGeometry(r * 0.94, r, h, 8),
+      opts.bodyDark ?? PAL.stoneDark, opts.body ?? PAL.stone), 0, h / 2, 0),
+    place(cyl(r * 1.14, r * 1.14, h * 0.09, 8, opts.band ?? PAL.stoneLight, true), 0, h * 0.94, 0),
     place(cone(r * 1.2, roofH, 8, opts.roof ?? PAL.terra, 0.07), 0, h + roofH / 2, 0)
   ]);
 }
