@@ -23,8 +23,7 @@
 import { START_RESOURCES } from '../core/constants.js';
 import { SPAWNS, DESERT } from '../board/layout.js';
 import { resetNodes, mulberry32 } from '../board/nodes.js';
-
-const SETUP_ORDER = [0, 1, 2, 3, 3, 2, 1, 0];
+import { buildSetupOrder } from '../core/rules.js';
 
 function resetPlayer(p) {
   const spawn = SPAWNS[p.id] || { x: 0, z: 0, facing: 0 };
@@ -62,11 +61,10 @@ function resetState(state, seed) {
   state.robberOwner = -1;
   state.longestRoadHolder = -1;
   state.largestArmyHolder = -1;
-  state.setupOrder = SETUP_ORDER.slice();
-  state.setupIndex = 0;
-  state.setupNeed = 'settlement';
-  state.setupAnchor = -1;
   state.rng = mulberry32(seed >>> 0);
+  // Reseat the snake draft off the fresh rng — a replay deals a new order, so
+  // the player does not sit in the same slot every match.
+  buildSetupOrder(state);
   state.flowActive = true;
 }
 
@@ -129,7 +127,13 @@ function resetBots(game) {
   return true;
 }
 
-function resetInterface(game) {
+/**
+ * `keepBoard` is set by the flow's own replay path: it is about to reopen the
+ * board map for the new draft on this very same tick, so closing the map and
+ * dropping the camera out of the board framing here would be a one-frame
+ * flicker between two identical views. Everything else still resets.
+ */
+function resetInterface(game, keepBoard) {
   // showResults() is deliberately un-closeable — only "Play Again" leaves it.
   // Routing through a dismissible sheet lets the modal layer go without a
   // reload, and it never becomes visible because `close()` lands first.
@@ -138,7 +142,9 @@ function resetInterface(game) {
     if (typeof panels.openTrade === 'function') panels.openTrade(null);
     if (typeof panels.close === 'function') panels.close();
   }
-  if (game.overview && typeof game.overview.close === 'function') game.overview.close();
+  if (!keepBoard && game.overview && typeof game.overview.close === 'function') {
+    game.overview.close();
+  }
 
   // Put the HUD back into its pre-match state; hud.js drops the class itself
   // the moment the new draft finishes.
@@ -146,7 +152,7 @@ function resetInterface(game) {
   if (hudRoot && hudRoot.classList) hudRoot.classList.add('pre');
 
   const cam = game.camera;
-  if (cam && typeof cam.setOverview === 'function') cam.setOverview(false);
+  if (!keepBoard && cam && typeof cam.setOverview === 'function') cam.setOverview(false);
 }
 
 export function resetMatchInPlace(state, game, opts = {}) {
@@ -164,7 +170,7 @@ export function resetMatchInPlace(state, game, opts = {}) {
     resetState(state, (opts.seed ?? (Math.random() * 1e9)) | 0);
     resyncWorld(state, g, world);
     resetBots(g);
-    resetInterface(g);
+    resetInterface(g, !!opts.keepBoard);
     return true;
   } catch (err) {
     if (typeof console !== 'undefined' && console.warn) {

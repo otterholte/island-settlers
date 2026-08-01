@@ -1,0 +1,548 @@
+/**
+ * Island Settlers — the opening snake draft.
+ *
+ *   createDraft(state, game, deps) ->
+ *     { begin(), update(dt) -> doneBoolean, reset(), holding, boardUp }
+ *
+ * Split out of matchflow.js, which owns everything either side of it.
+ *
+ * The one rule this module exists to enforce: **the draft is a single, stable
+ * view.** The camera goes to the board framing and the board map opens once,
+ * in `begin()`, and neither is touched again until matchflow hands off to
+ * third-person play. Every beat after that — a rival thinking, a rival's spot
+ * lighting up, a piece landing, the player's corners arming, the player's own
+ * settlement giving way to the player's own road — is a *re-dress of the same
+ * open panel* through `showBoard()`, which overview.js applies in place.
+ *
+ * Nothing here calls `overview.close()` or `cam.overview(false)`. That pair is
+ * what used to snap the player back to the close third-person camera between
+ * their settlement and their road, and between every bot pick.
+ *
+ * A bot pick is three beats rather than one event:
+ *
+ *   1. `beat` — "Alex is choosing". Nothing on the board yet.
+ *   2. `aim`  — the corner or edge Alex has already settled on lights up, so
+ *               the player sees where it is going before it gets there.
+ *   3. `act`  — the piece lands, then `hold` keeps it on screen for a moment
+ *               with a caption naming who picks next.
+ *
+ * That is what makes a draft the player is only watching — which the shuffled
+ * seating in `buildSetupOrder` makes likely — read as an unfolding draft.
+ *
+ * Owner: Flow agent.
+ */
+
+import { HEX_SIZE } from '../core/constants.js';
+import { tiles, intersections, BOUNDS } from '../board/layout.js';
+
+import {
+  setupCurrentPlayer, setupAdvance, setupPlaceSettlement, setupPlaceRoad,
+  legalSettlements, legalRoads
+} from '../core/rules.js';
+
+import { chooseSetupSettlement, chooseSetupRoad } from './bots.js';
+
+/* ------------------------------------------------------------------ timing */
+
+export const DRAFT_T = {
+  // A bot pick is deliberately watchable. Six of these plus the player's two
+  // is a ~20s opening, which is the length of a draft rather than the length
+  // of a loading bar.
+  botBeat: 0.52, botBeatSpread: 0.24,
+  botAim: 0.72, botAimSpread: 0.20,
+  botRoadBeat: 0.34,
+  botRoadAim: 0.42,
+  land: 0.38,          // hold after any piece lands, so you see where it went
+
+  humanOpen: 0.50,     // "you're up" beat before the corners arm
+  humanReopen: 0.70,   // between your settlement and your road — same view
+  idleNudge: 14.0      // gentle reminder if the player wanders off mid-draft
+};
+
+/* ------------------------------------------------------------- board poetry */
+
+const COMPASS = [
+  'northern', 'north-eastern', 'eastern', 'south-eastern',
+  'southern', 'south-western', 'western', 'north-western'
+];
+
+const FEATURE = {
+  forest: 'woods', hills: 'clay ridge', pasture: 'meadows',
+  fields: 'grainfields', mountains: 'peaks', desert: 'dunes'
+};
+
+const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
+const ord = i => ORDINAL[i] || `${i + 1}th`;
+
+function compassOf(x, z) {
+  const dx = x - BOUNDS.cx;
+  const dz = z - BOUNDS.cz;
+  // Screen-space north is -z, and the compass runs clockwise from there.
+  let a = Math.atan2(dx, -dz);
+  if (a < 0) a += Math.PI * 2;
+  return COMPASS[Math.round(a / (Math.PI / 4)) % 8];
+}
+
+/** "the north-eastern woods" / "the southern dock" — a place, not an index. */
+export function placeName(iid) {
+  const n = intersections[iid];
+  if (!n) return 'the island';
+  const central = Math.hypot(n.x - BOUNDS.cx, n.z - BOUNDS.cz) < HEX_SIZE * 0.95;
+  if (n.port !== null && n.port !== undefined) return `the ${compassOf(n.x, n.z)} dock`;
+  let best = null;
+  for (const tid of n.tiles) {
+    const t = tiles[tid];
+    if (!best || t.pips > best.pips) best = t;
+  }
+  const noun = best ? (FEATURE[best.terrain] || 'shore') : 'shore';
+  if (central) return `the heart of the ${noun}`;
+  return `the ${compassOf(n.x, n.z)} ${noun}`;
+}
+
+function pipTotal(iid) {
+  const n = intersections[iid];
+  if (!n) return 0;
+  let s = 0;
+  for (const tid of n.tiles) s += tiles[tid].pips;
+  return s;
+}
+
+function strategyOf(p) {
+  return ({
+    expansion: 'for expansion and the Longest Road',
+    cities: 'for settlements and cities',
+    cards: 'for development cards and the army'
+  })[p.strategy] || 'their own game';
+}
+
+/* ==================================================================== draft */
+
+export function createDraft(state, game, deps) {
+  const g = game || {};
+  const d = deps || {};
+  const ui = d.ui;
+  const cam = d.cam;
+  const rng = typeof d.rng === 'function' ? d.rng : Math.random;
+  const announce = d.announce || (() => {});
+  const toast = d.toast || (() => {});
+  const sfx = d.sfx || (() => {});
+  const warn = d.warn || (() => {});
+  const world = d.world || (() => ({}));
+  const onDone = typeof d.onDone === 'function' ? d.onDone : null;
+
+  const T = DRAFT_T;
+
+  const step = {
+    key: '', t: 0, pid: -1, human: false, road: false,
+    phase: 'beat', beat: 0, aim: 0,
+    target: -1, opened: false, idle: 0
+  };
+
+  // The board map is open for the entire draft; `boardUp` records whether it
+  // actually came up, because a headless build has no map to stand in.
+  let boardUp = false;
+  let hold = 0;                  // post-placement beat, shared by bots and human
+  let done = false;
+
+  /**
+   * The last road has just gone down. The single view change of the whole
+   * draft happens *here*, on the same tick as the placement, rather than a
+   * beat later — "only when the last road is placed does it transition" — and
+   * the smoothness comes from the transition itself (a 0.55s camera blend
+   * under a 0.26s panel fade), not from stalling in front of it.
+   */
+  function finish() {
+    if (done) return;
+    done = true;
+    hold = 0;
+    if (onDone) { try { onDone(); } catch (e) { warn(e); } }
+  }
+
+  /* ------------------------------------------------------------- narration */
+
+  /** Where the shuffle put the player, in words. */
+  function seatLine() {
+    const order = state.setupOrder || [];
+    const mine = [];
+    for (let i = 0; i < order.length; i++) if (order[i] === 0) mine.push(ord(i));
+    if (!mine.length) return 'Snake order — two picks each';
+    return `Snake order · you pick ${mine.join(' and ')} of ${order.length}`;
+  }
+
+  function picksLeftLine() {
+    const total = (state.setupOrder || []).length || 8;
+    const left = Math.max(0, total - state.setupIndex - 1);
+    return left === 0 ? 'Last pick of the draft' : `${left} pick${left === 1 ? '' : 's'} to follow`;
+  }
+
+  function pickLine() {
+    const total = (state.setupOrder || []).length || 8;
+    return `Pick ${Math.min(state.setupIndex + 1, total)} of ${total}`;
+  }
+
+  /**
+   * Re-dress the one open board panel. Never closes, never reopens.
+   *
+   * The sub-line is handed to the rail as well as to the title plate, because
+   * ui.css drops `.ov-hint` at 375px tall and the commentary must survive the
+   * short viewport.
+   */
+  function showBoard(mode, extra) {
+    const ov = g.overview;
+    if (!ov || typeof ov.open !== 'function') return false;
+    const e = extra || {};
+    const o = Object.assign({ setup: true, cancellable: false, keepOpen: true }, e);
+    o.draft = Object.assign({
+      index: state.setupIndex,
+      order: state.setupOrder,
+      pid: step.pid >= 0 ? step.pid : setupCurrentPlayer(state)
+    }, e.draft || {}, { note: e.hint || '' });
+    try { return ov.open(mode, o) !== false; } catch (err) { warn(err); return false; }
+  }
+
+  /* ----------------------------------------------------------------- begin */
+
+  function begin() {
+    hold = 0;
+    done = false;
+    step.key = '';
+    step.phase = 'beat';
+    step.pid = -1;
+    step.target = -1;
+    step.opened = false;
+
+    cam.setActive(true);
+    cam.overview(true);
+    cam.snap(BOUNDS.cx, BOUNDS.cz);
+
+    boardUp = showBoard('draft-watch', { title: 'Opening Draft', hint: seatLine() });
+
+    if (!boardUp) ui.showDraft();
+    ui.setDraft({
+      index: state.setupIndex, pid: setupCurrentPlayer(state),
+      status: 'Opening Draft', sub: 'Two picks each', tip: seatLine()
+    });
+    announce('Opening Draft', '#ffc93c');
+    toast(seatLine(), 'info');
+  }
+
+  function reset() {
+    step.key = ''; step.pid = -1; step.human = false; step.opened = false;
+    step.phase = 'beat'; step.target = -1; step.t = 0; step.idle = 0;
+    hold = 0; boardUp = false; done = true;
+  }
+
+  /* ------------------------------------------------------------ the picks */
+
+  function stepKey() { return `${state.setupIndex}:${state.setupNeed}`; }
+
+  function beginStep() {
+    step.key = stepKey();
+    step.t = 0;
+    step.opened = false;
+    step.idle = 0;
+    step.pid = setupCurrentPlayer(state);
+    step.human = step.pid === 0;
+    step.target = -1;
+    step.road = state.setupNeed === 'road';
+    step.phase = 'beat';
+
+    const p = state.players[step.pid];
+    if (!p) { step.human = false; return; }
+
+    const road = step.road;
+    const second = state.setupIndex >= state.players.length;
+
+    if (step.human) {
+      step.beat = road ? T.humanReopen : T.humanOpen;
+      ui.setDraft({
+        index: state.setupIndex, pid: 0,
+        status: 'Your Pick',
+        sub: road ? 'Lay your first road' : 'Claim a corner',
+        tip: road
+          ? 'Roads reach toward your next corner — point it at open ground or a dock.'
+          : humanTip(second)
+      });
+      // The "you're up" beat: the board says so before the corners arm, so the
+      // handover from watching to picking is never a surprise.
+      showBoard('draft-watch', {
+        title: road ? 'Your Road' : "You're Up",
+        hint: `${pickLine()} · ${road ? 'Lay your first road' : 'Claim a corner'}`
+      });
+      announce(road ? 'Your Road' : 'Your Pick', p.color.css);
+      sfx('award', { gain: 0.5 });
+      return;
+    }
+
+    // Bots decide up front so the board can point at the spot while they
+    // "think" — the telegraph is the decision, shown a beat early.
+    step.beat = road ? T.botRoadBeat : T.botBeat + rng() * T.botBeatSpread;
+    step.aim = road ? T.botRoadAim : T.botAim + rng() * T.botAimSpread;
+    step.target = road
+      ? safeRoadChoice(step.pid, state.setupAnchor)
+      : safeSettlementChoice(step.pid);
+
+    ui.setDraft({
+      index: state.setupIndex, pid: step.pid,
+      status: p.name,
+      sub: road ? 'is laying a road' : 'is choosing a corner',
+      tip: road ? picksLeftLine() : `${p.name} plays ${strategyOf(p)}.`
+    });
+
+    showBoard('draft-watch', {
+      title: road ? `${p.name} is laying a road` : `${p.name} is choosing`,
+      hint: `${pickLine()} · ${road ? picksLeftLine() : 'Plays ' + strategyOf(p)}`
+    });
+  }
+
+  /**
+   * Second beat of a bot pick: light up the spot they have settled on.
+   *
+   * The title deliberately does not change from the previous beat — a headline
+   * that rewrites itself mid-pick reads as a flicker, which is the exact
+   * complaint this whole rework is answering. Only the sub-line moves.
+   */
+  function aimBotStep() {
+    step.phase = 'aim';
+    const p = state.players[step.pid];
+    if (!p) return;
+    const road = step.road;
+    showBoard('draft-watch', {
+      title: road ? `${p.name} is laying a road` : `${p.name} is choosing`,
+      hint: road ? 'Running it out now' : `Eyeing ${placeName(step.target)}`,
+      spotlight: {
+        kind: road ? 'edge' : 'node',
+        id: step.target,
+        color: p.color.light,
+        hot: true
+      }
+    });
+    sfx('blip', { gain: 0.5 });
+  }
+
+  function humanTip(second) {
+    const legal = legalSettlements(state, 0, true);
+    let best = 0;
+    for (const iid of legal) best = Math.max(best, pipTotal(iid));
+    const bits = [
+      `Corners score by pips — the best spot open right now is worth ${best}.`,
+      'Three different resources beats two rich ones.',
+      'A corner on a dock unlocks 2:1 or 3:1 trading for the whole match.'
+    ];
+    if (second) bits.push('Your second settlement pays out its resources immediately.');
+    return bits.join(' ');
+  }
+
+  function safeSettlementChoice(pid) {
+    let iid = -1;
+    try { iid = chooseSetupSettlement(state, pid, rng); } catch (e) { warn(e); }
+    const legal = legalSettlements(state, pid, true);
+    if (legal.indexOf(iid) < 0) iid = legal.length ? legal[0] : -1;
+    return iid;
+  }
+
+  function safeRoadChoice(pid, anchor) {
+    let eid = -1;
+    try { eid = chooseSetupRoad(state, pid, anchor, rng); } catch (e) { warn(e); }
+    const legal = legalRoads(state, pid, true, anchor);
+    if (legal.indexOf(eid) < 0) eid = legal.length ? legal[0] : -1;
+    return eid;
+  }
+
+  /** The one hard guarantee of this module: the draft always moves forward. */
+  function forceAdvance() {
+    try { setupAdvance(state); } catch (e) { warn(e); }
+  }
+
+  function placeForBot() {
+    step.phase = 'act';
+    const pid = step.pid;
+    const p = state.players[pid];
+    const road = state.setupNeed === 'road';
+    let ok = false;
+    let placed = -1;
+
+    if (road) {
+      const list = legalRoads(state, pid, true, state.setupAnchor);
+      const order = step.target >= 0 ? [step.target, ...list] : list;
+      for (const eid of order) {
+        if (setupPlaceRoad(state, pid, eid)) { ok = true; placed = eid; break; }
+      }
+      if (ok) {
+        ui.setDraft({
+          index: state.setupIndex, pid,
+          status: p ? p.name : '', sub: 'lays the first road', tip: picksLeftLine()
+        });
+        sfx('build', { gain: 0.6 });
+        cam.shake(0.08);
+      }
+    } else {
+      const list = legalSettlements(state, pid, true);
+      const order = step.target >= 0 ? [step.target, ...list] : list;
+      for (const iid of order) {
+        if (setupPlaceSettlement(state, pid, iid)) { ok = true; placed = iid; break; }
+      }
+      if (ok) {
+        announce(`${p.name} claims ${placeName(placed)}`, p.color.css);
+        sfx('build');
+        cam.shake(0.14);
+        flourish(placed, p);
+      }
+    }
+
+    if (!ok) { forceAdvance(); return; }
+
+    landedBoard(p, road, placed);
+    if (state.phase !== 'setup') { finish(); return; }
+    // Hold on the piece that just landed. `setupAdvance` has already moved the
+    // pointer on, so this beat is charged against the *next* step and read at
+    // the top of update() before beginStep runs.
+    hold = T.land;
+  }
+
+  /** The board after a piece lands: name what happened, then whose turn next. */
+  function landedBoard(p, road, id) {
+    if (!p) return;
+    const nextPid = setupCurrentPlayer(state);
+    const next = state.players[nextPid];
+    const nextLine = state.phase !== 'setup'
+      ? 'Draft complete'
+      : (nextPid === 0 ? 'You are up next' : `${next ? next.name : ''} picks next`);
+    showBoard('draft-watch', {
+      title: road ? `${p.name} lays a road` : `${p.name} takes a corner`,
+      hint: road ? nextLine : `${placeName(id)} · ${nextLine}`,
+      spotlight: road ? null : { kind: 'node', id, color: p.color.light, hot: false },
+      draft: { index: state.setupIndex, order: state.setupOrder, pid: nextPid }
+    });
+  }
+
+  function flourish(iid, p) {
+    const w = world();
+    const n = intersections[iid];
+    if (!n) return;
+    try {
+      if (w.effects && typeof w.effects.ring === 'function') w.effects.ring(n.x, n.z, p.color.hex);
+    } catch (e) { /* fx are optional */ }
+  }
+
+  /**
+   * Arm the *already open* board for the player's pick. This is a re-dress of
+   * the same panel — no close, no reopen, no camera change — so the only thing
+   * that visibly happens is that the corners light up and the confirm bar
+   * slides in.
+   */
+  function openHumanTurn() {
+    step.opened = true;
+    const road = state.setupNeed === 'road';
+    const anchor = state.setupAnchor;
+
+    const extra = road
+      ? {
+          anchor,
+          title: 'Lay Your First Road',
+          hint: 'Tap a glowing edge, then Confirm',
+          pickLabel: 'Pick an edge',
+          onConfirm: eid => humanRoad(eid)
+        }
+      : {
+          title: state.setupIndex >= state.players.length
+            ? 'Your Second Corner' : 'Claim Your Corner',
+          hint: 'High pips · three resources · a dock',
+          pickLabel: 'Pick a corner',
+          onConfirm: iid => humanSettlement(iid)
+        };
+
+    const opened = showBoard(road ? 'place-road' : 'place-settlement', extra);
+    // No map, or nothing legal to show — never strand the player mid-draft.
+    if (!opened) autoPlaceForHuman();
+  }
+
+  function humanSettlement(iid) {
+    const ok = setupPlaceSettlement(state, 0, iid);
+    if (!ok) return false;
+    const p = state.players[0];
+    announce(`You claim ${placeName(iid)}`, p.color.css);
+    sfx('build');
+    flourish(iid, p);
+    // Same board, same camera — only the caption changes while the road beat
+    // runs. This is the transition the player called out by name.
+    hold = T.land;
+    showBoard('draft-watch', {
+      title: 'You take a corner',
+      hint: `${placeName(iid)} · now run a road out of it`,
+      spotlight: { kind: 'node', id: iid, color: p.color.light, hot: false },
+      draft: { index: state.setupIndex, order: state.setupOrder, pid: 0 }
+    });
+    return true;
+  }
+
+  function humanRoad(eid) {
+    const ok = setupPlaceRoad(state, 0, eid);
+    if (!ok) return false;
+    sfx('build');
+    landedBoard(state.players[0], true, eid);
+    if (state.phase !== 'setup') { finish(); return true; }
+    hold = T.land;
+    return true;
+  }
+
+  function autoPlaceForHuman() {
+    if (state.setupNeed === 'road') {
+      const list = legalRoads(state, 0, true, state.setupAnchor);
+      for (const eid of list) if (setupPlaceRoad(state, 0, eid)) return;
+    } else {
+      const list = legalSettlements(state, 0, true);
+      for (const iid of list) if (setupPlaceSettlement(state, 0, iid)) return;
+    }
+    forceAdvance();
+  }
+
+  /* ---------------------------------------------------------------- update */
+
+  /** Returns true when the draft is finished and the caller may hand off. */
+  function update(dt) {
+    if (done) return false;
+
+    // The landing beat is charged before anything else, so the piece that just
+    // appeared gets held on screen before the next name comes up.
+    if (hold > 0) {
+      hold -= dt;
+      if (hold > 0) return false;
+    }
+
+    // Backstop: the draft ended somewhere this module did not see it happen.
+    if (state.phase !== 'setup') { done = true; return true; }
+
+    if (stepKey() !== step.key) beginStep();
+    if (step.pid < 0) { forceAdvance(); return false; }
+
+    step.t += dt;
+
+    if (step.human) {
+      // The player's turn waits. It does not time out into an auto-pick.
+      if (!step.opened && step.t >= step.beat) openHumanTurn();
+      if (step.opened) {
+        step.idle += dt;
+        if (step.idle > T.idleNudge) {
+          step.idle = 0;
+          toast('Tap a glowing spot, then Confirm', 'warn');
+        }
+      }
+      return false;
+    }
+
+    if (step.phase === 'beat' && step.t >= step.beat) aimBotStep();
+    if (step.phase === 'aim' && step.t >= step.beat + step.aim) placeForBot();
+    return false;
+  }
+
+  return {
+    begin, update, reset,
+    get holding() { return hold > 0 && !done; },
+    get done() { return done; },
+    get boardUp() { return boardUp; },
+    get pid() { return step.pid; }
+  };
+}
+
+export default createDraft;

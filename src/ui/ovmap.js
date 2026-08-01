@@ -373,41 +373,252 @@ export function createPainter(ctx, proj) {
 
   /* ---------------------------------------------------------------- ports */
 
-  const PORT_W = 42, PORT_H = 25;
+  /**
+   * The nine harbours, drawn as harbours.
+   *
+   * A port used to be a stick and a floating label. It is now a real jetty:
+   * two gangways running down off the coastal corners that own it, a planked
+   * deck reaching out over the water, mooring posts along both sides, and the
+   * ratio board bolted to the seaward end of the deck rather than hovering
+   * next to it. Unlocked docks are gold-planked, lantern-lit and shadowed
+   * warm; locked ones are weathered grey driftwood.
+   *
+   * Everything is measured off `proj.s` so the whole harbour shrinks with the
+   * board instead of overhanging the coast at 375px tall.
+   */
+
+  const WOOD = {
+    open: { deck: '#e3ae4d', plank: '#96601b', rim: '#5d3a10', post: '#8a5418',
+            sign: '#ffd764', ink: '#3a2208', edge: '#6f4505' },
+    shut: { deck: '#b08d61', plank: '#7a5b33', rim: '#4b3719', post: '#6d5228',
+            sign: '#f2e6c8', ink: '#3a2208', edge: '#5a3a1e' }
+  };
+
+  /** Resource swatches for the 2:1 boards. */
+  const RES_DOT = {
+    wood: '#2f7d32', brick: '#c05a24', wheat: '#e8b62c',
+    wool: '#8fc95a', ore: '#8593a3'
+  };
+
+  const dockGeom = p => {
+    const s = proj.s;
+    const e = edges[p.edge];
+    const bx = PX(e.x), by = PY(e.z);          // the coastline, mid-edge
+    let ox = Math.cos(p.bearing), oy = Math.sin(p.bearing);
+    const m = Math.hypot(ox, oy) || 1;
+    ox /= m; oy /= m;
+    const len = Math.max(15, HEX_SIZE * s * 0.74);
+    return {
+      e, bx, by, ox, oy,
+      nx: -oy, ny: ox,                          // across the pier
+      len,
+      foot: len * 0.24,                         // where the deck leaves the sand
+      half: Math.max(4.4, HEX_SIZE * s * 0.235),
+      signW: Math.max(31, s * 9.2) * (p.resource ? 1.2 : 1),
+      signH: Math.max(15, s * 4.4)
+    };
+  };
 
   function portRects() {
-    return ports.map(p => ({
-      x: PX(p.x), y: PY(p.z), w: PORT_W + 6, h: PORT_H + 6, weight: 22, kind: 'port'
-    }));
+    return ports.map(p => {
+      const d = dockGeom(p);
+      return {
+        x: d.bx + d.ox * (d.len + d.signH / 2),
+        y: d.by + d.oy * (d.len + d.signH / 2),
+        w: d.signW + 6, h: d.signH + 6, weight: 22, kind: 'port'
+      };
+    });
+  }
+
+  /** A mooring post: a dark stub with a lit top, standing proud of the deck. */
+  function mooring(x, y, r, col) {
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.5, r * 0.95, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(4,18,34,.42)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = col.post; ctx.fill();
+    ctx.lineWidth = Math.max(1, r * 0.42);
+    ctx.strokeStyle = col.rim; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x - r * 0.25, y - r * 0.28, r * 0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,240,205,.7)'; ctx.fill();
+  }
+
+  function drawDock(p, unlocked) {
+    const s = proj.s;
+    const col = unlocked ? WOOD.open : WOOD.shut;
+    const d = dockGeom(p);
+    const { bx, by, ox, oy, nx, ny, len, foot, half } = d;
+
+    const heelX = bx + ox * foot, heelY = by + oy * foot;
+    const tipX = bx + ox * len, tipY = by + oy * len;
+    // Deck corners, flared at the seaward end so it reads as a jetty rather
+    // than a plank.
+    const inA = [heelX + nx * half * 0.86, heelY + ny * half * 0.86];
+    const inB = [heelX - nx * half * 0.86, heelY - ny * half * 0.86];
+    const outA = [tipX + nx * half * 1.2, tipY + ny * half * 1.2];
+    const outB = [tipX - nx * half * 1.2, tipY - ny * half * 1.2];
+    const deckPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(inA[0], inA[1]); ctx.lineTo(outA[0], outA[1]);
+      ctx.lineTo(outB[0], outB[1]); ctx.lineTo(inB[0], inB[1]);
+      ctx.closePath();
+    };
+
+    // An unlocked harbour throws a warm pool of light on the water.
+    if (unlocked) {
+      ctx.save();
+      const gl = ctx.createRadialGradient(
+        (heelX + tipX) / 2, (heelY + tipY) / 2, half * 0.4,
+        (heelX + tipX) / 2, (heelY + tipY) / 2, len * 1.05);
+      gl.addColorStop(0, 'rgba(255,201,60,.30)');
+      gl.addColorStop(1, 'rgba(255,201,60,0)');
+      ctx.fillStyle = gl;
+      ctx.beginPath();
+      ctx.arc((heelX + tipX) / 2, (heelY + tipY) / 2, len * 1.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Two gangways running down off the corners that actually own the port —
+    // the classic harbour V, and the only bit of the dock that touches land.
+    ctx.lineCap = 'round';
+    for (const iid of p.intersections) {
+      const n = intersections[iid];
+      if (!n) continue;
+      const ax = PX(n.x), ay = PY(n.z);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(heelX, heelY);
+      ctx.lineWidth = Math.max(4, s * 0.5);
+      ctx.strokeStyle = col.rim; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(heelX, heelY);
+      ctx.lineWidth = Math.max(2.2, s * 0.3);
+      ctx.strokeStyle = col.deck; ctx.stroke();
+      // Sleepers across the gangway so it is planking, not a cable.
+      const steps = 3;
+      ctx.lineWidth = Math.max(0.9, s * 0.1);
+      ctx.strokeStyle = col.plank;
+      for (let i = 1; i <= steps; i++) {
+        const t = i / (steps + 1);
+        const mx = ax + (heelX - ax) * t, my = ay + (heelY - ay) * t;
+        let gx = heelX - ax, gy = heelY - ay;
+        const gm = Math.hypot(gx, gy) || 1;
+        gx /= gm; gy /= gm;
+        const w = Math.max(1.6, s * 0.22);
+        ctx.beginPath();
+        ctx.moveTo(mx - gy * w, my + gx * w);
+        ctx.lineTo(mx + gy * w, my - gx * w);
+        ctx.stroke();
+      }
+    }
+
+    // Deck, with a shadow on the water under it.
+    ctx.save();
+    ctx.shadowColor = 'rgba(2,14,30,.6)';
+    ctx.shadowBlur = Math.max(5, s * 1.3);
+    ctx.shadowOffsetY = Math.max(2, s * 0.55);
+    deckPath();
+    ctx.fillStyle = col.deck; ctx.fill();
+    ctx.restore();
+
+    // Planking: cross-boards along the run, plus a centre stringer.
+    ctx.save();
+    deckPath();
+    ctx.clip();
+    ctx.lineWidth = Math.max(1, s * 0.13);
+    ctx.strokeStyle = col.plank;
+    const planks = 5;
+    for (let i = 1; i <= planks; i++) {
+      const t = foot + (i / (planks + 1)) * (len - foot);
+      ctx.beginPath();
+      ctx.moveTo(bx + ox * t + nx * half * 1.4, by + oy * t + ny * half * 1.4);
+      ctx.lineTo(bx + ox * t - nx * half * 1.4, by + oy * t - ny * half * 1.4);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.moveTo(heelX, heelY); ctx.lineTo(tipX, tipY);
+    ctx.lineWidth = Math.max(0.8, s * 0.1);
+    ctx.strokeStyle = 'rgba(255,244,214,.4)';
+    ctx.stroke();
+    ctx.restore();
+
+    deckPath();
+    ctx.lineWidth = Math.max(1.3, s * 0.17);
+    ctx.strokeStyle = col.rim;
+    ctx.stroke();
+
+    // Four mooring posts, two a side.
+    const pr = Math.max(2, s * 0.28);
+    for (const t of [0.42, 0.94]) {
+      const along = foot + (len - foot) * t;
+      for (const side of [1, -1]) {
+        mooring(bx + ox * along + nx * half * 1.3 * side,
+          by + oy * along + ny * half * 1.3 * side, pr, col);
+      }
+    }
+    return d;
+  }
+
+  /** The ratio board, bolted to the seaward end of its own dock. */
+  function drawDockSign(p, d, unlocked) {
+    const col = unlocked ? WOOD.open : WOOD.shut;
+    const { bx, by, ox, oy, nx, ny, len, signW, signH } = d;
+    const cx = bx + ox * (len + signH * 0.62);
+    const cy = by + oy * (len + signH * 0.62);
+
+    // Two legs from the deck tip up to the board.
+    ctx.lineWidth = Math.max(1.4, proj.s * 0.2);
+    ctx.strokeStyle = col.rim;
+    for (const side of [1, -1]) {
+      ctx.beginPath();
+      ctx.moveTo(bx + ox * len + nx * signW * 0.16 * side,
+        by + oy * len + ny * signW * 0.16 * side);
+      ctx.lineTo(cx + nx * signW * 0.2 * side, cy + ny * signW * 0.2 * side);
+      ctx.stroke();
+    }
+
+    plate(cx, cy, signW, signH, col.sign, col.edge, Math.min(signH / 2, 7), 2);
+    rounded(cx - signW / 2 + 3, cy - signH / 2 + 2.5, signW - 6, signH * 0.22, 2);
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fill();
+
+    const dot = RES_DOT[p.resource];
+    const fs = Math.round(Math.min(signH * 0.72, signW * 0.34));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = f(800, fs);
+    ctx.fillStyle = col.ink;
+    if (dot) {
+      // Resource bead on the left of the board, ratio on the right.
+      const dr = signH * 0.28;
+      ctx.fillText(p.label, cx + signW * 0.14, cy + 1);
+      ctx.beginPath(); ctx.arc(cx - signW * 0.28, cy, dr, 0, Math.PI * 2);
+      ctx.fillStyle = dot; ctx.fill();
+      ctx.lineWidth = Math.max(1, dr * 0.3);
+      ctx.strokeStyle = 'rgba(20,14,4,.8)'; ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx - signW * 0.28, cy - dr * 0.28, dr * 0.55, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.lineWidth = Math.max(0.8, dr * 0.24);
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.stroke();
+    } else {
+      ctx.fillText(p.label, cx, cy + 1);
+    }
+
+    // A lit lantern on a post at the seaward end of any dock the player has
+    // unlocked, so "which of these nine are mine" is answered at a glance.
+    if (unlocked) {
+      const lx = bx + ox * (len + signH * 0.05) + nx * (signW * 0.5 + signH * 0.18);
+      const ly = by + oy * (len + signH * 0.05) + ny * (signW * 0.5 + signH * 0.18);
+      ctx.beginPath(); ctx.arc(lx, ly, signH * 0.42, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,214,110,.34)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(lx, ly, signH * 0.23, 0, Math.PI * 2);
+      ctx.fillStyle = '#fff6d0'; ctx.fill();
+      ctx.lineWidth = Math.max(1.1, signH * 0.09);
+      ctx.strokeStyle = '#7a4a16'; ctx.stroke();
+    }
   }
 
   function drawPorts(state) {
-    const s = proj.s;
     const mine = state.players[0].ports;
     for (const p of ports) {
-      const e = edges[p.edge];
       const unlocked = mine.has(p.id);
-      const px = PX(p.x), py = PY(p.z);
-
-      ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(PX(e.x), PY(e.z)); ctx.lineTo(px, py);
-      ctx.lineWidth = Math.max(3.4, s * 0.34);
-      ctx.strokeStyle = 'rgba(10,24,42,.75)'; ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(PX(e.x), PY(e.z)); ctx.lineTo(px, py);
-      ctx.lineWidth = Math.max(1.7, s * 0.18);
-      ctx.strokeStyle = unlocked ? '#ffc93c' : '#d3bd94'; ctx.stroke();
-
-      plate(px, py, PORT_W, PORT_H,
-        unlocked ? '#ffd764' : '#f5ead2',
-        unlocked ? '#6f4505' : '#5a3a1e', 8, 2.2);
-      ctx.beginPath();
-      rounded(px - PORT_W / 2 + 3.5, py - PORT_H / 2 + 3, PORT_W - 7, 5, 2.5);
-      ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.fill();
-
-      ctx.fillStyle = '#3a2208';
-      ctx.font = f(800, 14);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(p.label, px, py + 1.5);
+      const d = drawDock(p, unlocked);
+      drawDockSign(p, d, unlocked);
     }
   }
 

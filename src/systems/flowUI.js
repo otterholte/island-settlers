@@ -33,6 +33,9 @@ const CSS = INTRO_CSS + `
 .mf-layer{position:absolute;inset:0;pointer-events:none}
 
 /* ------------------------------------------------------------ draft strip */
+/* The fallback strip. When the board map is up — which is every draft that
+   has an interface — overview.js carries the order in its rail instead, and
+   this stays hidden. It exists for a build with no map to stand in. */
 .mf-draft{
   position:absolute;left:calc(10px + var(--sal,0px));bottom:calc(10px + var(--sab,0px));
   display:flex;flex-direction:column;gap:5px;padding:8px 12px 9px;
@@ -59,6 +62,7 @@ const CSS = INTRO_CSS + `
   opacity:.3;transition:opacity .2s ease,transform .2s cubic-bezier(.2,1.4,.4,1);
 }
 .mf-pip.done{opacity:.75}
+.mf-pip.mine{box-shadow:0 0 0 1.5px rgba(255,201,60,.85),inset 0 2px 0 rgba(255,255,255,.42)}
 .mf-pip.now{opacity:1;transform:scale(1.34);animation:mfPip 1.1s ease-in-out infinite}
 @keyframes mfPip{
   0%,100%{box-shadow:0 0 0 2px rgba(255,201,60,.8),0 0 10px rgba(255,201,60,.45),
@@ -222,7 +226,19 @@ export function createFlowUI(root, state, game) {
     function setDraft(info) {
       const o = info || {};
       const idx = Number.isFinite(o.index) ? o.index : 0;
+      // The seating is shuffled per match and reshuffled on a replay, so the
+      // pip colours are re-read from the live order rather than baked at
+      // construction. The human's slots keep a gold outline.
+      const live = Array.isArray(state.setupOrder) && state.setupOrder.length
+        ? state.setupOrder : order;
       pips.forEach((pip, i) => {
+        const pid = live[i];
+        const pl = state.players[pid];
+        if (pl && pip.style) {
+          pip.style.setProperty('--c', pl.color.css);
+          pip.style.setProperty('--cl', pl.color.light);
+        }
+        toggle(pip, 'mine', pid === 0);
         toggle(pip, 'done', i < idx);
         toggle(pip, 'now', i === idx);
       });

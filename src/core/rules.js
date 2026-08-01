@@ -545,13 +545,38 @@ export function hasCard(p, type) { return p.cards.some(c => c.type === type); }
 
 /* ==================================================================== setup */
 
-function buildSetupOrder(state) {
+/**
+ * Seat the snake draft.
+ *
+ * The seating is shuffled every match, so `players[0]` — the human — drafts
+ * from wherever the shuffle put them rather than always opening the board.
+ * The structure is untouched: one forward pass, one reverse pass, two picks
+ * each, `setupIndex >= players.length` still means "second round".
+ *
+ * Headless-safe: the only randomness is `state.rng` (mulberry32), so a seeded
+ * match still replays identically and tools/simulate.mjs is unaffected.
+ */
+export function buildSetupOrder(state) {
   const n = state.players.length;
   const fwd = [...Array(n).keys()];
+  const rnd = typeof state.rng === 'function' ? state.rng : Math.random;
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1)) % (i + 1);
+    const t = fwd[i]; fwd[i] = fwd[j]; fwd[j] = t;
+  }
   state.setupOrder = [...fwd, ...fwd.slice().reverse()];
   state.setupIndex = 0;
   state.setupNeed = 'settlement';
   state.setupAnchor = -1;
+  return state.setupOrder;
+}
+
+/** Which pick numbers (0-based, into `setupOrder`) belong to a player. */
+export function setupSlotsOf(state, pid) {
+  const out = [];
+  const order = state.setupOrder || [];
+  for (let i = 0; i < order.length; i++) if (order[i] === pid) out.push(i);
+  return out;
 }
 
 export function setupCurrentPlayer(state) {
