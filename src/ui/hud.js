@@ -9,94 +9,107 @@
  * container is pointer-events:none and only real controls opt back in. Each
  * control carries `data-ui` so the joystick layer ignores touches on it.
  *
+ * The HUD's whole job is legibility of progress:
+ *   top-left     who you are and how far along the 12-point track
+ *   top-centre   what you own, which regions still have it, and the one line
+ *                that answers "what should I do right now?"
+ *   top-right    standings, deliberately quiet
+ *   bottom-left  what the ground under your feet is offering, and when a
+ *                worked-out region comes back
+ *   bottom-centre four live progress meters, one per purchase
+ *
  * Owner: UI agent.
  */
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL, TRADE_RADIUS, INTERACT_RADIUS, PIECE_LIMIT,
+  CARD_LABEL, TRADE_RADIUS, INTERACT_RADIUS,
   canAfford, missingFrom
 } from '../core/constants.js';
 
-import {
-  scoreOf, rankings, drawCard, nearestPortFor,
-  legalRoads, legalSettlements, legalCities
-} from '../core/rules.js';
+import { scoreOf, rankings, drawCard, nearestPortFor } from '../core/rules.js';
 
 import { MARKET } from '../board/layout.js';
 import { nodes } from '../board/nodes.js';
-import { el, button, setText, toggle, replay, fmtTime } from './dom.js';
+import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
+import { createBuildBar } from './hud-build.js';
+import {
+  createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere
+} from './hud-guide.js';
 
-/* Nothing in the interface may draw a resource smaller than this. */
 const RES_ICON_PX = 28;
-const COST_ICON_PX = 20;
-
-const BUILD_KINDS = [
-  { kind: 'road',       label: 'Road',       ico: 'road',   blurb: 'Extend your network' },
-  { kind: 'settlement', label: 'Settlement', ico: 'house',  blurb: 'Claim a corner' },
-  { kind: 'city',       label: 'City',       ico: 'castle', blurb: 'Triple your yield' },
-  { kind: 'card',       label: 'Card',       ico: 'cards',  blurb: 'Draw development' }
-];
 
 const HOW_TO = [
   ['Move', 'Drag anywhere on the left half of the screen to run.'],
-  ['Gather', 'Stand on a resource and hold — trees, clay, sheep, wheat and ore.'],
-  ['Build', 'Tap a build card, then pick a glowing spot on the map.'],
-  ['Score', `Settlements 1 pt, cities 2 pts. First to ${VICTORY_POINTS} wins.`],
-  ['Awards', 'Longest Road and Largest Army are worth 2 points each.'],
-  ['Trade', 'Visit the Great Market for 4:1, or a dock you own for 3:1 / 2:1.']
+  ['Gather', 'Stand in a region and hold — trees, clay, sheep, wheat and ore.'],
+  ['Regions', 'Work a region dry and it rests for 20 seconds. The bars under the resource pill show what is still standing.'],
+  ['Build', 'Each card fills as you gather. When it glows gold you can afford it — tap it, then pick a glowing spot.'],
+  ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
+  ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
+  ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.']
 ];
 
 export function createHUD(root, state, game) {
   const me = state.players[0];
+  const guide = createGuide(state, game);
+  const rivalNames = state.players.filter(p => p.id !== 0).map(p => p.name);
 
   /* ------------------------------------------------------------- scaffold */
   const hud = el('div', { class: 'hud pre', id: 'hud' });
+  const mk = (tag, cls, html) => el(tag, { class: cls, html });
 
-  /* --- top-left: settings, identity, inventory ------------------------- */
+  /* --- top-left: settings, identity, victory track ---------------------- */
   const gearBtn = button('cbtn small ghost', {
-    'aria-label': 'Settings',
-    on: { click: () => toggleSettings() }
+    'aria-label': 'Settings', on: { click: () => toggleSettings() }
   }, mk('span', 'cb-ico', icon('gear', 22)));
 
   const vpNum = el('b', { text: '0' });
-  const idName = el('b', { class: 'idc-name', text: me.name });
+  const vpCells = [];
+  const vpTrack = el('span', { class: 'vp-track' });
+  for (let i = 0; i < VICTORY_POINTS; i++) {
+    const c = el('i', { class: i === VICTORY_POINTS - 1 ? 'goal' : '' });
+    vpCells.push(c); vpTrack.appendChild(c);
+  }
   const idCard = el('div', { class: 'idcard plate' },
     el('span', { class: 'idc-av', html: avatar(me.color.css, me.color.light, 32) }),
-    el('div', { class: 'idc-txt' },
-      idName,
-      el('span', { class: 'idc-sub', text: 'Settler' })),
-    el('div', { class: 'idc-vp' }, iconEl('trophy', 20), vpNum,
-      el('i', { text: '/' + VICTORY_POINTS }))
+    el('div', { class: 'idc-txt' }, el('b', { class: 'idc-name', text: me.name }), vpTrack),
+    el('div', { class: 'idc-vp' }, iconEl('trophy', 20), vpNum)
   );
 
-  /* The match clock keeps its job but loses the prime slot. */
   const timerTxt = el('b', { text: '0:00' });
   const timeChip = el('div', { class: 'timechip plate' }, iconEl('clock', 14), timerTxt);
-
   const tl = el('div', { class: 'hud-tl' },
-    el('div', { class: 'tl-row' }, gearBtn, idCard),
-    timeChip);
+    el('div', { class: 'tl-row' }, gearBtn, idCard), timeChip);
 
-  /* --- top-centre: the resource readout ---------------------------------
-     One beveled pill in the prime slot. Five slots, 28px objects, 20px
-     stroked numerals, gold hairline separators. */
+  /* --- top-centre: resources, region availability, next step -------------
+     One beveled pill in the prime slot: five 28px objects, 20px stroked
+     numerals, and a hairline bar under each showing how much of that
+     resource is still standing on the island. Below it, one quiet line
+     that always says what to do next. */
   const resSlots = {};
   const resBar = el('div', { class: 'resbar' });
   for (const r of RES) {
     const num = el('b', { text: '0' });
+    const live = el('i', { class: 'res-live' }, el('span'));
     const slot = el('div', { class: 'res', 'data-res': r, title: RES_LABEL[r] },
-      iconEl(resIcon(r), RES_ICON_PX), num);
-    resSlots[r] = { node: slot, num, last: -1 };
+      iconEl(resIcon(r), RES_ICON_PX), num, live);
+    resSlots[r] = { node: slot, num, live, last: -1, lastF: -1 };
     resBar.appendChild(slot);
   }
-  const tc = el('div', { class: 'hud-tc' }, resBar);
 
-  /* --- toasts: bottom-centre, above the build bar, never over the map --- */
+  const obIco = el('span', { class: 'ob-ico' });
+  const obLead = el('b', { class: 'ob-lead' });
+  const obTail = el('span', { class: 'ob-tail' });
+  const objective = el('div', { class: 'objective plate' }, obIco,
+    el('span', { class: 'ob-body' }, obLead, obTail));
+
+  const tc = el('div', { class: 'hud-tc' }, resBar, objective);
+
+  /* --- toasts ------------------------------------------------------------ */
   const toastWrap = el('div', { class: 'hud-toasts' });
 
-  /* --- top-right: live rankings ---------------------------------------- */
+  /* --- top-right: standings, deliberately quiet -------------------------- */
   const rankRows = state.players.map(p => {
     const vp = el('b', { text: '0' });
     const award = el('span', { class: 'rk-award' });
@@ -104,45 +117,21 @@ export function createHUD(root, state, game) {
       class: 'rk' + (p.id === 0 ? ' me' : ''), 'data-p': p.id,
       style: { '--c': p.color.css, '--cl': p.color.light }
     },
-      el('span', { class: 'rk-pos', text: '1' }),
-      el('span', { class: 'rk-av', html: avatar(p.color.css, p.color.light, 32) }),
+      el('span', { class: 'rk-av', html: avatar(p.color.css, p.color.light, p.id === 0 ? 26 : 22) }),
       el('span', { class: 'rk-name', text: p.name }),
       award,
-      el('span', { class: 'rk-vp' }, iconEl('trophy', 16), vp));
+      el('span', { class: 'rk-vp' }, p.id === 0 ? iconEl('trophy', 16) : null, vp));
     return { p, row, vp, award };
   });
   const rankList = el('div', { class: 'ranks' }, rankRows.map(r => r.row));
-  const tr = el('div', { class: 'hud-tr plate' },
-    el('div', { class: 'rk-head', text: 'Standings' }), rankList);
+  const tr = el('div', { class: 'hud-tr plate' }, rankList);
 
-  /* --- bottom-centre: build cards --------------------------------------- */
-  const buildCards = {};
-  const buildRow = el('div', { class: 'build-row' });
-  for (const b of BUILD_KINDS) {
-    const costRow = el('span', { class: 'bc-cost' });
-    const costBits = {};
-    for (const r of RES) {
-      const n = COST[b.kind][r];
-      if (!n) continue;
-      const chip = el('i', { class: 'cc', html: icon(resIcon(r), COST_ICON_PX) + `<em>${n}</em>` });
-      costBits[r] = chip;
-      costRow.appendChild(chip);
-    }
-    const card = el('button', {
-      class: 'bcard', type: 'button', 'data-ui': '', 'data-kind': b.kind,
-      on: { click: () => requestBuild(b.kind) }
-    },
-      el('span', { class: 'bc-name', text: b.label }),
-      el('span', { class: 'bc-ico', html: icon(b.ico, 30) }),
-      costRow,
-      el('span', { class: 'bc-lip' })
-    );
-    buildCards[b.kind] = { node: card, costBits, ok: null };
-    buildRow.appendChild(card);
-  }
+  /* --- bottom-centre: the four progress meters --------------------------- */
+  const buildBar = createBuildBar(state, game, { onBuy: kind => requestBuild(kind) });
+  const buildRow = buildBar.node;
   const bc = el('div', { class: 'hud-bc' }, buildRow);
 
-  /* --- bottom-right: circular actions ----------------------------------- */
+  /* --- bottom-right: circular actions ------------------------------------ */
   const mkCircle = (ico, label, cls, fn) => {
     const badge = el('i', { class: 'badge hid', text: '0' });
     const node = el('button', {
@@ -150,8 +139,7 @@ export function createHUD(root, state, game) {
       on: { click: fn }
     },
       el('span', { class: 'cb-ico', html: icon(ico, 26) }),
-      el('span', { class: 'cb-lab', text: label }),
-      badge);
+      el('span', { class: 'cb-lab', text: label }), badge);
     return { node, badge };
   };
   const btnBuild = mkCircle('hammer', 'Build', 'gold', () => {
@@ -161,29 +149,29 @@ export function createHUD(root, state, game) {
   const btnMap = mkCircle('map', 'Map', 'blue', () => game.openOverview('view'));
   const br = el('div', { class: 'hud-br' }, btnMap.node, btnCards.node, btnBuild.node);
 
-  /* --- bottom-left: contextual prompt ----------------------------------- */
+  /* --- bottom-left: what the ground here is offering ---------------------- */
   let promptAction = null;
   const promptIco = el('span', { class: 'pr-ico', html: icon('hammer', 26) });
   const promptTxt = el('span', { class: 'pr-txt', text: '' });
   const promptSub = el('span', { class: 'pr-sub', text: '' });
+  const promptBar = el('span', { class: 'pr-bar' }, el('i'));
   // No `data-ui` until it is actually tappable: this sits in the joystick's
   // corner and must not swallow a thumb that only wants to run.
   const promptBtn = el('button', {
     class: 'prompt plate hid', type: 'button',
     on: { click: () => { if (promptAction) promptAction(); } }
-  }, promptIco, el('span', { class: 'pr-body' }, promptTxt, promptSub));
+  }, promptIco, el('span', { class: 'pr-body' }, promptTxt, promptSub, promptBar));
   const bl = el('div', { class: 'hud-bl' }, promptBtn);
 
-  /* --- announcements ---------------------------------------------------- */
+  /* --- announcements ----------------------------------------------------- */
   const annTxt = el('div', { class: 'ann-txt' });
   const annWrap = el('div', { class: 'announce' }, annTxt);
 
-  /* --- settings ---------------------------------------------------------- */
+  /* --- settings ----------------------------------------------------------- */
   let soundOn = true;
-  const soundBtn = button('wide cream', {
-    on: { click: () => setSound(!soundOn) }
-  }, el('span', { class: 'sb-ico', html: icon('sound', 20) }),
-     el('span', { class: 'sb-lab', text: 'Sound: On' }));
+  const soundBtn = button('wide cream', { on: { click: () => setSound(!soundOn) } },
+    el('span', { class: 'sb-ico', html: icon('sound', 20) }),
+    el('span', { class: 'sb-lab', text: 'Sound: On' }));
 
   const howBody = el('div', { class: 'how hid' },
     HOW_TO.map(([t, d]) => el('p', {}, el('b', { text: t }), el('span', { text: d }))));
@@ -208,8 +196,6 @@ export function createHUD(root, state, game) {
   hud.appendChild(toastWrap); hud.appendChild(annWrap); hud.appendChild(settings);
   root.appendChild(hud);
 
-  function mk(tag, cls, html) { return el(tag, { class: cls, html }); }
-
   /* ---------------------------------------------------------------- toast */
   const liveToasts = [];
 
@@ -219,7 +205,6 @@ export function createHUD(root, state, game) {
       el('span', { class: 'tk' }), el('span', { text: String(msg) }));
     toastWrap.appendChild(t);
     liveToasts.push({ node: t, t: 0 });
-    // Two at a time, maximum. A taller stack is noise, not feedback.
     while (liveToasts.length > 2) {
       const old = liveToasts.shift();
       if (old.node.parentNode) old.node.parentNode.removeChild(old.node);
@@ -227,10 +212,20 @@ export function createHUD(root, state, game) {
     return t;
   }
 
-  let annT = 0;
+  /* A rival's news is news, not an event. It gets a toast, at most one every
+     ten seconds; the centre banner is reserved for things the player did. */
+  let annT = 0, lastRival = -99;
+
   function announce(text, color) {
     if (!text) return;
-    annTxt.textContent = String(text);
+    const s = String(text);
+    if (rivalNames.some(n => s.startsWith(n))) {
+      if (state.time - lastRival < 10) return;
+      lastRival = state.time;
+      toast(s, 'info');
+      return;
+    }
+    annTxt.textContent = s;
     if (color && annTxt.style) annTxt.style.setProperty('--ac', color);
     replay(annWrap, 'show', 2600);
     annT = 2.4;
@@ -239,50 +234,23 @@ export function createHUD(root, state, game) {
   /* ------------------------------------------------------------ resources */
   function pulseResource(res) {
     const s = resSlots[res];
-    if (!s) return;
-    replay(s.node, 'pop', 480);
+    if (s) replay(s.node, 'pop', 480);
   }
 
-  function flashCost(kind) {
-    const c = buildCards[kind];
-    if (!c) return;
-    replay(c.node, 'nope', 520);
-    const miss = missingFrom(me.res, COST[kind] || {});
-    for (const r in c.costBits) toggle(c.costBits[r], 'short', !!miss[r]);
-    setTimeout(() => {
-      for (const r in c.costBits) toggle(c.costBits[r], 'short', false);
-    }, 1400);
-  }
+  function flashCost(kind) { buildBar.flash(kind); }
 
   /* -------------------------------------------------------------- actions */
-  function pieceCap(kind) {
-    if (kind === 'road') return me.roads.size >= PIECE_LIMIT.road;
-    if (kind === 'settlement') return me.settlements.size + me.cities.size >= PIECE_LIMIT.settlement;
-    if (kind === 'city') return me.cities.size >= PIECE_LIMIT.city;
-    return false;
-  }
-
-  function legalFor(kind) {
-    if (kind === 'road') return legalRoads(state, 0);
-    if (kind === 'settlement') return legalSettlements(state, 0);
-    if (kind === 'city') return legalCities(state, 0);
-    return [1];
-  }
-
   function requestBuild(kind) {
     if (state.phase === 'over') return false;
     if (state.phase === 'setup') { toast('Finish the opening draft first', 'warn'); return false; }
     if (!COST[kind]) return false;
 
-    if (pieceCap(kind)) {
-      toast(`No ${kind} pieces left`, 'warn');
-      flashCost(kind);
-      return false;
+    if (pieceCapped(state, 0, kind)) {
+      toast(`No ${kind} pieces left`, 'warn'); flashCost(kind); return false;
     }
     if (!canAfford(me.res, COST[kind])) {
       const miss = missingFrom(me.res, COST[kind]);
-      const bits = Object.keys(miss).map(r => `${miss[r]} ${RES_LABEL[r]}`).join(', ');
-      toast(`Need ${bits}`, 'bad');
+      toast(`Need ${Object.keys(miss).map(r => `${miss[r]} ${RES_LABEL[r]}`).join(', ')}`, 'bad');
       flashCost(kind);
       return false;
     }
@@ -294,8 +262,7 @@ export function createHUD(root, state, game) {
       refreshAll(true);
       return true;
     }
-    const legal = legalFor(kind);
-    if (!legal.length) {
+    if (!hasSomewhere(state, kind)) {
       toast(kind === 'city'
         ? 'Upgrade needs one of your settlements'
         : `Nowhere legal to place a ${kind}`, 'warn');
@@ -342,33 +309,48 @@ export function createHUD(root, state, game) {
 
   function refreshPrompt() {
     if (state.phase !== 'play') { setPrompt(null); return; }
+
     if (me.action === 'gather' && me.gatherNode) {
-      setPrompt('gather', resIcon(me.gatherNode.resource),
-        'Gathering', RES_LABEL[me.gatherNode.resource], null);
+      const here = standingRegion(state, me);
+      setPrompt('gather', resIcon(me.gatherNode.resource), 'Gathering',
+        here ? `${RES_LABEL[me.gatherNode.resource]} · ${here.units} left`
+             : RES_LABEL[me.gatherNode.resource], null, -1);
       return;
     }
+
+    // A worked-out region is the thing the player most wanted spelled out.
+    const here = standingRegion(state, me);
+    if (here && here.exhausted) {
+      setPrompt('spent' + here.tile.id, resIcon(here.resource), 'Worked out',
+        `Back in ${Math.ceil(here.secondsLeft)}s`, null, here.recovery);
+      return;
+    }
+
     const dm = Math.hypot(me.x - MARKET.x, me.z - MARKET.z);
     if (dm < TRADE_RADIUS + MARKET.radius) {
-      setPrompt('market', 'swap', 'Open Market', 'Trade 4 : 1', () => game.openTrade(null));
+      setPrompt('market', 'swap', 'Open Market', 'Trade 4 : 1', () => game.openTrade(null), -1);
       return;
     }
     const port = nearestPortFor(state, 0, me.x, me.z, TRADE_RADIUS + 3);
     if (port) {
       setPrompt('port' + port.id, 'ship', `Trade ${port.ratio} : 1`,
         port.resource ? RES_LABEL[port.resource] + ' dock' : 'Any resource',
-        () => game.openTrade(port.id));
+        () => game.openTrade(port.id), -1);
       return;
     }
     const n = nearestNode();
     if (n) {
-      setPrompt('node' + n.resource, resIcon(n.resource),
-        'Hold to gather', RES_LABEL[n.resource], null);
+      const rem = here && here.resource === n.resource ? here : null;
+      setPrompt('node' + n.resource, resIcon(n.resource), 'Hold to gather',
+        rem ? `${RES_LABEL[n.resource]} · ${rem.live} of ${rem.total} left`
+            : RES_LABEL[n.resource], null, -1);
       return;
     }
     setPrompt(null);
   }
 
-  function setPrompt(key, ico, txt, sub, action) {
+  /** `bar` < 0 hides the recovery meter; 0..1 shows it filling. */
+  function setPrompt(key, ico, txt, sub, action, bar) {
     if (key === null) {
       if (promptKey !== '') { promptKey = ''; toggle(promptBtn, 'hid', true); promptAction = null; }
       return;
@@ -377,16 +359,22 @@ export function createHUD(root, state, game) {
     toggle(promptBtn, 'tappable', !!action);
     if (action) promptBtn.setAttribute('data-ui', '');
     else if (promptBtn.removeAttribute) promptBtn.removeAttribute('data-ui');
+
+    setText(promptSub, sub || '');           // sub carries a live countdown
+    const showBar = bar >= 0;
+    toggle(promptBar, 'on', showBar);
+    if (showBar) setVar(promptBar.firstChild, 'width', (bar * 100).toFixed(1) + '%');
+    toggle(promptBtn, 'spent', showBar);
+
     if (key === promptKey) return;
     promptKey = key;
     promptIco.innerHTML = icon(ico, 20);
     setText(promptTxt, txt);
-    setText(promptSub, sub || '');
     toggle(promptBtn, 'hid', false);
     replay(promptBtn, 'in', 400);
   }
 
-  /* -------------------------------------------------------------- refresh */
+  /* ------------------------------------------------------------ standings */
   let order = rankRows.map(r => r.p.id);
 
   function refreshRanks() {
@@ -401,11 +389,10 @@ export function createHUD(root, state, game) {
     rk.forEach((e, i) => {
       const r = rankRows[e.p.id];
       setText(r.vp, e.vp);
-      setText(r.row.childNodes[0], i + 1);
       toggle(r.row, 'lead', i === 0);
       let aw = '';
-      if (e.p.hasLongestRoad) aw += icon('road', 20, 'aw');
-      if (e.p.hasLargestArmy) aw += icon('knight', 20, 'aw');
+      if (e.p.hasLongestRoad) aw += icon('road', 16, 'aw');
+      if (e.p.hasLargestArmy) aw += icon('knight', 16, 'aw');
       if (r.award.innerHTML !== aw) r.award.innerHTML = aw;
       if (changed) rankList.appendChild(r.row);
     });
@@ -424,25 +411,37 @@ export function createHUD(root, state, game) {
     }
   }
 
-  function refreshBuild() {
-    let ready = 0;
-    for (const b of BUILD_KINDS) {
-      const c = buildCards[b.kind];
-      const afford = canAfford(me.res, COST[b.kind]);
-      const capped = pieceCap(b.kind);
-      const ok = afford && !capped && state.phase === 'play';
-      if (ok) ready++;
-      if (c.ok !== ok) {
-        c.ok = ok;
-        toggle(c.node, 'off', !ok);
-        toggle(c.node, 'ok', ok);
-        if (ok) replay(c.node, 'ready', 700);
+  /* -------------------------------------------------------------- refresh */
+  let regions = regionReport(state);
+  let obKey = '';
+
+  function refreshRegions() {
+    regions = regionReport(state);
+    for (const r of RES) {
+      const s = resSlots[r];
+      const rr = regions[r];
+      const dry = rr.live === 0;
+      const f = dry ? rr.recovery : rr.live / Math.max(1, rr.total);
+      if (Math.abs(f - s.lastF) > 0.01) {
+        s.lastF = f;
+        setVar(s.live.firstChild, 'width', (f * 100).toFixed(1) + '%');
       }
-      const miss = afford ? null : missingFrom(me.res, COST[b.kind]);
-      for (const r in c.costBits) toggle(c.costBits[r], 'lack', !!(miss && miss[r]));
+      toggle(s.node, 'dry', dry);
     }
-    setBadge(btnBuild, ready);
-    setBadge(btnCards, me.cards.length);
+  }
+
+  function refreshObjective() {
+    const g = guide.read({ regions, buildHidden: buildRow.classList.contains('hid') });
+    const ico = RES.indexOf(g.ico) >= 0 ? resIcon(g.ico) : g.ico;
+    setText(obLead, g.lead);
+    setText(obTail, g.tail || '');
+    if (g.key !== obKey) {
+      obKey = g.key;
+      obIco.innerHTML = icon(ico, 20);
+      toggle(objective, 'go', g.tone === 'go');
+      toggle(objective, 'wait', g.tone === 'wait');
+      replay(objective, 'turn', 420);
+    }
   }
 
   function setBadge(b, n) {
@@ -460,10 +459,13 @@ export function createHUD(root, state, game) {
         setText(s.num, v);
       }
     }
-    setText(vpNum, scoreOf(state, me));
+    const vp = scoreOf(state, me);
+    setText(vpNum, vp);
+    for (let i = 0; i < vpCells.length; i++) toggle(vpCells[i], 'on', i < vp);
     refreshRanks();
-    refreshBuild();
-    if (force) refreshPrompt();
+    setBadge(btnBuild, buildBar.refresh());
+    setBadge(btnCards, me.cards.length);
+    if (force) { refreshRegions(); refreshPrompt(); refreshObjective(); }
   }
 
   /* ----------------------------------------------------------------- loop */
@@ -480,7 +482,10 @@ export function createHUD(root, state, game) {
     if (slow >= 0.1) { slow = 0; refreshAll(false); }
 
     promptT += d;
-    if (promptT >= 0.22) { promptT = 0; refreshPrompt(); }
+    if (promptT >= 0.2) {
+      promptT = 0;
+      refreshRegions(); refreshPrompt(); refreshObjective();
+    }
 
     timeT += d;
     if (timeT >= 0.25) { timeT = 0; setText(timerTxt, fmtTime(state.time)); }
@@ -495,17 +500,13 @@ export function createHUD(root, state, game) {
       }
     }
 
-    if (annT > 0) {
-      annT -= d;
-      if (annT <= 0) toggle(annWrap, 'show', false);
-    }
+    if (annT > 0) { annT -= d; if (annT <= 0) toggle(annWrap, 'show', false); }
   }
 
   function onPlayBegan() {
     toggle(hud, 'pre', false);
     replay(hud, 'enter', 900);
     refreshAll(true);
-    toast('Go! Gather, build, win.', 'good');
     announce('Settle the Island', me.color.css);
   }
 

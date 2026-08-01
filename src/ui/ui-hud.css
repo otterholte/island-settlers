@@ -1,6 +1,10 @@
 /* ==========================================================================
    Island Settlers — the in-world heads-up display.
    Imported by ui.css after ui-base.css. Owner: UI agent.
+
+   Compact rules live in the media block at the foot of this file and are all
+   written as `.hud <sel>` so they outrank ui.css's older phone block, which
+   is loaded after this file and which this agent does not own.
    ========================================================================== */
 
 .hud{position:absolute;inset:0}
@@ -8,7 +12,7 @@
   opacity:0;transform:translateY(26px);pointer-events:none}
 .hud-bc,.hud-br,.hud-bl{transition:opacity .34s ease,transform .34s cubic-bezier(.2,.9,.3,1)}
 
-/* --- top-left: settings, identity, clock -------------------------------- */
+/* --- top-left: settings, identity, victory track ------------------------ */
 .hud-tl{
   position:absolute;left:var(--gL);top:var(--gT);
   display:flex;flex-direction:column;gap:6px;align-items:flex-start;
@@ -20,18 +24,33 @@
   border-radius:13px;
 }
 .idc-av{line-height:0;flex:0 0 auto}
-.idc-txt{display:flex;flex-direction:column;line-height:1;gap:3px;min-width:0}
+.idc-txt{display:flex;flex-direction:column;line-height:1;gap:4px;min-width:0}
 .idc-name{font:800 14px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#fff;
   text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.idc-sub{font:700 9px/1 var(--ff);letter-spacing:.17em;text-transform:uppercase;
-  color:rgba(190,214,240,.72)}
 .idc-vp{display:flex;align-items:center;gap:4px;margin-left:1px;padding-left:9px;
   border-left:1px solid rgba(255,201,60,.28)}
 .idc-vp .ico{line-height:0}
 .idc-vp b{font:800 22px/1 var(--ff);color:var(--gold);
   -webkit-text-stroke:2px rgba(10,18,30,.85);paint-order:stroke fill;
   text-shadow:0 2px 4px rgba(0,0,0,.5)}
-.idc-vp i{font:700 11px/1 var(--ff);font-style:normal;color:rgba(255,231,154,.62)}
+
+/* The road to twelve, drawn as twelve steps. The last cell is the finish
+   post, outlined even when empty so the target is always visible. */
+.vp-track{display:flex;align-items:flex-end;gap:1px}
+.vp-track i{
+  display:block;width:4px;height:8px;border-radius:1.5px;
+  background:rgba(255,255,255,.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px rgba(0,0,0,.35);
+  transition:background .25s ease,box-shadow .25s ease;
+}
+.vp-track i.on{
+  background:linear-gradient(180deg,var(--gold-l),var(--gold-d));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 5px rgba(255,201,60,.6);
+}
+.vp-track i.goal{width:5px;height:11px;background:rgba(255,201,60,.10);
+  box-shadow:inset 0 0 0 1px rgba(255,201,60,.55)}
+.vp-track i.goal.on{background:linear-gradient(180deg,#fff3cf,var(--gold));
+  box-shadow:0 0 9px rgba(255,201,60,.9)}
 
 .timechip{
   display:flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;
@@ -42,15 +61,17 @@
   text-shadow:0 1px 2px rgba(0,0,0,.65)}
 
 /* --- top-centre: THE resource readout -----------------------------------
-   The most-read element in the game gets the prime slot: one beveled pill,
-   five slots, 28px objects and 20px stroked numerals that survive over bright
-   terrain. Nothing here ever scales below 20px. */
+   The most-read element in the game keeps the prime slot: one beveled pill,
+   five slots, 28px objects and 20px stroked numerals. Under each slot a
+   hairline reports how much of that resource is still standing on the
+   island — and, when a resource has run out everywhere, it turns into the
+   recovery clock instead. Nothing here ever scales below 20px. */
 .hud-tc{
   position:absolute;top:var(--gT);left:50%;transform:translateX(-50%);
   display:flex;flex-direction:column;align-items:center;gap:6px;
 }
 .resbar{
-  display:flex;align-items:stretch;height:44px;padding:0 5px;
+  display:flex;align-items:stretch;height:46px;padding:0 5px;
   border-radius:13px;
   background:linear-gradient(180deg,#20527f 0%,#12304f 44%,#08192e 100%);
   border:1px solid rgba(3,10,20,.95);
@@ -63,18 +84,37 @@
 }
 .res{
   position:relative;display:flex;align-items:center;justify-content:center;
-  gap:6px;padding:0 11px;flex:1 1 0;
+  gap:6px;padding:0 11px 7px;flex:1 1 0;
 }
 .res + .res::before{
   content:'';position:absolute;left:0;top:7px;bottom:7px;width:1px;
   background:linear-gradient(180deg,rgba(255,201,60,0),rgba(255,201,60,.45),rgba(255,201,60,0));
 }
-.res .ico{line-height:0;flex:0 0 auto}
+.res .ico{line-height:0;flex:0 0 auto;transition:opacity .3s ease,filter .3s ease}
 .res b{
   font:800 20px/1 var(--ff);color:#fff;min-width:13px;text-align:left;
   -webkit-text-stroke:2px rgba(8,16,28,.92);paint-order:stroke fill;
   text-shadow:0 2px 3px rgba(0,0,0,.6);
 }
+.res-live{
+  position:absolute;left:9px;right:9px;bottom:4px;height:3px;border-radius:2px;
+  background:rgba(0,0,0,.5);box-shadow:inset 0 1px 1px rgba(0,0,0,.55);
+  overflow:hidden;
+}
+.res-live span{
+  display:block;height:100%;width:100%;border-radius:2px;
+  background:linear-gradient(90deg,var(--gold-d),var(--gold));
+  box-shadow:0 0 5px rgba(255,201,60,.55);
+  transition:width .4s ease,background .4s ease;
+}
+/* Nothing of this kind is standing anywhere: dim the object, and let the bar
+   run as the countdown to the first region coming back. */
+.res.dry .ico{opacity:.4;filter:grayscale(.85)}
+.res.dry b{color:rgba(214,230,248,.55);-webkit-text-stroke-color:rgba(8,16,28,.7)}
+.res.dry .res-live span{background:linear-gradient(90deg,#3f6d86,#5fc0d6);
+  box-shadow:0 0 5px rgba(63,196,216,.5)}
+.res.dry .res-live{box-shadow:inset 0 1px 1px rgba(0,0,0,.55),0 0 0 1px rgba(242,112,90,.45)}
+
 .res.pop{animation:resPop .46s cubic-bezier(.2,1.6,.4,1)}
 .res.pop b{color:#fff2c4}
 .res.pop .ico{animation:resIcoPop .46s cubic-bezier(.2,1.7,.4,1)}
@@ -85,104 +125,181 @@
   100%{transform:scale(1) rotate(0)}}
 @keyframes resRing{0%{opacity:1;transform:scale(.82)}100%{opacity:0;transform:scale(1.3)}}
 
-/* --- top-right: standings ------------------------------------------------ */
+/* --- the next-step line --------------------------------------------------
+   One quiet sentence, directly under the thing it talks about. It never
+   covers the playfield, never animates on a ticking number, and never
+   demands a tap. */
+.objective{
+  display:flex;align-items:center;gap:7px;height:28px;padding:0 12px 0 8px;
+  border-radius:9px;max-width:min(400px,50vw);overflow:hidden;
+}
+.ob-ico{line-height:0;flex:0 0 auto}
+.ob-body{display:flex;align-items:baseline;gap:6px;min-width:0;white-space:nowrap;overflow:hidden}
+.ob-lead{flex:0 0 auto;font:800 11px/1 var(--ff);letter-spacing:.07em;text-transform:uppercase;
+  color:#ffe7ab;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.ob-tail{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  font:700 10px/1 var(--ff);letter-spacing:.03em;color:rgba(196,218,242,.78)}
+.objective.go{box-shadow:
+  0 8px 8px -2px rgba(0,0,0,.40),0 0 14px rgba(255,201,60,.30),
+  inset 0 2px 0 rgba(255,255,255,.20),inset 0 0 0 1.4px rgba(255,201,60,.55)}
+.objective.go .ob-lead{color:#fff0c2}
+.objective.wait .ob-lead{color:#f5bda6}
+.objective.turn{animation:obTurn .4s cubic-bezier(.2,.9,.3,1)}
+@keyframes obTurn{from{opacity:.15;transform:translateY(-5px)}to{opacity:1}}
+
+/* --- top-right: standings, turned down ----------------------------------
+   The player asked not to have to track rivals. They stay on screen, but
+   small, flat and low-contrast; only their own row carries weight. */
 .hud-tr{
   position:absolute;right:var(--gR);top:var(--gT);
-  width:190px;padding:5px 6px 7px;
+  width:152px;padding:5px;
 }
-.rk-head{font:800 9px/1 var(--ff);letter-spacing:.24em;text-transform:uppercase;
-  color:rgba(255,231,154,.78);padding:3px 4px 6px;text-align:center}
-.ranks{display:flex;flex-direction:column;gap:4px}
+.ranks{display:flex;flex-direction:column;gap:3px}
 .rk{
-  position:relative;display:flex;align-items:center;gap:7px;
-  height:40px;padding:0 8px 0 6px;
-  border-radius:10px;
-  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.3);
+  position:relative;display:flex;align-items:center;gap:6px;
+  height:28px;padding:0 7px 0 8px;
+  border-radius:8px;opacity:.66;
   will-change:transform;overflow:hidden;
 }
-.rk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
-  background:var(--c,#3b7fd4);opacity:.75}
-.rk.me{background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.24));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 1px 3px rgba(0,0,0,.36)}
-.rk.me::before{width:4px;background:var(--gold);opacity:1;
+.rk::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:2px;
+  background:var(--c,#3b7fd4);opacity:.8}
+.rk.me{
+  height:34px;opacity:1;
+  background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.22));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 1px 3px rgba(0,0,0,.34);
+}
+.rk.me::before{top:0;bottom:0;width:3px;border-radius:0;background:var(--gold);opacity:1;
   box-shadow:0 0 8px rgba(255,201,60,.7)}
-.rk.lead .rk-vp{text-shadow:0 1px 0 #6b4405,0 0 10px rgba(255,201,60,.7)}
-.rk-pos{font:800 11px/1 var(--ff);color:rgba(196,218,242,.66);width:9px;text-align:center;
-  flex:0 0 auto}
-.rk-av{line-height:0;flex:0 0 auto}
-.rk-name{flex:1 1 auto;min-width:0;font:700 12px/1 var(--ff);letter-spacing:.04em;color:#eef4fb;
+.rk-av{line-height:0;flex:0 0 auto;opacity:.9}
+.rk.me .rk-av{opacity:1}
+.rk-name{flex:1 1 auto;min-width:0;font:700 11px/1 var(--ff);letter-spacing:.04em;
+  color:rgba(226,238,250,.82);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   text-shadow:0 1px 2px rgba(0,0,0,.5)}
-.rk-award{display:flex;gap:2px;line-height:0;opacity:.95;flex:0 0 auto}
-.rk-award .aw{filter:drop-shadow(0 0 3px rgba(255,201,60,.8))}
+.rk.me .rk-name{font-size:12px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+  color:#fff}
+.rk-award{display:flex;gap:2px;line-height:0;flex:0 0 auto;opacity:.9}
+.rk-award .aw{filter:drop-shadow(0 0 3px rgba(255,201,60,.75))}
 .rk-vp{display:flex;align-items:center;gap:3px;flex:0 0 auto}
 .rk-vp .ico{line-height:0}
-.rk-vp b{font:800 20px/1 var(--ff);color:var(--gold);min-width:14px;text-align:right;
-  -webkit-text-stroke:1.6px rgba(10,18,30,.8);paint-order:stroke fill;
+.rk-vp b{font:800 15px/1 var(--ff);color:rgba(255,231,154,.86);min-width:13px;text-align:right;
+  -webkit-text-stroke:1.4px rgba(10,18,30,.75);paint-order:stroke fill}
+.rk.me .rk-vp b{font-size:20px;color:var(--gold);-webkit-text-stroke-width:1.8px;
   text-shadow:0 1px 3px rgba(0,0,0,.5)}
+.rk.lead:not(.me) .rk-vp b{color:var(--gold)}
 
-/* --- bottom-centre: build cards ------------------------------------------ */
-.hud-bc{
-  position:absolute;bottom:var(--gB);left:50%;transform:translateX(-50%);
-}
+/* --- bottom-centre: four live progress meters ---------------------------
+   A build card is not a price tag. It fills from the bottom as the purchase
+   comes within reach, names every resource as have / need, flags the one
+   still holding you up, and goes gold the instant it is buyable. */
+.hud-bc{position:absolute;bottom:var(--gB);left:50%;transform:translateX(-50%)}
 .build-row{display:flex;gap:8px;align-items:flex-end}
 .bcard{
   position:relative;display:flex;flex-direction:column;align-items:center;
-  justify-content:flex-start;gap:2px;
-  width:96px;height:108px;padding:6px 4px 0;overflow:hidden;
-  background:linear-gradient(180deg,#fffaea 0%,#f8ebcd 34%,var(--cream-2) 100%);
+  justify-content:flex-start;gap:1px;
+  width:96px;height:112px;padding:6px 4px 0;overflow:hidden;
+  /* Empty is cold. Every point of colour on this card is earned. */
+  background:linear-gradient(180deg,#e7e4dc 0%,#d3cfc5 100%);
   border:2px solid var(--brown);border-radius:13px;
   box-shadow:0 5px 0 #8b6a34,0 9px 16px rgba(0,0,0,.45),
-             inset 0 2px 0 rgba(255,255,255,.9),inset 0 -10px 14px rgba(154,116,58,.18);
+             inset 0 2px 0 rgba(255,255,255,.6);
   cursor:pointer;touch-action:manipulation;
-  transition:transform .1s ease,box-shadow .1s ease,filter .18s ease,opacity .18s ease;
+  transition:transform .1s ease,box-shadow .1s ease,opacity .18s ease;
 }
 .bcard:active{transform:translateY(4px);
-  box-shadow:0 1px 0 #8b6a34,0 4px 8px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.7)}
-/* flex:0 0 auto matters: without it a four-resource cost row shrinks the
-   title until it is clipped in half. */
+  box-shadow:0 1px 0 #8b6a34,0 4px 8px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.6)}
+.bcard.off:active{transform:translateY(2px)}
+
+/* the fill: min(have/need) across this purchase's cost */
+.bc-fill{
+  position:absolute;left:0;right:0;bottom:0;height:var(--p,0%);z-index:0;
+  background:linear-gradient(180deg,#fff7dc 0%,#ffdd8c 30%,#f3bd4d 100%);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.85);
+  transition:height .45s cubic-bezier(.2,.9,.3,1);
+}
+.bc-fill::after{content:'';position:absolute;left:0;right:0;top:0;height:2px;
+  background:linear-gradient(90deg,rgba(255,255,255,0),#fffdf2,rgba(255,255,255,0))}
+.bcard > .bc-name,.bcard > .bc-row,.bcard > .bc-cost{position:relative;z-index:1}
+
 .bc-name{flex:0 0 auto;font:800 14px/1 var(--ff);font-variant-caps:small-caps;
-  letter-spacing:.03em;color:var(--brown);text-shadow:0 1px 0 rgba(255,255,255,.9);
+  letter-spacing:.03em;color:var(--brown);text-shadow:0 1px 0 rgba(255,255,255,.75);
   white-space:nowrap;max-width:100%;overflow:hidden}
-/* The one label long enough to need it. Small-caps buys most of the room; a
-   point of size and the letter-spacing buy the rest. */
 .bcard[data-kind="settlement"] .bc-name{font-size:13px;letter-spacing:-.01em}
-.bc-ico{flex:0 0 auto;line-height:0;margin:1px 0 2px}
+.bc-row{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:4px;
+  margin:1px 0 2px}
+.bc-ico{line-height:0}
+/* What the piece is worth, right where you decide to buy it. */
+.bc-vp{
+  font:800 8px/1 var(--ff);font-style:normal;letter-spacing:.04em;
+  color:#5a3a1e;padding:2px 3px;border-radius:4px;
+  background:rgba(255,201,60,.42);
+  box-shadow:inset 0 0 0 1px rgba(140,98,24,.55);
+}
+.bc-vp::after{content:'VP';margin-left:1px;font-size:6.5px;opacity:.8}
+
+/* The cost band is a window on the fill, not a plate over it: a hairline and
+   a whisper of shadow, so the gold rising underneath stays readable. */
 .bc-cost{
-  flex:0 0 auto;display:flex;flex-wrap:wrap;gap:2px 6px;align-items:center;justify-content:center;
-  width:calc(100% + 8px);margin:auto -4px 0;padding:4px 0 5px;
-  background:linear-gradient(180deg,#ffe6a6,#efc76d);
-  border-top:1.5px solid rgba(90,58,30,.42);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+  flex:0 0 auto;display:flex;flex-wrap:wrap;gap:2px 5px;
+  align-items:center;justify-content:center;
+  width:calc(100% + 8px);margin:auto -4px 0;padding:4px 0 6px;
+  border-top:1.5px solid rgba(90,58,30,.38);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -14px 16px rgba(90,58,30,.10);
 }
 .bc-cost .cc{display:inline-flex;align-items:center;gap:2px;font-style:normal;
-  padding:0 1px;border-radius:5px}
-.bc-cost .cc em{font:800 16px/1 var(--ff);font-style:normal;color:#4a3115;
-  text-shadow:0 1px 0 rgba(255,255,255,.6)}
-.bc-cost .cc.lack em{color:#a3301a}
-.bc-cost .cc.short{background:rgba(208,71,47,.30);box-shadow:0 0 0 1.5px rgba(208,71,47,.7)}
-.bc-cost .cc.short em{color:#8f2b18}
+  padding:0 1px;border-radius:6px}
+.cc-ico{line-height:0;opacity:.66;filter:grayscale(.5);transition:opacity .25s,filter .25s}
+.cc.met .cc-ico{opacity:1;filter:none}
+/* have over need — a real fraction. It survives a 70px card, which "3 / 4"
+   set inline does not. */
+.ccn{display:flex;flex-direction:column;align-items:center;gap:0;min-width:11px}
+.ccn b{font:800 12px/1 var(--ff);color:#9c3a22;text-shadow:0 1px 0 rgba(255,255,255,.5)}
+.cc.met .ccn b{color:#2c6027}
+.ccn em{font:800 9px/1 var(--ff);font-style:normal;color:rgba(74,49,21,.72);
+  margin-top:2px;padding-top:2px;border-top:1.2px solid rgba(74,49,21,.5)}
+/* The one resource actually holding the purchase up. */
+.cc.block{background:rgba(208,71,47,.24);box-shadow:inset 0 0 0 1.4px rgba(176,52,30,.75)}
+.cc.block .ccn b{color:#a3301a}
+.cc.short{background:rgba(208,71,47,.40);box-shadow:inset 0 0 0 1.6px rgba(208,71,47,.9)}
 
-/* Affordable: full colour with a gold rim and a live under-lip.
-   Unaffordable: desaturated and dimmed — unmistakably a different state from
-   "selected". */
+/* affordable now: gold rim, gold halo, a slow breath. The rim lives on an
+   inset pseudo-element (the card clips its own overflow, so an outset ring
+   would be cut off); the halo lives on the card's own box-shadow, which is
+   not clipped. */
+.bcard::after{content:'';position:absolute;inset:0;border-radius:11px;z-index:3;
+  border:2px solid var(--gold);opacity:0;pointer-events:none;transition:opacity .2s ease}
+.bcard.ok::after{opacity:1;animation:bcRim 2.4s ease-in-out infinite}
+@keyframes bcRim{
+  0%,100%{opacity:.72;box-shadow:inset 0 0 7px rgba(255,201,60,.30)}
+  50%{opacity:1;box-shadow:inset 0 0 13px rgba(255,201,60,.60)}}
 .bcard.ok{border-color:#8a5c22;
-  box-shadow:0 0 0 2px rgba(255,201,60,.75),0 5px 0 #8b6a34,0 9px 18px rgba(0,0,0,.45),
-             inset 0 2px 0 rgba(255,255,255,.9),inset 0 -10px 14px rgba(154,116,58,.18)}
-.bcard.ok .bc-lip{opacity:1}
-.bcard.off{filter:grayscale(1) brightness(.86) contrast(.92);opacity:.55}
-.bcard.off .bc-lip{opacity:0}
-.bcard.off:active{transform:none}
-.bcard .bc-lip{position:absolute;left:5px;right:5px;bottom:1px;height:3px;border-radius:2px;
+  box-shadow:0 0 0 2px rgba(255,201,60,.7),0 0 18px rgba(255,201,60,.45),
+             0 5px 0 #8b6a34,0 9px 18px rgba(0,0,0,.45),
+             inset 0 2px 0 rgba(255,255,255,.6)}
+.bcard.ok:active{box-shadow:0 0 0 2px rgba(255,201,60,.7),0 0 18px rgba(255,201,60,.45),
+  0 1px 0 #8b6a34,0 4px 8px rgba(0,0,0,.4),inset 0 2px 0 rgba(255,255,255,.6)}
+.bcard.ok .bc-name{color:#4a3115;text-shadow:0 1px 0 rgba(255,255,255,.9)}
+.bcard .bc-lip{position:absolute;left:5px;right:5px;bottom:1px;height:3px;border-radius:2px;z-index:2;
   background:linear-gradient(90deg,rgba(255,201,60,0),var(--gold),rgba(255,201,60,0));
   opacity:0;transition:opacity .2s ease}
+.bcard.ok .bc-lip{opacity:1}
+/* Paid for, but there is nowhere to put it (or no pieces left): the fill is
+   honest, the card is not offered. Never transparency — these sit over a
+   busy island and must stay solid. */
+.bcard.cap .bc-fill{filter:saturate(.5)}
+.bcard.cap .bc-name{color:#7d7264}
+.bcard.cap::before{
+  content:'';position:absolute;inset:0;z-index:2;pointer-events:none;
+  background:repeating-linear-gradient(-45deg,
+    rgba(90,58,30,.07) 0 6px,rgba(90,58,30,0) 6px 12px);
+}
+
 .bcard.nope{animation:nope .42s ease}
-.bcard.ready{animation:ready .6s ease}
+.bcard.ready{animation:bcReady .7s cubic-bezier(.2,1.3,.4,1)}
 @keyframes nope{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}
   45%{transform:translateX(5px)}70%{transform:translateX(-3px)}}
-@keyframes ready{0%{box-shadow:0 5px 0 #8b6a34,0 0 0 0 rgba(255,201,60,.9)}
-  100%{box-shadow:0 5px 0 #8b6a34,0 0 0 15px rgba(255,201,60,0)}}
+@keyframes bcReady{0%{transform:translateY(0) scale(1)}
+  35%{transform:translateY(-6px) scale(1.05)}100%{transform:translateY(0) scale(1)}}
 
 /* --- bottom-right ------------------------------------------------------- */
 .hud-br{
@@ -190,11 +307,10 @@
   display:flex;align-items:flex-end;gap:10px;
 }
 
-/* --- bottom-left prompt -------------------------------------------------- */
-.hud-bl{
-  position:absolute;left:var(--gL);bottom:var(--gB);
-  max-width:230px;
-}
+/* --- bottom-left prompt --------------------------------------------------
+   What the ground under your feet is offering — and, when you have worked it
+   out, exactly how long until it comes back. */
+.hud-bl{position:absolute;left:var(--gL);bottom:var(--gB);max-width:236px}
 .prompt{
   display:flex;align-items:center;gap:9px;min-height:48px;max-width:100%;
   padding:6px 14px 6px 9px;border-radius:13px;
@@ -204,21 +320,29 @@
   box-shadow:0 8px 8px -2px rgba(0,0,0,.40),0 0 16px rgba(255,201,60,.4),
     inset 0 2px 0 rgba(255,255,255,.22),inset 0 0 0 1.5px rgba(255,201,60,.65)}
 .prompt.tappable:active{transform:translateY(2px)}
+.prompt.spent{box-shadow:0 8px 8px -2px rgba(0,0,0,.40),
+    inset 0 2px 0 rgba(255,255,255,.18),inset 0 0 0 1.5px rgba(242,112,90,.55)}
+.prompt.spent .pr-ico{opacity:.45;filter:grayscale(.9)}
+.prompt.spent .pr-txt{color:#ffb9a4}
 .pr-ico{line-height:0;flex:0 0 auto}
-.pr-body{display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden}
+.pr-body{display:flex;flex-direction:column;gap:3px;min-width:0;overflow:hidden;flex:1 1 auto}
 .pr-txt{font:800 12px/1 var(--ff);letter-spacing:.11em;text-transform:uppercase;
   color:var(--gold-l);text-shadow:0 1px 2px rgba(0,0,0,.7);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pr-sub{font:700 9.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;
   color:rgba(190,214,240,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr-bar{display:none;height:4px;margin-top:2px;border-radius:2px;
+  background:rgba(0,0,0,.5);box-shadow:inset 0 1px 1px rgba(0,0,0,.5);overflow:hidden}
+.pr-bar.on{display:block}
+.pr-bar i{display:block;height:100%;border-radius:2px;
+  background:linear-gradient(90deg,#3f8ea8,#5fd0e2);
+  box-shadow:0 0 6px rgba(63,196,216,.6);transition:width .3s linear}
 .prompt.in{animation:promptIn .3s cubic-bezier(.2,1.4,.4,1)}
 @keyframes promptIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1}}
 
 /* --- toasts ---------------------------------------------------------------
-   Anchored to the left column, stacked above the gather prompt. Centring these
-   put them squarely on top of the settler, who sits just below frame centre —
-   the hero is the one thing that must never be occluded. The left column is
-   otherwise empty during play. */
+   Anchored to the left column, stacked above the gather prompt. Centring
+   these put them on top of the settler, who sits just below frame centre. */
 .hud-toasts{
   position:absolute;left:var(--gL);
   bottom:calc(var(--gB) + 62px);
@@ -282,3 +406,71 @@
 .how p{margin:0;display:flex;flex-direction:column;gap:2px}
 .how b{font:800 9.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
 .how span{font:400 11px/1.35 var(--ff);color:rgba(224,236,248,.86)}
+
+/* =========================================================== compact phone
+   Verified at 667x375. Gutters, gaps and text may shrink — a resource object
+   never does. Every one of these selectors is scoped to `.hud` so it beats
+   ui.css's older phone block, which is imported after this file. */
+@media (max-height:400px),(max-width:760px){
+  .hud .idcard{height:44px;max-width:none;padding:0 9px 0 6px;gap:6px}
+  .hud .idc-name{font-size:12.5px}
+  .hud .idc-txt{gap:3px}
+  .hud .idc-vp{padding-left:7px;gap:3px}
+  .hud .idc-vp b{font-size:20px}
+  .hud .vp-track i{width:3px;height:7px}
+  .hud .vp-track i.goal{width:4px;height:10px}
+
+  .hud .resbar{height:44px;padding:0 3px}
+  .hud .res{padding:0 5px 7px;gap:4px}
+  .hud .res b{font-size:19px;min-width:12px}
+  .hud .res-live{left:5px;right:5px}
+
+  .hud .objective{height:25px;max-width:44vw;padding:0 9px 0 6px;gap:6px}
+  .hud .ob-lead{font-size:10px;letter-spacing:.05em}
+  .hud .ob-tail{font-size:9px}
+
+  .hud .hud-tr{width:126px;padding:4px}
+  .hud .rk{height:24px;gap:5px;padding:0 5px 0 7px}
+  .hud .rk.me{height:30px}
+  .hud .rk-av svg{width:20px;height:20px}
+  .hud .rk.me .rk-av svg{width:24px;height:24px}
+  .hud .rk-name{font-size:10.5px}
+  .hud .rk.me .rk-name{font-size:11px}
+  .hud .rk-vp b{font-size:13px;min-width:11px}
+  .hud .rk.me .rk-vp b{font-size:17px}
+
+  .hud .bcard{width:70px;height:96px;padding:5px 3px 0;gap:0}
+  .hud .build-row{gap:5px}
+  .hud .bc-name{font-size:12px}
+  .hud .bcard[data-kind="settlement"] .bc-name{font-size:10.5px}
+  .hud .bc-row{margin:1px 0 2px;gap:3px}
+  .hud .bc-ico svg{width:26px;height:26px}
+  .hud .bc-vp{font-size:8px;padding:1px 3px 2px}
+  .hud .bc-vp::after{font-size:6px}
+  /* Four cost chips must share a 70px card. The 20px object is fixed, so the
+     numerals give: two chips per row, two rows. */
+  .hud .bc-cost{gap:1px 3px;padding:3px 0 5px}
+  .hud .bc-cost .cc{gap:1px;padding:0}
+  .hud .cc .ccn{min-width:9px}
+  .hud .cc .ccn b{font-size:10.5px}
+  .hud .cc .ccn em{font-size:8px;margin-top:1px;padding-top:1px;border-top-width:1px}
+
+  .hud .hud-br{gap:6px}
+  .hud .hud-bl{max-width:158px}
+  .hud .prompt{min-height:44px;padding:5px 10px 5px 7px;gap:7px}
+  .hud .pr-txt{font-size:11px;letter-spacing:.07em}
+  .hud .pr-sub{font-size:9px}
+  .hud .pr-bar{height:3px}
+
+  .hud .hud-toasts{bottom:calc(var(--gB) + 54px);max-width:44vw}
+  .hud .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
+  .hud .ann-txt{font-size:22px}
+}
+
+/* Very short viewports: reclaim vertical space without shrinking any object. */
+@media (max-height:380px){
+  .hud .bcard{height:94px}
+  .hud .bc-row{margin:0 0 1px}
+  .hud .bc-ico svg{width:24px;height:24px}
+  .hud .hud-toasts{bottom:calc(var(--gB) + 104px)}
+}
