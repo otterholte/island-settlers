@@ -5,11 +5,21 @@
  *   +X  points out to sea (the port's `bearing`)
  *   y=0 sits on the wet sand at the shoreline
  *
- * The brief for this pass was "cleaner, not busier". The silhouette is now
- * four readable shapes and nothing else: a shingled warehouse on a timber
- * platform, a plank dock running out on pilings, a crane at the dock head, and
- * a moored sailing ship. The trade ratio hangs from a proper sign frame at the
- * landward end of the dock, big enough to read across the water.
+ * The brief for this pass was the same one the market answered: cleaner, not
+ * busier. A harbour is now THREE shapes and a sign — a shingled warehouse on a
+ * timber platform, a plank dock running out on pilings, a moored sailing ship,
+ * and the trade ratio hung from a plain gate at the head of the dock, big
+ * enough to read across the water.
+ *
+ * What used to be here and is not any more: the dock crane with its jib, brace,
+ * winch drum, rope and hook (six pieces standing directly in front of the sign);
+ * the harbour lamp and its post; four of the warehouse's corner posts, both
+ * eave boards, the door lintel and the hoist beam; the sign gantry's two
+ * capitals, two gold finials and two braces; half the cargo; the ship's jib
+ * sail, both stays and its masthead finial; and both seagulls per berth — which
+ * were the only thing left flying across the one object on the whole structure
+ * the player actually has to read. Nine harbours went from 9,729 triangles in
+ * six draw calls to 5,625 in five.
  *
  * Everything that does not move lives in `portBaseGeo` and is tinted per
  * instance: weathered grey while the port is locked, full colour once
@@ -18,9 +28,9 @@
  */
 
 import * as THREE from 'three';
-import { merge, place, tint, gradient, box, cyl, cone } from './geo.js';
+import { merge, place, tint, gradient, box, cone } from './geo.js';
 import { canvasTexture } from './paint.js';
-import { PAL, prism, decal, cloth, crate, barrel, faceGeo, stripePanel, rng } from './buildkit.js';
+import { PAL, prism, decal, cloth, crate, barrel, faceGeo, stripePanel } from './buildkit.js';
 
 export const DECK_Y = 0.62;      // dock surface above the shore anchor
 export const DOCK_FROM = 0.9;    // dock starts here
@@ -33,9 +43,13 @@ export const DOCK_W = 2.60;
  * It straddles the head of the dock like a harbour gate rather than standing
  * off to one side: the board then clears the warehouse roof and stays readable
  * whichever way the coast happens to face, which is the whole point of it.
+ *
+ * With the crane gone there is nothing left standing in front of it, so the
+ * board grew — 2.50x1.56 to 2.90x1.81 — and went up a little. It is the one
+ * thing on a harbour that carries information, so it gets the room.
  */
 export const SIGN_LOCAL = {
-  x: 1.65, y: DECK_Y + 2.72, z: 0, w: 2.50, h: 1.56
+  x: 1.55, y: DECK_Y + 2.94, z: 0, w: 2.90, h: 1.81
 };
 
 // slate-blue roof, as in the reference art: it separates the warehouse
@@ -55,42 +69,28 @@ function platform() {
   ]);
 }
 
-/** Warehouse: one clean gable mass, a loading door and a shingled roof. */
+/**
+ * Warehouse: one gable mass, one ridge, one door, one window.
+ *
+ * The four corner posts were here to "read the silhouette even at grey-out",
+ * and the two eave boards, the lintel and the hoist beam were here to make it
+ * look worked-in. What they actually did was cover a 2.3-unit shed in eleven
+ * dark stripes. The slate roof carries the silhouette on its own.
+ */
 function warehouse() {
   const w = 2.30, h = 1.62, d = 2.00;
   return merge([
     place(gradient(new THREE.BoxGeometry(w, h, d), 0x7f5a32, 0xab7f4c), 0, h / 2, 0),
-    // corner posts read the silhouette even at grey-out
-    place(tint(new THREE.BoxGeometry(0.17, h, 0.17), 0x5c3a1f, 0.05), w / 2 - 0.06, h / 2, d / 2 - 0.06),
-    place(tint(new THREE.BoxGeometry(0.17, h, 0.17), 0x5c3a1f, 0.05), w / 2 - 0.06, h / 2, -d / 2 + 0.06),
-    place(tint(new THREE.BoxGeometry(0.17, h, 0.17), 0x5c3a1f, 0.05), -w / 2 + 0.06, h / 2, d / 2 - 0.06),
-    place(tint(new THREE.BoxGeometry(0.17, h, 0.17), 0x5c3a1f, 0.05), -w / 2 + 0.06, h / 2, -d / 2 + 0.06),
     place(prism(w * 1.26, h * 0.62, d * 1.20, SHINGLE_HI, SHINGLE), 0, h, 0),
-    place(box(w * 1.28, 0.10, 0.11, 0x3f3428), 0, h + 0.03, d * 0.60),
-    place(box(w * 1.28, 0.10, 0.11, 0x3f3428), 0, h + 0.03, -d * 0.60),
     place(box(0.16, 0.16, d * 1.24, 0x3f3428), 0, h + h * 0.62, 0),
-    // loading door facing the dock, with a lintel and a hoist beam above it
+    // loading door facing the dock
     place(box(0.10, h * 0.72, w * 0.60, 0x4b3722), w / 2 + 0.02, h * 0.36, 0),
-    place(box(0.16, 0.10, w * 0.68, 0x9a6c3c), w / 2 + 0.04, h * 0.74, 0),
-    place(box(0.62, 0.13, 0.13, 0x5c3a1f), w / 2 + 0.28, h * 1.16, 0),
     // shuttered side window
     place(decal(0.42, 0.40, 0x4b5f6b), 0, h * 0.62, d / 2 + 0.012)
   ]);
 }
 
-/** Dock crane: A-frame post, jib swung out over the berth, rope and hook. */
-function crane() {
-  return merge([
-    place(tint(new THREE.BoxGeometry(0.28, 3.10, 0.28), 0x6f5330, 0.05), 0, 1.55, 0),
-    place(tint(new THREE.BoxGeometry(0.20, 0.20, 2.40), 0x8a6338, 0.05), 0, 3.00, 1.00, -0.13, 0, 0),
-    place(tint(new THREE.BoxGeometry(0.16, 0.16, 1.30), 0x6b4526), 0, 2.28, 0.55, 0.72, 0, 0),
-    place(cyl(0.30, 0.30, 0.40, 6, 0x6b4526, false, 0.05), 0, 0.74, 0, 0, 0, Math.PI / 2),
-    place(box(0.04, 1.45, 0.04, PAL.rope), 0, 2.28, 2.02),
-    place(tint(new THREE.BoxGeometry(0.16, 0.28, 0.13), PAL.iron), 0, 1.48, 2.02)
-  ]);
-}
-
-/** Plank dock on pilings, two bollards, and a lamp at the head. */
+/** Plank dock on pilings, with two bollards. */
 function dock() {
   const parts = [];
   const span = DOCK_TO - DOCK_FROM;
@@ -110,47 +110,47 @@ function dock() {
   }
   parts.push(place(tint(new THREE.BoxGeometry(0.24, 0.48, 0.24), 0x4d3a22), DOCK_TO - 0.6, DECK_Y + 0.21, DOCK_W / 2 - 0.30));
   parts.push(place(tint(new THREE.BoxGeometry(0.24, 0.48, 0.24), 0x4d3a22), DOCK_TO - 2.8, DECK_Y + 0.21, DOCK_W / 2 - 0.30));
-  // harbour lamp — the clearest single "this berth is open" cue
-  parts.push(place(tint(new THREE.BoxGeometry(0.13, 2.05, 0.13), 0x4a4038, 0.04), DOCK_FROM + 0.55, DECK_Y + 1.02, -DOCK_W / 2 + 0.28));
-  parts.push(place(cyl(0.13, 0.19, 0.30, 5, 0xffc866, false, 0.04), DOCK_FROM + 0.55, DECK_Y + 2.18, -DOCK_W / 2 + 0.28));
-  parts.push(place(cone(0.24, 0.20, 5, PAL.iron), DOCK_FROM + 0.55, DECK_Y + 2.42, -DOCK_W / 2 + 0.28));
   return merge(parts);
 }
 
-/** One tidy stack of cargo on the platform. Deliberately small. */
+/**
+ * Cargo. One crate and one barrel, on the quay, well clear of the gate.
+ *
+ * Four pieces stacked two-high sat exactly where the eye lands coming off the
+ * sign, and every one of them was another dark brown box in a picture already
+ * made of dark brown boxes.
+ */
 function goods() {
   return merge([
-    place(crate(0.62), -1.05, DECK_Y, 1.22),
-    place(crate(0.48), -0.98, DECK_Y + 0.62, 1.18, 0, 0.4, 0),
-    place(barrel(0.25, 0.54), -1.20, DECK_Y, -1.28),
-    place(barrel(0.25, 0.54), -0.62, DECK_Y, -1.15)
+    place(crate(0.66), -1.10, DECK_Y, 1.26),
+    place(barrel(0.27, 0.58), -1.05, DECK_Y, -1.30)
   ]);
 }
 
-/** Gantry the painted board hangs from, straddling the head of the dock. */
+/**
+ * The gate the painted board hangs from, straddling the head of the dock.
+ *
+ * Two posts, one beam, two rope droppers — nothing else. It used to carry two
+ * capitals, two gold finials and two diagonal braces as well, which turned the
+ * frame around the sign into more of an object than the sign itself.
+ */
 function signFrame() {
   const { x } = SIGN_LOCAL;
-  const top = DECK_Y + 3.86;
-  const post = (z) => merge([
-    place(tint(new THREE.BoxGeometry(0.20, 3.80, 0.20), 0x6b4526, 0.05), x, DECK_Y + 1.90, z),
-    place(box(0.34, 0.16, 0.32, 0x8a6338), x, top - 0.26, z),
-    place(cone(0.15, 0.26, 4, PAL.gold), x, top + 0.22, z),
-    place(box(0.44, 0.14, 0.14, 0x8a6338), x + 0.16, DECK_Y + 3.44, z, 0, 0, 0.6)
-  ]);
+  const top = DECK_Y + 4.16;
   return merge([
-    post(1.22), post(-1.22),
-    place(box(0.22, 0.22, 2.80, 0x53381d), x, top, 0),
-    place(box(0.05, 0.42, 0.05, PAL.rope), x, top - 0.28, -0.72),
-    place(box(0.05, 0.42, 0.05, PAL.rope), x, top - 0.28, 0.72)
+    place(tint(new THREE.BoxGeometry(0.22, top - DECK_Y, 0.22), 0x6b4526, 0.05), x, DECK_Y + (top - DECK_Y) / 2, 1.58),
+    place(tint(new THREE.BoxGeometry(0.22, top - DECK_Y, 0.22), 0x6b4526, 0.05), x, DECK_Y + (top - DECK_Y) / 2, -1.58),
+    place(box(0.24, 0.24, 3.40, 0x53381d), x, top, 0),
+    place(box(0.05, 0.36, 0.05, PAL.rope), x, top - 0.26, -0.86),
+    place(box(0.05, 0.36, 0.05, PAL.rope), x, top - 0.26, 0.86)
   ]);
 }
 
-/** Everything that does not move: platform, warehouse, crane, dock, goods. */
+/** Everything that does not move: platform, warehouse, dock, cargo, gate. */
 export function portBaseGeo() {
   return merge([
     platform(),
     place(warehouse(), -2.60, DECK_Y, 0),
-    place(crane(), DOCK_FROM + 4.7, DECK_Y, -DOCK_W / 2 + 0.35),
     dock(), goods(), signFrame()
   ]);
 }
@@ -192,28 +192,23 @@ function hullGeo() {
   ]);
 }
 
-/** Moored sailing ship: hull, mast, boom, striped mainsail, two stays. */
+/**
+ * Moored sailing ship: hull, mast, boom and one striped mainsail.
+ *
+ * The jib, the two rigging stays and the gold masthead finial are gone. At the
+ * distance the ship is actually seen from, four hairlines crossing the sail
+ * read as dirt on the lens, and a second cream sail behind the first only made
+ * the striped one harder to pick out.
+ */
 export function portShipGeo() {
   const parts = [hullGeo()];
   parts.push(place(tint(new THREE.BoxGeometry(0.17, 3.40, 0.17), 0x7a5732, 0.04), 0.30, 1.78, 0));
   parts.push(place(tint(new THREE.BoxGeometry(1.80, 0.12, 0.12), 0x6a4526), 0.72, 0.80, 0));
-  parts.push(place(cone(0.10, 0.24, 4, PAL.gold), 0.30, 3.58, 0));
 
-  const sail = stripePanel(1.80, 2.02, 5, 0xf3e8cd, 0xc23f2c, { bulge: 0.16, rows: 2 });
-  place(sail, 1.14, 2.10, 0, 0, Math.PI / 2, 0);
+  const sail = stripePanel(1.92, 2.16, 5, 0xf3e8cd, 0xc23f2c, { bulge: 0.16, rows: 2 });
+  place(sail, 1.14, 2.12, 0, 0, Math.PI / 2, 0);
   parts.push(sail);
 
-  const jib = cloth(0.95, 1.30, 0xeee3cc, 0xcdbc9c, 0.12, 3);
-  place(jib, -0.52, 2.28, 0, 0, Math.PI / 2, 0);
-  parts.push(jib);
-
-  const line = (x1, y1, x2, y2) => {
-    const dx = x2 - x1, dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    return place(box(len, 0.04, 0.04, PAL.rope), (x1 + x2) / 2, (y1 + y2) / 2, 0, 0, 0, Math.atan2(dy, dx));
-  };
-  parts.push(line(0.30, 3.42, 2.52, 0.32));
-  parts.push(line(0.30, 3.42, -1.55, 0.46));
   return merge(parts);
 }
 
@@ -230,24 +225,6 @@ export function portFlagGeo() {
   place(f, 0.60, h - 0.44, 0);
   parts.push(f);
   return merge(parts);
-}
-
-/* ---------------------------------------------------------------- seagull */
-
-/**
- * Swept-wing gull, five triangles. The old one hung two rectangular planes off
- * a blob, which from any distance read as a scrap of paper blowing past rather
- * than as a bird; a proper dart silhouette does not.
- */
-export function seagullGeo() {
-  const tri = (a, b, c, hex) => tint(faceGeo(null, [[a, b, c]]), hex);
-  return merge([
-    place(tint(new THREE.OctahedronGeometry(0.12, 0), 0xf6f7f8, 0.04), 0, 0, 0, 0, 0, 0, 2.0, 0.72, 0.78),
-    tri([0.06, 0.02, 0.05], [-0.20, 0.11, 0.56], [0.12, 0.01, 0.12], 0xeef1f4),
-    tri([0.06, 0.02, -0.05], [0.12, 0.01, -0.12], [-0.20, 0.11, -0.56], 0xeef1f4),
-    tri([-0.14, 0.01, 0.05], [-0.34, 0.04, 0.12], [-0.34, 0.04, -0.12], 0xe4e9ef),
-    place(cone(0.05, 0.16, 3, 0xf5a63a), 0.23, 0, 0, 0, 0, -Math.PI / 2)
-  ]);
 }
 
 /* ------------------------------------------------------------- sign atlas */
@@ -333,29 +310,27 @@ export const ICON = {
 const FONT = '"Trebuchet MS","Arial Black",Impact,system-ui,sans-serif';
 
 /**
- * One trade board: a cream canvas banner with a swallow-tail hem, laced to a
- * timber rod, carrying the resource icon and the exchange ratio.
+ * One trade board: a cream canvas banner with a swallow-tail hem, carrying the
+ * resource icon and the exchange ratio.
  *
  * Drawn with `alphaTest` in mind — everything outside the banner shape stays
  * transparent so the sign keeps a cloth silhouette instead of a hard rectangle.
+ *
+ * Simplified with the rest of the harbour. The painted lacing, the woven weft,
+ * the diagonal shade wash and the inner rule were all detail at a scale nobody
+ * ever sees; what is left is three things — icon, ratio, resource — and the
+ * ratio is now half the height of the board, because reading it from across the
+ * water is the only job this sign has.
  */
-function paintBoard(g, x0, y0, w, h, port, rand) {
-  const pad = w * 0.055;
+function paintBoard(g, x0, y0, w, h, port) {
+  const pad = w * 0.05;
   const L = x0 + pad, R = x0 + w - pad;
-  const T = y0 + h * 0.115, B = y0 + h * 0.945;
-  const notch = h * 0.16;
+  const T = y0 + h * 0.085, B = y0 + h * 0.955;
+  const notch = h * 0.15;
 
   // hanging rod
   g.fillStyle = '#4a3520';
-  g.fillRect(x0 + w * 0.015, y0 + h * 0.02, w * 0.97, h * 0.075);
-  g.fillStyle = '#7a5836';
-  g.fillRect(x0 + w * 0.015, y0 + h * 0.02, w * 0.97, h * 0.035);
-  // laces
-  g.strokeStyle = '#8a6f4a'; g.lineWidth = h * 0.022;
-  for (const t of [0.2, 0.5, 0.8]) {
-    const lx = L + (R - L) * t;
-    g.beginPath(); g.moveTo(lx, y0 + h * 0.05); g.lineTo(lx, T + h * 0.02); g.stroke();
-  }
+  g.fillRect(x0 + w * 0.02, y0 + h * 0.012, w * 0.96, h * 0.062);
 
   const banner = () => {
     g.beginPath();
@@ -365,55 +340,38 @@ function paintBoard(g, x0, y0, w, h, port, rand) {
   };
   // dark backing so the banner keeps a heavy outline at distance
   g.save();
-  g.translate(0, h * 0.012);
+  g.translate(0, h * 0.014);
   banner(); g.fillStyle = '#4a3520'; g.fill();
   g.restore();
   banner();
-  g.fillStyle = '#d9c69a'; g.fill();
-  g.lineWidth = h * 0.045; g.strokeStyle = '#4a3520'; g.lineJoin = 'round'; g.stroke();
+  g.fillStyle = '#e2d0a4'; g.fill();
+  g.lineWidth = h * 0.048; g.strokeStyle = '#4a3520'; g.lineJoin = 'round'; g.stroke();
 
-  // weave
-  g.save();
-  banner(); g.clip();
-  g.strokeStyle = 'rgba(120,96,60,0.16)'; g.lineWidth = h * 0.012;
-  for (let i = 0; i < 16; i++) {
-    const py = T + (B - T) * (i / 16) + rand() * 3;
-    g.beginPath(); g.moveTo(L, py); g.lineTo(R, py); g.stroke();
-  }
-  const shade = g.createLinearGradient(L, T, R, B);
-  shade.addColorStop(0, 'rgba(255,246,222,0.30)');
-  shade.addColorStop(1, 'rgba(105,80,44,0.22)');
-  g.fillStyle = shade; g.fillRect(L, T, R - L, B - T);
-  g.restore();
+  const cx = (L + R) / 2, cy = T + (B - T) * 0.42;
 
-  // inner rule
-  g.strokeStyle = '#a8763a'; g.lineWidth = h * 0.018;
-  g.strokeRect(L + w * 0.035, T + h * 0.045, (R - L) - w * 0.07, (B - T) - h * 0.20);
-
-  // icon on the left third
+  // icon on the left, ratio on the right — one line, nothing above or beside it
   const icon = port.resource ? ICON[port.resource] : ICON.any;
-  icon(g, L + (R - L) * 0.215, T + (B - T) * 0.40, h * 0.185);
+  icon(g, L + (R - L) * 0.215, cy, h * 0.215);
 
-  // ratio, as big as the board allows
   const label = `${port.ratio}:1`;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.font = `900 ${Math.round(h * 0.40)}px ${FONT}`;
+  g.font = `900 ${Math.round(h * 0.50)}px ${FONT}`;
   g.lineJoin = 'round';
-  g.lineWidth = h * 0.085;
+  g.lineWidth = h * 0.10;
   g.strokeStyle = '#3b2410';
-  g.strokeText(label, L + (R - L) * 0.635, T + (B - T) * 0.38);
-  g.fillStyle = '#fff2d2';
-  g.fillText(label, L + (R - L) * 0.635, T + (B - T) * 0.38);
+  g.strokeText(label, L + (R - L) * 0.645, cy);
+  g.fillStyle = '#fff6de';
+  g.fillText(label, L + (R - L) * 0.645, cy);
 
-  // sub-label along the hem
-  g.font = `800 ${Math.round(h * 0.135)}px ${FONT}`;
-  g.lineWidth = h * 0.05;
+  // what it takes, along the hem
+  g.font = `800 ${Math.round(h * 0.145)}px ${FONT}`;
+  g.lineWidth = h * 0.055;
   g.strokeStyle = '#3b2410';
   const sub = port.resource ? String(port.resource).toUpperCase() : 'ANY GOODS';
-  g.strokeText(sub, (L + R) / 2, T + (B - T) * 0.755);
+  g.strokeText(sub, cx, T + (B - T) * 0.795);
   g.fillStyle = '#f3cf85';
-  g.fillText(sub, (L + R) / 2, T + (B - T) * 0.755);
+  g.fillText(sub, cx, T + (B - T) * 0.795);
 }
 
 /**
@@ -421,15 +379,14 @@ function paintBoard(g, x0, y0, w, h, port, rand) {
  * cells[i] = { u0, v0, u1, v1 } in port order.
  */
 export function portSignAtlas(portList) {
-  const CW = 320, CH = 200, cols = 3;
+  const CW = 384, CH = 240, cols = 3;
   const rows = Math.max(1, Math.ceil(portList.length / cols));
   const w = cols * CW, h = rows * CH;
   const cells = [];
-  const rand = rng(4242);
   const texture = canvasTexture(w, h, (g) => {
     g.clearRect(0, 0, w, h);
     portList.forEach((p, i) => {
-      paintBoard(g, (i % cols) * CW, Math.floor(i / cols) * CH, CW, CH, p, rand);
+      paintBoard(g, (i % cols) * CW, Math.floor(i / cols) * CH, CW, CH, p);
     });
   }, { aniso: 8 });
   portList.forEach((p, i) => {
@@ -515,5 +472,5 @@ export function buildSignMesh(portList, anchors) {
 }
 
 export default {
-  portBaseGeo, portShipGeo, portFlagGeo, seagullGeo, portSignAtlas, buildSignMesh
+  portBaseGeo, portShipGeo, portFlagGeo, portSignAtlas, buildSignMesh
 };

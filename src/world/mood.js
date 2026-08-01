@@ -42,11 +42,37 @@
  *   flash  1  the moment it all comes back
  *
  * ---------------------------------------------------------------------------
+ * ...AND WHAT THE MUTE USED TO COST
+ * ---------------------------------------------------------------------------
+ * Crushing a hex toward NEUTRAL grey did say "off limits" — and it also said
+ * nothing at all about what the hex was. Fifteen of the nineteen hexes on the
+ * board are hexes you do not own, and all fifteen of them looked like the same
+ * slate-blue smudge: you could not plan a settlement because you could not tell
+ * a forest from a mountain from a wheat field from where you were standing.
+ *
+ * So the mute no longer goes to grey. It goes to a DUOTONE: an off-limits hex
+ * is flattened onto ONE colour of its own — deep green for forest, ochre for
+ * fields, terracotta for clay, blue-slate for mountains — keeping only the
+ * fragment's brightness. Measured against what it replaced, that is a *harder*
+ * mute in both directions the eye reads: 88% of the surface's own colour is
+ * thrown away instead of 74%, and the value drops to 52% instead of 64%. The
+ * hex still looks drained, printed and inert, and next to a hex you own — which
+ * keeps every one of its colours, gains a warm lift, an additive blue breath and
+ * a light wall around its border — there is no confusing the two.
+ *
+ * What comes back is identity. Each unowned hex is now one bold flat colour that
+ * names its terrain from the far side of the island, and because every surface
+ * on the hex is forced onto that ONE colour, the internal variety that would
+ * make it look alive is gone. A forest reads as a green print, not as a forest.
+ *
+ * ---------------------------------------------------------------------------
  * HOW IT REACHES THE GPU
  * ---------------------------------------------------------------------------
- * A 19x1 RGBA byte texture, one texel per hex — updated for the price of 76
- * bytes a frame and shared by every material in the world. Each mesh carries an
- * `aMood` attribute of (tileIndex, influence): per-vertex on the baked ground,
+ * A 19x2 RGBA byte texture, one column per hex — updated for the price of 152
+ * bytes a frame and shared by every material in the world. The bottom row is
+ * the live state (tone, spent, flash); the top row is that hex's duotone ink,
+ * a fixed colour derived from its terrain. Each mesh carries an `aMood`
+ * attribute of (tileIndex, influence): per-vertex on the baked ground,
  * per-instance on the four hundred instanced props. A mesh that has no `aMood`
  * gets the constant generic attribute (0, 0) and is simply left alone, which is
  * exactly the right default for boats, roads and buildings.
@@ -83,6 +109,8 @@ export const MOOD = tiles.map(t => ({
   spent: 0, spentWant: 0,       // 0..1 — worked out
   flash: 0,                     // 0..1 — the regrowth beat
   blocked: false,
+  // which terrain the duotone ink in the texture was last painted for
+  inkFor: null,
   exhausted: false, wasExhausted: false,
   fraction: 1, seconds: 0, progress: 1,
   remaining: 0, capacity: 0,
@@ -95,10 +123,59 @@ export function onRestored(fn) { restoredHooks.push(fn); }
 const spentHooks = [];
 export function onSpent(fn) { spentHooks.push(fn); }
 
+/* --------------------------------------------------------- the duotone ink
+ *
+ * The one colour an off-limits hex prints in. Authored as the terrain's own
+ * hue at a strength that still reads across the island, then normalised in
+ * `inkOf` so every ink has luminance 1 — the shader multiplies it by the
+ * fragment's own brightness, so the ink decides HUE and nothing else, and every
+ * unowned hex ends up at exactly the same value no matter what terrain it is.
+ * That is what keeps the mute even: forest cannot end up darker than fields
+ * just because leaves are darker than wheat.
+ */
+const INK_HEX = {
+  forest:    0x3f8a4a,   // deep leaf green
+  fields:    0xd9a83a,   // ripe gold
+  pasture:   0xa8c452,   // yellow-green turf — deliberately far from forest
+  hills:     0xb06f4e,   // wet clay
+  mountains: 0x7d93b5,   // blue-slate
+  desert:    0xcdb188    // pale sand
+};
+
+/**
+ * How far each ink leans from a cool neutral toward its terrain hue. Zero would
+ * be the old grey-out exactly; one would be full-strength poster paint. 0.70 is
+ * where a wheat hex is unmistakably golden and still plainly switched off.
+ */
+const INK_CHROMA = 0.70;
+
+/** Cool neutral (luminance 1) the inks are mixed out of — the old grey's tilt. */
+const COOL = [0.936, 0.998, 1.206];
+
+/** The largest channel any ink may carry; the byte texture encodes v / INK_ENC. */
+const INK_ENC = 2.5;
+
+const _ink = new THREE.Color();
+const lumOf = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+function inkOf(terrain) {
+  _ink.setHex(INK_HEX[terrain] || INK_HEX.desert, THREE.SRGBColorSpace);
+  let l = lumOf(_ink.r, _ink.g, _ink.b) || 1;
+  const out = [
+    COOL[0] + (_ink.r / l - COOL[0]) * INK_CHROMA,
+    COOL[1] + (_ink.g / l - COOL[1]) * INK_CHROMA,
+    COOL[2] + (_ink.b / l - COOL[2]) * INK_CHROMA
+  ];
+  l = lumOf(out[0], out[1], out[2]) || 1;
+  for (let i = 0; i < 3; i++) out[i] = clamp01(out[i] / l / INK_ENC);
+  return out;
+}
+
 /* ------------------------------------------------------------- the texture */
 
-const data = new Uint8Array(N * 4);
-export const moodTexture = new THREE.DataTexture(data, N, 1, THREE.RGBAFormat);
+/* Two rows: row 0 is the live state, row 1 is the duotone ink. */
+const data = new Uint8Array(N * 2 * 4);
+export const moodTexture = new THREE.DataTexture(data, N, 2, THREE.RGBAFormat);
 moodTexture.magFilter = THREE.NearestFilter;
 moodTexture.minFilter = THREE.NearestFilter;
 moodTexture.wrapS = THREE.ClampToEdgeWrapping;
@@ -122,16 +199,31 @@ export const uMoodTime = { value: 0 };
  *  a strobe, and it has to sit under the game for four minutes at a time. */
 export const GLOW_HZ = 1.85;
 
+/* The board is re-dealt between matches and `tiles` is mutated in place, so the
+   ink row is refreshed off the LIVE terrain whenever a hex changes under us. */
 function writeTexture() {
+  const inkRow = N * 4;
   for (let i = 0; i < N; i++) {
     const m = MOOD[i];
     data[i * 4] = Math.round(clamp01((m.tone + 1) * 0.5) * 255);
     data[i * 4 + 1] = Math.round(clamp01(m.spent) * 255);
     data[i * 4 + 2] = Math.round(clamp01(m.flash) * 255);
     data[i * 4 + 3] = 255;
+
+    const terrain = tiles[i] ? tiles[i].terrain : m.terrain;
+    if (terrain !== m.inkFor) {
+      m.inkFor = terrain;
+      m.terrain = terrain;
+      const ink = inkOf(terrain);
+      data[inkRow + i * 4] = Math.round(ink[0] * 255);
+      data[inkRow + i * 4 + 1] = Math.round(ink[1] * 255);
+      data[inkRow + i * 4 + 2] = Math.round(ink[2] * 255);
+      data[inkRow + i * 4 + 3] = 255;
+    }
   }
   moodTexture.needsUpdate = true;
 }
+writeTexture();
 
 /* ==================================================================== poll */
 
@@ -255,25 +347,33 @@ attribute vec2 aMood;
 uniform sampler2D uMoodTex;
 uniform float uMoodN;
 varying vec3 vMood;
+varying vec3 vInk;
 `;
 
 const MOOD_BODY_VERT = /* glsl */`
 {
-  vec4 md = texture2D(uMoodTex, vec2((aMood.x + 0.5) / uMoodN, 0.5));
+  float mu = (aMood.x + 0.5) / uMoodN;
+  vec4 md = texture2D(uMoodTex, vec2(mu, 0.25));
   vMood = vec3(md.r * 2.0 - 1.0, md.g, md.b) * aMood.y;
+  vInk = texture2D(uMoodTex, vec2(mu, 0.75)).rgb * ${INK_ENC.toFixed(2)};
 }
 `;
 
 const MOOD_PARS_FRAG = /* glsl */`
 varying vec3 vMood;
+varying vec3 vInk;
 uniform float uMoodTime;
 `;
 
 /*
  * The whole "mine / not mine" read, in eight lines of arithmetic.
  *
- *  OFF LIMITS  crushed 85% of the way to luminance, tipped cool, and dropped to
- *              48% value. A forest you cannot chop stops being green.
+ *  OFF LIMITS  printed as a DUOTONE in the hex's own ink: 88% of the surface's
+ *              colour thrown away, only its brightness kept, and the whole thing
+ *              dropped to 52% value. Harder than the grey-out it replaces on
+ *              both counts — and a forest you cannot chop is still green, a
+ *              mountain is still slate and a clay hill is still red, so you can
+ *              read the board you are planning your next settlement on.
  *  YOURS       pushed the other way: saturation up, a warm bias, and a lift in
  *              the shadows so the hex reads as sunlit rather than merely bright.
  *  SPENT       flat grey. Stubble, spoil and stumps, and nothing worth walking
@@ -285,10 +385,10 @@ const MOOD_BODY_FRAG = /* glsl */`
   float mTone = vMood.x, mSpent = vMood.y, mFlash = vMood.z;
   float mLum = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
   if (mTone < -0.003) {
-    // Far enough that the hex is plainly inert, but not so far that the board
-    // stops being a board: you still have to be able to tell a forest from a
-    // mountain when you are deciding where to put your next settlement.
-    vec3 dead = mix(diffuseColor.rgb, vec3(mLum) * vec3(0.80, 0.87, 1.16), 0.74) * 0.64;
+    // vInk carries luminance 1, so this is the fragment's own brightness in the
+    // hex's colour and nothing else — one flat ink across terrain, trunk,
+    // fleece and brick alike. That uniformity is what reads as "switched off".
+    vec3 dead = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.88) * 0.52;
     diffuseColor.rgb = mix(diffuseColor.rgb, dead, -mTone);
   } else if (mTone > 0.003) {
     vec3 lit = clamp(diffuseColor.rgb * vec3(1.22, 1.14, 0.95)

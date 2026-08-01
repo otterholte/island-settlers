@@ -21,9 +21,12 @@
  * So the read is built in three layers, loudest first:
  *
  *   1. THE PIXELS (mood.js). Every hex you may not work — terrain, trees,
- *      flock, boulders, wheat — is crushed to near-monochrome and dropped half
- *      a stop. Every hex you may work keeps full saturation and gains a warm
- *      lift. That is the layer that survives being covered in forty trees.
+ *      flock, boulders, wheat — is printed as a flat DUOTONE in that terrain's
+ *      own ink and dropped half a stop, so a forest you cannot chop is one dead
+ *      green and a mountain you cannot mine is one dead slate: you can still
+ *      read the board, and nothing on it looks alive. Every hex you may work
+ *      keeps all of its colours and gains a warm lift. That is the layer that
+ *      survives being covered in forty trees.
  *
  *   2. THIS DECAL. A terrain-conforming fan per hex: a bright rim in the
  *      player's blue and a soft inward bleed on a hex that is yours, a flat
@@ -322,12 +325,19 @@ function buildOverlay(list) {
         vec3 glow = vec3(0.0);      // additive energy, premultiplied output
 
         // ---- 1. OFF LIMITS. Flat, cold and inert, with a black border that
-        // cuts the hex away from its neighbours. The mood shader has already
-        // pulled the saturation out of the terrain and the trees; this is what
-        // makes the boundary itself unmistakable.
+        // cuts the hex away from its neighbours.
+        //
+        // Both numbers went UP with the duotone pass in mood.js. An unowned
+        // hex now keeps its terrain's hue instead of going neutral grey, which
+        // is what makes the board readable again — but hue is warmth, and the
+        // "you cannot work here" read had to be paid for somewhere else. It is
+        // paid here, in the one place that costs nothing: a heavier cold wash
+        // across the floor and a heavier black line around the edge, so the
+        // boundary between a hex that is yours and one that is not stays the
+        // hardest edge on the island.
         if (off > 0.004) {
-          over(col, a, uMute, 0.15 * off * plate);
-          over(col, a, uMute, rim * 0.62 * off);
+          over(col, a, uMute, 0.22 * off * plate);
+          over(col, a, uMute, rim * 0.74 * off);
         }
 
         // ---- 2. YOURS. Warm sunlight pooling in from the border. Pulled back

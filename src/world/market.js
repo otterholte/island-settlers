@@ -20,8 +20,12 @@
  *
  * Each port is one instanced kit (see buildport.js) placed at the wet-sand
  * anchor found by walking outward along `port.bearing` until the ground drops
- * to the shoreline. Six draw calls cover all nine: base, ship, flag, sign,
- * crew, gulls.
+ * to the shoreline. The harbours have just had the same treatment as the
+ * market: the crane, the lamp, half the cargo, the ship's jib and stays and
+ * both wheeling gulls are gone, which took the nine of them from 9,729
+ * triangles in six draw calls to 5,625 in five — base, ship, flag, sign, crew.
+ * What is left is a dock, a ship and a sign you can read from the water, which
+ * is the whole of what a port has to say.
  */
 
 import * as THREE from 'three';
@@ -276,25 +280,25 @@ export function buildPorts(scene, state) {
   if (scene) scene.add(group);
 
   const solid = glowSolidMaterial();
-  // Sails, banners and gulls all share one two-sided material. The ship no
+  // The mainsail and the owner banner share one two-sided material. The ship no
   // longer runs the wind vertex shader: it made the hull ripple like a rag.
   const clothMat = clothMaterial();
 
   const gBase = P.portBaseGeo();
   const gShip = P.portShipGeo();
   const gFlag = P.portFlagGeo();
-  const gGull = P.seagullGeo();
   const gFolk = villagerGeo(false);
 
   const N = ports.length;
-  const CREW = 3, GULLS = 2;
+  // Two dockers, not three. Enough for the berth to look worked without three
+  // hats bobbing across the one sign the player has to read.
+  const CREW = 2;
 
   const base = instanced(gBase, solid, N, true, true);
   const ship = instanced(gShip, clothMat, N, true, false);
   const flag = instanced(gFlag, clothMat, N, false, false);
   const crew = instanced(gFolk, solid, N * CREW, true, false);
-  const gulls = instanced(gGull, clothMat, N * GULLS, false, false);
-  for (const m of [base, ship, flag, crew, gulls]) group.add(m);
+  for (const m of [base, ship, flag, crew]) group.add(m);
 
   const white = n => new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
   base.instanceColor = white(N);
@@ -320,7 +324,7 @@ export function buildPorts(scene, state) {
     const r = rng(1000 + i * 77);
     const crewList = [];
     for (let k = 0; k < CREW; k++) {
-      const lx = -2.4 + k * 2.4, lz = (k % 2 ? 0.85 : -0.80);
+      const lx = -1.9 + k * 3.6, lz = (k % 2 ? 0.85 : -0.80);
       const w = toWorld(lx, lz);
       crewList.push({
         slot: i * CREW + k, lx, lz, tlx: lx, tlz: lz,
@@ -333,7 +337,7 @@ export function buildPorts(scene, state) {
     return {
       port: p, i, x: a.x, z: a.z, y: a.y, ry: -p.bearing, cb, sb, toWorld,
       lit: 0, want: 0, owner: -1, crew: crewList,
-      bob: r() * 6.28, gull: r() * 6.28
+      bob: r() * 6.28
     };
   });
   crew.instanceColor.needsUpdate = true;
@@ -445,16 +449,6 @@ export function buildPorts(scene, state) {
           rec.ry + (moving ? 0 : 0.5), 1, 1, 0, moving ? Math.sin(c.phase) * 0.12 : 0);
       }
 
-      // gulls only wheel over a working harbour
-      for (let k = 0; k < GULLS; k++) {
-        if (!active) { hideInstance(gulls, rec.i * GULLS + k); continue; }
-        const a = t * (0.66 + k * 0.2) + rec.gull + k * 2.6;
-        const rr = 3.4 + k * 1.4;
-        const w = rec.toWorld(DOCK_MID + Math.cos(a) * rr, Math.sin(a) * rr * 0.7);
-        setInstance(gulls, rec.i * GULLS + k, w.x,
-          rec.y + 4.1 + k * 0.8 + Math.sin(a * 1.7) * 0.32, w.z,
-          rec.ry - a - Math.PI / 2, 0.82, 0.82, 0, Math.sin(a * 3.1) * 0.45);
-      }
     }
     if (dirty) {
       markDirty();
@@ -463,20 +457,19 @@ export function buildPorts(scene, state) {
     }
     ship.instanceMatrix.needsUpdate = true;
     crew.instanceMatrix.needsUpdate = true;
-    gulls.instanceMatrix.needsUpdate = true;
   }
 
   update(0);
 
   const triangles = N * (triCount(gBase) + triCount(gShip) + triCount(gFlag))
-    + N * CREW * triCount(gFolk) + N * GULLS * triCount(gGull) + N * 2;
+    + N * CREW * triCount(gFolk) + N * 2;
 
   return {
-    group, anchors, meshes: { base, ship, flag, crew, gulls, sign: sign.mesh },
-    triangles, drawCalls: 6,
+    group, anchors, meshes: { base, ship, flag, crew, sign: sign.mesh },
+    triangles, drawCalls: 5,
     update, setUnlocked,
     dispose() {
-      for (const g of [gBase, gShip, gFlag, gGull, gFolk, sign.geometry]) g.dispose();
+      for (const g of [gBase, gShip, gFlag, gFolk, sign.geometry]) g.dispose();
       solid.dispose(); clothMat.dispose();
       sign.material.dispose(); sign.atlas.texture.dispose();
     }
