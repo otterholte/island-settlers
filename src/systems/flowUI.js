@@ -23,68 +23,14 @@
  * Owner: Flow agent.
  */
 
-import { VICTORY_POINTS, BOT_PROFILES } from '../core/constants.js';
-import { el, button, toggle, setText } from '../ui/dom.js';
-import { icon } from '../ui/icons.js';
+import { el, toggle, setText } from '../ui/dom.js';
+import { buildIntro, INTRO_CSS } from './flowIntro.js';
 
 const STYLE_ID = 'mf-flow-style';
 
-const CSS = `
+const CSS = INTRO_CSS + `
 .mf-hid{display:none !important}
 .mf-layer{position:absolute;inset:0;pointer-events:none}
-
-/* ------------------------------------------------------------- intro card */
-.mf-intro{
-  position:absolute;inset:0;pointer-events:none;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;
-  padding:calc(10px + var(--sat,0px)) calc(10px + var(--sar,0px))
-          calc(10px + var(--sab,0px)) calc(10px + var(--sal,0px));
-  background:radial-gradient(125% 92% at 50% 42%,rgba(8,32,60,.30),rgba(4,14,28,.88));
-  opacity:0;transition:opacity .55s ease;
-}
-.mf-intro.on{opacity:1}
-.mf-i-crest{
-  font:800 12px/1 var(--ff);letter-spacing:.66em;text-indent:.66em;
-  text-transform:uppercase;color:var(--gold-l,#ffe79a);
-  text-shadow:0 2px 8px rgba(0,0,0,.7);
-}
-.mf-i-title{
-  margin:-4px 0 2px;
-  font:800 clamp(30px,7.4vw,60px)/1 var(--ff);letter-spacing:.12em;
-  text-transform:uppercase;color:#fff;
-  -webkit-text-stroke:2px rgba(12,20,34,.92);
-  text-shadow:0 4px 0 rgba(10,18,30,.62),0 12px 30px rgba(0,0,0,.65),
-              0 0 36px rgba(255,201,60,.42);
-}
-.mf-i-obj{
-  display:inline-flex;align-items:center;gap:7px;padding:5px 17px 6px;border-radius:999px;
-  background:linear-gradient(180deg,#1b4a7e,#0c203a 72%);
-  border:2px solid rgba(255,201,60,.55);
-  font:800 11px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
-  color:var(--gold,#ffc93c);
-  box-shadow:0 6px 16px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.16);
-}
-.mf-i-row{display:flex;gap:8px;margin-top:5px;max-width:96vw}
-.mf-cmp{
-  flex:0 1 auto;display:flex;flex-direction:column;align-items:center;gap:4px;
-  width:min(22vw,152px);padding:8px 8px 9px;border-radius:13px;
-  background:linear-gradient(180deg,#fdf5e2 0%,#f6e7c6 40%,#e6d6b2 100%);
-  border:2px solid #5a3a1e;
-  box-shadow:0 5px 0 rgba(90,58,30,.55),0 11px 22px rgba(0,0,0,.46),
-             inset 0 2px 0 rgba(255,255,255,.7);
-  opacity:0;transform:translateY(16px) scale(.96);
-  transition:opacity .34s ease,transform .34s cubic-bezier(.2,1.3,.35,1);
-}
-.mf-cmp.in{opacity:1;transform:none}
-.mf-cmp.you{border-color:#3b7fd4;box-shadow:0 5px 0 rgba(37,90,157,.6),
-  0 11px 22px rgba(0,0,0,.46),inset 0 2px 0 rgba(255,255,255,.7)}
-.mf-cmp .chip{width:22px;height:22px;border-radius:8px}
-.mf-c-name{font:800 12.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#3a2208}
-.mf-c-desc{font:700 8.5px/1.3 var(--ff);letter-spacing:.06em;text-transform:uppercase;
-  color:#7a5228;text-align:center}
-.mf-i-foot{display:flex;align-items:center;gap:10px;margin-top:7px}
-.mf-i-hint{font:700 9px/1 var(--ff);letter-spacing:.18em;text-transform:uppercase;
-  color:rgba(196,220,245,.6)}
 
 /* ------------------------------------------------------------ draft strip */
 .mf-draft{
@@ -184,31 +130,9 @@ export function createFlowUI(root, state, game) {
     injectStyle(doc);
 
     /* ------------------------------------------------------------- intro */
-    const cards = state.players.map(p => {
-      const profile = BOT_PROFILES.find(b => b.id === p.id);
-      const desc = p.id === 0 ? 'Your island to claim' : (profile ? profile.desc : 'Rival settler');
-      return el('div', {
-        class: 'mf-cmp' + (p.id === 0 ? ' you' : ''),
-        style: { '--c': p.color.css, '--cl': p.color.light }
-      },
-        el('span', { class: 'chip', style: { '--c': p.color.css, '--cl': p.color.light } }),
-        el('b', { class: 'mf-c-name', text: p.name }),
-        el('span', { class: 'mf-c-desc', text: desc }));
-    });
-
-    const skipBtn = button('gold', {
-      on: { click: () => fireSkip() }
-    }, el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
-
-    const intro = el('div', { class: 'mf-intro mf-hid' },
-      el('div', { class: 'mf-i-crest', text: 'Island' }),
-      el('div', { class: 'mf-i-title', text: 'Settlers' }),
-      el('div', { class: 'mf-i-obj', html: icon('trophy', 15) },
-        el('span', { text: `First to ${VICTORY_POINTS} Points` })),
-      el('div', { class: 'mf-i-row' }, cards),
-      el('div', { class: 'mf-i-foot' },
-        skipBtn,
-        el('span', { class: 'mf-i-hint', text: 'Snake draft · 2 picks each' })));
+    const built = buildIntro(state, () => fireSkip());
+    const intro = built.node;
+    const cards = built.cards;
 
     /* -------------------------------------------------------- draft strip */
     const order = Array.isArray(state.setupOrder) && state.setupOrder.length
@@ -258,11 +182,15 @@ export function createFlowUI(root, state, game) {
     function showIntro() {
       if (introOn) return;
       introOn = true;
+      // The in-match HUD has nothing to say before the match exists, and it
+      // was reading straight through the title. ui.css fades everything in
+      // the interface layer except this one while the class is set.
+      toggle(root, 'mf-introlive', true);
       toggle(intro, 'mf-hid', false);
       staggerTimers.push(setTimeout(() => toggle(intro, 'on', introOn), 20));
       cards.forEach((c, i) => {
         toggle(c, 'in', false);
-        staggerTimers.push(setTimeout(() => toggle(c, 'in', introOn), 420 + i * 150));
+        staggerTimers.push(setTimeout(() => toggle(c, 'in', introOn), 300 + i * 120));
       });
     }
 
@@ -270,6 +198,7 @@ export function createFlowUI(root, state, game) {
       if (!introOn) return;
       introOn = false;
       clearStagger();
+      toggle(root, 'mf-introlive', false);
       toggle(intro, 'on', false);
       staggerTimers.push(setTimeout(() => toggle(intro, 'mf-hid', !introOn), 560));
     }
@@ -335,6 +264,7 @@ export function createFlowUI(root, state, game) {
 
     function destroy() {
       clearStagger();
+      toggle(root, 'mf-introlive', false);
       if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
     }
 

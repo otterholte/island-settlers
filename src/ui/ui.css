@@ -13,6 +13,19 @@
 @import './ui-base.css';
 @import './ui-hud.css';
 
+/* ======================================================== opening screen
+   The match-flow module sets `mf-introlive` on the interface root while the
+   opening screen is up. There is no match yet — an empty resource bar and a
+   0-0-0-0 ranking behind the title is noise, and it was reading straight
+   through the wordmark. Everything but the flow layer stands down, then
+   fades back in as the draft begins. */
+#ui.mf-introlive > *:not(.mf-layer){
+  opacity:0 !important;
+  transition:opacity .3s ease;
+}
+/* The overview and the panels animate their own opacity — leave them alone. */
+#ui > *:not(.mf-layer):not(.ov):not(.panels){transition:opacity .45s ease .12s}
+
 /* ============================================================== overview */
 .ov{
   position:absolute;inset:0;
@@ -41,17 +54,38 @@
 }
 .rail-head{font:800 9px/1 var(--ff);letter-spacing:.24em;text-transform:uppercase;
   color:rgba(255,231,154,.78);text-align:center;padding:2px 0 4px}
-.rr{position:relative;padding:6px 7px;border-radius:10px;overflow:hidden;
-  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+
+/* One row per settler. The left bar is the player's colour at full strength —
+   no tint, no transparency — and the whole row is washed with it, so "which
+   one am I" is answered before the name is read. */
+.rr{position:relative;padding:6px 7px 6px 12px;border-radius:10px;overflow:hidden;
+  background:
+    linear-gradient(90deg,var(--ct,rgba(59,127,212,.34)),rgba(255,255,255,.03) 64%),
+    linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.3)}
-.rr::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;
-  background:var(--c,#3b7fd4);opacity:.8}
-.rr.me{background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.24))}
-.rr.me::before{width:4px;background:var(--gold);box-shadow:0 0 8px rgba(255,201,60,.7)}
+.rr::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;
+  background:linear-gradient(180deg,var(--cl,#7fb2f0),var(--c,#3b7fd4) 55%);
+  box-shadow:inset -1px 0 0 rgba(0,0,0,.45)}
+.rr.me{padding-top:8px;
+  background:
+    linear-gradient(90deg,var(--ct2,rgba(59,127,212,.62)),rgba(59,127,212,.16) 72%),
+    linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.04));
+  box-shadow:inset 0 0 0 2px var(--gold),0 0 14px rgba(255,201,60,.34),
+             inset 0 1px 0 rgba(255,255,255,.2)}
+.rr.me::before{width:7px;box-shadow:inset -1px 0 0 rgba(0,0,0,.4),0 0 10px rgba(255,201,60,.6)}
+.rr-you{position:absolute;top:0;right:0;padding:2px 7px 3px;border-radius:0 10px 0 9px;
+  background:linear-gradient(180deg,var(--gold-l),var(--gold));
+  font:800 8px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;color:#3a2208;
+  box-shadow:0 1px 3px rgba(0,0,0,.5)}
 .rr-top{display:flex;align-items:center;gap:7px}
 .rr-av{line-height:0;flex:0 0 auto}
-.rr-name{flex:1 1 auto;min-width:0;font:700 12px/1 var(--ff);color:#eef4fb;letter-spacing:.04em;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rr-id{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
+.rr-name{min-width:0;font:800 12.5px/1 var(--ff);color:#fff;letter-spacing:.05em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.rr-col{font:800 7.5px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--cl,#7fb2f0);text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.rr.me .rr-col{color:var(--gold-l)}
 .rr-vp{font:800 20px/1 var(--ff);color:var(--gold);
   -webkit-text-stroke:1.6px rgba(10,18,30,.8);paint-order:stroke fill}
 .rr-stats{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
@@ -374,8 +408,18 @@
   .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
 
   .ann-txt{font-size:22px}
+  /* Every pixel the title plate and the confirm bar give back is board: the
+     map is scaled to the space between them, and at 375px tall that is the
+     difference between a readable island and a crowded one. */
+  .ov-top{padding:4px 15px 5px;border-radius:11px}
+  .ov-title{font-size:12.5px;letter-spacing:.13em}
+  .ov-hint{display:none}
+  .ov-bar{padding:5px 9px;gap:8px;border-radius:15px}
+  .ov-sel{font-size:9px;max-width:30vw}
   .ov-rail{width:158px;padding:6px}
-  .rr{padding:5px 6px}
+  .rr{padding:5px 6px 5px 11px}
+  .rr-col{font-size:7px;letter-spacing:.16em}
+  .rr-you{font-size:7px;padding:2px 5px 3px}
   .rr-av svg{width:26px;height:26px}
   .rr-name{font-size:11.5px}
   .rr-vp{font-size:17px}
