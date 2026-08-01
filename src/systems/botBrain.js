@@ -31,6 +31,16 @@ import {
   longestRoadFor, scoreOf, canGatherTile, ownedTiles
 } from '../core/rules.js';
 
+import { difficultyParams } from './difficulty.js';
+
+/**
+ * Difficulty block in force for this call. Callers that know better (bots.js,
+ * which may be running one brain on a different profile from the rest) pass
+ * `ctx.d`; everyone else — the opening draft in flowDraft.js, for instance —
+ * gets whatever the player picked on the title screen.
+ */
+const dOf = ctx => (ctx && ctx.d) || difficultyParams();
+
 /* ---------------------------------------------------------------- gathering
  * Ownership is now a hard gate, so "how much land do I work" IS the economy.
  * Everything below scores land in items-per-second rather than pips, and a
@@ -224,6 +234,7 @@ export function chooseRoad(state, pid, fromX, fromZ, ctx = {}) {
   const prod = ctx.prod || productionOf(state, pid);
   const owned = ctx.owned || ownedTiles(state, pid);
   const jitter = ctx.jitter || (() => 0);
+  const awardK = dOf(ctx).award;
   const openSpot = (iid) => !state.buildings.has(iid)
     && !intersections[iid].neighbors.some(nb => state.buildings.has(nb));
 
@@ -280,6 +291,9 @@ export function chooseRoad(state, pid, fromX, fromZ, ctx = {}) {
               + (len >= holderLen - 1 ? 5 * roadW : 0);   // closing in
       }
     }
+    // An easier bot barely notices the trophies, so it spends its wood on
+    // whatever is nearest instead of on a five-segment highway.
+    award *= awardK;
     const s = c.base + award;
     if (!best || s > best.score) {
       best = { id: c.id, score: s, award, len, spot: EDGE_SPOT[c.id] };
@@ -302,10 +316,12 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
   const prod = ctx.prod || productionOf(state, pid);
   const owned = ctx.owned || ownedTiles(state, pid);
   const jitter = ctx.jitter || (() => 0);
+  const d = dOf(ctx);
   const vp = scoreOf(state, p);
   const toWin = VICTORY_POINTS - vp;
-  // Within one point of the trophy, take the shortest path to VP.
-  const endgame = toWin <= 1 ? 1.9 : toWin <= 2 ? 1.25 : 1;
+  // Within one point of the trophy, take the shortest path to VP — unless this
+  // bot is too green to notice it is about to win.
+  const endgame = !d.endgame ? 1 : toWin <= 1 ? 1.9 : toWin <= 2 ? 1.25 : 1;
 
   const out = [];
 
@@ -346,7 +362,7 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
   }
 
   /* ---- road ---- */
-  const rd = chooseRoad(state, pid, fromX, fromZ, { aff, prod, owned, jitter });
+  const rd = chooseRoad(state, pid, fromX, fromZ, { aff, prod, owned, jitter, d });
   if (rd) {
     // A road is only worth buying when it opens something or chases the award;
     // otherwise it burns the wood/brick a settlement wants. Chasing Longest
@@ -365,9 +381,9 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
     const armyHolder = state.largestArmyHolder;
     const armyLen = armyHolder >= 0 ? state.players[armyHolder].knightsPlayed : LARGEST_ARMY_MIN - 1;
     let s = 12;
-    if (armyHolder !== pid && army + 1 > armyLen && army + 1 >= LARGEST_ARMY_MIN) s += 9;
-    else if (armyHolder !== pid && army + 2 >= LARGEST_ARMY_MIN) s += 4;
-    if (toWin <= 2) s += 3;                         // victory-point cards
+    if (armyHolder !== pid && army + 1 > armyLen && army + 1 >= LARGEST_ARMY_MIN) s += 9 * d.award;
+    else if (armyHolder !== pid && army + 2 >= LARGEST_ARMY_MIN) s += 4 * d.award;
+    if (toWin <= 2 && d.endgame) s += 3;            // victory-point cards
     s += Math.hypot(MARKET.x - fromX, MARKET.z - fromZ) * -0.05;
     out.push({ kind: 'card', target: null, spot: MARKET_SPOT, score: (s + jitter(2)) * W.card });
   }
@@ -481,7 +497,11 @@ function contested(state, pid, tileId) {
  * Returns { tile, items, x, z, eta, value, perSecond, wait } or null.
  */
 export function chooseHarvestTile(state, pid, weights, fromX, fromZ,
-                                  avoid = null, includeExhausted = false) {
+                                  avoid = null, includeExhausted = false,
+                                  opts = {}) {
+  const slop = opts.slop || 0;
+  const rand = opts.rand || Math.random;
+  const pool = slop > 0 ? [] : null;
   let best = null, bestV = 0;
   for (const t of tiles) {
     if (!t.resource) continue;
@@ -503,9 +523,17 @@ export function chooseHarvestTile(state, pid, weights, fromX, fromZ,
     const sweep = count * SWEEP_SEC;
     let v = (count * w) / (travel + Math.max(0, wait - travel) + sweep + 0.4);
     if (contested(state, pid, t.id)) v *= 0.55;
-    if (v > bestV) { bestV = v; best = { tile: t, left, wait, count, travel, sweep }; }
+    const cand = { tile: t, left, wait, count, travel, sweep, v };
+    if (pool) pool.push(cand);
+    if (v > bestV) { bestV = v; best = cand; }
   }
   if (!best) return null;
+  // Weaker bots do not always work their best land: they walk to whichever of
+  // their hexes came to mind, which is often the wrong one.
+  if (pool && pool.length > 1 && rand() < slop) {
+    best = pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
+    bestV = best.v;
+  }
 
   const t = best.tile;
   // Head for the nearest item still standing; if the hex is bare, its centre.
@@ -539,14 +567,14 @@ export function needWeights(state, pid, cost) {
  * caller then falls through to trading or to buying more land.
  * Returns { eta, first } where `first` is the hex to head for now.
  */
-export function planGather(state, pid, cost, fromX, fromZ, avoid) {
+export function planGather(state, pid, cost, fromX, fromZ, avoid, opts = {}) {
   const p = state.players[pid];
   const miss = cost ? missingFrom(p.res, cost) : {};
   const keys = Object.keys(miss);
 
   if (!keys.length) {
     const any = chooseHarvestTile(state, pid, needWeights(state, pid, null),
-                                  fromX, fromZ, avoid, true);
+                                  fromX, fromZ, avoid, true, opts);
     return any ? { eta: any.eta, first: any } : null;
   }
 
@@ -554,7 +582,7 @@ export function planGather(state, pid, cost, fromX, fromZ, avoid) {
   for (const r of keys) {
     const w = { wood: 0, brick: 0, wool: 0, wheat: 0, ore: 0 };
     w[r] = 1;
-    const pick = chooseHarvestTile(state, pid, w, x, z, avoid, true);
+    const pick = chooseHarvestTile(state, pid, w, x, z, avoid, true, opts);
     if (!pick) return null;
     total += pick.eta + miss[r] * SWEEP_SEC;
     if (!first) first = pick;
@@ -576,12 +604,21 @@ export const chooseNode = chooseHarvestTile;
  * all rather than a reduced trickle — so this is the single most disruptive
  * thing a bot can do.
  */
-export function knightTarget(state, pid) {
+export function knightTarget(state, pid, opts = {}) {
+  const d = dOf(opts);
+  const rand = opts.rand || Math.random;
   let leader = -1, bestVp = -Infinity;
   for (const o of state.players) {
     if (o.id === pid) continue;
     const vp = scoreOf(state, o);
     if (vp > bestVp) { bestVp = vp; leader = o.id; }
+  }
+  // A weaker raider does not read the scoreboard: it drops the Raider on
+  // somebody, but not necessarily on whoever is running away with the match.
+  if (rand() >= d.knightAim) {
+    const rivals = state.players.filter(o => o.id !== pid);
+    if (rivals.length) leader = rivals[Math.min(rivals.length - 1,
+      Math.floor(rand() * rivals.length))].id;
   }
   let best = -1, bestS = -Infinity;
   for (const t of tiles) {
@@ -598,7 +635,8 @@ export function knightTarget(state, pid) {
     }
     if (mine > 0) continue;                       // never sabotage ourselves
     if (theirs <= 0 && others <= 0) continue;     // blocking nobody's land is free but useless
-    const s = rateOf(t.id) * RATE_TO_SCORE * (theirs * 2.4 + others * 0.5 + 0.2);
+    const s = rateOf(t.id) * RATE_TO_SCORE * (theirs * 2.4 + others * 0.5 + 0.2)
+      * (1 + (rand() - 0.5) * 0.22 * d.noise);
     if (s > bestS) { bestS = s; best = t.id; }
   }
   if (best < 0) {
@@ -612,19 +650,24 @@ export function knightTarget(state, pid) {
  * `sinceLast` is seconds since this bot's previous Knight — chaining raids
  * flattens everyone's economy and drags matches out, so it is rate limited.
  */
-export function wantsKnight(state, pid, sinceLast = Infinity) {
+export function wantsKnight(state, pid, sinceLast = Infinity, opts = {}) {
   const p = state.players[pid];
   if (!p.cards.some(c => c.type === 'knight')) return false;
+  const d = dOf(opts);
+  const rand = opts.rand || Math.random;
+  // Sitting on a playable Knight and not noticing is exactly what a weak
+  // player does. The roll is per decision, so it delays rather than forbids.
+  if (rand() >= d.knight) return false;
 
   const holder = state.largestArmyHolder;
   const need = holder >= 0 ? state.players[holder].knightsPlayed : LARGEST_ARMY_MIN - 1;
   // Seizing Largest Army is two victory points on the spot — always take it.
   if (holder !== pid && p.knightsPlayed + 1 > need
-      && p.knightsPlayed + 1 >= LARGEST_ARMY_MIN) return true;
+      && p.knightsPlayed + 1 >= LARGEST_ARMY_MIN && d.award >= 0.5) return true;
 
   // Otherwise the Knight is a disruption tool, spent on a clear leader only.
   const aggressive = p.strategy === 'cards';
-  if (sinceLast < (aggressive ? 10 : 18)) return false;
+  if (sinceLast < (aggressive ? 10 : 18) + d.knightGap) return false;
   const me = scoreOf(state, p);
   let lead = -Infinity;
   for (const o of state.players) if (o.id !== pid) lead = Math.max(lead, scoreOf(state, o));
@@ -640,9 +683,10 @@ export function wantsKnight(state, pid, sinceLast = Infinity) {
  * as many DIFFERENT resources as possible — a settler who opens with no wheat
  * corner cannot build a settlement without trading 4:1 for it.
  */
-export function chooseSetupSettlement(state, pid, rand = Math.random) {
+export function chooseSetupSettlement(state, pid, rand = Math.random, opts = {}) {
   const legal = legalSettlements(state, pid, true);
   if (!legal.length) return -1;
+  const noiseK = dOf(opts).setupNoise;
   const p = state.players[pid];
   const aff = affinityOf(p.strategy);
   const prod = productionOf(state, pid);
@@ -671,16 +715,17 @@ export function chooseSetupSettlement(state, pid, rand = Math.random) {
       if (d < 14) s -= (14 - d) * 0.55;
       else if (d > 46) s -= (d - 46) * 0.12;
     }
-    s += (rand() - 0.5) * 2.4;
+    s += (rand() - 0.5) * 2.4 * noiseK;
     if (s > bestS) { bestS = s; best = iid; }
   }
   return best;
 }
 
 /** Opening road: aim at the strongest reachable second-ring corner or a port. */
-export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random) {
+export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random, opts = {}) {
   const legal = legalRoads(state, pid, true, anchorIid);
   if (!legal.length) return -1;
+  const noiseK = dOf(opts).setupNoise;
   const p = state.players[pid];
   const aff = affinityOf(p.strategy);
   const prod = productionOf(state, pid);
@@ -699,7 +744,7 @@ export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random) {
     const pt = intersections[far].port;
     if (pt !== null && pt !== undefined) s += ports[pt].kind === 'generic' ? 2.5 : 3.5;
     if (intersections[far].tiles.length < 3) s -= 2.0;    // don't road into the sea
-    s += (rand() - 0.5) * 1.8;
+    s += (rand() - 0.5) * 1.8 * noiseK;
     if (s > bestS) { bestS = s; best = eid; }
   }
   return best;

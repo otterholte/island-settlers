@@ -10,8 +10,13 @@
  *   crest + title      ISLAND / SETTLERS, bevelled, sitting on the sea
  *   objective ribbon   FIRST TO 12 POINTS
  *   four settler cards colour, portrait, name, the strategy they play
+ *   difficulty picker  EASY / MEDIUM / HARD — how good the rivals are
  *   the primary button BEGIN THE DRAFT — green, deep lip, real press
  *   one line of help   how a turn actually works
+ *
+ * The difficulty choice is written straight into `systems/difficulty.js`, which
+ * `bots.js` re-reads on every planning tick, so no wiring is needed anywhere
+ * else: pick a level here and the rivals are playing at it by the next frame.
  *
  * Owner: Flow agent (flow UI). Kept out of flowUI.js purely for file size.
  */
@@ -19,6 +24,9 @@
 import { VICTORY_POINTS, BOT_PROFILES } from '../core/constants.js';
 import { el, button } from '../ui/dom.js';
 import { icon, avatar } from '../ui/icons.js';
+import {
+  DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
+} from './difficulty.js';
 
 export const INTRO_CSS = `
 /* --------------------------------------------------------- opening screen */
@@ -112,6 +120,53 @@ export const INTRO_CSS = `
   box-shadow:0 2px 6px rgba(0,0,0,.5);
 }
 
+/* -------------------------------------------------------------- difficulty */
+.mf-i-diff{
+  display:flex;flex-direction:column;align-items:center;
+  gap:clamp(2px,.7vh,5px);margin-top:clamp(1px,.6vh,4px);
+}
+.mf-i-dlab{
+  display:inline-flex;align-items:center;gap:8px;
+  font:800 clamp(8px,1.25vw,10px)/1 var(--ff);letter-spacing:.24em;text-indent:.24em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+  text-shadow:0 1px 3px rgba(0,0,0,.85);
+}
+.mf-i-dlab::before,.mf-i-dlab::after{
+  content:'';width:clamp(12px,3vw,30px);height:2px;border-radius:2px;
+  background:linear-gradient(90deg,rgba(255,201,60,0),rgba(255,201,60,.75));
+}
+.mf-i-dlab::after{background:linear-gradient(270deg,rgba(255,201,60,0),rgba(255,201,60,.75))}
+.mf-i-drow{display:flex;gap:clamp(5px,1.2vw,10px)}
+
+.btn.mf-diff{
+  flex-direction:column;gap:2px;
+  min-height:48px;width:clamp(102px,19vw,152px);
+  padding:6px 7px 9px;border-radius:13px;
+  --f1:#fdf5e2;--f2:#f0dfb6;--f3:#dcc496;--lip:#8f7444;--fg:#4a2f16;
+  filter:saturate(.9) brightness(.97);
+}
+.btn.mf-diff .mf-d-name{
+  font:800 clamp(11px,1.85vw,14px)/1 var(--ff);letter-spacing:.16em;
+  text-transform:uppercase;
+}
+.btn.mf-diff .mf-d-sub{
+  font:700 clamp(6.6px,1.05vw,8.6px)/1.22 var(--ff);letter-spacing:.045em;
+  text-transform:uppercase;color:#7a5228;text-align:center;white-space:normal;
+  text-shadow:none;
+}
+.btn.mf-diff.on{
+  --f1:#ffe79a;--f2:#ffc93c;--f3:#eaad20;--lip:#a8741a;--fg:#3a2208;
+  filter:none;
+  box-shadow:0 4px 0 var(--lip),0 8px 14px rgba(0,0,0,.42),
+             0 0 20px rgba(255,201,60,.5),
+             inset 0 2px 0 rgba(255,255,255,.7),inset 0 -6px 10px rgba(0,0,0,.16);
+}
+.btn.mf-diff.on .mf-d-sub{color:#6b4406}
+.btn.mf-diff.on::after{
+  content:'';position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
+  width:26px;height:3px;border-radius:2px;background:#6b4406;opacity:.75;
+}
+
 /* ------------------------------------------------------------- call to act */
 .mf-i-foot{display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:3px}
 .mf-play{
@@ -148,6 +203,11 @@ export const INTRO_CSS = `
   .mf-c-band{height:6px;margin:0 -5px 4px}
   .mf-c-av svg{width:28px;height:28px}
   .mf-play{min-height:48px}
+  /* Still a 46px tap target at 667x375 — the guideline floor, not a whisker
+     under it. The blurb is what gives, not the button. */
+  .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
+  .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
+  .mf-i-diff{gap:2px}
 }
 `;
 
@@ -169,6 +229,42 @@ export function buildIntro(state, onBegin) {
     return card;
   });
 
+  /* ----------------------------------------------------------- difficulty */
+  // Three chunky, obviously-tappable options. The choice goes straight into
+  // difficulty.js; bots.js re-reads it every planning tick, and it is what a
+  // replay re-applies, so there is nothing else to wire up.
+  const diffButtons = DIFFICULTY_ORDER.map(key => {
+    const level = LEVELS[key];
+    const b = button('cream mf-diff', {
+      'data-level': key,
+      'aria-label': `${level.label} — ${level.blurb}`,
+      on: { click: () => pick(key) }
+    },
+      el('b', { class: 'mf-d-name', text: level.label }),
+      el('span', { class: 'mf-d-sub', text: level.blurb }));
+    return b;
+  });
+
+  function paint() {
+    const cur = getDifficulty();
+    diffButtons.forEach(b => {
+      const on = b.getAttribute('data-level') === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function pick(key) {
+    setDifficulty(key);
+    paint();
+  }
+
+  paint();
+
+  const difficulty = el('div', { class: 'mf-i-diff' },
+    el('div', { class: 'mf-i-dlab', text: 'Rival Skill' }),
+    el('div', { class: 'mf-i-drow' }, diffButtons));
+
   const playBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
@@ -178,13 +274,14 @@ export function buildIntro(state, onBegin) {
     el('div', { class: 'mf-i-obj', html: icon('trophy', 15) },
       el('span', { text: `First to ${VICTORY_POINTS} Points` })),
     el('div', { class: 'mf-i-row' }, cards),
+    difficulty,
     el('div', { class: 'mf-i-foot' },
       playBtn,
       el('div', { class: 'mf-i-hint' },
         el('b', { text: 'Claim two corners' }),
         ' · gather from the land you touch · build roads, settlements and cities')));
 
-  return { node, cards, playBtn };
+  return { node, cards, playBtn, diffButtons, refreshDifficulty: paint };
 }
 
 export default buildIntro;

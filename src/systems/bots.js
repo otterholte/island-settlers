@@ -23,14 +23,18 @@ import {
 
 import { clampToIsland, MARKET } from '../board/layout.js';
 
-import { mulberry32, nearestItem, tileItemsRemaining } from '../board/nodes.js';
+import { mulberry32, nearestItem, tileItemsRemaining, itemsByTile } from '../board/nodes.js';
+
+import { difficultyParams, LEVELS } from './difficulty.js';
 
 import {
   placeRoad, placeSettlement, upgradeCity, drawCard,
   playKnight, playRoadBuilding, doTrade, sweepPickups,
-  legalRoads, setupCurrentPlayer, canGatherTile,
+  legalRoads, setupCurrentPlayer, canGatherTile, scoreOf,
   setupPlaceSettlement, setupPlaceRoad
 } from '../core/rules.js';
+
+import { VICTORY_POINTS } from '../core/constants.js';
 
 import {
   choosePurchase, chooseRoad, planGather, planTrade, knightTarget, wantsKnight,
@@ -54,8 +58,37 @@ const REPLAN_MIN = 0.42;
 const REPLAN_SPREAD = 0.34;
 const STUCK_SEC = 2.2;
 const BLACKLIST_SEC = 9.0;
-const DESPERATE_SEC = 18.0;
 const SETUP_FALLBACK_SEC = 3.5;    // only fires if matchflow.js never shows up
+
+/* Anti-stall, and the reason an easy match still ends inside five minutes.
+   A dawdling field grinds: everybody on ten or eleven points, nobody able to
+   close, and the clock runs into the soft cap. So from `level.rampFrom` the
+   rivals shed their handicap over RAMP_SPAN seconds and drift back toward
+   `hard`, going a shade beyond it if the match is still open RAMP_URGENT
+   seconds later.
+
+   Two things protect the player, who is always seat 0:
+     - on match point (within RAMP_SAFE_VP) they get RAMP_GRACE extra seconds
+       of dawdling rivals, so a beginner about to win is not chased down;
+     - if instead they are RAMP_PACE_VP or more off the pace a five-minute
+       match needs, the ramp comes forward by RAMP_EARLY and the thing gets
+       wrapped up rather than sprawling to seven minutes.
+   The ramp never applies to a seat running an explicit profile — see
+   `opts.profiles` — because a human does not get better at 4:00. */
+const RAMP_SPAN = 70;           // seconds from "still dawdling" to "playing hard"
+const RAMP_SAFE_VP = 2;
+const RAMP_GRACE = 90;          // extra seconds when the player is on match point
+const RAMP_URGENT = 30;         // seconds past full ramp before rivals go sharper still
+const RAMP_MAX = 1.8;
+const RAMP_PACE_SEC = 300;      // the pace a five-minute match would need
+const RAMP_PACE_VP = 3;         // how far off it the player has to be
+const RAMP_EARLY = 60;          // ...to bring the whole ramp forward this far
+
+/* Difficulty (src/systems/difficulty.js) scales almost everything below: how
+   fast a rival runs, how long it stands about, how often it re-plans, how good
+   its choice is when it does, and how willing it is to trade or raid. Nothing
+   here changes what a bot is *allowed* to do — a resource still only ever
+   arrives through a rules.js call on a hex the bot owns. */
 
 /* ----------------------------------------------------------------- helpers */
 
@@ -85,10 +118,31 @@ function moveWithSlide(p, nx, nz) {
 
 const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
 
+/** A random standing item on a hex — the sloppy alternative to `nearestItem`. */
+function randomItemOn(tileId, rand) {
+  const pool = itemsByTile.get(tileId);
+  if (!pool || !pool.length) return null;
+  let live = 0;
+  for (const it of pool) if (it.available) live++;
+  if (!live) return null;
+  let k = Math.floor(rand() * live);
+  for (const it of pool) {
+    if (!it.available) continue;
+    if (k-- <= 0) return it;
+  }
+  return null;
+}
+
 /* ==================================================================== bots */
 
+/**
+ * `opts.profiles` maps a player id to a difficulty key, overriding the level
+ * the player picked for that one seat. Only the simulator uses it, to seat a
+ * deliberately mediocre "novice" policy where the human would be.
+ */
 export function createBots(state, world, opts = {}) {
   const seed = (opts.seed ?? state.botSeed ?? 0x5eed1e) >>> 0;
+  const profiles = opts.profiles || {};
 
   const brains = state.players.filter(p => p.isBot).map((p, i) => {
     const rng = mulberry32(seed + p.id * 9176 + 17);
@@ -96,6 +150,9 @@ export function createBots(state, world, opts = {}) {
       pid: p.id,
       p,
       rng,
+      profile: profiles[p.id] || null,
+      d: difficultyParams(profiles[p.id] || undefined),
+      pause: 0,
       // A little personality so the three never move in lockstep.
       lag: 0.06 + rng() * 0.22,
       speedScale: 0.93 + rng() * 0.07,
@@ -123,7 +180,80 @@ export function createBots(state, world, opts = {}) {
 
   /* ------------------------------------------------------------ utilities */
 
-  const jitterFor = b => (amp) => (b.rng() - 0.5) * amp * b.noise;
+  const jitterFor = b => (amp) => (b.rng() - 0.5) * amp * b.noise * b.d.noise;
+
+  /** Effective run speed for this bot at this difficulty. */
+  const speedOf = b => BOT_SPEED * b.speedScale * b.d.speed;
+
+  /** Slop options for the brain's land-picking helpers. */
+  const slopOf = b => ({ slop: b.d.tileSlop, rand: b.rng });
+
+  /* ---------------------------------------------------------- anti-stall */
+
+  /** 0 while the match is healthy, rising to RAMP_MAX if it drags. */
+  function rampK() {
+    // Where the ramp starts is itself part of the level: easy rivals dawdle for
+    // most of a match before they sharpen up, hard ones never need to.
+    if (state.phase !== 'play') return 0;
+    // Seat 0 is the player's chair (and the simulator's novice stand-in).
+    const you = state.players[0];
+    const yourVp = you ? scoreOf(state, you) : 0;
+    const closing = yourVp >= VICTORY_POINTS - RAMP_SAFE_VP;
+    // A match nobody is winning should not be allowed to sprawl. If the player
+    // is a long way off the pace needed for a five-minute match, the rivals
+    // start sharpening earlier and it gets wrapped up.
+    const pace = VICTORY_POINTS * (state.time / RAMP_PACE_SEC);
+    const from = difficultyParams().rampFrom
+      - (yourVp <= pace - RAMP_PACE_VP ? RAMP_EARLY : 0);
+    if (state.time <= from) return 0;
+    // Grace, not a veto: a player on match point gets an extra RAMP_GRACE
+    // seconds of dawdling rivals. If they still cannot close, the match has to
+    // end some time, so the ramp comes back.
+    const grace = closing ? RAMP_GRACE : 0;
+    let k = (state.time - from - grace) / RAMP_SPAN;
+    k = Math.min(1, Math.max(0, k));
+    // Last resort. Past RAMP_URGENT a match that still has not resolved gets
+    // rivals who are a shade sharper than `hard` — the only thing left that
+    // reliably stops a bad field from running into the soft cap.
+    const over = state.time - (from + RAMP_SPAN + RAMP_URGENT) - grace;
+    if (over > 0) k += Math.min(RAMP_MAX - 1, over / 90);
+    return k;
+  }
+
+  /** Blend a level toward `hard` — the shape of the ramp. */
+  function sharpen(d, k) {
+    if (k <= 0) return d;
+    const H = LEVELS.hard;
+    const out = { ...d };
+    for (const key in H) {
+      const a = d[key], h = H[key];
+      if (typeof a === 'number' && typeof h === 'number') {
+        out[key] = Math.max(0, a + (h - a) * k);
+      }
+    }
+    // Sharpening always switches the endgame push on: a rival that is one point
+    // from winning and does not notice is exactly how a match stalls.
+    out.endgame = d.endgame || k > 0.35;
+    // ...and shortens the patience that flips the planner into "take whatever
+    // I can finish soonest", which is what converts a stuck position into a
+    // finished match. Never to zero: a bot that only ever buys the cheapest
+    // thing available buys roads forever and never scores.
+    out.desperate = Math.max(7, d.desperate * (1 - 0.55 * Math.min(1, k)));
+    return out;
+  }
+
+  // Quantised so the blend is built a handful of times per match, not 60 times
+  // a second per bot.
+  let rampQ = -1;
+  const rampCache = new Map();
+  function effectiveD(base, k) {
+    if (k <= 0) return base;
+    const q = Math.round(k * 20) / 20;
+    if (q !== rampQ) { rampQ = q; rampCache.clear(); }
+    let v = rampCache.get(base.key);
+    if (!v) { v = sharpen(base, q); rampCache.set(base.key, v); }
+    return v;
+  }
 
   function liveAvoid(b, map) {
     const out = new Set();
@@ -142,11 +272,17 @@ export function createBots(state, world, opts = {}) {
 
   function planFor(b) {
     const p = b.p;
+    const d = b.d;
     const jitter = jitterFor(b);
-    const ctx = { aff: affinityOf(p.strategy), prod: productionOf(state, p.id), jitter };
+    const ctx = { aff: affinityOf(p.strategy), prod: productionOf(state, p.id), jitter, d };
     const avoidN = liveAvoid(b, b.avoidTiles);
     const avoidG = liveAvoid(b, b.avoidGoals);
-    const desperate = b.sinceAct > DESPERATE_SEC;
+    const desperate = b.sinceAct > d.desperate;
+
+    /* --- amble off and achieve nothing --- */
+    // The single most visible difference between a beginner and an expert is
+    // that the beginner is often just... walking somewhere else.
+    if (d.wander > 0 && !desperate && b.rng() < d.wander) return wanderGoal(b);
 
     /* --- spend Road Building charges first --- */
     if ((p.freeRoads || 0) > 0 && p.roads.size < PIECE_LIMIT.road) {
@@ -157,8 +293,8 @@ export function createBots(state, world, opts = {}) {
     }
 
     /* --- card plays are instant, no travel --- */
-    if (wantsKnight(state, p.id, state.time - b.lastKnight)) {
-      const kt = knightTarget(state, p.id);
+    if (wantsKnight(state, p.id, state.time - b.lastKnight, { d, rand: b.rng })) {
+      const kt = knightTarget(state, p.id, { d, rand: b.rng });
       if (kt.tile >= 0) return { kind: 'knight', tile: kt.tile };
     }
     if (p.cards.some(c => c.type === 'roadBuilding')
@@ -175,8 +311,13 @@ export function createBots(state, world, opts = {}) {
     if (!options.length) options = purchase.options;
 
     // Normally we chase the highest-scoring purchase. If we have been stalled
-    // for a while we instead take whatever we can complete soonest.
-    const ranked = desperate ? options.slice(0, 3) : [options[0]];
+    // for a while we instead take whatever we can complete soonest. A weaker
+    // bot regularly talks itself into the second- or third-best idea instead.
+    let ranked = desperate ? options.slice(0, 3) : [options[0]];
+    if (!desperate && options.length > 1 && b.rng() < d.secondBest) {
+      const alt = 1 + Math.floor(b.rng() * Math.min(2, options.length - 1));
+      ranked = [options[Math.min(alt, options.length - 1)]];
+    }
     let best = null;
     for (const o of ranked) {
       const route = routeFor(b, o, avoidN);
@@ -217,8 +358,10 @@ export function createBots(state, world, opts = {}) {
     const cost = COST[o.kind];
     if (canAfford(p.res, cost)) return { kind: 'ready', eta: travelEta(b, o) };
 
-    const g = planGather(state, p.id, cost, p.x, p.z, avoidN);
-    const t = planTrade(state, p.id, cost, p.x, p.z);
+    const g = planGather(state, p.id, cost, p.x, p.z, avoidN, slopOf(b));
+    // Trading four wool for one ore is a learned move. Weak bots mostly do not
+    // think of it, and go and dig for the ore they will never own instead.
+    const t = b.rng() < b.d.trade ? planTrade(state, p.id, cost, p.x, p.z) : null;
     if (g && (!t || g.eta <= t.eta * 1.05)) return { kind: 'gather', eta: g.eta, pick: g.first };
     if (t) return { kind: 'trade', eta: t.eta, plan: t };
     if (g) return { kind: 'gather', eta: g.eta, pick: g.first };
@@ -227,7 +370,19 @@ export function createBots(state, world, opts = {}) {
 
   function travelEta(b, o) {
     const s = o.spot || MARKET_SPOT;
-    return dist(b.p.x, b.p.z, s.x, s.z) / BOT_SPEED;
+    return dist(b.p.x, b.p.z, s.x, s.z) / Math.max(1, speedOf(b));
+  }
+
+  /** A short, pointless stroll to somewhere near enough to look deliberate. */
+  function wanderGoal(b) {
+    const p = b.p;
+    const a = b.rng() * Math.PI * 2;
+    const r = 9 + b.rng() * 14;
+    const spot = clampToIsland(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
+    return {
+      kind: 'wander', tx: spot.x, tz: spot.z, arrive: 1.8,
+      t: b.d.wanderSec * (0.6 + b.rng() * 0.8)
+    };
   }
 
   /**
@@ -238,8 +393,9 @@ export function createBots(state, world, opts = {}) {
    */
   function gatherFallback(b, avoidN) {
     const w = needWeights(state, b.pid, null);
-    const pick = chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, avoidN, true)
-      || chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, null, true);
+    const sl = slopOf(b);
+    const pick = chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, avoidN, true, sl)
+      || chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, null, true, sl);
     if (!pick) return null;
     return { kind: 'gather', tile: pick.tile, tx: pick.x, tz: pick.z, arrive: ARRIVE_GATHER };
   }
@@ -267,12 +423,28 @@ export function createBots(state, world, opts = {}) {
     /* Contact pickup: there is nothing to "start". Chain from one item to the
        nearest next one and let `sweepPickups` scoop them up as we run over
        them. The hex empties, we replan. */
+    /* -- the pointless stroll ------------------------------------------- */
+    if (g.kind === 'wander') {
+      g.t -= dt;
+      const dw = steer(b, g.tx, g.tz, dt);
+      if (g.t <= 0 || dw <= g.arrive) { b.goal = null; b.think = 0.1; }
+      return;
+    }
+
     if (g.kind === 'gather') {
       if (!canGatherTile(state, p.id, g.tile)) {
         blacklistTile(b, g.tile);
         b.goal = null; b.think = 0; return;
       }
-      const it = nearestItem(p.x, p.z, { tile: g.tile });
+      // Hold onto the chosen item until it is gone, then pick the next one —
+      // usually the nearest, but a sloppy bot regularly heads across the hex
+      // for one it merely happened to think of.
+      let it = g.item && g.item.available && g.item.tile === g.tile ? g.item : null;
+      if (!it) {
+        if (b.d.routeSlop > 0 && b.rng() < b.d.routeSlop) it = randomItemOn(g.tile, b.rng);
+        if (!it) it = nearestItem(p.x, p.z, { tile: g.tile });
+        g.item = it;
+      }
       if (it) {
         g.tx = it.x; g.tz = it.z;
         b.sinceAct = 0;              // productive: not stalled, do not panic
@@ -294,6 +466,15 @@ export function createBots(state, world, opts = {}) {
       ? dist(p.x, p.z, g.venue.x, g.venue.z) <= TRADE_RADIUS - 0.25 || d <= g.arrive
       : d <= g.arrive;
     if (!arrived) return;
+
+    // Loitering on the spot before actually doing the thing. This is what
+    // "slower" looks like once a bot has stopped running.
+    if (g.settle === undefined) g.settle = b.d.actDelay * (0.6 + b.rng() * 0.8);
+    if (g.settle > 0) {
+      g.settle -= dt;
+      p.vx *= 0.35; p.vz *= 0.35;
+      return;
+    }
 
     if (g.kind === 'trade') {
       // Hard gate: never trade unless we are genuinely standing at the venue.
@@ -350,14 +531,15 @@ export function createBots(state, world, opts = {}) {
     // its node can never get slow enough to latch on.
     if (d > arrive) {
       const ease = Math.min(1, Math.max(0.25, (d - arrive) / 2.2));
-      const sp = BOT_SPEED * b.speedScale * ease;
+      const sp = speedOf(b) * ease;
       tvx = (dx / d) * sp; tvz = (dz / d) * sp;
     }
     applyVelocity(b, tvx, tvz, dt, true);
 
-    // Stall detection: wanted to move, barely did.
+    // Stall detection: wanted to move, barely did. The threshold tracks the
+    // difficulty's run speed, or a deliberately slow bot reads as stuck.
     const spd = Math.hypot(p.vx, p.vz);
-    if (d > (b.goal ? b.goal.arrive : 1.5) && spd < 1.2) {
+    if (d > (b.goal ? b.goal.arrive : 1.5) && spd < 1.2 * b.d.speed) {
       b.stuck += dt;
       if (b.stuck > STUCK_SEC) {
         if (b.goal && b.goal.kind === 'gather') blacklistTile(b, b.goal.tile);
@@ -379,7 +561,7 @@ export function createBots(state, world, opts = {}) {
 
     const dvx = tvx - p.vx, dvz = tvz - p.vz;
     const dm = Math.hypot(dvx, dvz);
-    const maxDelta = BOT_ACCEL * dt * (tvx || tvz ? 1 : 1.7);
+    const maxDelta = BOT_ACCEL * b.d.accel * dt * (tvx || tvz ? 1 : 1.7);
     if (dm > maxDelta && dm > 1e-6) {
       p.vx += (dvx / dm) * maxDelta;
       p.vz += (dvz / dm) * maxDelta;
@@ -449,11 +631,12 @@ export function createBots(state, world, opts = {}) {
     if (pid < 0 || !state.players[pid] || !state.players[pid].isBot) return;
     if (setupWait < SETUP_FALLBACK_SEC) return;
 
+    const dOpt = { d: difficultyParams() };
     if (state.setupNeed === 'settlement') {
-      const iid = chooseSetupSettlement(state, pid, setupRng);
+      const iid = chooseSetupSettlement(state, pid, setupRng, dOpt);
       if (iid >= 0) setupPlaceSettlement(state, pid, iid);
     } else {
-      const eid = chooseSetupRoad(state, pid, state.setupAnchor, setupRng);
+      const eid = chooseSetupRoad(state, pid, state.setupAnchor, setupRng, dOpt);
       if (eid >= 0) setupPlaceRoad(state, pid, eid);
     }
     setupWait = 0;
@@ -463,6 +646,17 @@ export function createBots(state, world, opts = {}) {
 
   function update(dt) {
     const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 1 / 60;
+
+    // Re-read the level every step: the player chooses it on the title screen,
+    // which is long after main.js built these brains, and may change it again
+    // between matches without anything being rebuilt.
+    const live = difficultyParams();
+    const k = rampK();
+    for (const b of brains) {
+      // A seat running an explicit profile — the simulator's novice stand-in
+      // for a human — never ramps: people do not suddenly get better at 5:00.
+      b.d = b.profile ? difficultyParams(b.profile) : effectiveD(live, k);
+    }
 
     if (state.phase === 'setup') { driveSetup(step); return; }
     if (state.phase !== 'play') {
@@ -481,14 +675,28 @@ export function createBots(state, world, opts = {}) {
 
       driveGather(b);
 
+      // Dithering: having just decided something, stand there and think about
+      // it. Pickup is contact-based, so a paused bot still collects whatever it
+      // is standing in — it simply stops making progress.
+      if (b.pause > 0) {
+        b.pause -= step;
+        coast(b, step);
+        continue;
+      }
+
       b.think -= step;
       if (b.think <= 0) {
-        b.think = REPLAN_MIN + b.lag + b.rng() * REPLAN_SPREAD;
+        b.think = (REPLAN_MIN + b.lag + b.rng() * REPLAN_SPREAD) * b.d.replan;
         const next = planFor(b);
         if (next) {
           const same = b.goal && next.kind === 'gather' && b.goal.kind === 'gather'
             && b.goal.tile === next.tile;
-          if (!same) { b.goal = next; b.stuck = 0; }
+          if (!same) {
+            b.goal = next; b.stuck = 0;
+            if (b.d.hesitate > 0 && b.rng() < b.d.hesitate) {
+              b.pause = b.d.pause * (0.35 + b.rng() * 0.65);
+            }
+          }
         } else if (!b.goal) {
           coast(b, step);
         }
@@ -501,7 +709,10 @@ export function createBots(state, world, opts = {}) {
   /** Wipe every per-match field, keeping the personalities. Used by the
    *  in-place restart in systems/flowRestart.js. */
   function reset() {
+    const live = difficultyParams();
     brains.forEach((b, i) => {
+      b.d = b.profile ? difficultyParams(b.profile) : live;
+      b.pause = 0;
       b.goal = null;
       b.hold = 0;
       b.stuck = 0;
@@ -515,7 +726,18 @@ export function createBots(state, world, opts = {}) {
     setupKey = ''; setupWait = 0;
   }
 
-  return { update, reset, brains };
+  /**
+   * Re-read the chosen level. `update()` already does this every step, so this
+   * exists purely so flowRestart.js can say what it means: a replay runs at the
+   * difficulty in force now.
+   */
+  function applyDifficulty() {
+    const live = difficultyParams();
+    for (const b of brains) b.d = b.profile ? difficultyParams(b.profile) : live;
+    return live.key;
+  }
+
+  return { update, reset, applyDifficulty, brains };
 }
 
 export default createBots;

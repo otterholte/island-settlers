@@ -2,10 +2,17 @@
  * Island Settlers — headless match simulator.
  *
  *   node tools/simulate.mjs [--matches=30] [--seed=1] [--cap=420] [--verbose]
+ *                          [--difficulty=easy|medium|hard] [--novice]
  *
  * Runs full bot-vs-bot matches at a fixed 1/60 s step with no renderer, using
  * the real rules.js. Seat 0 (normally the human) is handed one of the three
  * strategies, rotating between matches, so every strategy plays every seat.
+ *
+ * `--difficulty` sets the level every bot plays at, exactly as the title screen
+ * would. `--novice` additionally drops seat 0 onto the deliberately mediocre
+ * "novice" policy from difficulty.js — the stand-in for a human who is still
+ * learning — and the report then shows seat 0's win rate, which is the closest
+ * this rig can get to "is this level beatable?".
  *
  * It also audits the bots: no settler may ever stand off the island, and no
  * player may ever gain a resource that is not accounted for by a `gained` or
@@ -21,6 +28,9 @@ import {
 } from '../src/core/rules.js';
 import { createBots, chooseSetupSettlement, chooseSetupRoad } from '../src/systems/bots.js';
 import { PORT_SPOT_REACH } from '../src/systems/botBrain.js';
+import {
+  setDifficulty, getDifficulty, difficultyParams, LEVELS, DIFFICULTY_ORDER
+} from '../src/systems/difficulty.js';
 import { tileAt, ports, tiles } from '../src/board/layout.js';
 import { mulberry32, tileItemCount } from '../src/board/nodes.js';
 import {
@@ -46,6 +56,36 @@ const DRAFT_BY_BOTS = String(args.draft ?? 'flow') === 'bots';
 const EXT_GATHER = !!args.gathersys;
 const DT = 1 / 60;
 const STRATS = BOT_PROFILES.map(b => b.strategy);          // expansion, cities, cards
+
+/* ------------------------------------------------------------- difficulty */
+
+const DIFF = String(args.difficulty ?? getDifficulty());
+if (!DIFFICULTY_ORDER.includes(DIFF)) {
+  console.error(`unknown --difficulty=${DIFF} (want ${DIFFICULTY_ORDER.join('|')})`);
+  process.exit(2);
+}
+setDifficulty(DIFF);
+
+// Seat 0 is the human's chair. `--novice` puts the mediocre-player policy in
+// it; without the flag seat 0 is just another bot at the chosen level.
+const NOVICE = !!args.novice;
+const SEAT0 = NOVICE ? 'novice' : DIFF;
+
+// --dset=speed=0.8,replan=1.4 retunes the level in-process (--nset does the
+// same to the novice policy), the same way the economy flags below do, so a
+// tuning pass can sweep before editing src/.
+let TUNED_D = '';
+function retune(levelKey, spec) {
+  const L = LEVELS[levelKey];
+  for (const part of String(spec).split(',')) {
+    const m = /^([a-zA-Z]+)=(-?[\d.]+)$/.exec(part.trim());
+    if (m && m[1] in L) L[m[1]] = Number(m[2]);
+  }
+  TUNED_D += `\n  ${levelKey}: ` + Object.entries(L)
+    .filter(([, v]) => typeof v === 'number').map(([k, v]) => `${k}=${v}`).join(' ');
+}
+if (args.dset) retune(DIFF, args.dset);
+if (args.nset) retune('novice', args.nset);
 
 /* ------------------------------------------------------- pacing experiments
  * These flags exist so a tuning pass can measure a candidate economy *before*
@@ -194,7 +234,10 @@ function runMatch(index) {
   state.players[0].name = `Bot0/${seat0}`;
 
   const draftRng = mulberry32(seed ^ 0x2545f491);
-  const bots = createBots(state, world, { seed: state.botSeed });
+  const bots = createBots(state, world, {
+    seed: state.botSeed,
+    profiles: NOVICE ? { 0: 'novice' } : {}
+  });
   const gathering = EXT_GATHER && createGathering ? createGathering(state, world) : null;
 
   /* ---- opening snake draft (what matchflow.js will drive in the game) --- */
@@ -207,14 +250,17 @@ function runMatch(index) {
     while (state.phase === 'setup' && guard++ < 64) {
       const pid = setupCurrentPlayer(state);
       if (pid < 0) break;
+      // Seat 0 drafts on its own policy — a novice picks its opening corners
+      // about as well as it plays the rest of the match.
+      const dOpt = { d: difficultyParams(pid === 0 ? SEAT0 : DIFF) };
       if (state.setupNeed === 'settlement') {
-        const iid = chooseSetupSettlement(state, pid, draftRng);
+        const iid = chooseSetupSettlement(state, pid, draftRng, dOpt);
         if (iid < 0 || !setupPlaceSettlement(state, pid, iid)) {
           flag(`match ${index}: draft settlement failed for p${pid}`);
           break;
         }
       } else {
-        const eid = chooseSetupRoad(state, pid, state.setupAnchor, draftRng);
+        const eid = chooseSetupRoad(state, pid, state.setupAnchor, draftRng, dOpt);
         if (eid < 0 || !setupPlaceRoad(state, pid, eid)) {
           flag(`match ${index}: draft road failed for p${pid}`);
           break;
@@ -374,6 +420,9 @@ function runMatch(index) {
 
 console.log(`Island Settlers — bot simulation: ${MATCHES} matches, ` +
             `dt=1/60, cap=${CAP}s, seed=${SEED0}, target=${VP_TARGET} VP`);
+console.log(`DIFFICULTY: ${DIFF}` +
+  (NOVICE ? '  |  seat 0 = novice (mediocre-human stand-in)' : '  |  all four seats at this level'));
+if (TUNED_D) console.log('DIFFICULTY OVERRIDES:' + TUNED_D);
 if (TUNED.length) {
   console.log('EXPERIMENTAL ECONOMY (simulator-side overrides, src/ untouched):');
   for (const t of TUNED) console.log('  ' + t);
@@ -439,6 +488,28 @@ console.log('\n=== WINS BY STRATEGY ===');
       pct(seats[s] / 4, done.length)
     ])
   ));
+}
+
+console.log(`\n=== WINS BY SEAT (${NOVICE ? 'seat 0 = novice policy' : 'every seat at ' + DIFF}) ===`);
+{
+  const wins = [0, 0, 0, 0];
+  const vp = [0, 0, 0, 0];
+  for (const r of results) {
+    if (r.winner >= 0) wins[r.winner]++;
+    for (const row of r.rows) vp[row.id] += row.vp;
+  }
+  console.log(table(
+    ['seat', 'who', 'wins', 'win rate', 'avg VP'],
+    wins.map((w, i) => [
+      `p${i}`,
+      i === 0 ? (NOVICE ? 'NOVICE (human stand-in)' : `bot/${DIFF}`) : `bot/${DIFF}`,
+      w, pct(w, done.length), fmt(vp[i] / (results.length || 1), 2)
+    ])
+  ));
+  if (NOVICE) {
+    console.log(`  seat 0 (novice) beat three ${DIFF} bots in ` +
+      `${wins[0]}/${done.length} finished matches — chance alone would be 25%.`);
+  }
 }
 
 console.log('\n=== AVERAGE END-OF-MATCH VP BREAKDOWN (per player, all seats) ===');

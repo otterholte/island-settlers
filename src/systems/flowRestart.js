@@ -24,6 +24,7 @@ import { START_RESOURCES } from '../core/constants.js';
 import { SPAWNS, DESERT } from '../board/layout.js';
 import { resetNodes, mulberry32 } from '../board/nodes.js';
 import { buildSetupOrder } from '../core/rules.js';
+import { getDifficulty } from './difficulty.js';
 
 function resetPlayer(p) {
   const spawn = SPAWNS[p.id] || { x: 0, z: 0, facing: 0 };
@@ -106,6 +107,17 @@ function resyncWorld(state, game, world) {
 function resetBots(game) {
   const bots = game.bots;
   if (!bots) return false;
+
+  // The difficulty the player chose on the title screen outlives the match: a
+  // replay skips the intro, so nobody is going to pick it again. bots.js reads
+  // the level every planning tick, and `applyDifficulty` re-seats it on every
+  // brain immediately so the very first frame of the replay is already at the
+  // right level rather than one tick behind.
+  if (typeof bots.applyDifficulty === 'function') {
+    try { bots.applyDifficulty(); } catch (e) { /* level stays as it was */ }
+  }
+  game.difficulty = getDifficulty();
+
   if (typeof bots.reset === 'function') {
     try { bots.reset(); return true; } catch (e) { /* fall through */ }
   }
