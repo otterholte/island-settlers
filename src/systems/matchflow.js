@@ -607,6 +607,13 @@ export function createMatchFlow(state, game) {
     get stage() { return stage; },
     get elapsed() { return elapsed; },
     get isWinSequence() { return win.active; },
+    /**
+     * Seconds into the victory sequence — the clock `WIN` is spaced against.
+     * Exposed so the capture rig can assert the beats in *game* time: a
+     * software renderer feeds this loop far fewer fixed steps than a phone
+     * does, so wall-clock timings out of headless mean nothing.
+     */
+    get winT() { return win.active ? win.t : -1; },
     get winner() { return win.wid; },
     get tutorial() { return tutorial; },
     destroy() { cam.release(); ui.destroy(); tutorial.destroy(); }

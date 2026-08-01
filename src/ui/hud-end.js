@@ -26,7 +26,9 @@
 import { el, button, setText, toggle } from './dom.js';
 import { icon } from './icons.js';
 
-const CONFETTI = 26;
+/* Enough paper that it reads as a shower rather than as a few stray pixels on
+   a bright island. Three shapes, staggered starts, each with its own sway. */
+const CONFETTI = 44;
 
 export function createEndgame(root, state, game, hooks = {}) {
   /* ------------------------------------------------------------ the moment */
@@ -34,12 +36,16 @@ export function createEndgame(root, state, game, hooks = {}) {
   const paper = el('div', { class: 'ew-paper' });
   for (let i = 0; i < CONFETTI; i++) {
     paper.appendChild(el('i', {
+      class: 'p' + (i % 3),
       style: {
-        '--x': (3 + (i * 97) % 94) + '%',
-        '--d': ((i * 137) % 900) + 'ms',
+        '--x': (2 + (i * 61) % 96) + '%',
+        // Staggered so the shower lasts the whole hold on the board (see WIN
+        // in matchflow.js) rather than being over before the camera moves.
+        '--d': ((i * 137) % 1900) + 'ms',
         '--s': (0.7 + ((i * 53) % 60) / 100).toFixed(2),
         '--r': ((i * 71) % 360) + 'deg',
-        '--t': (2.6 + ((i * 31) % 90) / 100).toFixed(2) + 's'
+        '--sw': (((i * 43) % 66) - 33) + 'px',
+        '--t': (3.2 + ((i * 31) % 160) / 100).toFixed(2) + 's'
       }
     }));
   }
@@ -73,10 +79,12 @@ export function createEndgame(root, state, game, hooks = {}) {
     void bWrap.offsetWidth;
     bWrap.classList.add('in');
     if (hideT) clearTimeout(hideT);
+    // Held until just short of the scoreboard (WIN.reveal, 6.0s) so the plate
+    // and the last of the paper clear the frame a beat before the score lands.
     hideT = setTimeout(() => {
       bWrap.classList.remove('in');
       toggle(bWrap, 'hid', true);
-    }, 5200);
+    }, 5600);
   }
 
   /* -------------------------------------------------------------- the dock */
@@ -108,9 +116,11 @@ export function createEndgame(root, state, game, hooks = {}) {
       el('span', { class: 'sb-ico', html: icon('trophy', 20) }),
       el('span', { class: 'sb-lab', text: 'Results' })),
     button('blue', { on: { click: () => setView(!board) } }, viewIco, viewLab),
+    // Two short words: at 667px this sits in a 92px box and anything longer
+    // breaks to three ragged lines beside a 46px button.
     el('span', { class: 'eb-hint' },
       el('b', { class: 'tc-key', text: 'Enter' }),
-      el('i', { text: 'brings the score back' })));
+      el('i', { text: 'for the score' })));
   root.appendChild(dock);
 
   /** Show or hide the bar, and mark the interface root so the HUD stands down. */

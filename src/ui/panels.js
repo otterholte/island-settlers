@@ -135,13 +135,18 @@ export function createPanels(root, state, game) {
     el('span', { class: 'sb-ico', html: icon('swap', 22) }),
     el('span', { class: 'sb-lab', text: 'Trade' }));
 
+  // Kept as references: the heading of whichever row the arrows are steering
+  // lights up, so the keyboard cursor is named as well as drawn.
+  const giveCol = el('div', { class: 'tcol' }, el('h4', { text: 'You give' }), giveRow);
+  const getCol = el('div', { class: 'tcol' }, el('h4', { text: 'You get' }), getRow);
+
   const tradeSheet = el('div', { class: 'sheet trade hid' },
     head('Trade', () => close()),
     tInv,
     el('div', { class: 'trade-body' },
-      el('div', { class: 'tcol' }, el('h4', { text: 'You give' }), giveRow),
+      giveCol,
       el('div', { class: 'tmid' }, ratioBig, ratioWhere, amtBox, ratioNote),
-      el('div', { class: 'tcol' }, el('h4', { text: 'You get' }), getRow)),
+      getCol),
     el('div', { class: 'sheet-foot' },
       el('div', { class: 'tfoot' }, tradeDeal, tradeWhy, kbHint), tradeBtn));
   wrap.appendChild(tradeSheet);
@@ -235,6 +240,9 @@ export function createPanels(root, state, game) {
     if (lots > cap) lots = cap;
     if (lots < 1) lots = 1;
 
+    toggle(giveCol, 'act', side === 'give');
+    toggle(getCol, 'act', side === 'get');
+
     RES.forEach((r, i) => {
       const held = me.res[r] | 0;
       setText(tInvNums[r], held);
@@ -254,9 +262,17 @@ export function createPanels(root, state, game) {
       ? (port.resource ? `${RES_LABEL[port.resource]} Dock` : 'Trading Dock')
       : 'Great Market'));
 
+    // Two different "there is a better rate than this" messages, and the one
+    // about the post you are standing on comes first: a specialised dock is
+    // worthless if the sheet never mentions the resource it specialises in.
     let note = '';
     const best = tradeRatio(state, 0, give);
-    if (best < ratio) note = `${best}:1 at your dock`;
+    const port2 = portId === null ? null : ports[portId];
+    if (port2 && port2.resource && port2.resource !== give) {
+      note = `${rateFor(port2.resource)}:1 on ${RES_LABEL[port2.resource]} here`;
+    } else if (best < ratio) {
+      note = `${best}:1 at your dock`;
+    }
     setText(ratioNote, note);
 
     setText(lotsNum, lots);
@@ -325,12 +341,36 @@ export function createPanels(root, state, game) {
     return true;
   }
 
+  /** The rate this post charges for giving away `r`, whatever post it is. */
+  function rateFor(r) {
+    if (portId === null) return TRADE_BASE;
+    return activeTradeRatio(state, 0, r, portId) || TRADE_BASE;
+  }
+
   function openTrade(id) {
     portId = (id === undefined || id === null) ? null : id;
     if (portId !== null && !me.ports.has(portId)) portId = null;
-    // Open on the resource you are richest in — the one you came here to spend.
-    let best = 0;
-    RES.forEach((r, i) => { if ((me.res[r] | 0) > (me.res[RES[best]] | 0)) best = i; });
+
+    /*
+     * Open on the deal the player walked here for.
+     *
+     * "Richest resource" was fine at the Great Market, where every rate is 4:1,
+     * but it made a specialised dock useless: you crossed the island to your
+     * Brick Dock for its 2:1, and the sheet opened on wood at 4:1 with the
+     * advertised rate nowhere on screen. Rank by (can I pay, rate, how much I
+     * hold) instead, so the post's best offer is the one you land on.
+     */
+    let best = 0, bestKey = null;
+    RES.forEach((r, i) => {
+      const held = me.res[r] | 0;
+      const ratio = rateFor(r);
+      const key = [held >= ratio ? 0 : 1, ratio, -held];
+      if (!bestKey || key[0] < bestKey[0]
+        || (key[0] === bestKey[0] && key[1] < bestKey[1])
+        || (key[0] === bestKey[0] && key[1] === bestKey[1] && key[2] < bestKey[2])) {
+        bestKey = key; best = i;
+      }
+    });
     giveI = best;
     getI = (best + 1) % RES.length;
     side = 'get';

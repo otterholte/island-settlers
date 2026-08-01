@@ -228,10 +228,44 @@
 .pick.off{filter:grayscale(1) brightness(.9);opacity:.55}
 .pick.off:active{transform:none}
 /* `.on` is the chosen resource for that row; `.cur` says which row the arrow
-   keys are steering right now, so the keyboard cursor is never guesswork. */
-.pick.cur{box-shadow:0 3px 0 #a8741a,0 0 0 3px var(--gold-l),0 0 18px rgba(255,201,60,.7),
-  inset 0 2px 0 rgba(255,255,255,.8)}
+   keys are steering right now.
+   These two used to be told apart by a GOLD ring drawn on a GOLD cell, which
+   meant that with both rows lit the player could not see which one the arrows
+   were about to move. The cursor now reads at a glance from across the room:
+   it lifts off the row, takes a cobalt collar against the cream panel, pulses,
+   and flies a caret. There is no mouse pointer to fall back on. */
+.pick.cur{
+  transform:translateY(-3px);
+  border-color:#123a66;
+  box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 6px #2f6bb0,
+             0 0 22px rgba(255,201,60,.85),inset 0 2px 0 rgba(255,255,255,.85);
+  animation:curPulse 1.5s ease-in-out infinite;
+  z-index:2;
+}
+.pick.cur:active{transform:translateY(0)}
 .pick.cur .pk-name{color:#6b3d05}
+/* the caret sits inside the cell's own top edge, so it never fouls the heading */
+.pick.cur::after{
+  content:'';position:absolute;top:3px;left:50%;margin-left:-5px;
+  width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
+  border-top:6px solid #123a66;opacity:.9;
+}
+@keyframes curPulse{
+  0%,100%{box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 6px #2f6bb0,
+                     0 0 22px rgba(255,201,60,.85),inset 0 2px 0 rgba(255,255,255,.85)}
+  50%    {box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 7px #4b9bea,
+                     0 0 30px rgba(120,190,255,.75),inset 0 2px 0 rgba(255,255,255,.85)}
+}
+@media (prefers-reduced-motion:reduce){.pick.cur{animation:none}}
+
+/* which row the arrows are steering, said in words as well as in light */
+.tcol>h4{transition:color .14s ease}
+.tcol.act>h4{
+  color:#f4ecdc;background:linear-gradient(180deg,#2f6bb0,#123a66);
+  border-radius:7px;padding:3px 4px 4px;margin-bottom:4px;
+  box-shadow:0 2px 0 rgba(9,30,56,.5),inset 0 1px 0 rgba(255,255,255,.25);
+}
+.tcol.act>h4::after{content:' \25C0 \25B6';letter-spacing:0;opacity:.75}
 .pk-lots{color:#1d5c26 !important}
 .pk-ico{line-height:0}
 .pk-name{font:800 8px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:var(--brown)}
@@ -371,19 +405,30 @@
 .ew-sub{margin:0;font:700 9.5px/1 var(--ff);letter-spacing:.13em;text-transform:uppercase;
   color:rgba(198,220,242,.82)}
 
+/* The shower. Three shapes so it does not read as one repeated sprite: the
+   winner's own colour, a cream disc and a turquoise ribbon, each swaying on its
+   own offset. All CSS, no canvas, no pointer events. */
 .ew-paper{position:absolute;inset:0}
 .ew-paper i{
-  position:absolute;left:var(--x);top:-24px;width:9px;height:14px;border-radius:2px;
+  position:absolute;left:var(--x);top:-26px;width:10px;height:15px;border-radius:2px;
   background:linear-gradient(180deg,var(--wl,#ffe79a),var(--wc,#ffc93c));
-  box-shadow:0 1px 3px rgba(0,0,0,.35);opacity:0;
+  box-shadow:0 1px 3px rgba(0,0,0,.4);opacity:0;
 }
+.ew-paper i.p1{width:9px;height:9px;border-radius:50%;
+  background:linear-gradient(180deg,#fffaf0,#f6e7c6)}
+.ew-paper i.p2{width:6px;height:17px;border-radius:3px;
+  background:linear-gradient(180deg,#9ef0ff,#3fc4d8)}
 .endwin.in .ew-paper i{animation:ewFall var(--t,3s) linear var(--d,0ms) 1 both}
 @keyframes ewFall{
-  0%{opacity:0;transform:translateY(0) rotate(var(--r)) scale(var(--s))}
+  0%{opacity:0;transform:translate3d(0,0,0) rotate(var(--r)) scale(var(--s))}
   8%{opacity:1}
+  50%{transform:translate3d(var(--sw,0px),56vh,0)
+      rotate(calc(var(--r) + 280deg)) scale(var(--s))}
   85%{opacity:1}
-  100%{opacity:0;transform:translateY(112vh) rotate(calc(var(--r) + 540deg)) scale(var(--s))}
+  100%{opacity:0;transform:translate3d(0,114vh,0)
+       rotate(calc(var(--r) + 560deg)) scale(var(--s))}
 }
+@media (prefers-reduced-motion:reduce){.endwin.in .ew-paper i{animation-duration:6s}}
 
 /* --------------------------------------------------- the end-of-match bar */
 .endbar{
