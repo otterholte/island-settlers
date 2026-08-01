@@ -9,7 +9,7 @@
   "play": {
     "stats": {
       "phase": "play",
-      "time": 3.6,
+      "time": 3.5,
       "buildings": 8,
       "roads": 9,
       "vp": [
@@ -19,15 +19,15 @@
         2
       ],
       "gathered": [
-        1,
+        2,
         0,
         1,
         0
       ],
-      "calls": 71,
-      "tris": 125072,
+      "calls": 74,
+      "tris": 128619,
       "meshes": 105,
-      "textures": 23,
+      "textures": 24,
       "geometries": 77
     },
     "exceptions": [],
@@ -241,73 +241,45 @@
         "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
       },
       {
-        "level": "error",
-        "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
-        "level": "warning",
-        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-      },
-      {
         "level": "warning",
         "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
       },
       {
         "level": "error",
         "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      },
+      {
+        "level": "warning",
+        "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
       }
     ],
-    "w": 960,
-    "h": 444,
-    "at": "2026-07-31T16:41:39.121Z"
+    "w": 667,
+    "h": 375,
+    "at": "2026-07-31T18:10:32.042Z"
   },
   "probe": {
     "stats": {

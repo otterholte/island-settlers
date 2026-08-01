@@ -124,7 +124,15 @@ export function createGameCamera(renderer, scene) {
   }
 
   /* ------------------------------------------------------------ celebrate */
+  /** End the victory orbit and hand the camera back to normal play. */
+  function endCelebrate() {
+    celebrating = false;
+    celT = 0;
+  }
+
   function celebrate(player) {
+    // Only the end-of-match sequence may start this. Once running it takes the
+    // camera over completely, so it must always have a way out — see update().
     celebrating = true;
     celT = 0;
     let cx = 0, cz = 0, n = 0;
@@ -234,7 +242,14 @@ export function createGameCamera(renderer, scene) {
       _look.lerp(_l2, k);
     }
 
-    /* ---- celebration orbit -------------------------------------------- */
+    /* ---- celebration orbit --------------------------------------------
+       Strictly for the end of a match. `celebrating` used to be set and never
+       cleared, so `celAngle` kept winding on forever: any stray call left the
+       camera slowly orbiting the island with no way for the player to stop it.
+       It now runs only while the match is actually over, and releases itself
+       the moment play resumes. */
+    if (celebrating && state && state.phase !== 'over') endCelebrate();
+
     if (celebrating) {
       celT = Math.min(CELEB_SEC, celT + step);
       celAngle += step * 0.24;
@@ -277,6 +292,7 @@ export function createGameCamera(renderer, scene) {
     follow,
     setOverview,
     celebrate,
+    endCelebrate,
     shake,
     update,
     /** Gameplay yaw — fixed, so joystick-up is always away from the camera. */

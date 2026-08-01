@@ -188,3 +188,29 @@ html,body{
   box-shadow:0 6px 18px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.12);
   backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
 }
+
+/* ==========================================================================
+   No native scrollbars, anywhere, ever.
+
+   A few panels (settings, the results list, the card hand) legitimately scroll
+   when they run out of room, and on Windows those render a chunky classic
+   scrollbar right on top of the playfield. This is a full-screen game: the
+   scroll still works, but the browser furniture never shows. Headless Chrome
+   uses overlay scrollbars so this class of bug is invisible in our captures —
+   it has to be prevented structurally rather than caught by a screenshot.
+   ========================================================================== */
+html, body, #app, #ui, #ui * {
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;         /* legacy Edge */
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar,
+#ui::-webkit-scrollbar,
+#ui *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+/* Belt and braces: the root can never scroll in a fixed-viewport game. */
+html, body { overflow: hidden !important; overscroll-behavior: none; }
