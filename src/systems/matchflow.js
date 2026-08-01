@@ -48,7 +48,10 @@ import { resetMatchInPlace } from './flowRestart.js';
 
 const T = {
   boot: 0.40,          // let the boot splash clear before the title lands
-  title: 5.2,          // intro card hold (skippable)
+  // The opening screen is a MENU, not a cinematic: it carries the difficulty
+  // picker, so it waits for BEGIN THE DRAFT rather than timing out from under
+  // the player. This is only a safety net for an abandoned tab.
+  title: 90.0,
   draftIntro: 1.90,    // board is up, the order is on it — let it be read
   handoff: 2.30
 };
