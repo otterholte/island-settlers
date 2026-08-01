@@ -8,11 +8,22 @@
  *
  * Structure, top to bottom, so it fits a 375px-tall landscape phone:
  *   crest + title      ISLAND / SETTLERS, bevelled, sitting on the sea
- *   objective ribbon   FIRST TO 12 POINTS
- *   four settler cards colour, portrait, name, the strategy they play
+ *   objective ribbon   FIRST TO 13 POINTS
+ *   identity plate     one slim plate: your colour, your portrait, YOU
  *   difficulty picker  EASY / MEDIUM / HARD — how good the rivals are
- *   the primary button BEGIN THE DRAFT — green, deep lip, real press
+ *   two buttons        BEGIN THE DRAFT (green, primary) · TUTORIAL (cream)
  *   one line of help   how a turn actually works
+ *
+ * The three rival cards are gone on purpose — "have the home screen NOT show
+ * the other players right now, just hide them". They are still in the match,
+ * still named in the draft rail and the ranking; they simply do not introduce
+ * themselves before anyone has asked. What is left is the player's own
+ * identity, laid out horizontally so one plate reads as a deliberate badge
+ * rather than as the survivor of a row of four.
+ *
+ * TUTORIAL raises a `mf-tutorial` CustomEvent on `document` rather than taking
+ * a callback, so nothing between here and systems/tutorial.js has to grow a
+ * parameter to carry it.
  *
  * The difficulty choice is written straight into `systems/difficulty.js`, which
  * `bots.js` re-reads on every planning tick, so no wiring is needed anywhere
@@ -21,7 +32,7 @@
  * Owner: Flow agent (flow UI). Kept out of flowUI.js purely for file size.
  */
 
-import { VICTORY_POINTS, BOT_PROFILES } from '../core/constants.js';
+import { VICTORY_POINTS } from '../core/constants.js';
 import { el, button } from '../ui/dom.js';
 import { icon, avatar } from '../ui/icons.js';
 import {
@@ -83,41 +94,39 @@ export const INTRO_CSS = `
 }
 .mf-i-obj svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 
-/* ------------------------------------------------------------ competitors */
-.mf-i-row{display:flex;gap:clamp(5px,1.2vw,10px);margin-top:2px;max-width:96vw}
+/* -------------------------------------------------------------- identity
+   One horizontal plate instead of four stacked cards. The colour band runs
+   down its leading edge — the same "this is me" language the in-match identity
+   chip uses — so the plate is legible as a badge on its own. */
+.mf-i-row{display:flex;justify-content:center;margin-top:1px;max-width:96vw}
 .mf-cmp{
-  position:relative;flex:0 1 auto;overflow:hidden;
-  display:flex;flex-direction:column;align-items:center;gap:3px;
-  width:clamp(104px,20vw,160px);padding:0 7px 8px;border-radius:13px;
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:clamp(7px,1.4vw,11px);
+  min-height:44px;padding:5px clamp(13px,2.4vw,20px) 6px clamp(11px,2vw,16px);
+  border-radius:14px;
   background:linear-gradient(180deg,#fdf5e2 0%,#f6e7c6 44%,#e2cfa6 100%);
   border:2px solid #4a2f16;
   box-shadow:0 5px 0 rgba(58,36,16,.62),0 12px 22px rgba(0,0,0,.5),
              inset 0 2px 0 rgba(255,255,255,.85);
-  opacity:0;transform:translateY(18px) scale(.95);
+  opacity:0;transform:translateY(14px) scale(.96);
   transition:opacity .34s ease,transform .34s cubic-bezier(.2,1.3,.35,1);
 }
 .mf-cmp.in{opacity:1;transform:none}
 .mf-c-band{
-  align-self:stretch;height:7px;margin:0 -7px 5px;
+  position:absolute;left:0;top:0;bottom:0;width:7px;
   background:linear-gradient(180deg,var(--cl,#7fb2f0),var(--c,#3b7fd4));
-  box-shadow:inset 0 -1px 0 rgba(0,0,0,.35);
+  box-shadow:inset -1px 0 0 rgba(0,0,0,.35);
 }
-.mf-c-av{line-height:0;margin-top:1px}
-.mf-c-name{font:800 clamp(11px,1.9vw,14px)/1 var(--ff);letter-spacing:.1em;
+.mf-c-av{line-height:0;flex:0 0 auto;margin-left:3px}
+.mf-c-txt{display:flex;flex-direction:column;align-items:flex-start;gap:1px;min-width:0}
+.mf-c-name{font:800 clamp(12px,2vw,15px)/1 var(--ff);letter-spacing:.16em;
   text-transform:uppercase;color:#2e1c06;text-shadow:0 1px 0 rgba(255,255,255,.7)}
-.mf-c-desc{font:700 clamp(7.5px,1.15vw,9px)/1.28 var(--ff);letter-spacing:.05em;
-  text-transform:uppercase;color:#7a5228;text-align:center}
+.mf-c-desc{font:700 clamp(7.5px,1.15vw,9.5px)/1.25 var(--ff);letter-spacing:.09em;
+  text-transform:uppercase;color:#7a5228;white-space:nowrap}
 .mf-cmp.you{
   border-color:#c99413;
   box-shadow:0 5px 0 #9a6d08,0 12px 22px rgba(0,0,0,.5),
              0 0 22px rgba(255,201,60,.45),inset 0 2px 0 rgba(255,255,255,.9);
-}
-.mf-c-you{
-  position:absolute;top:7px;right:-27px;width:92px;padding:2px 0 3px;
-  transform:rotate(38deg);text-align:center;
-  background:linear-gradient(180deg,var(--gold-l,#ffe79a),var(--gold,#ffc93c));
-  font:800 8px/1 var(--ff);letter-spacing:.18em;text-transform:uppercase;color:#3a2208;
-  box-shadow:0 2px 6px rgba(0,0,0,.5);
 }
 
 /* -------------------------------------------------------------- difficulty */
@@ -167,8 +176,18 @@ export const INTRO_CSS = `
   width:26px;height:3px;border-radius:2px;background:#6b4406;opacity:.75;
 }
 
-/* ------------------------------------------------------------- call to act */
-.mf-i-foot{display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:3px}
+/* ------------------------------------------------------------- call to act
+   THE GAP IS LOAD-BEARING. .mf-play carries a 7px hard under-lip and floats
+   3px on its idle bounce, and neither is part of its layout box — with the old
+   5px gap the lip painted straight across the help line underneath it ("the
+   Begin draft is covering the text below it"). The floor here is 14px: 7 for
+   the lip, 3 for the bounce, and 4 of actual air. Measured at 960x444 and
+   667x375, button-bottom to hint-top, not eyeballed. */
+.mf-i-foot{
+  display:flex;flex-direction:column;align-items:center;
+  gap:clamp(14px,3.4vh,20px);margin-top:clamp(4px,1.2vh,8px);
+}
+.mf-i-cta{display:flex;align-items:center;gap:clamp(9px,2vw,16px)}
 .mf-play{
   position:relative;overflow:hidden;
   min-height:clamp(48px,12vh,58px);padding:0 clamp(22px,5vw,44px);
@@ -191,6 +210,26 @@ export const INTRO_CSS = `
 }
 @keyframes mfPlay{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @keyframes mfSheen{0%,62%{left:-60%}88%,100%{left:120%}}
+
+/* The second route in. Same bevel, same outline, same press — cream instead of
+   green and a size down, so it is unmistakably an option rather than the
+   option. 48px tall at every size we ship. */
+.mf-tut{
+  min-height:clamp(48px,10.5vh,54px);padding:0 clamp(15px,3vw,26px);
+  border-radius:16px;border-width:2.5px;
+  flex-direction:column;gap:1px;
+  --f1:#fbf3de;--f2:#f0dfb6;--f3:#dcc493;--lip:#8f7444;--fg:#3f2a12;
+  box-shadow:0 6px 0 var(--lip),0 11px 20px rgba(0,0,0,.5),
+             inset 0 3px 0 rgba(255,255,255,.7),inset 0 -7px 11px rgba(0,0,0,.16);
+}
+.mf-tut:active{transform:translateY(6px);
+  box-shadow:0 0 0 var(--lip),0 4px 8px rgba(0,0,0,.45),
+             inset 0 3px 0 rgba(255,255,255,.6)}
+.mf-tut .mf-t-lab{font:800 clamp(12px,2.1vw,15px)/1 var(--ff);letter-spacing:.15em;
+  text-transform:uppercase}
+.mf-tut .mf-t-sub{font:700 clamp(6.6px,1.05vw,8.4px)/1.15 var(--ff);letter-spacing:.11em;
+  text-transform:uppercase;color:#7a5228;text-shadow:none;white-space:nowrap}
+
 .mf-i-hint{font:700 clamp(8px,1.3vw,10px)/1.3 var(--ff);letter-spacing:.14em;
   text-transform:uppercase;color:rgba(206,228,250,.72);text-align:center;
   text-shadow:0 1px 3px rgba(0,0,0,.8)}
@@ -198,36 +237,50 @@ export const INTRO_CSS = `
 
 @media (max-height:400px){
   .mf-intro{gap:4px}
-  .mf-i-row{gap:5px}
-  .mf-cmp{width:clamp(96px,19vw,132px);padding:0 5px 6px}
-  .mf-c-band{height:6px;margin:0 -5px 4px}
+  /* Specificity on purpose: flowUI.js's own compact block still sizes the old
+     four-card row, and this plate is not a card. */
+  .mf-intro .mf-cmp{width:auto;min-height:42px;padding:4px 13px 5px 11px;gap:8px}
+  .mf-intro .mf-c-desc{font-size:8px}
   .mf-c-av svg{width:28px;height:28px}
   .mf-play{min-height:48px}
+  .mf-tut{min-height:48px}
   /* Still a 46px tap target at 667x375 — the guideline floor, not a whisker
      under it. The blurb is what gives, not the button. */
   .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
+  .mf-i-foot{gap:14px;margin-top:4px}
 }
 `;
 
+/** Raised when TUTORIAL is pressed; systems/tutorial.js is listening. */
+export const TUTORIAL_EVENT = 'mf-tutorial';
+
+function askForTutorial() {
+  if (typeof document === 'undefined' || !document.dispatchEvent) return;
+  try {
+    document.dispatchEvent(typeof CustomEvent === 'function'
+      ? new CustomEvent(TUTORIAL_EVENT)
+      : Object.assign(document.createEvent('Event'), { type: TUTORIAL_EVENT }));
+  } catch (e) { /* a browser this old is not running the game anyway */ }
+}
+
 /** The whole opening screen as one detached node. */
 export function buildIntro(state, onBegin) {
-  const cards = state.players.map(p => {
-    const profile = BOT_PROFILES.find(b => b.id === p.id);
-    const mine = p.id === 0;
-    const desc = mine ? 'Your island to claim' : (profile ? profile.desc : 'Rival settler');
-    const card = el('div', {
-      class: 'mf-cmp' + (mine ? ' you' : ''),
-      style: { '--c': p.color.css, '--cl': p.color.light }
+  // The rivals are deliberately absent. `cards` stays an array so flowUI.js's
+  // staggered reveal keeps working without knowing how many there are.
+  const me = state.players[0] || { color: { css: '#3b7fd4', light: '#7fb2f0' } };
+  const cards = [
+    el('div', {
+      class: 'mf-cmp you',
+      style: { '--c': me.color.css, '--cl': me.color.light }
     },
       el('span', { class: 'mf-c-band' }),
-      el('span', { class: 'mf-c-av', html: avatar(p.color.css, p.color.light, 34) }),
-      el('b', { class: 'mf-c-name', text: mine ? 'You' : p.name }),
-      el('span', { class: 'mf-c-desc', text: desc }));
-    if (mine) card.appendChild(el('span', { class: 'mf-c-you', text: 'You' }));
-    return card;
-  });
+      el('span', { class: 'mf-c-av', html: avatar(me.color.css, me.color.light, 34) }),
+      el('div', { class: 'mf-c-txt' },
+        el('b', { class: 'mf-c-name', text: 'You' }),
+        el('span', { class: 'mf-c-desc', text: 'Your island to claim' })))
+  ];
 
   /* ----------------------------------------------------------- difficulty */
   // Three chunky, obviously-tappable options. The choice goes straight into
@@ -268,6 +321,13 @@ export function buildIntro(state, onBegin) {
   const playBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
+  const tutBtn = button('cream mf-tut', {
+    'aria-label': 'Tutorial — read the rules or take a guided practice run',
+    on: { click: () => askForTutorial() }
+  },
+    el('b', { class: 'mf-t-lab', text: 'Tutorial' }),
+    el('span', { class: 'mf-t-sub', text: 'New here? Start with this' }));
+
   const node = el('div', { class: 'mf-intro mf-hid' },
     el('div', { class: 'mf-i-crest', text: 'Island' }),
     el('div', { class: 'mf-i-title', text: 'Settlers' }),
@@ -276,12 +336,12 @@ export function buildIntro(state, onBegin) {
     el('div', { class: 'mf-i-row' }, cards),
     difficulty,
     el('div', { class: 'mf-i-foot' },
-      playBtn,
+      el('div', { class: 'mf-i-cta' }, playBtn, tutBtn),
       el('div', { class: 'mf-i-hint' },
         el('b', { text: 'Claim two corners' }),
         ' · gather from the land you touch · build roads, settlements and cities')));
 
-  return { node, cards, playBtn, diffButtons, refreshDifficulty: paint };
+  return { node, cards, playBtn, tutBtn, diffButtons, refreshDifficulty: paint };
 }
 
 export default buildIntro;

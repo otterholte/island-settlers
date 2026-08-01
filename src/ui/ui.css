@@ -2,10 +2,11 @@
    Island Settlers — interface styling (entry point).
    Landscape mobile web. System faces only, no webfonts, no remote assets.
 
-   Split across four files to stay well inside the per-file line budget:
+   Split across five files to stay well inside the per-file line budget:
      ui-base.css  design tokens, reset, shared material, buttons
      ui-hud.css   the in-world heads-up display
      ui-boot.css  the boot splash — the cold open, before anything exists
+     tutorial.css the rules book and the guided practice run
      ui.css       board overview, modal panels, results, responsive
 
    Owner: UI agent.
@@ -14,6 +15,7 @@
 @import './ui-base.css';
 @import './ui-hud.css';
 @import './ui-boot.css';
+@import './tutorial.css';
 
 /* ======================================================== opening screen
    The match-flow module sets `mf-introlive` on the interface root while the

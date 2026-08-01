@@ -43,6 +43,7 @@ import { createFlowUI } from './flowUI.js';
 import { createFlowCamera } from './flowCamera.js';
 import { createDraft } from './flowDraft.js';
 import { resetMatchInPlace } from './flowRestart.js';
+import { createTutorial } from './tutorial.js';
 
 /* ------------------------------------------------------------------ timing */
 
@@ -119,6 +120,10 @@ export function createMatchFlow(state, game) {
 
   const beats = { half: false, matchPoint: new Set(), finalCall: false };
   let beatT = 0;
+
+  // The guided practice run switches the pacing beats and the stalemate cap
+  // off: a tutorial must never have a clock running out under it.
+  let practice = false;
 
   /* ------------------------------------------------------------- utilities */
 
@@ -197,6 +202,15 @@ export function createMatchFlow(state, game) {
     onDone: () => enterHandoff()
   });
 
+  /* --------------------------------------------------------------- tutorial */
+
+  // Owns the TUTORIAL button on the opening screen (it listens for that
+  // button's event itself) and the guided practice run.
+  const tutorial = createTutorial(state, g, {
+    ui, setPractice: on => { practice = !!on; }
+  });
+  g.tutorial = tutorial;
+
   /* ------------------------------------------------------------------ begin */
 
   function begin() {
@@ -271,7 +285,7 @@ export function createMatchFlow(state, game) {
     if (beatT < 0.4) return;
     beatT = 0;
 
-    if (state.phase !== 'play') return;
+    if (state.phase !== 'play' || practice) return;
 
     for (const p of state.players) {
       const vp = scoreOf(state, p);
@@ -533,7 +547,8 @@ export function createMatchFlow(state, game) {
     get elapsed() { return elapsed; },
     get isWinSequence() { return win.active; },
     get winner() { return win.wid; },
-    destroy() { cam.release(); ui.destroy(); }
+    get tutorial() { return tutorial; },
+    destroy() { cam.release(); ui.destroy(); tutorial.destroy(); }
   };
 }
 

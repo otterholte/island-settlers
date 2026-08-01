@@ -116,12 +116,33 @@
      parts live here rather than in the build: the flavour line rotates, and
      the bar eases toward 92% because there is no honest byte counter to read.
      main.js sets `done` on #boot when the world exists — that is intercepted
-     for one beat so the fill can land on 100 and the screen can hand over
-     with a bloom instead of a cut. Defensive throughout: if any of it is
-     missing the game still boots. */
+     so the fill can land on 100 and the screen can hand over with a bloom
+     instead of a cut. Defensive throughout: if any of it is missing the game
+     still boots.
+
+     MINIMUM HOLD. On a desktop the world is ready in well under a second and
+     the whole cold open used to be gone before anyone could read the title —
+     "it disappears so quickly I can't tell what the game is". So the handoff
+     is now floored: whatever happens, the splash stays put for MIN_HOLD before
+     the bar is allowed to land, and LAND ms after that it starts its bloom.
+     Nothing here can make it feel stuck, because the floor is only ever a
+     floor: a slow device passes it on the way and hands over the instant it
+     is ready. Timings are published on window.__SPLASH__ so the capture rig
+     can measure the real numbers rather than trust this comment. */
   (function () {
     var boot = document.getElementById('boot');
     if (!boot || !boot.querySelector) return;
+    var MIN_HOLD = 2650;   // ms the artwork is guaranteed to stay readable
+    var LAND = 430;        // the beat the bar needs to travel 92% -> 100%
+    var clock = function () {
+      return (window.performance && performance.now)
+        ? performance.now() : (new Date()).getTime();
+    };
+    var t0 = clock();
+    var S = window.__SPLASH__ = {
+      minHold: MIN_HOLD, land: LAND,
+      readyAt: -1, waitMs: -1, landedAt: -1, handoffAt: -1
+    };
     var fill = boot.querySelector('.bs-fill');
     var tip = boot.querySelector('.bs-tip');
     var LINES = [
@@ -159,14 +180,28 @@
       clearInterval(barT); clearInterval(tipT);
       if (fill) fill.style.width = '100%';
       say('Make landfall');
+      S.landedAt = clock() - t0;
     }
 
+    /* main.js sets `done` the moment the world exists. Take the class straight
+       back off, serve out whatever is left of the minimum hold — the flavour
+       line keeps rotating and the bar keeps easing through it, so the screen
+       is never frozen — then land the bar and put the class back. */
     function watch() {
       if (handing || !boot.classList.contains('done')) return;
       handing = true;
-      boot.classList.remove('done');          // hold for the last beat
-      finish();
-      setTimeout(function () { boot.classList.add('done'); }, 430);
+      boot.classList.remove('done');
+      S.readyAt = clock() - t0;
+      var wait = MIN_HOLD - S.readyAt;
+      if (!(wait > 0)) wait = 0;
+      S.waitMs = wait;
+      setTimeout(function () {
+        finish();
+        setTimeout(function () {
+          S.handoffAt = clock() - t0;
+          boot.classList.add('done');
+        }, LAND);
+      }, wait);
     }
     if (typeof MutationObserver === 'function') {
       new MutationObserver(watch).observe(boot, {
