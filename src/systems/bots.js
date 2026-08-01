@@ -25,7 +25,7 @@ import { clampToIsland, MARKET } from '../board/layout.js';
 
 import { mulberry32, nearestItem, tileItemsRemaining, itemsByTile } from '../board/nodes.js';
 
-import { difficultyParams, LEVELS } from './difficulty.js';
+import { difficultyParams, LEVELS, RAMP_CEILING } from './difficulty.js';
 
 import {
   placeRoad, placeSettlement, upgradeCity, drawCard,
@@ -60,29 +60,74 @@ const STUCK_SEC = 2.2;
 const BLACKLIST_SEC = 9.0;
 const SETUP_FALLBACK_SEC = 3.5;    // only fires if matchflow.js never shows up
 
-/* Anti-stall, and the reason an easy match still ends inside five minutes.
+/* Anti-stall, and the reason even a barely-trying field still ends a match.
    A dawdling field grinds: everybody on ten or eleven points, nobody able to
-   close, and the clock runs into the soft cap. So from `level.rampFrom` the
-   rivals shed their handicap over RAMP_SPAN seconds and drift back toward
-   `hard`, going a shade beyond it if the match is still open RAMP_URGENT
-   seconds later.
+   close, and the clock runs into the soft cap.
+
+   The old version of this block clawed the entire handicap back at 210s and
+   dropped a full-strength `hard` rival on a human who was, at that exact
+   moment, finally catching up. It now does two separate things:
+
+     SOFT RAMP — from `level.rampFrom`, over RAMP_SPAN seconds, the rivals blend
+     toward `hard`. `hard` is itself a mild level now, and RAMP_WEIGHT holds the
+     *visible* knobs — run speed, raiding, the award chase — most of the way
+     back regardless. What the soft ramp really sharpens is the bookkeeping: it
+     stops them dithering, stops them wandering off, and shortens the patience
+     that flips the planner into "finish something". That is what converts a
+     stuck position into a finished match, and it costs the player almost no
+     perceived pressure.
+
+     PANIC — a genuine last resort, and the only thing in the build that still
+     plays like the retired Hard. It does not begin until RAMP_PANIC_SEC, by
+     which point the match has already overrun the three-to-five minutes it is
+     meant to take, and it lifts RAMP_WEIGHT out of the way as it goes so the
+     field is at full `RAMP_CEILING` strength by
+     RAMP_PANIC_SEC + RAMP_PANIC_SPAN, leaving a comfortable margin before
+     matchflow.js's stalemate net at MATCH_SOFT_CAP_SEC.
 
    Two things protect the player, who is always seat 0:
-     - on match point (within RAMP_SAFE_VP) they get RAMP_GRACE extra seconds
-       of dawdling rivals, so a beginner about to win is not chased down;
+     - on match point (within RAMP_SAFE_VP) BOTH ramps are held off for
+       RAMP_GRACE seconds, so a beginner about to win is never chased down;
      - if instead they are RAMP_PACE_VP or more off the pace a five-minute
-       match needs, the ramp comes forward by RAMP_EARLY and the thing gets
-       wrapped up rather than sprawling to seven minutes.
-   The ramp never applies to a seat running an explicit profile — see
-   `opts.profiles` — because a human does not get better at 4:00. */
-const RAMP_SPAN = 70;           // seconds from "still dawdling" to "playing hard"
+       match needs, the soft ramp comes forward by RAMP_EARLY.
+   Neither ramp applies to a seat running an explicit profile — see
+   `opts.profiles` — because a human does not get better at 4:00.
+
+   Measured over 120 matches per level (`tools/simulate.mjs --matches=60
+   --novice`, seeds 1 and 7): the share that reaches the stalemate net rather
+   than a 13-point win is 15% easy / 12% medium / 11% hard, against 12% / 5% /
+   0% before this pass. That is the price of a field this much weaker, and it is
+   paid in matches that finish on points at seven minutes rather than in matches
+   that hang. */
+const RAMP_SPAN = 80;           // seconds the soft ramp takes to run in
 const RAMP_SAFE_VP = 2;
-const RAMP_GRACE = 90;          // extra seconds when the player is on match point
-const RAMP_URGENT = 30;         // seconds past full ramp before rivals go sharper still
-const RAMP_MAX = 1.8;
+const RAMP_GRACE = 65;          // extra seconds when the player is on match point
+const RAMP_PANIC_GRACE = 1.0;   // ...of which the panic ramp honours this share
 const RAMP_PACE_SEC = 300;      // the pace a five-minute match would need
 const RAMP_PACE_VP = 3;         // how far off it the player has to be
-const RAMP_EARLY = 60;          // ...to bring the whole ramp forward this far
+const RAMP_EARLY = 55;          // ...to bring the soft ramp forward this far
+const RAMP_PANIC_SEC = 268;     // absolute clock at which "end this" takes over
+const RAMP_PANIC_SPAN = 50;     // ...reaching RAMP_CEILING this many seconds later
+
+/* How much of the distance to the target each knob is allowed to travel on the
+   SOFT ramp. Anything the player can see and feel — how fast a rival crosses
+   the island, how often the Raider lands on them, how hard the trophies are
+   chased — barely moves. Everything that only makes a bot stop wasting its own
+   time moves nearly all the way. Panic scales all of these toward 1. */
+const RAMP_WEIGHT = {
+  speed: 0.22, accel: 0.30,
+  replan: 0.85, hesitate: 0.90, pause: 0.90, actDelay: 0.85,
+  noise: 0.65, secondBest: 0.85, routeSlop: 0.70, tileSlop: 0.70,
+  wander: 1.00, wanderSec: 1.00,
+  hoard: 1.00,
+  trade: 0.70,
+  knight: 0.25, knightAim: 0.25, knightGap: 0.25,
+  // The trophy chase is worth two victory points and is most of how a stuck
+  // field finally closes; it is also the one "sharper" behaviour a player never
+  // feels as pressure, because it happens out on the road network.
+  award: 0.60, setupNoise: 0.00,
+  desperate: 1.00
+};
 
 /* Difficulty (src/systems/difficulty.js) scales almost everything below: how
    fast a rival runs, how long it stands about, how often it re-plans, how good
@@ -117,6 +162,8 @@ function moveWithSlide(p, nx, nz) {
 }
 
 const dist = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
+
+const clamp01 = v => (v > 1 ? 1 : v < 0 ? 0 : v);
 
 /** A random standing item on a hex — the sloppy alternative to `nearestItem`. */
 function randomItemOn(tileId, rand) {
@@ -190,68 +237,92 @@ export function createBots(state, world, opts = {}) {
 
   /* ---------------------------------------------------------- anti-stall */
 
-  /** 0 while the match is healthy, rising to RAMP_MAX if it drags. */
-  function rampK() {
-    // Where the ramp starts is itself part of the level: easy rivals dawdle for
-    // most of a match before they sharpen up, hard ones never need to.
-    if (state.phase !== 'play') return 0;
+  /**
+   * The two ramps, as a pair of 0..1 fractions.
+   *   `k` — the soft ramp, weighted by RAMP_WEIGHT, target `hard`.
+   *   `panic` — the last-resort blend toward RAMP_CEILING, which also lifts
+   *             RAMP_WEIGHT out of the way. Zero for the whole of any match
+   *             that ends anywhere near on time.
+   */
+  function rampAmounts() {
+    if (state.phase !== 'play') return { k: 0, panic: 0 };
     // Seat 0 is the player's chair (and the simulator's novice stand-in).
     const you = state.players[0];
     const yourVp = you ? scoreOf(state, you) : 0;
     const closing = yourVp >= VICTORY_POINTS - RAMP_SAFE_VP;
+    // Grace, not a veto: a player on match point gets an extra RAMP_GRACE
+    // seconds of dawdling rivals. If they still cannot close, the match has to
+    // end some time, so the ramp comes back.
+    const grace = closing ? RAMP_GRACE : 0;
+
     // A match nobody is winning should not be allowed to sprawl. If the player
     // is a long way off the pace needed for a five-minute match, the rivals
     // start sharpening earlier and it gets wrapped up.
     const pace = VICTORY_POINTS * (state.time / RAMP_PACE_SEC);
     const from = difficultyParams().rampFrom
       - (yourVp <= pace - RAMP_PACE_VP ? RAMP_EARLY : 0);
-    if (state.time <= from) return 0;
-    // Grace, not a veto: a player on match point gets an extra RAMP_GRACE
-    // seconds of dawdling rivals. If they still cannot close, the match has to
-    // end some time, so the ramp comes back.
-    const grace = closing ? RAMP_GRACE : 0;
-    let k = (state.time - from - grace) / RAMP_SPAN;
-    k = Math.min(1, Math.max(0, k));
-    // Last resort. Past RAMP_URGENT a match that still has not resolved gets
-    // rivals who are a shade sharper than `hard` — the only thing left that
-    // reliably stops a bad field from running into the soft cap.
-    const over = state.time - (from + RAMP_SPAN + RAMP_URGENT) - grace;
-    if (over > 0) k += Math.min(RAMP_MAX - 1, over / 90);
-    return k;
+    const k = clamp01((state.time - from - grace) / RAMP_SPAN);
+
+    const panic = clamp01(
+      (state.time - RAMP_PANIC_SEC - grace * RAMP_PANIC_GRACE) / RAMP_PANIC_SPAN);
+    return { k, panic };
   }
 
-  /** Blend a level toward `hard` — the shape of the ramp. */
-  function sharpen(d, k) {
-    if (k <= 0) return d;
+  /**
+   * Blend a level toward `hard` (soft) and then toward RAMP_CEILING (panic).
+   *
+   * Every knob travels `k * RAMP_WEIGHT[knob]` of the way to `hard`, so the
+   * things the player can feel stay handicapped even at full soft ramp; `panic`
+   * scales those weights toward 1 and pulls the result on toward the ceiling.
+   */
+  function sharpen(d, k, panic) {
+    if (k <= 0 && panic <= 0) return d;
     const H = LEVELS.hard;
     const out = { ...d };
     for (const key in H) {
       const a = d[key], h = H[key];
-      if (typeof a === 'number' && typeof h === 'number') {
-        out[key] = Math.max(0, a + (h - a) * k);
+      if (typeof a !== 'number' || typeof h !== 'number') continue;
+      const w = RAMP_WEIGHT[key] === undefined ? 1 : RAMP_WEIGHT[key];
+      // Panic un-caps the weight: at panic 1 every knob travels the full way.
+      const eff = w + (1 - w) * panic;
+      out[key] = Math.max(0, a + (h - a) * k * eff);
+    }
+    if (panic > 0) {
+      for (const key in RAMP_CEILING) {
+        const a = out[key], c = RAMP_CEILING[key];
+        if (typeof a !== 'number' || typeof c !== 'number') continue;
+        out[key] = Math.max(0, a + (c - a) * panic);
       }
     }
     // Sharpening always switches the endgame push on: a rival that is one point
-    // from winning and does not notice is exactly how a match stalls.
-    out.endgame = d.endgame || k > 0.35;
+    // from winning and does not notice is exactly how a match stalls. This is
+    // the one part of the soft ramp with real teeth, and it is also the part
+    // that costs the player nothing — it only stops a rival wasting a win.
+    out.endgame = d.endgame || k > 0.35 || panic > 0;
     // ...and shortens the patience that flips the planner into "take whatever
     // I can finish soonest", which is what converts a stuck position into a
     // finished match. Never to zero: a bot that only ever buys the cheapest
     // thing available buys roads forever and never scores.
-    out.desperate = Math.max(7, d.desperate * (1 - 0.55 * Math.min(1, k)));
+    const urge = Math.min(1, Math.max(k, panic));
+    out.desperate = Math.max(7, d.desperate * (1 - 0.6 * urge));
+    // A field that has to finish stops postponing purchases it can already
+    // afford, whatever level it is nominally playing at.
+    out.hoard = (d.hoard || 0) * (1 - urge);
     return out;
   }
 
   // Quantised so the blend is built a handful of times per match, not 60 times
   // a second per bot.
-  let rampQ = -1;
+  let rampQ = '';
   const rampCache = new Map();
-  function effectiveD(base, k) {
-    if (k <= 0) return base;
-    const q = Math.round(k * 20) / 20;
+  function effectiveD(base, k, panic) {
+    if (k <= 0 && panic <= 0) return base;
+    const qk = Math.round(k * 20) / 20;
+    const qp = Math.round(panic * 20) / 20;
+    const q = `${qk}/${qp}`;
     if (q !== rampQ) { rampQ = q; rampCache.clear(); }
     let v = rampCache.get(base.key);
-    if (!v) { v = sharpen(base, q); rampCache.set(base.key, v); }
+    if (!v) { v = sharpen(base, qk, qp); rampCache.set(base.key, v); }
     return v;
   }
 
@@ -320,7 +391,7 @@ export function createBots(state, world, opts = {}) {
     }
     let best = null;
     for (const o of ranked) {
-      const route = routeFor(b, o, avoidN);
+      const route = routeFor(b, o, avoidN, desperate);
       if (!route) continue;
       const score = desperate ? -route.eta : o.score - route.eta * 0.35;
       if (!best || score > best.score) best = { score, o, route };
@@ -353,10 +424,21 @@ export function createBots(state, world, opts = {}) {
   }
 
   /** How do we get from "want it" to "have it"? */
-  function routeFor(b, o, avoidN) {
+  function routeFor(b, o, avoidN, desperate = false) {
     const p = b.p;
     const cost = COST[o.kind];
-    if (canAfford(p.res, cost)) return { kind: 'ready', eta: travelEta(b, o) };
+    if (canAfford(p.res, cost)) {
+      // Sitting on the wood and brick for a settlement and going back out to
+      // collect more anyway is the most human thing a weak bot does, and it is
+      // the single biggest brake on how relentlessly a rival expands. The roll
+      // is per plan, so it postpones rather than forbids, and it is off the
+      // moment the bot has been stalled long enough to count as desperate.
+      if (!desperate && (b.d.hoard || 0) > 0 && b.rng() < b.d.hoard) {
+        const idle = planGather(state, p.id, null, p.x, p.z, avoidN, slopOf(b));
+        if (idle) return { kind: 'gather', eta: idle.eta, pick: idle.first };
+      }
+      return { kind: 'ready', eta: travelEta(b, o) };
+    }
 
     const g = planGather(state, p.id, cost, p.x, p.z, avoidN, slopOf(b));
     // Trading four wool for one ore is a learned move. Weak bots mostly do not
@@ -651,11 +733,11 @@ export function createBots(state, world, opts = {}) {
     // which is long after main.js built these brains, and may change it again
     // between matches without anything being rebuilt.
     const live = difficultyParams();
-    const k = rampK();
+    const { k, panic } = rampAmounts();
     for (const b of brains) {
       // A seat running an explicit profile — the simulator's novice stand-in
       // for a human — never ramps: people do not suddenly get better at 5:00.
-      b.d = b.profile ? difficultyParams(b.profile) : effectiveD(live, k);
+      b.d = b.profile ? difficultyParams(b.profile) : effectiveD(live, k, panic);
     }
 
     if (state.phase === 'setup') { driveSetup(step); return; }

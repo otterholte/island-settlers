@@ -378,11 +378,16 @@ export function createOverview(root, state, game) {
 
   /* A corner target is a ring rather than a disc, and stays hollow, because
      fifty-odd of them are legal at the opening of a draft and a field of solid
-     discs hides the terrain the player is trying to judge. It is now sized off
-     the hex spacing instead of a fixed floor — 0.38 of the distance between
-     neighbouring corners — which roughly doubles the old ring at 667x375 while
-     still leaving a clear gap between two of them. */
-  const targetR = () => Math.max(9, HEX_SIZE * proj.s * 0.38);
+     discs hides the terrain the player is trying to judge.
+
+     A previous pass roughly doubled these to 0.38 of the distance between
+     neighbouring corners, which at 667x375 put a 22px ring on a 29px corner
+     spacing — the rings all but touched and the board disappeared under them.
+     0.21 puts them back to about half that, so there is real hex between two
+     targets again. What the finger gets is unchanged: `pick()` below owns the
+     hit test and still claims a 52px-wide zone around every corner, nearest
+     wins, so shrinking the paint costs no tappability at all. */
+  const targetR = () => Math.max(6.5, HEX_SIZE * proj.s * 0.21);
 
   /** Legal targets: unmistakable, inviting, and never mistakable for a piece
       that is already on the board. */
@@ -440,16 +445,17 @@ export function createOverview(root, state, game) {
         const r = targetR();
 
         if (warm) {
-          // Expanding sonar halo, on the one under the finger only: fifty of
-          // them at once turned the island into a lattice.
-          ctx.globalAlpha = (1 - halo) * 0.85;
-          ctx.beginPath(); ctx.arc(x, y, r * (1.02 + halo * 0.9), 0, Math.PI * 2);
-          ctx.lineWidth = Math.max(1.6, r * 0.18);
+          // One expanding sonar ripple, on the one under the finger only, and
+          // kept close to the ring it comes off: a wide ripple on a small
+          // target is all ripple and no target.
+          ctx.globalAlpha = (1 - halo) * 0.8;
+          ctx.beginPath(); ctx.arc(x, y, r * (1.0 + halo * 0.45), 0, Math.PI * 2);
+          ctx.lineWidth = Math.max(1.4, r * 0.16);
           ctx.strokeStyle = '#ffe79a';
           ctx.stroke();
         }
 
-        const rr = r * (chosen ? 1.34 : (warm ? 1.12 : 1));
+        const rr = r * (chosen ? 1.22 : (warm ? 1.1 : 1));
         // Fifty-four corners are legal on the opening pick. Held a touch back
         // from full strength, they read as an invitation over the board rather
         // than a lattice on top of it.
@@ -461,7 +467,7 @@ export function createOverview(root, state, game) {
           ctx.fillStyle = 'rgba(255,238,190,.94)'; ctx.fill();
         }
         ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
-        ctx.lineWidth = Math.max(1.8, r * 0.24);
+        ctx.lineWidth = Math.max(1.5, r * 0.24);
         ctx.strokeStyle = 'rgba(20,12,4,.55)'; ctx.stroke();
         ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
         ctx.lineWidth = Math.max(1.4, r * 0.15) * (chosen ? 1.8 : 0.9 + 0.2 * beat);
@@ -481,17 +487,19 @@ export function createOverview(root, state, game) {
       ctx.restore();
     }
 
-    // The chosen corner: the piece itself, dropped on the spot, ringed and
-    // flagged. There is no mistaking it for one of the fifty invitations.
+    // The chosen corner: the piece itself, dropped on the spot, and one close
+    // ring plus the chevron to say so. It used to sit inside a halo twice its
+    // own width, which is what read as "several concentric gold rings"; the
+    // pip is the same size as a placed building now and the ring hugs it.
     if (sel !== null && mode !== 'place-robber' && mode !== 'place-road') {
       const n = intersections[sel];
       const x = PX(n.x), y = PY(n.z);
-      const r = Math.max(11, s * 1.15) * (mode === 'place-city' ? 1.22 : 1);
+      const r = Math.max(11, s * 1.05) * (mode === 'place-city' ? 1.22 : 1);
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, r * (2.0 + 0.14 * beat), 0, Math.PI * 2);
-      ctx.lineWidth = Math.max(2, r * 0.18);
-      ctx.strokeStyle = `rgba(255,201,60,${0.42 + 0.3 * beat})`;
+      ctx.arc(x, y, r * (1.4 + 0.09 * beat), 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(1.8, r * 0.15);
+      ctx.strokeStyle = `rgba(255,201,60,${0.5 + 0.28 * beat})`;
       ctx.stroke();
       ctx.globalAlpha = 0.98;
       paint.ownerPip(x, y, r, state.players[0].color, mode === 'place-city', true);

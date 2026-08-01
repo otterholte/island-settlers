@@ -698,8 +698,20 @@ export function createPainter(ctx, proj) {
     ctx.fillRect(x - k * 0.3, y + k * 0.05, k * 0.6, k * 0.95);
   }
 
-  /** Owner-coloured pip with the piece glyph on it. The human's pieces wear a
-      gold ring so "which of these is mine" is never a question. */
+  /**
+   * Owner-coloured pip with the piece glyph on it — and nothing else.
+   *
+   * The player's own pieces used to wear a gold outline, a gold halo ring and
+   * an extra tenth of radius on top. The player asked for all three to go:
+   * "I don't need that gold section for where my house is... I just wanted the
+   * actual blue circle a little bigger once it's placed on the map." So every
+   * pip on the board is now the same plain disc in its owner's colour, a size
+   * up from before, and the colour alone does the identifying — which is what
+   * the colour swatch in the right-hand rail is there to key.
+   *
+   * `mine` is kept in the signature because overview.js's placement preview
+   * calls through here; it no longer changes anything about the drawing.
+   */
   function ownerPip(x, y, r, col, city, mine) {
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = r * 0.9; ctx.shadowOffsetY = r * 0.34;
@@ -710,27 +722,23 @@ export function createPainter(ctx, proj) {
     ctx.lineWidth = r * 0.24; ctx.strokeStyle = col.light; ctx.stroke();
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.lineWidth = Math.max(2, r * 0.26);
-    ctx.strokeStyle = mine ? '#ffc93c' : 'rgba(8,18,30,.9)';
+    ctx.strokeStyle = 'rgba(8,18,30,.9)';
     ctx.stroke();
-    if (mine) {
-      ctx.beginPath(); ctx.arc(x, y, r * 1.28, 0, Math.PI * 2);
-      ctx.lineWidth = Math.max(1.4, r * 0.14);
-      ctx.strokeStyle = 'rgba(255,201,60,.5)'; ctx.stroke();
-    }
     const k = r * 0.56;
     if (city) castleGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
     else houseGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
   }
 
   function drawBuildings(state) {
-    const r = Math.max(9.5, proj.s * 0.9);
+    // A step up from the old 0.9 / 9.5px floor. With the gold gone the disc is
+    // the only thing carrying "a settlement stands here", so it has to be big
+    // enough to read at a glance on a 375px-tall phone.
+    const r = Math.max(11, proj.s * 1.05);
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
       const col = state.players[b.owner].color;
-      const mine = b.owner === 0;
-      ownerPip(PX(n.x), PY(n.z),
-        (b.type === 'city' ? r * 1.22 : r) * (mine ? 1.1 : 1),
-        col, b.type === 'city', mine);
+      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.22 : r,
+        col, b.type === 'city', b.owner === 0);
     }
   }
 

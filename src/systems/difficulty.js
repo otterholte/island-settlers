@@ -37,55 +37,77 @@ export const DEFAULT_DIFFICULTY = 'easy';
  *   routeSlop       chance of running at a random item rather than the nearest
  *   tileSlop        chance of working a random hex of theirs, not the best one
  *   wander/wanderSec chance per plan of ambling off and achieving nothing
+ *   hoard           chance of going back out to gather even though the thing
+ *                   is already affordable — the beginner who keeps collecting
+ *                   instead of spending, and the biggest single brake on how
+ *                   relentlessly a rival expands
  *   trade           willingness to route a purchase through a dock at all
  *   knight/knightAim/knightGap  how often the Raider flies and how well aimed
  *   endgame         whether the "one point from winning" VP rush applies
  *   award           multiplies the Longest Road / Largest Army chase
  *   setupNoise      randomness in the opening draft picks
  *   desperate       seconds of no progress before the bot takes any quick win
- *   rampFrom        match time at which bots.js starts winding the handicap
- *                   back off, so a slow field still finishes — see the
- *                   anti-stall block in bots.js
+ *   rampFrom        match time at which the SOFT anti-stall ramp in bots.js
+ *                   starts. It only sharpens a rival's bookkeeping — dithering,
+ *                   wandering, hoarding — and is weighted to leave run speed,
+ *                   raiding and the trophy chase nearly untouched, so easing is
+ *                   real for the whole match. The separate panic ramp, which is
+ *                   on a fixed clock, is the last resort. See bots.js.
+ *
+ * The whole ladder was moved down a rung after playtesting: the level that used
+ * to be Hard is gone, Hard is now roughly the old Medium, Medium is roughly the
+ * old Easy, and Easy is a long way below anything that shipped before. Nobody
+ * on this island is trying to win a tournament.
  */
 export const LEVELS = {
   easy: {
     key: 'easy',
     label: 'Easy',
-    blurb: 'Slow and clumsy',
-    speed: 0.64, accel: 0.72,
-    replan: 1.95, hesitate: 0.45, pause: 1.00, actDelay: 0.65,
-    noise: 2.8, secondBest: 0.32, routeSlop: 0.50, tileSlop: 0.40,
-    wander: 0.12, wanderSec: 2.4,
-    trade: 0.48,
-    knight: 0.32, knightAim: 0.22, knightGap: 21,
-    endgame: false, award: 0.65, setupNoise: 3.0, desperate: 22,
+    blurb: 'Barely trying',
+    // Half the run speed, a second of loitering before every build, and
+    // roughly a third of their affordable purchases postponed in favour of yet
+    // more gathering. A beginner still finding the thumbstick beats this field:
+    // the novice stand-in wins 96% of simulated matches against it.
+    speed: 0.52, accel: 0.60,
+    replan: 2.80, hesitate: 0.62, pause: 1.45, actDelay: 0.95,
+    noise: 3.8, secondBest: 0.48, routeSlop: 0.68, tileSlop: 0.58,
+    wander: 0.22, wanderSec: 3.2,
+    hoard: 0.30,
+    trade: 0.28,
+    knight: 0.14, knightAim: 0.10, knightGap: 32,
+    endgame: false, award: 0.45, setupNoise: 3.0, desperate: 26,
     rampFrom: 210
   },
   medium: {
     key: 'medium',
     label: 'Medium',
-    blurb: 'An even contest',
-    speed: 0.80, accel: 0.85,
-    replan: 1.55, hesitate: 0.28, pause: 0.60, actDelay: 0.35,
-    noise: 2.0, secondBest: 0.16, routeSlop: 0.28, tileSlop: 0.25,
-    wander: 0.06, wanderSec: 1.8,
-    trade: 0.70,
-    knight: 0.60, knightAim: 0.50, knightGap: 10,
-    endgame: true, award: 0.85, setupNoise: 2.0, desperate: 20,
-    rampFrom: 215
+    blurb: 'Slow and clumsy',
+    // Where Easy used to sit.
+    speed: 0.69, accel: 0.76,
+    replan: 2.00, hesitate: 0.42, pause: 0.95, actDelay: 0.55,
+    noise: 2.9, secondBest: 0.33, routeSlop: 0.52, tileSlop: 0.42,
+    wander: 0.13, wanderSec: 2.4,
+    hoard: 0.13,
+    trade: 0.46,
+    knight: 0.30, knightAim: 0.20, knightGap: 22,
+    endgame: false, award: 0.70, setupNoise: 3.0, desperate: 23,
+    rampFrom: 195
   },
   hard: {
     key: 'hard',
     label: 'Hard',
-    blurb: 'Fast and ruthless',
-    speed: 1.00, accel: 1.00,
-    replan: 1.00, hesitate: 0.00, pause: 0.00, actDelay: 0.00,
-    noise: 1.0, secondBest: 0.00, routeSlop: 0.00, tileSlop: 0.00,
-    wander: 0.00, wanderSec: 0.0,
-    trade: 1.00,
-    knight: 1.00, knightAim: 1.00, knightGap: 0,
-    endgame: true, award: 1.00, setupNoise: 1.0, desperate: 18,
-    rampFrom: 280
+    blurb: 'An even contest',
+    // Where Medium used to sit, shaded down a little further. Nothing in the
+    // build is as strong as the old Hard any more.
+    speed: 0.78, accel: 0.84,
+    replan: 1.60, hesitate: 0.28, pause: 0.62, actDelay: 0.38,
+    noise: 2.1, secondBest: 0.18, routeSlop: 0.28, tileSlop: 0.26,
+    wander: 0.06, wanderSec: 1.8,
+    hoard: 0.08,
+    trade: 0.68,
+    knight: 0.56, knightAim: 0.48, knightGap: 11,
+    endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
+    rampFrom: 180
   },
 
   /**
@@ -106,6 +128,7 @@ export const LEVELS = {
     replan: 2.40, hesitate: 0.45, pause: 1.00, actDelay: 0.55,
     noise: 3.0, secondBest: 0.30, routeSlop: 0.35, tileSlop: 0.30,
     wander: 0.14, wanderSec: 2.2,
+    hoard: 0.22,
     trade: 0.30,
     knight: 0.35, knightAim: 0.30, knightGap: 18,
     // The HUD tells a human when they are one point away, so they do get the
@@ -113,6 +136,25 @@ export const LEVELS = {
     endgame: true, award: 0.40, setupNoise: 3.0, desperate: 24,
     rampFrom: 9999
   }
+};
+
+/**
+ * NOT a difficulty either, and deliberately not in `LEVELS`: the profile the
+ * anti-stall ramp in bots.js blends toward once a match has run so long it has
+ * to be brought to an end. It is roughly the old Hard, and it is the only thing
+ * in the build that still plays that sharply — a player never meets it unless
+ * the clock is past five and a half minutes with nobody able to close.
+ */
+export const RAMP_CEILING = {
+  key: 'ceiling',
+  speed: 1.00, accel: 1.00,
+  replan: 1.00, hesitate: 0.00, pause: 0.00, actDelay: 0.00,
+  noise: 1.0, secondBest: 0.00, routeSlop: 0.00, tileSlop: 0.00,
+  wander: 0.00, wanderSec: 0.0,
+  hoard: 0.00,
+  trade: 1.00,
+  knight: 1.00, knightAim: 1.00, knightGap: 0,
+  endgame: true, award: 1.00, setupNoise: 1.0, desperate: 14
 };
 
 export const DIFFICULTY_LABEL = {
@@ -172,6 +214,6 @@ export function difficultyParams(key) {
 }
 
 export default {
-  DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty,
+  DIFFICULTY_ORDER, LEVELS, RAMP_CEILING, getDifficulty, setDifficulty,
   onDifficultyChange, difficultyParams
 };
