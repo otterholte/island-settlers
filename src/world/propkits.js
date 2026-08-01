@@ -99,34 +99,101 @@ export function broadleaf() {
 
 /*
  * ---------------------------------------------------------------------------
- * HARVEST SUB-UNITS
+ * FIELD ITEMS — the things you actually pick up
  * ---------------------------------------------------------------------------
- * A gather node holds NODE_CAPACITY (3) harvest cycles, and the player has to
- * SEE those three cycles come out of the ground. So a node is no longer one
- * object — it is three, and each cycle fells / shears / cuts / digs / cracks
- * exactly one of them. The kits below are therefore built at a third of the old
- * silhouette weight: three of them together read denser than the single hero
- * they replaced, for roughly the same triangles.
+ * A hex is FULL of its resource: ten items on a 2/12 hex, twenty-two on a 6/8,
+ * three hundred across the island. Every one of them is a separate instance you
+ * can run at, take, and see missing afterwards.
  *
- * Every one of them stands on y = 0 with its mass centred on the origin, so an
- * instance matrix can topple it about its own base.
+ * Which means the triangle budget per item is brutal. These kits run 16 to 28
+ * faces each — every cap that faces away from a 50-degree downward camera is
+ * dropped, filler volumes are 8-face octahedra, and nothing carries a detail
+ * you could not resolve at the twenty-pixel size an item actually draws at.
+ * Together the whole field costs about 6.6k triangles, less than half of what
+ * the 378 old node sub-units cost.
+ *
+ * Every one stands on y = 0 with its mass centred on the origin, so an instance
+ * matrix can punch it, spin it and collapse it about its own base.
  */
 
 /**
- * One tree of a three-tree copse — the harvestable forest node.  (23 tris)
+ * One harvestable tree.  (19 tris)
  *
- * Deliberately painted two full steps LIGHTER than the decorative spruces it
- * stands among (needleMid -> 0x76c94a rather than needle -> needleHi) and given
- * a pale trunk, because thirty-six dressing conifers per tile will otherwise
- * swallow the seven copses you are actually allowed to chop.
+ * Painted a clear step LIGHTER and warmer than the decorative spruces it stands
+ * among, so a hex of forty-five trees still separates into "the ones I can take"
+ * and "the backdrop" at a glance.
  */
-export function heroTree() {
+export function fieldTree() {
   const parts = [];
-  parts.push(place(cyl(0.14, 0.24, 1.10, 5, C.barkPale, true), 0, 0.55, 0));
-  parts.push(gradient(place(cone(0.84, 1.52, 7, C.needleMid, 0, true), 0, 1.42, 0),
+  parts.push(place(cyl(0.15, 0.24, 1.00, 4, C.barkPale, true), 0, 0.50, 0));
+  parts.push(gradient(place(cone(0.86, 1.50, 6, C.needleMid, 0, true), 0, 1.34, 0),
     C.needleMid, C.needleHi));
-  parts.push(gradient(place(cone(0.58, 1.26, 6, C.needleHi, 0, true), 0, 2.30, 0),
-    C.needleHi, 0x76c94a));
+  parts.push(gradient(place(cone(0.58, 1.20, 5, C.needleHi, 0, true), 0, 2.22, 0),
+    C.needleHi, 0x86dc55));
+  return merge(parts);
+}
+
+/**
+ * One sheep of the flock.  (40 tris)
+ *
+ * The fleece keeps its 20 faces. An octahedron body was a fifth cheaper and
+ * read as a white crystal shard sitting in the grass — and "exactly which sheep
+ * did I pick up" is not a question a crystal shard can answer. Head, ears and
+ * legs stay coarse.
+ */
+export function fieldSheep() {
+  const parts = [];
+  // Two overlapping fleece lumps, not one: a single icosahedron reads as a
+  // white boulder sitting in the grass, and "exactly which sheep did I pick up"
+  // is not a question a boulder can answer.
+  const body = ball(0.40, 0, C.wool);
+  place(body, 0, 0.58, 0, 0, 0, 0, 1.24, 0.94, 1.02);
+  parts.push(gradient(body, 0xbfb6a0, C.wool));
+  parts.push(gradient(place(blob(0.30, C.wool), -0.30, 0.70, 0.02), 0xbfb6a0, C.wool));
+  // a dark head held well clear of the fleece — the one feature that separates
+  // a sheep from a rock at twenty pixels
+  const head = blob(0.24, C.face);
+  place(head, 0.62, 0.48, 0, 0, 0, 0.24, 1.15, 1.05, 0.88);
+  parts.push(head);
+  parts.push(place(box(0.52, 0.44, 0.28, C.face), 0.02, 0.22, 0));
+  return merge(parts);
+}
+
+/** One standing bundle of wheat — four blades and three fat ears.  (17 tris) */
+export function fieldWheat() {
+  const parts = [];
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.62;
+    const x = Math.cos(a) * 0.13, z = Math.sin(a) * 0.13;
+    const h = 0.92 + (i % 2) * 0.22;
+    const b = blade(0.24, h, C.wheat, C.wheatHi, 0.18, 1);
+    place(b, x, 0, z, 0, a, 0.12);
+    parts.push(b);
+    if (i < 3) {
+      const ear = cone(0.15, 0.46, 3, C.wheatHi, 0, true);
+      place(ear, x + 0.02, h + 0.04, z, 0, a, 0.15);
+      parts.push(gradient(ear, C.wheat, C.wheatHi));
+    }
+  }
+  return merge(parts);
+}
+
+/** One clay working — a dug heap of spoil with a moulded brick on it. (20 tris) */
+export function fieldClay() {
+  const parts = [];
+  parts.push(gradient(place(cone(0.62, 0.52, 6, C.clay), 0, 0.25, 0), C.clay, C.clayHi));
+  parts.push(place(blob(0.24, C.brick), 0.42, 0.16, 0.20, 0, 0.6, 0, 1.3, 0.7, 1.0));
+  return merge(parts);
+}
+
+/** One crystal-bearing chunk of ore.  (16 tris) */
+export function fieldOre() {
+  const parts = [];
+  parts.push(place(rock(0.52, 0, C.slate, 0.34, 41, true), 0, 0.34, 0));
+  const g = new THREE.OctahedronGeometry(0.19, 0);
+  tint(g, C.oreGlint);
+  place(g, 0.02, 0.64, 0.04, 0.2, 0.6, 0.25, 1, 2.3, 1);
+  parts.push(g);
   return merge(parts);
 }
 
@@ -139,8 +206,8 @@ export function heroTree() {
  * pixels across, and nobody has ever counted the sides of one.
  */
 export function stump() {
-  const g = cyl(0.30, 0.40, 0.44, 5, C.barkDark);
-  place(g, 0, 0.22, 0);
+  const g = cyl(0.34, 0.46, 0.54, 5, C.barkDark);
+  place(g, 0, 0.27, 0);
   return gradient(g, C.barkDark, C.barkPale);
 }
 
@@ -244,21 +311,6 @@ export function wheatTuft() {
   return merge(parts);
 }
 
-/** One standing sheaf of a three-sheaf wheat node.  (33 tris) */
-export function wheatSheaf() {
-  const parts = [];
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI * 2;
-    const st = cyl(0.06, 0.09, 1.18, 3, C.wheat, true);
-    place(st, Math.cos(a) * 0.13, 0.59, Math.sin(a) * 0.13,
-      Math.sin(a) * 0.17, 0, -Math.cos(a) * 0.17);
-    parts.push(gradient(st, C.wheat, C.wheatHi));
-  }
-  parts.push(place(cyl(0.26, 0.23, 0.13, 5, 0x9c6f2c, true), 0, 0.52, 0));
-  parts.push(gradient(place(cone(0.38, 0.56, 5, C.wheatHi, 0, true), 0, 1.30, 0), C.wheat, C.wheatHi));
-  return merge(parts);
-}
-
 /** (44 tris) */
 export function hayBale() {
   const parts = [];
@@ -297,22 +349,6 @@ export function spire() {
   return merge(parts);
 }
 
-/** One crystal-bearing chunk of a three-chunk ore seam.  (32 tris) */
-export function oreRock() {
-  const parts = [];
-  parts.push(place(rock(0.50, 0, C.slate, 0.32, 41, true), 0, 0.34, 0));
-  parts.push(place(rock(0.28, 0, C.slateHi, 0.40, 47, true), 0.44, 0.18, -0.20));
-  const crystal = (x, y, z, r, h, c) => {
-    const g = new THREE.OctahedronGeometry(r, 0);
-    tint(g, c);
-    place(g, x, y, z, 0.2, 0.6, 0.25, 1, h / r, 1);
-    parts.push(g);
-  };
-  crystal(0.02, 0.62, 0.08, 0.16, 0.40, C.oreGlint);
-  crystal(-0.26, 0.44, -0.10, 0.11, 0.26, C.gold);
-  return merge(parts);
-}
-
 /* ----------------------------------------------------------------- clay */
 
 /** Hill-country clay works: dug mound, brick pallet, plank.  (~88 tris) */
@@ -330,39 +366,7 @@ export function clayWorks() {
   return merge(parts);
 }
 
-/** One working of a three-working clay pit: hollow, spoil heap, brick. (37 tris) */
-export function clayPit() {
-  const parts = [];
-  parts.push(gradient(place(cyl(0.46, 0.62, 0.24, 5, 0x8a4322), 0, 0.12, 0), 0x6f3419, C.clay));
-  parts.push(gradient(place(cone(0.34, 0.42, 5, C.clayHi, 0, true), 0.58, 0.20, 0.30), C.clay, C.clayHi));
-  parts.push(place(box(0.30, 0.13, 0.18, C.brick), -0.48, 0.07, 0.30, 0, 0.5, 0));
-  return merge(parts);
-}
-
 /* ---------------------------------------------------------------- pasture */
-
-/**
- * One sheep of a three-sheep flock. Three per pasture node means twenty-one
- * animals on a pasture tile and one of them bolting away every harvest cycle,
- * which is the whole point. At the play camera a sheep is about ten pixels
- * tall, so the ears and the icosphere fleece the old model carried were paying
- * for detail nobody could resolve.  (60 tris)
- */
-export function sheep() {
-  const parts = [];
-  const body = ball(0.42, 0, C.wool);
-  place(body, 0, 0.50, 0, 0, 0, 0, 1.25, 0.95, 0.95);
-  parts.push(gradient(body, C.woolShade, C.wool));
-  parts.push(gradient(place(blob(0.26, C.wool), -0.30, 0.64, 0.04), C.woolShade, C.wool));
-  const head = blob(0.20, C.face);
-  place(head, 0.56, 0.58, 0, 0, 0, 0.2, 1.1, 0.95, 0.85);
-  parts.push(head);
-  for (const [x, z] of [[0.28, 0.17], [0.28, -0.17], [-0.22, 0.17], [-0.22, -0.17]]) {
-    parts.push(place(cyl(0.05, 0.045, 0.32, 3, C.face, true), x, 0.16, z));
-  }
-  return merge(parts);
-}
-
 /** (36 tris) */
 export function fence() {
   const parts = [];
@@ -442,8 +446,9 @@ export function timberPile() {
 }
 
 export default {
-  conifer, coniferShort, broadleaf, heroTree, stump, deadwood,
-  undergrowth, grassTuft, flowerTuft, wheatTuft, wheatSheaf, hayBale,
-  smallRock, boulder, spire, oreRock, clayWorks, clayPit,
-  sheep, fence, crateStack, mineEntrance, oreCart, railSegment, timberPile
+  conifer, coniferShort, broadleaf, stump, deadwood,
+  undergrowth, grassTuft, flowerTuft, wheatTuft, hayBale,
+  smallRock, boulder, spire, clayWorks, fence,
+  fieldTree, fieldSheep, fieldWheat, fieldClay, fieldOre,
+  crateStack, mineEntrance, oreCart, railSegment, timberPile
 };

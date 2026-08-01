@@ -26,6 +26,7 @@ import {
 import { grainTexture, tokenAtlas, DISC_FRAC } from './paint.js';
 import { hexBorderGeometry } from './borders.js';
 import { merge, triCount } from './geo.js';
+import { applyMood, syncMood, moodAttrFromPositions } from './mood.js';
 import { pipsFor } from '../core/constants.js';
 
 const GRID_R = 54;       // ground mesh reaches this far from the island centre
@@ -410,10 +411,20 @@ export function buildIsland(scene) {
   // The hex-border beams and corner posts fold straight into the ground mesh:
   // same material, same planar UVs, zero extra draw calls.
   const groundGeo = merge([buildGround(), hexBorderGeometry()]);
-  const groundMat = new THREE.MeshLambertMaterial({
+  /*
+   * The single loudest answer to "which hexes can I use?". Each ground vertex
+   * carries the hex it belongs to and how strongly that hex owns it (fading to
+   * nothing across the tan road strip), and the shared mood shader crushes the
+   * terrain of every hex you may not work to near-monochrome while lifting the
+   * ones you may. It is the same injection the trees, the flock and the
+   * boulders use, so the ground and the things standing on it can never
+   * disagree — and it costs one 19x1 texture fetch in the vertex stage.
+   */
+  groundGeo.setAttribute('aMood', moodAttrFromPositions(groundGeo));
+  const groundMat = applyMood(new THREE.MeshLambertMaterial({
     vertexColors: true,
     map: grain
-  });
+  }));
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.name = 'ground';
   ground.castShadow = true;
@@ -479,6 +490,7 @@ export function buildIsland(scene) {
 
     update(dt, camera) {
       time += dt;
+      syncMood();
       tokens.uniforms.uTime.value = time;
       if (camera) tokens.uniforms.uCam.value.copy(camera.position);
     },

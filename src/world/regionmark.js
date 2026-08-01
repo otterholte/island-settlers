@@ -1,28 +1,31 @@
 /**
- * Island Settlers — the region badge.
+ * Island Settlers — the RECOVERY CLOCK over a worked-out hex.
  *
  *   buildMarkers(list, atlas) -> { mesh, geo, mat, quad, aPos, aData, aCol,
  *                                  aSize, aOwn, triangles }
  *   markerAtlas() -> THREE.CanvasTexture | null
  *
- * One shader-driven quad per hex, floating overhead on a pointer tail. The
- * board used to badge every region all the time and the screen turned into a
- * noticeboard, so a badge now appears only when it has something to say:
+ * One shader-driven quad per hex, floating overhead on a pointer tail. It is
+ * silent almost all of the time. It has exactly two things to say:
  *
- *   YOURS       cream face inside a thick rim in YOUR colour, an outer halo,
- *               a segmented ring showing what is still standing, and the
- *               ownership multiplier — x2 for a settlement, x3 for a city —
- *               painted big in the middle. This is the "these are your
- *               high-yield regions" read.
- *   WORKED OUT  ash face, oxblood rim, and an ember arc sweeping round as the
- *               region counts itself back in, with the SECONDS LEFT painted in
- *               the middle. Readable across the island.
- *   BLOCKED     the Raider has the region shut: ash face, a barred glyph.
- *   ANYTHING ELSE — silent. No badge at all.
+ *   WORKED OUT  ash face, oxblood rim, a THICK ember arc sweeping all the way
+ *               round as the hex counts itself back in, and the seconds left
+ *               painted across the middle in a numeral you can read from the
+ *               far side of the island. This is the player's own brief:
+ *
+ *                 "it has a timer bar or circle above it, showing the visual of
+ *                  when it will be restored ... if you cut all of the trees
+ *                  down, you have to wait for them all to grow again."
+ *
+ *   BLOCKED     the Raider has the hex shut: ash face, a barred glyph.
+ *
+ * The x2 / x3 ownership badges are GONE. Ownership is a hard gate now, not a
+ * multiplier, and the player asked for the badges to go with it — the hexes you
+ * own are said by the ground and the light, not by a floating number.
  *
  * All nineteen ride ONE InstancedBufferGeometry — a plain Mesh, not an
- * InstancedMesh, because the badge billboards itself in view space and has no
- * use for an instanceMatrix. One draw call, 38 triangles, no shadow pass.
+ * InstancedMesh, because the badge billboards in view space and has no use for
+ * an instanceMatrix. One draw call, 38 triangles, no shadow pass.
  *
  * Owner: World agent.
  */
@@ -48,12 +51,14 @@ function texture(w, h, paint) {
   return t;
 }
 
-const GRID = 5, CELL = 128;
+/* The longest a hex ever stays bare is TILE_REGEN[1] = 64s, so the atlas holds
+   0..64 as painted numerals with room to spare. 9x9 cells at 112px. */
+const GRID = 9, CELL = 112;
+const MAX_SEC = 64;
 
 /** Atlas cell indices the region layer asks for by name. */
-export const GLYPH = { blocked: 21, sprout: 22, mult2: 23, mult3: 24 };
+export const GLYPH = { blocked: 65, lock: 66, none: 67 };
 
-/** 0..20 as painted numerals, a barred glyph, a sprout, and x2 / x3. */
 export function markerAtlas() {
   return texture(CELL * GRID, CELL * GRID, (ctx, w, h) => {
     ctx.clearRect(0, 0, w, h);
@@ -71,47 +76,39 @@ export function markerAtlas() {
 
     const stroked = (label, size) => {
       ctx.font = `900 ${size}px system-ui, sans-serif`;
-      ctx.strokeStyle = '#fff6dc'; ctx.lineWidth = 20;
-      ctx.strokeText(label, 0, 3);
-      ctx.fillStyle = '#241505';
-      ctx.fillText(label, 0, 3);
+      ctx.strokeStyle = '#fff3d0'; ctx.lineWidth = 18;
+      ctx.strokeText(label, 0, 2);
+      ctx.fillStyle = '#1d1006';
+      ctx.fillText(label, 0, 2);
     };
 
-    for (let n = 0; n <= 20; n++) {
+    for (let n = 0; n <= MAX_SEC; n++) {
       const label = String(n);
-      cell(n, () => stroked(label, label.length > 1 ? 82 : 100));
+      cell(n, () => stroked(label, label.length > 1 ? 72 : 90));
     }
 
-    // 21 — barred: the Raider has this region shut
+    // barred — the Raider has this hex shut
     cell(GLYPH.blocked, () => {
-      ctx.strokeStyle = '#fff6dc'; ctx.lineWidth = 30; ctx.lineCap = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#fff3d0'; ctx.lineWidth = 28;
       for (const s of [-1, 1]) {
-        ctx.beginPath(); ctx.moveTo(-36 * s, -36); ctx.lineTo(36 * s, 36); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-30 * s, -30); ctx.lineTo(30 * s, 30); ctx.stroke();
       }
-      ctx.strokeStyle = '#241505'; ctx.lineWidth = 17;
+      ctx.strokeStyle = '#1d1006'; ctx.lineWidth = 16;
       for (const s of [-1, 1]) {
-        ctx.beginPath(); ctx.moveTo(-36 * s, -36); ctx.lineTo(36 * s, 36); ctx.stroke();
-      }
-    });
-
-    // 22 — a sprout: "this place still has something standing"
-    cell(GLYPH.sprout, () => {
-      ctx.translate(0, 12);
-      ctx.strokeStyle = '#241505'; ctx.lineWidth = 13; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(0, 40); ctx.lineTo(0, -18); ctx.stroke();
-      ctx.fillStyle = '#241505';
-      for (const s of [-1, 1]) {
-        ctx.beginPath();
-        ctx.moveTo(0, -6);
-        ctx.quadraticCurveTo(s * 44, -22, s * 30, -50);
-        ctx.quadraticCurveTo(s * 12, -40, 0, -22);
-        ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(-30 * s, -30); ctx.lineTo(30 * s, 30); ctx.stroke();
       }
     });
 
-    // 23 / 24 — the ownership multiplier, the whole point of the owned badge
-    cell(GLYPH.mult2, () => stroked('×2', 78));
-    cell(GLYPH.mult3, () => stroked('×3', 78));
+    // a padlock — "you own no corner of this hex"
+    cell(GLYPH.lock, () => {
+      ctx.strokeStyle = '#1d1006'; ctx.lineWidth = 13; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(0, -14, 20, Math.PI, 0); ctx.stroke();
+      ctx.fillStyle = '#1d1006';
+      ctx.beginPath(); ctx.rect(-28, -12, 56, 44); ctx.fill();
+      ctx.fillStyle = '#fff3d0';
+      ctx.beginPath(); ctx.arc(0, 8, 7, 0, Math.PI * 2); ctx.fill();
+    });
   });
 }
 
@@ -135,14 +132,15 @@ export function buildMarkers(list, atlas) {
   geo.setAttribute('aCol', aCol);
   geo.setAttribute('aSize', aSize);
   geo.setAttribute('aOwn', aOwn);
-  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6, 0), 200);
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6, 0), 220);
 
   const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: false,
     uniforms: {
       uAtlas: { value: atlas },
       uHasAtlas: { value: atlas ? 1 : 0 },
-      uOwn: { value: new THREE.Color(0x3b7fd4) },
+      uGrid: { value: GRID },
+      uOwn: { value: new THREE.Color(0x7fb2f0) },
       uTime: { value: 0 }
     },
     vertexShader: /* glsl */`
@@ -165,7 +163,7 @@ export function buildMarkers(list, atlas) {
     fragmentShader: /* glsl */`
       uniform sampler2D uAtlas;
       uniform vec3 uOwn;
-      uniform float uHasAtlas, uTime;
+      uniform float uHasAtlas, uTime, uGrid;
       varying vec2 vQ;
       varying vec4 vData;
       varying vec3 vCol;
@@ -175,74 +173,66 @@ export function buildMarkers(list, atlas) {
       void main() {
         float alpha = vData.y;
         if (alpha < 0.005) discard;
+        float progress = vData.x;     // 0 = just cleared, 1 = back
         float spent = vData.z;
-        float own = vOwn;
+        float cell = vData.w;
+
         // Disc in the top two thirds of the quad, a long pointer tail below it.
-        // The tail is what ties the badge to the hex it is talking about: at
-        // this camera pitch a floating disc on its own reads as belonging to
-        // whichever tile happens to be behind it.
         vec2 q = vQ * 2.0 - 1.0;
-        vec2 p = vec2(q.x, q.y - 0.30) / 0.66;
+        vec2 p = vec2(q.x, q.y - 0.28) / 0.68;
+        float d = length(p);
 
         vec3 col = vec3(0.0);
         float a = 0.0;
-        float d = length(p);
 
-        vec3 dark = mix(vec3(0.075, 0.048, 0.028), vec3(0.34, 0.09, 0.05), spent);
-        dark = mix(dark, uOwn * 0.92, own);
-        vec3 face = mix(vec3(0.965, 0.906, 0.776), vec3(0.615, 0.62, 0.65), spent);
+        vec3 dark = mix(vec3(0.075, 0.048, 0.028), vec3(0.30, 0.055, 0.035), spent);
+        vec3 face = mix(vec3(0.955, 0.900, 0.760), vec3(0.365, 0.355, 0.360), spent);
 
-        // ---- owner halo, outside the body
-        if (own > 0.01) {
-          float glow = smoothstep(1.30, 0.98, d) * (0.60 + 0.40 * sin(uTime * 2.2));
-          col = uOwn;
-          a = glow * 0.34 * own;
+        // ---- a breathing halo so a worked-out hex is findable across the board
+        {
+          float pulse = 0.62 + 0.38 * sin(uTime * 3.0);
+          float glow = smoothstep(1.42, 1.00, d) * pulse;
+          col = mix(uOwn, vCol, spent);
+          a = glow * (0.20 + 0.34 * spent);
         }
 
         // ---- pointer tail
-        float ty = (-q.y - 0.30) / 0.70;
-        if (ty > 0.0 && ty < 1.0 && abs(q.x) < 0.19 * (1.0 - ty * ty * 0.85)) {
-          col = mix(dark, dark * 1.6, ty);
-          a = 1.0 - ty * 0.25;
+        float ty = (-q.y - 0.28) / 0.72;
+        if (ty > 0.0 && ty < 1.0 && abs(q.x) < 0.17 * (1.0 - ty * ty * 0.85)) {
+          col = mix(dark, dark * 1.7, ty);
+          a = 1.0 - ty * 0.22;
         }
 
         // ---- badge body
         float body = smoothstep(1.00, 0.955, d);
-        float inner = smoothstep(0.855, 0.815, d);
+        float inner = smoothstep(0.740, 0.700, d);
         col = mix(col, dark, body);
         a = max(a, body);
         col = mix(col, face, inner);
-
-        // top bevel so it reads as a chunky physical tab
-        float bev = inner * smoothstep(0.10, 0.60, p.y) * 0.30;
+        float bev = inner * smoothstep(0.10, 0.60, p.y) * 0.26;
         col = mix(col, vec3(1.0), bev);
 
-        // ---- the ring
-        float ann = smoothstep(0.520, 0.560, d) * smoothstep(0.815, 0.775, d);
+        // ---- THE CLOCK. A thick arc sweeping a full turn as the hex comes
+        // back: the whole point of the badge, so it gets the whole annulus
+        // between the face and the rim rather than a thin hairline.
+        float ann = smoothstep(0.700, 0.735, d) * smoothstep(0.965, 0.930, d);
         if (ann > 0.001) {
           float t = fract(atan(p.x, p.y) / TAU);
-          // The unlit track is always dark: a cream track under a mid-green
-          // resource colour gave a segmented ring you could not count.
-          vec3 track = mix(vec3(0.20, 0.15, 0.10), vec3(0.26, 0.20, 0.18), spent);
-          if (spent > 0.5) {
-            float lit = step(t, vData.x);
-            float head = smoothstep(0.040, 0.0, abs(t - vData.x));
-            col = mix(col, mix(mix(track, vCol, lit), vec3(1.0), head * 0.85), ann);
-          } else {
-            float fr = fract(t * 7.0);
-            float gap = step(0.10, fr) * step(fr, 0.90);
-            float lit = step(floor(t * 7.0) + 0.5, vData.x * 7.0) * gap;
-            col = mix(col, mix(track, vCol, lit), ann * max(gap, 0.5));
-          }
+          vec3 track = vec3(0.16, 0.12, 0.09);
+          float lit = step(t, progress);
+          float head = smoothstep(0.035, 0.0, abs(t - progress));
+          vec3 arc = mix(track, vCol, lit);
+          arc = mix(arc, vec3(1.0), head * 0.9);
+          col = mix(col, arc, ann);
+          a = max(a, ann * 0.98);
         }
 
-        // ---- centre glyph
-        if (uHasAtlas > 0.5) {
-          vec2 g2 = p / 0.80 + 0.5;
+        // ---- centre glyph: the seconds left, or the barred / locked mark
+        if (uHasAtlas > 0.5 && cell >= 0.0) {
+          vec2 g2 = p / 0.86 + 0.5;
           if (g2.x > 0.0 && g2.x < 1.0 && g2.y > 0.0 && g2.y < 1.0) {
-            float cell = vData.w;
-            vec2 c = vec2(mod(cell, 5.0), floor(cell / 5.0));
-            vec2 uvv = vec2(c.x / 5.0, 1.0 - (c.y + 1.0) / 5.0) + g2 / 5.0;
+            vec2 c = vec2(mod(cell, uGrid), floor(cell / uGrid));
+            vec2 uvv = vec2(c.x / uGrid, 1.0 - (c.y + 1.0) / uGrid) + g2 / uGrid;
             vec4 g = texture2D(uAtlas, uvv);
             col = mix(col, g.rgb, g.a);
             a = max(a, g.a * body);
@@ -262,7 +252,8 @@ export function buildMarkers(list, atlas) {
   mesh.frustumCulled = false;
   mesh.castShadow = false;
   mesh.receiveShadow = false;
-  return { mesh, geo, mat, quad, aPos, aData, aCol, aSize, aOwn, triangles: n * 2 };
+  return { mesh, geo, mat, quad, aPos, aData, aCol, aSize, aOwn, triangles: n * 2, MAX_SEC };
 }
 
+export { MAX_SEC };
 export default buildMarkers;

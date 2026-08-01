@@ -5,46 +5,49 @@
  *
  * This file owns the DRESSING: layered forests, undergrowth, fallen logs,
  * boulders, wheat fields, fences, hay, crates, clay works, rock spires, mine
- * portals, ore carts and rails — three to five times as much scenery as there
- * are harvestable nodes.
+ * portals, ore carts and rails — the backdrop the harvestable field stands in.
  *
- * The 126 gather nodes themselves live in `nodelife.js` (three sub-units each,
- * one per harvest cycle, that visibly topple / bolt / get cut / get dug out and
- * then regrow) and their "you can pick this up" affordances live in
- * `gatherfx.js`. The REGION-scale read — worked ground, the dressing answering
- * to the harvest, the exhausted badge with its recovery countdown and the
- * regrowth beat — lives in `regions.js` / `regionmark.js`. All of them build
- * into this group and share these materials.
+ * The FIELD itself — the three hundred trees, sheep, clay heaps, wheat bundles
+ * and ore chunks you actually run over and pick up — lives in `nodelife.js`,
+ * and the hit that fires the instant one leaves the world lives in
+ * `gatherfx.js`. The hex-scale read (whose hex is this, worked ground, the
+ * dressing answering to the sweep, the recovery clock and the regrowth beat)
+ * lives in `regions.js` / `regionmark.js` / `stand.js`, and the drastic
+ * owned-versus-off-limits tint that paints all of them at once lives in
+ * `mood.js`. All of it builds into this group and shares these materials.
  *
- * Everything is an InstancedMesh sharing four materials, so ~1795 instanced
- * dressing pieces plus a baked static batch plus the 378 node sub-units plus
- * the whole region layer cost twenty draw calls in total. Foliage sways in a
- * vertex-shader wind injected through onBeforeCompile; only the animated nodes
- * and the dressing currently answering a harvest rewrite instance matrices.
+ * Everything is an InstancedMesh sharing four materials, so ~1500 instanced
+ * dressing pieces plus a baked static batch plus the 300 field items plus the
+ * whole region layer cost about twenty draw calls in total. Foliage sways in a
+ * vertex-shader wind injected through onBeforeCompile; only the items currently
+ * being taken and the dressing answering a sweep rewrite instance matrices.
  *
  * Placement rule: dressing is kept to hexFrac <= 0.78 so the tan border strip
- * (hexFrac 0.81 -> 1.00) stays clear for the structures agent's roads.
+ * (hexFrac 0.81 -> 1.00) stays clear for the structures agent's roads, and it
+ * is kept clear of every field item so nothing sprouts through a sheep.
  */
 
 import * as THREE from 'three';
 import { HEX_SIZE } from '../core/constants.js';
 import { tiles, MARKET, SPAWNS } from '../board/layout.js';
-import { nodesByTile, mulberry32 } from '../board/nodes.js';
+import { tileItems, mulberry32 } from '../board/nodes.js';
 import { heightAt, hexFrac, normalAt, PROP_MAX_FRAC } from './terrain.js';
 import { instanced, setInstance, triCount, merge } from './geo.js';
 import * as K from './propkits.js';
-import { buildNodeLife } from './nodelife.js';
-import { buildGatherFX } from './gatherfx.js';
+import { buildField } from './nodelife.js';
+import { buildPickupFX } from './gatherfx.js';
 import { buildRegions } from './regions.js';
 import { countFellable } from './stand.js';
+import { applyMood, syncMood, moodAttrFromList, moodAttrFromPositions } from './mood.js';
 
 /*
  * Dressing kits that are part of the STAND, not scenery around it. Every
  * instance of these joins its region's harvest pool in `stand.js` and topples /
  * gets cropped / goes straw-coloured as the region is worked, choosing which
- * ones by how close they are to the settler who swung. A forest tile therefore
- * clears along the path you walked and ends up as stumps, not as a full forest
- * with seven gaps in it. Nothing is deleted and no count changes — it is
+ * ones by how close they are to the settler who swept them. A forest tile
+ * therefore clears along the path you actually walked and ends up as a stump
+ * field, not as a full forest with twenty gaps in it where the harvestable
+ * trees used to be. Nothing is deleted and no count changes — it is
  * instance matrices and instance colours only, and it all reverses when the
  * region grows back. Baked (STATIC_MERGE) kits cannot animate, which is why
  * fences, clay works and mine portals stay put: they are the works, not the
@@ -120,27 +123,30 @@ const STATIC_KITS = {
   timber:       { make: K.timberPile,   mat: 'solid', cast: true }
 };
 
-/* Per-tile dressing recipe. Counts are per tile of that terrain. A forest tile
-   carries 18 + 11 + 7 = 36 standing trees on top of its 21 harvestable ones,
-   which is what makes the hex read as a solid stand rather than as scattered
-   copses — and all 57 of them come down over the region's 21 harvest events.
+/* Per-tile dressing recipe. Counts are per tile of that terrain.
  *
- * The OFF-TERRAIN entries have been culled. A clay hill with spruces, fences
- * and crates on it, a mountain with packing crates, a wheat field with a
- * broadleaf in it: each of those was a second silhouette competing with the
- * one thing the hex is supposed to say. Density on the terrain's own kit is
- * untouched; the visitors are gone, so each hex now groups as one idea. */
+ * These are all a third down on what they were, because the hex is no longer
+ * seven sparse copses in a sea of scenery — it now carries ten to twenty-two
+ * REAL, takeable items of its own. A forest tile stands about twenty
+ * harvestable trees plus twenty-five decorative ones: still a solid canopy, but
+ * the majority of it is now the thing you came for, which is the entire point.
+ * Every backdrop conifer you cannot chop is a triangle spent lying to the
+ * player about what they are allowed to touch.
+ *
+ * The OFF-TERRAIN entries stay culled. A clay hill with spruces on it, a
+ * mountain with packing crates, a wheat field with a broadleaf: each was a
+ * second silhouette competing with the one thing the hex is supposed to say. */
 const RECIPE = {
-  forest:    { conifer: 24, coniferShort: 15, broadleaf: 8, deadwood: 5,
-               undergrowth: 16, grass: 34, rockSmall: 5 },
-  fields:    { wheat: 118, hay: 3, fence: 6, crate: 2, grass: 8,
+  forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
+               undergrowth: 12, grass: 26, rockSmall: 3 },
+  fields:    { wheat: 92, hay: 3, fence: 6, crate: 2, grass: 8,
                rockSmall: 2, undergrowth: 3 },
-  pasture:   { grass: 58, flower: 14, fence: 4, undergrowth: 8, rockSmall: 4,
+  pasture:   { grass: 56, flower: 14, fence: 4, undergrowth: 6, rockSmall: 3,
                broadleaf: 2, hay: 2 },
-  hills:     { clayWorks: 5, rockSmall: 14, boulder: 7, grass: 24,
-               undergrowth: 6, crate: 2, deadwood: 1 },
-  mountains: { spire: 7, boulder: 8, rockSmall: 14, conifer: 3, coniferShort: 2,
-               grass: 10, timber: 3 },
+  hills:     { clayWorks: 3, rockSmall: 14, boulder: 7, grass: 24,
+               undergrowth: 5, crate: 2, deadwood: 1 },
+  mountains: { spire: 6, boulder: 8, rockSmall: 13, conifer: 2, coniferShort: 2,
+               grass: 10, timber: 2 },
   desert:    { rockSmall: 9, boulder: 4, crate: 3, grass: 8, hay: 2,
                deadwood: 2, coniferShort: 1 }
 };
@@ -184,12 +190,11 @@ const FOOT = {
   undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.185, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
-  // A node is now a copse / flock / stand of three sub-units spread up to 1.15
-  // from its centre, each carrying a canopy about 1.2 across, so the reserved
-  // disc has to grow with it or the dressing sprouts straight through a
-  // harvestable tree. Kept as tight as that argument allows: every extra tenth
-  // here is dressing the placer fails to fit.
-  node: 1.45
+  // Every field item reserves a disc so no backdrop prop ever sprouts through
+  // a sheep or a tree you are supposed to be able to see and run at. There are
+  // up to twenty-two of them per hex, blue-noise spaced about 2.6 apart, so
+  // this is as wide as it can be without starving the placer.
+  item: 0.95
 };
 
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */
@@ -226,8 +231,8 @@ function tiltAt(x, z, amount) {
 /** Rejection sampler: non-overlapping discs inside one hex, off the road strip. */
 function makePlacer(tile, rng) {
   const blocked = [];
-  for (const n of (nodesByTile.get(tile.id) || [])) {
-    blocked.push({ x: n.x, z: n.z, r: FOOT.node });
+  for (const it of tileItems(tile.id)) {
+    blocked.push({ x: it.x, z: it.z, r: FOOT.item });
   }
   if (tile.terrain === 'desert') {
     // The plaza is nearly as wide as the prop zone; leave just the outer ring.
@@ -282,6 +287,11 @@ export function buildProps(scene) {
     grass: windMaterial(0.105, { side: THREE.DoubleSide }),
     wheat: windMaterial(0.145, { side: THREE.DoubleSide })
   };
+  // Every prop in the world reads the shared per-hex mood: full colour on a hex
+  // you may work, near-monochrome on one you may not, grey on one you have
+  // cleared out. It is a per-fragment tint on four materials, so it costs
+  // nothing and nothing can get out of step with anything else.
+  for (const k in mats) applyMood(mats[k]);
 
   /* ------------------------------------------------- collect placements */
   const bucket = {};
@@ -508,6 +518,7 @@ export function buildProps(scene) {
     geos[kit] = geo;
     const mesh = instanced(geo, mats[spec.mat], list.length, spec.cast, true);
     mesh.name = `prop-${kit}`;
+    mesh.geometry.setAttribute('aMood', moodAttrFromList(list));
     list.forEach((o, i) => setInstance(mesh, i, o.x, o.y, o.z, o.ry, o.s, o.sy, o.rx, o.rz));
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -520,6 +531,9 @@ export function buildProps(scene) {
 
   if (bakedParts.length) {
     const bakedGeo = merge(bakedParts);
+    // The baked batch has no instances to hang a mood on, so its hex is sampled
+    // per vertex straight off the world positions instead.
+    bakedGeo.setAttribute('aMood', moodAttrFromPositions(bakedGeo));
     geos['__baked'] = bakedGeo;
     const baked = new THREE.Mesh(bakedGeo, mats.solid);
     baked.name = 'prop-static';
@@ -530,17 +544,17 @@ export function buildProps(scene) {
     drawCalls++;
   }
 
-  /* ------------------------------------------------------------- the nodes
+  /* ------------------------------------------------------------- the field
    *
-   * The 126 gather nodes are not props — they are the game. Their geometry,
-   * their harvest life and their regrowth live in nodelife.js; the "you can
-   * pick this up" affordances live in gatherfx.js. Both build into this same
-   * group and share these same materials.
+   * The three hundred items are not props — they are the game. Their geometry,
+   * their instant pickup and their whole-hex regrowth live in nodelife.js; the
+   * flash, burst and flying chip fire from gatherfx.js. Both build into this
+   * same group and share these same materials.
    *
-   * `extraStumps` is the deal that keeps a clear-cut free: nodelife sizes its
-   * stump batch to cover the decorative timber as well as the harvestable
-   * copses, and hands the spare instances to the stand. Fifty-seven trees on a
-   * forest tile become fifty-seven stumps without a second draw call.
+   * `extraStumps` is the deal that keeps a clear-cut free: the field sizes its
+   * stump batch to cover the decorative timber as well as its own trees, and
+   * hands the spare instances to the stand. Forty-five trees on a forest hex
+   * become forty-five stumps without a second draw call.
    */
   const dressing = {};
   for (const kit in bucket) {
@@ -549,21 +563,27 @@ export function buildProps(scene) {
     if (mesh) dressing[kit] = { mesh, list: bucket[kit] };
   }
 
-  const life = buildNodeLife(group, mats, { extraStumps: countFellable(bucket) });
-  triangles += life.triangles;
-  drawCalls += life.drawCalls;
+  const field = buildField(group, mats, { extraStumps: countFellable(bucket) });
+  triangles += field.triangles;
+  drawCalls += field.drawCalls;
 
-  const affordance = buildGatherFX(group);
-  triangles += affordance.triangles;
-  drawCalls += affordance.drawCalls;
+  const pickup = buildPickupFX(group);
+  triangles += pickup.triangles;
+  drawCalls += pickup.drawCalls;
+
+  // The instant an item's `available` flag drops, the field animates it out and
+  // tells us who took it. That is the whole wiring for "SUPER CLEAR visual of
+  // exactly which sheep I picked up" — no event plumbing, no ordering worries,
+  // and it fires identically for the human and for a bot across the island.
+  field.onPick((item, player) => pickup.pop(item, player));
 
   /* --------------------------------------------------------- the regions
    *
-   * Region-scale legibility: whose region is this, worked ground, the stand
-   * answering to the harvest, a countdown badge and the regrowth beat.
+   * Hex-scale legibility: whose hex is this, worked ground, the dressing
+   * answering to the sweep, the recovery clock and the regrowth beat.
    * Two draw calls for all nineteen hexes.
    */
-  const regions = buildRegions(group, dressing, life.stumps);
+  const regions = buildRegions(group, dressing, field.stumps);
   triangles += regions.triangles;
   drawCalls += regions.drawCalls;
 
@@ -576,33 +596,39 @@ export function buildProps(scene) {
     mats.tree.userData.wind.value = wind;
     mats.grass.userData.wind.value = wind * 1.35;
     mats.wheat.userData.wind.value = wind * 1.2;
-    life.update(dt);
-    affordance.update(dt);
+    syncMood();
+    field.update(dt);
+    pickup.update(dt);
     regions.update(dt);
   }
 
   return {
     group,
     meshes,
-    nodeMesh: life.meshes,
+    field,
+    nodeMesh: field.meshes,
     materials: mats,
     triangles,
     drawCalls,
     regions,
+    pickup,
 
-    playHarvest(idOrNode) { life.playHarvest(idOrNode); },
-    setDepleted(idOrNode, on = true) { life.setDepleted(idOrNode, on); },
+    /** Kept so main.js's `gained` handler keeps working. The field reconciles
+     *  itself off the item flags, so both of these are now no-ops. */
+    playHarvest(ref) { field.playHarvest(ref); },
+    setDepleted(ref, on = true) { field.setDepleted(ref, on); },
 
-    /** Where a node's visual currently stands — handy for FX anchoring. */
-    nodeAnchor(idOrNode) { return life.nodeAnchor(idOrNode); },
+    /** Where an item's visual currently stands — handy for FX anchoring. */
+    itemAnchor(id) { return field.itemAnchor(id); },
+    nodeAnchor(ref) { return field.nodeAnchor(ref); },
 
     update,
 
     dispose() {
       for (const k in geos) geos[k].dispose();
       for (const k in mats) mats[k].dispose();
-      life.dispose();
-      affordance.dispose();
+      field.dispose();
+      pickup.dispose();
       regions.dispose();
     }
   };

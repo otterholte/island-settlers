@@ -235,6 +235,139 @@ if (STAGE === 'intro') {
     return {gathered:state.players[0].stats.gathered,res:state.players[0].res,
       propTris:world.props.triangles,propCalls:world.props.drawCalls};})()`)));
 
+} else if (STAGE === 'sweep') {
+  /*
+   * The whole arc of a hex you own, photographed through the real contact
+   * pickup: FULL -> PARTLY SWEPT -> CLEARED WITH THE COUNTDOWN -> RESTORED,
+   * plus a wide shot of owned hexes next to hexes you do not own.
+   *
+   *   --terrain=forest|fields|pasture|hills|mountains
+   *   --phase=a   full field, then half of it swept up
+   *   --phase=b   cleared out with the clock running, then further into it
+   *   --phase=c   the regrowth beat and the refilled hex
+   *   --phase=wide  the owned / off-limits contrast across the whole island
+   */
+  const TERRAIN = arg('terrain', 'forest');
+  const PHASE = arg('phase', 'a');
+  await finishDraft();
+  await ev(`import('/src/board/nodes.js').then(m=>{window.__N__=m}).then(()=>1)`, true);
+  console.log('  setup ' + await ev(`(()=>{const{state,game}=window.__ISLAND__,R=window.__R__;
+    return import('/src/board/layout.js').then(L=>{
+      // Give the human a hex of this terrain to work, through the real rules.
+      let t=L.tiles.filter(x=>x.terrain===${JSON.stringify(TERRAIN)})
+        .find(x=>R.playerOwnsTile(state,0,x.id));
+      if(!t){
+        const cands=L.tiles.filter(x=>x.terrain===${JSON.stringify(TERRAIN)})
+          .sort((a,b)=>b.pips-a.pips);
+        outer: for(const c of cands){
+          for(const corner of c.corners){
+            const ph=state.phase; state.phase='setup';
+            const ok=R.placeSettlement(state,0,corner,true);
+            state.phase=ph;
+            if(ok){ t=c; break outer; }
+          }
+        }
+      }
+      if(!t) return 'could not claim a '+${JSON.stringify(TERRAIN)}+' hex';
+      window.__T__=t;
+      // The bots keep playing knights while the capture sleeps between frames;
+      // park the Raider somewhere harmless so the shot is about the field.
+      window.__UNBLOCK__=()=>{state.robberTile=L.DESERT.id; state.robberOwner=0; return 1;};
+      window.__UNBLOCK__();
+      const p=state.players[0];
+      p.x=t.x; p.z=t.z+9.5; p.vx=0; p.vz=0; p.action='idle'; p.facing=-Math.PI/2;
+      p.res={wood:6,brick:4,wool:3,wheat:5,ore:3};
+      game.avatars[0].setCarry(p.res);
+      game.avatars[0].group.position.set(p.x,0,p.z);
+      window.__STEP__=(k)=>{for(let i=0;i<k;i++){window.__R__.tickWorld(state,1/60);
+        game.flow.update(1/60);game.gathering.update(1/60);game.bots.update(1/60);}
+        return +state.time.toFixed(1);};
+      // Walk the settler item to item and let the contact sweep take them.
+      window.__SWEEP__=(n)=>{let got=0;
+        window.__UNBLOCK__();
+        for(let k=0;k<n;k++){
+          const it=window.__N__.nearestItem(p.x,p.z,{tile:t.id});
+          if(!it) break;
+          p.x=it.x; p.z=it.z; p.sweptAt=-1;
+          window.__R__.tickWorld(state,1/60); game.gathering.update(1/60); got++;
+        }
+        game.avatars[0].group.position.set(p.x,0,p.z);
+        game.avatars[0].setCarry(p.res);
+        return {got, left:window.__N__.tileItemsRemaining(t.id),
+                full:window.__N__.tileItemCount(t.id)};};
+      window.__REC__=()=>{const r=window.__N__.tileRecovery(t.id,state.time);
+        const g=window.__ISLAND__.world.props.regions;
+        return {left:+r.secondsLeft.toFixed(1), progress:+r.progress.toFixed(2),
+          items:window.__N__.tileItemsRemaining(t.id),
+          badge:(g?g.readout():[]).filter(x=>x.tile===t.id)[0],
+          field:window.__ISLAND__.world.props.field.debug(t.id),
+          dress:g&&g.debug?g.debug(t.id):null};};
+      window.__CAM__=(d,hh,fov,aim)=>{const{camera}=window.__ISLAND__;
+        window.__ISLAND__.game.camera.update=()=>{};
+        camera.position.set(t.x+1.5,hh,t.z+d); camera.lookAt(t.x,aim||5.5,t.z);
+        camera.fov=fov; camera.updateProjectionMatrix(); return 1;};
+      return 'hex '+t.id+' '+t.terrain+' pips='+t.pips+
+        ' items='+window.__N__.tileItemCount(t.id);
+    });})()`, true));
+  if (arg('hud', '1') === '0') await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+
+  if (PHASE === 'wide') {
+    await ev(`(()=>{const{camera,THREE}=window.__ISLAND__;
+      window.__ISLAND__.game.camera.update=()=>{};
+      camera.position.set(6,64,72); camera.lookAt(0,2,-2);
+      camera.fov=40; camera.updateProjectionMatrix(); return 1;})()`);
+    await ev(`window.__STEP__(30)`);
+    await sleep(+arg('settle', 3600));
+    await shot('sw-wide-owned');
+    console.log('  owned ' + JSON.stringify(await ev(`(()=>{const R=window.__R__,st=window.__ISLAND__.state;
+      return import('/src/board/layout.js').then(L=>({
+        mine:L.tiles.filter(t=>t.resource&&R.playerOwnsTile(st,0,t.id)).map(t=>t.id),
+        total:L.tiles.filter(t=>t.resource).length }));})()`, true)));
+  } else {
+    await ev(`window.__CAM__(${+arg('dist', 22)}, ${+arg('eye', 15)}, ${+arg('fov', 38)}, ${+arg('aim', 5.5)})`);
+    await sleep(+arg('settle', 2800));
+    if (PHASE === 'pop') {
+      // One item, taken on contact, photographed while the chip is still in the
+      // air — the "which one did I just pick up" shot.
+      console.log('  pre ' + JSON.stringify(await ev(`(()=>{const{state}=window.__ISLAND__,R=window.__R__,t=window.__T__;
+        return {phase:state.phase, owns:R.playerOwnsTile(state,0,t.id),
+          may:R.canGatherTile(state,0,t.id), robber:state.robberTile,
+          rec:window.__REC__()};})()`)));
+      await shot(`sw-${TERRAIN}-0-before`);
+      console.log('  take ' + JSON.stringify(await ev(`__SWEEP__(1)`)));
+      console.log('  post ' + JSON.stringify(await ev(`__REC__()`)));
+      await shot(`sw-${TERRAIN}-0-pop`);
+      await sleep(+arg('gap', 700));
+      await shot(`sw-${TERRAIN}-0-after`);
+    } else if (PHASE === 'a') {
+      await shot(`sw-${TERRAIN}-1-full`);
+      console.log('  sweep ' + JSON.stringify(await ev(`__SWEEP__(${+arg('take', 8)})`)));
+      await sleep(1600);
+      await shot(`sw-${TERRAIN}-2-swept`);
+      console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+    } else if (PHASE === 'b') {
+      console.log('  sweep ' + JSON.stringify(await ev(`__SWEEP__(40)`)));
+      await ev(`window.__STEP__(60)`);
+      await sleep(2400);
+      await shot(`sw-${TERRAIN}-3-cleared`);
+      console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+      await ev(`window.__STEP__(${Math.round(+arg('skip', 16) * 60)})`);
+      await sleep(1500);
+      await shot(`sw-${TERRAIN}-4-countdown`);
+      console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+    } else {
+      console.log('  sweep ' + JSON.stringify(await ev(`__SWEEP__(40)`)));
+      const total = await ev(`window.__N__.tileRegenSeconds(window.__T__.id)`);
+      await ev(`window.__STEP__(${Math.round((+total - 0.4) * 60)})`);
+      await sleep(+arg('beat', 1200));
+      await shot(`sw-${TERRAIN}-5-regrowing`);
+      console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+      await sleep(+arg('wait', 2400));
+      await shot(`sw-${TERRAIN}-6-restored`);
+      console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+    }
+  }
+
 } else if (STAGE === 'region') {
   /*
    * Region depletion + recovery. Drains a WHOLE TILE through the real

@@ -1,57 +1,53 @@
 /**
- * Island Settlers — the standing stock of a region.
+ * Island Settlers — the dressing answering to the harvest.
  *
- *   countFellable(bucket)          -> how many stump instances to reserve
+ *   countFellable(bucket)               -> how many stump instances to reserve
  *   buildStand(group, dressing, stumps) -> { update(dt), debug(tileId), dispose() }
  *
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
- * The player asked for a tile that IS the resource:
- *
- *   "the entire tree hex is made of trees ... the whole tile is split into
- *    individual trees. And if you walk into those trees on your tile, you pick
- *    them up / chop them down, and as soon as you walk over them, they're
- *    chopped up and you only see stumps."
- *
- * A forest tile carries 21 harvestable sub-units (nodelife.js) AND about 36
- * decorative conifers, 16 ferns, 34 grass tufts. If only the 21 answer to the
- * harvest, a "clear cut" is a full forest with 21 gaps in it. So the DRESSING
- * is part of the stand too: every responsive prop on the tile is a unit in one
- * pool, and the tile's 21 harvest events spend that whole pool.
+ * A forest hex carries about twenty harvestable trees (`nodelife.js`) AND about
+ * twenty-eight decorative conifers, ferns and grass tufts on top of them. Take
+ * every harvestable tree and, if only those twenty answer, a "clear cut" is a
+ * full forest with twenty gaps in it — which is exactly the read the player
+ * complained about. So the DRESSING is part of the stand too: every responsive
+ * prop on a hex is a unit in one pool, and the hex's own fill fraction spends
+ * that whole pool alongside the real items.
  *
  * Two rules make it read:
  *
- *   1. PROXIMITY, NOT OWNERSHIP. When the region's standing count drops, the
- *      props that go are the ones nearest the settler who swung — so the stand
- *      clears along the path you actually walked, not in a ring around an
- *      abstract node you cannot see.
+ *   1. PROXIMITY, NOT ACCOUNTANCY. When the fill fraction drops, the props that
+ *      go are the ones nearest the settler who is working the hex — so the
+ *      stand clears along the path you actually walked.
  *
- *   2. STUMPS, NOT SLASH. A felled conifer topples, then sinks away while a
- *      stump grows in its place. A whole spruce lying on its side keeps its
- *      canopy pointing at the sun and turns a clear-cut into green litter;
- *      a stump field still says "this was a forest" and says "there is nothing
- *      here to chop" at the same time. The stumps ride nodelife's own stump
- *      InstancedMesh (it reserves spares for us), so this costs no draw call.
+ *   2. STUMPS, NOT SLASH. A felled conifer topples, then sinks while a stump
+ *      grows in its place. A whole spruce lying on its side keeps its canopy
+ *      pointing at the sun and turns a clear-cut into green litter; a stump
+ *      field still says "this was a forest" and "there is nothing here to take"
+ *      at the same time. The stumps ride the field's own stump InstancedMesh
+ *      (it reserves spares for us), so this costs no draw call.
  *
  * Everything here is instance matrices and instance colours. Nothing is created,
- * nothing is deleted, no count changes, and it all reverses when the region
- * grows back — sweeping outward from the middle of the hex.
+ * nothing is deleted, no count changes, and it all reverses when the hex fills
+ * back up — sweeping outward from the middle.
+ *
+ * The owned / off-limits tint is NOT here. That rides the shared mood shader in
+ * `mood.js`, which paints these same meshes and the terrain under them together.
  *
  * Owner: World agent.
  */
 
 import * as THREE from 'three';
-import { NODE_CAPACITY } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
-import { nodesByTile } from '../board/nodes.js';
 import { heightAt, APOTHEM } from './terrain.js';
 import { setInstance } from './geo.js';
+import { MOOD } from './mood.js';
 
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /*
- * How each dressing kit answers to the harvest, per terrain.
+ * How each dressing kit answers, per terrain.
  *   fell     topples and is replaced by a stump
  *   crop     cut down to stubble
  *   flatten  mashed into the ground
@@ -76,10 +72,9 @@ export const ROLE = {
   }
 };
 
-/* Vertical squash and horizontal pinch a `crop` leaves behind. */
-/* A cropped field has to still LOOK like a field. Cut too far and a worked-out
-   fields tile is bare mud with a fence round it, and the player loses the "you
-   can still tell what this hex was" read they asked for. */
+/* Vertical squash and horizontal pinch a `crop` leaves behind. A cropped field
+   still has to LOOK like a field: cut too far and a worked-out fields hex is
+   bare mud with a fence round it. */
 const CROP = {
   wheat:  [1.08, 0.26],
   grass:  [0.98, 0.34],
@@ -88,7 +83,7 @@ const CROP = {
 };
 
 /* How big a stump a felled dressing tree leaves, relative to its own scale. */
-const STUMP_K = { conifer: 0.58, coniferShort: 0.54, broadleaf: 0.66 };
+const STUMP_K = { conifer: 0.72, coniferShort: 0.66, broadleaf: 0.80 };
 
 /* instanceColor multiplier at full response — straw, dust and dead wood. */
 const WORN_MUL = {
@@ -99,16 +94,16 @@ const WORN_MUL = {
   boulder: [0.78, 0.76, 0.74]
 };
 
-/* Chunky, not graceful. The player asked for "as soon as you walk over them,
-   they're chopped up", so a struck prop is down inside a second. */
-const RATE = { fell: 4.6, crop: 5.6, flatten: 5.6, wilt: 3.0 };
+/* Chunky, not graceful. Pickup is instant, so the world around it has to move
+   at the same speed: a struck prop is down inside half a second. */
+const RATE = { fell: 5.2, crop: 6.2, flatten: 6.2, wilt: 3.4 };
 
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
   return (g && g.__ISLAND__) || null;
 }
 
-/** How many stump instances the stand will need. Call before buildNodeLife. */
+/** How many stump instances the stand will need. Call before buildField. */
 export function countFellable(bucket) {
   let n = 0;
   for (const kit in bucket) {
@@ -127,6 +122,7 @@ export function buildStand(group, dressing, stumps) {
   const smesh = stumps && stumps.mesh ? stumps.mesh : null;
   const sbase = stumps ? stumps.base | 0 : 0;
   const scap = stumps ? stumps.count | 0 : 0;
+  const smood = smesh && smesh.userData ? smesh.userData.moodArray : null;
   let snext = 0;
   let sdirty = false;
 
@@ -134,13 +130,8 @@ export function buildStand(group, dressing, stumps) {
   const regions = [];
   const byTile = new Map();
   for (const t of tiles) {
-    const list = nodesByTile.get(t.id);
-    if (!list || !list.length) continue;
-    const rec = {
-      tile: t, nodes: list,
-      maxUnits: list.length * NODE_CAPACITY,
-      items: [], struck: 0
-    };
+    if (!t.resource) continue;
+    const rec = { tile: t, mood: MOOD[t.id], items: [], struck: 0 };
     regions.push(rec);
     byTile.set(t.id, rec);
   }
@@ -178,6 +169,11 @@ export function buildStand(group, dressing, stumps) {
         };
         if (role === 'fell' && smesh && snext < scap) {
           it.stump = sbase + snext++;
+          // the borrowed stump belongs to this hex, so it greys out with it
+          if (smood) {
+            smood[it.stump * 2] = reg.tile.id;
+            smood[it.stump * 2 + 1] = 1;
+          }
         }
         reg.items.push(it);
         used = true;
@@ -188,9 +184,12 @@ export function buildStand(group, dressing, stumps) {
       }
     }
   }
+  if (smesh && smood && smesh.geometry.getAttribute('aMood')) {
+    smesh.geometry.getAttribute('aMood').needsUpdate = true;
+  }
 
-  /* Biggest silhouettes first inside a region: when three props are struck at
-     once it should be the trees you notice going, not the grass. */
+  /* Biggest silhouettes first inside a hex: when three props go at once it
+     should be the trees you notice, not the grass. */
   const WEIGHT = { fell: 0, flatten: 1, crop: 2, wilt: 3 };
   for (const rec of regions) rec.items.sort((a, b) => WEIGHT[a.role] - WEIGHT[b.role]);
 
@@ -211,7 +210,7 @@ export function buildStand(group, dressing, stumps) {
 
     if (it.role === 'fell') {
       // topple over the first half, sink away over the second while the stump
-      // rises through it — the whole thing takes under half a second
+      // rises through it
       const drop = clamp01(c / 0.52);
       const gone = clamp01((c - 0.46) / 0.54);
       rz += it.lean * drop;
@@ -239,7 +238,7 @@ export function buildStand(group, dressing, stumps) {
 
   /* ------------------------------------------------------------ selection */
 
-  /** Where the felling is happening: the settler working this region. */
+  /** Where the work is happening: the settler working this hex. */
   const _o = { x: 0, z: 0 };
   function origin(tile) {
     _o.x = tile.x; _o.z = tile.z;
@@ -248,7 +247,6 @@ export function buildStand(group, dressing, stumps) {
     if (!ps) return _o;
     let best = null, bd = 1e9;
     for (const p of ps) {
-      if (p.gatherNode && p.gatherNode.tile === tile.id) { _o.x = p.x; _o.z = p.z; return _o; }
       const d = (p.x - tile.x) * (p.x - tile.x) + (p.z - tile.z) * (p.z - tile.z);
       if (d < bd) { bd = d; best = p; }
     }
@@ -272,10 +270,9 @@ export function buildStand(group, dressing, stumps) {
       const it = pick[i];
       it.hit = true;
       it.tgt = 1;
-      // A hair of stagger so three trees never fall on the identical frame —
-      // capped, because a bot draining a whole tile in one tick strikes
-      // seventy props at once and a linear ramp would take five seconds.
-      it.wait = Math.min(0.45, i * 0.05);
+      // a hair of stagger, capped: a bot draining a whole hex in one tick
+      // strikes seventy props at once and a linear ramp would take five seconds
+      it.wait = Math.min(0.40, i * 0.045);
       active.add(it);
       rec.struck++;
     }
@@ -290,7 +287,7 @@ export function buildStand(group, dressing, stumps) {
       const it = pick[i];
       it.hit = false;
       it.tgt = 0;
-      it.wait = it.d * 0.68;
+      it.wait = it.d * 0.55;
       active.add(it);
       rec.struck--;
     }
@@ -303,9 +300,8 @@ export function buildStand(group, dressing, stumps) {
   function sample() {
     for (const rec of regions) {
       if (!rec.items.length) continue;
-      let units = 0;
-      for (const n of rec.nodes) units += Math.max(0, Math.min(NODE_CAPACITY, n.remaining | 0));
-      const worked = 1 - units / rec.maxUnits;
+      const m = rec.mood;
+      const worked = m.exhausted ? 1 : clamp01(1 - m.fraction);
       const want = Math.round(worked * rec.items.length);
       if (want > rec.struck) strike(rec, want - rec.struck);
       else if (want < rec.struck) release(rec, rec.struck - want);
@@ -337,7 +333,7 @@ export function buildStand(group, dressing, stumps) {
     regions,
     stumpsUsed: snext,
 
-    /** Debug / capture hook: how much of the stand has answered the harvest. */
+    /** Debug / capture hook: how much of the dressing has answered. */
     debug(tileId) {
       let total = 0, moved = 0, mid = 0;
       const roles = {};

@@ -2,42 +2,36 @@
  * Island Settlers — the life of a REGION.
  *
  *   buildRegions(group, dressing, stumps) -> {
- *     update(dt), drawCalls, triangles, dispose()
+ *     update(dt), readout(), debug(tileId), drawCalls, triangles, dispose()
  *   }
  *
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
- * The player said it plainly:
+ * The player has now said the same thing three times, and the last two answers
+ * were not good enough:
  *
- *   "I should be easily able to tell the specific hexes I'm allowed to get
- *    resources from. Right now they're all the same appearance. NOTHING is
- *    currently differentiating them."
+ *   "It's still way too hard to tell which hexes I can use and which I can't.
+ *    Make it much more drastic and clear."
+ *   "I should never be able to pick up resources from hexes I don't have a
+ *    settlement or city next to — only my own."
  *
- * You can in fact work any region — owning a settlement or a city on one of its
- * corners MULTIPLIES what you get there (x2 / x3, `ownershipMultiplier` in
- * rules.js). So the honest read is not "locked out", it is "these are your
- * high-yield regions", and this file is what says it, at region scale:
+ * Ownership is a hard GATE now. There is no multiplier, no x2 badge, no "these
+ * are your high-yield regions". A hex is either yours to work or it is scenery.
+ * So the read is built in three layers, loudest first:
  *
- *   1. TONAL GROUPING. One terrain-conforming decal per hex. A region you own
- *      gets a warm lift and a clean rim in YOUR colour; a region you do not
- *      gets a cool, quiet mute. That is the Whiteout Survival separation
- *      between active and inactive territory, and it holds with six hexes on
- *      screen at once.
+ *   1. THE PIXELS (mood.js). Every hex you may not work — terrain, trees,
+ *      flock, boulders, wheat — is crushed to near-monochrome and dropped half
+ *      a stop. Every hex you may work keeps full saturation and gains a warm
+ *      lift. That is the layer that survives being covered in forty trees.
  *
- *   2. WORKED GROUND. The same decal churns up as the region is worked —
- *      patches of bare, dug, trampled earth spreading out from where you have
- *      been standing — and drops to ash when the region is worked out.
+ *   2. THIS DECAL. A terrain-conforming fan per hex: a bright rim in the
+ *      player's blue and a soft inward bleed on a hex that is yours, a flat
+ *      dead wash and a black border on one that is not, churned worked ground
+ *      as you sweep it, ash when it is spent, and a green wave when it returns.
  *
- *   3. THE BADGE (regionmark.js). Silent unless it has something to say:
- *      the multiplier on a region you own, the SECONDS LEFT on one that is
- *      worked out, a bar on one the Raider has shut. Nothing else.
- *
- *   4. THE STAND (stand.js). The trees, wheat, ferns and grass answering to
- *      the harvest, felled nearest the settler who swung.
- *
- *   5. THE RECOVERY BEAT. When the region comes back the ground flashes from
- *      the centre outward, the stand rises again in a wave and the badge fades.
+ *   3. THE CLOCK (regionmark.js). A big countdown ring over a worked-out hex,
+ *      and nothing at all otherwise.
  *
  * Two draw calls for all nineteen hexes.
  *
@@ -45,14 +39,11 @@
  */
 
 import * as THREE from 'three';
-import { NODE_CAPACITY, RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
+import { RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
-import {
-  nodesByTile, tileRemaining, tileRecovery, isTileExhausted, TILE_REGROW_SEC
-} from '../board/nodes.js';
-import { ownershipMultiplier } from '../core/rules.js';
 import { heightAt, APOTHEM } from './terrain.js';
-import { buildMarkers, markerAtlas, GLYPH } from './regionmark.js';
+import { MOOD, syncMood, onRestored, onSpent } from './mood.js';
+import { buildMarkers, markerAtlas, GLYPH, MAX_SEC } from './regionmark.js';
 import { buildStand } from './stand.js';
 
 const TAU = Math.PI * 2;
@@ -64,9 +55,9 @@ function match() {
 }
 
 /* ------------------------------------------------------- worked-ground tone
- * What the bare, worked-out floor of each terrain looks like once the standing
- * crop is off it. Deliberately a long way from the tile's own painted colour —
- * a clear-cut has to read as churned earth, not as slightly darker forest. */
+ * What the bare floor of each terrain looks like once the crop is off it.
+ * Deliberately a long way from the tile's own painted colour — a clear-cut has
+ * to read as churned earth, not as slightly darker forest. */
 const WORN = {
   forest:    0x5e4630,   // duff, sawdust and root-torn soil
   fields:    0xa98b3f,   // stubble and chaff
@@ -76,9 +67,7 @@ const WORN = {
   desert:    0xbc9256
 };
 
-/* The colour a region flashes when it comes back. Deliberately a step or two
-   brighter than the terrain it lands on — a recovery has to be a moment, and a
-   wave the same value as the ground under it is not one. */
+/* The colour a hex flashes when it comes back. */
 const LIVE = {
   forest:    0x8dff5e,
   fields:    0xfff2a0,
@@ -88,20 +77,15 @@ const LIVE = {
   desert:    0xffe9b8
 };
 
-/* The two tones that carry the whole "mine / not mine" read. */
-const WARM = 0xffe9b0;    // sunlit lift over a region you own
-const MUTE = 0x121b2c;    // cool, quiet dark over one you do not
+const WARM = 0xffeec0;    // sunlit lift over a hex you own
+const MUTE = 0x0a1120;    // the dead wash over one you do not
 
 /* =========================================================== ground overlay */
 
-const SEGS = 12;                       // hex corners land on 30 degree steps
-/* Absolute hex fractions, not normalised: the shader bands against them
-   directly. 0.795 is the owner rim — just inside the tan road strip (0.81) so
-   the glow reads as the hex being lit, never as paint on somebody's road. */
+const SEGS = 12;
 const RINGS = [0.24, 0.46, 0.66, 0.775, 0.865];
 const RIM_AT = 0.775;
 
-/** Distance from a hex centre to its boundary along `a`, in world units. */
 function hexReach(a) {
   const c = Math.cos(a), s = Math.sin(a);
   const m = Math.max(
@@ -135,27 +119,13 @@ function buildOverlay(list) {
     rec.vStart = v;
     rec.vCount = perTile;
 
-    // Which gather node owns this patch of ground. The churn is written PER
-    // VERTEX from that node's own level, so bare dug earth appears exactly
-    // where you have been working and spreads across the hex as you walk it,
-    // instead of the whole region dimming uniformly.
-    rec.vn = new Int32Array(perTile);
-
     const put = (x, z, r) => {
       // Lifted well clear of the tile top: the decal is a coarse fan and the
-      // painted undulation under it runs +-0.19, so a tighter offset sinks
-      // whole wedges of it below the ground and the depth test eats them.
+      // painted undulation under it runs +-0.19.
       pos[v * 3] = x; pos[v * 3 + 1] = heightAt(x, z) + 0.30; pos[v * 3 + 2] = z;
       rim[v] = r;
       worn[v * 3] = cw.r; worn[v * 3 + 1] = cw.g; worn[v * 3 + 2] = cw.b;
       live[v * 3] = cl.r; live[v * 3 + 1] = cl.g; live[v * 3 + 2] = cl.b;
-      let bi = 0, bd = 1e9;
-      for (let k = 0; k < rec.nodes.length; k++) {
-        const nd = rec.nodes[k];
-        const dd = (nd.x - x) * (nd.x - x) + (nd.z - z) * (nd.z - z);
-        if (dd < bd) { bd = dd; bi = k; }
-      }
-      rec.vn[v - base] = bi;
       v++;
     };
 
@@ -168,13 +138,11 @@ function buildOverlay(list) {
       }
     }
 
-    // centre fan
     for (let s = 0; s < SEGS; s++) {
       idx[f++] = base;
       idx[f++] = base + 1 + s;
       idx[f++] = base + 1 + ((s + 1) % SEGS);
     }
-    // ring quads
     for (let r = 0; r < RINGS.length - 1; r++) {
       const a0 = base + 1 + r * SEGS;
       const b0 = a0 + SEGS;
@@ -199,12 +167,11 @@ function buildOverlay(list) {
 
   const mat = new THREE.ShaderMaterial({
     // DoubleSide is not laziness: a fan wound counter-clockwise in (x, z) faces
-    // AWAY from a camera looking down +y, because (x, z) is left-handed from
-    // above. Front-side only and the whole decal is invisible.
+    // AWAY from a camera looking down +y.
     transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
     uniforms: {
       uTime: { value: 0 },
-      uRim:  { value: new THREE.Color(0x3b7fd4) },
+      uRim:  { value: new THREE.Color(0x7fb2f0) },
       uWarm: { value: new THREE.Color(WARM) },
       uMute: { value: new THREE.Color(MUTE) }
     },
@@ -241,9 +208,8 @@ function buildOverlay(list) {
         return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
       }
 
-      /* Standard source-over composite, so the tonal wash, the churn, the ash
-         and the owner rim stack in a defined order instead of fighting for the
-         same lerp. */
+      /* Source-over composite, so the wash, the churn, the ash and the owner
+         rim stack in a defined order instead of fighting for the same lerp. */
       void over(inout vec3 col, inout float a, vec3 c2, float a2) {
         if (a2 <= 0.0005) return;
         float o = a2 + a * (1.0 - a2);
@@ -252,76 +218,74 @@ function buildOverlay(list) {
       }
 
       void main() {
-        float work = vState.x, spent = vState.y, flash = vState.z, own = vState.w;
+        float work = vState.x, spent = vState.y, flash = vState.z, tone = vState.w;
+        // A hex you own but have cleared out is not "available" any more, so it
+        // gives up its blue rim and its sunlight until the clock runs out. The
+        // rim is the promise; an empty hex has nothing to promise.
+        float own = max(tone, 0.0) * (1.0 - spent * 0.86);
+        float off = max(-tone, 0.0);
 
         // The wash fills the whole prop zone and stops at the tan road strip.
         float plate = 1.0 - smoothstep(0.72, 0.865, vRim);
-        float rim = smoothstep(${(RIM_AT - 0.075).toFixed(3)}, ${RIM_AT.toFixed(3)}, vRim)
-                  * (1.0 - smoothstep(${RIM_AT.toFixed(3)}, ${(RIM_AT + 0.070).toFixed(3)}, vRim));
+        float rim = smoothstep(${(RIM_AT - 0.085).toFixed(3)}, ${RIM_AT.toFixed(3)}, vRim)
+                  * (1.0 - smoothstep(${RIM_AT.toFixed(3)}, ${(RIM_AT + 0.078).toFixed(3)}, vRim));
         float n = vn(vW * 0.62) * 0.62 + vn(vW * 1.9 + 7.3) * 0.38;
 
         vec3 col = vec3(0.0);
         float a = 0.0;
 
-        // ---- 1. tonal grouping: is this region worth your time right now?
-        if (own > 0.004) {
-          // sunlit lift, strongest out toward the rim so the hex reads as lit
-          // from its own border inward
-          float lift = 0.065 + 0.15 * smoothstep(0.15, 0.80, vRim);
-          over(col, a, uWarm, lift * own * plate);
-        } else if (spent < 0.5) {
-          // Deliberately restrained: fifteen of the eighteen regions are
-          // unowned at any moment, so anything heavier here drags the whole
-          // island out of its saturated tropical palette.
-          float mute = 0.25 * (1.0 - 0.35 * work);
-          over(col, a, uMute, mute * plate);
-          // and the border goes dark, which is what actually separates two
-          // neighbouring hexes at a glance
-          over(col, a, uMute, rim * 0.34 * (1.0 - 0.5 * work));
+        // ---- 1. OFF LIMITS. Flat, cold and inert, with a black border that
+        // cuts the hex away from its neighbours. The mood shader has already
+        // pulled the saturation out of the terrain and the trees; this is what
+        // makes the boundary itself unmistakable.
+        if (off > 0.004) {
+          over(col, a, uMute, 0.15 * off * plate);
+          over(col, a, uMute, rim * 0.62 * off);
         }
 
-        // ---- 2. churned patches spread out of the noise field as the work
-        // level climbs, so a half-worked region looks blotchy rather than
-        // uniformly tinted — ground somebody has actually walked over.
-        // ('patch' is a reserved word in GLSL ES 3.00 — do not rename to it)
+        // ---- 2. YOURS. Warm sunlight pooling in from the border.
+        if (own > 0.004) {
+          float lift = 0.05 + 0.17 * smoothstep(0.15, 0.80, vRim);
+          over(col, a, uWarm, lift * own * plate);
+        }
+
+        // ---- 3. churned patches spread out of the noise field as you sweep,
+        // so a half-worked hex looks blotchy — ground you have walked over.
         float churn = smoothstep(0.0, 0.30, work * 1.42 - n * 0.82);
         over(col, a, vWorn, churn * (0.54 + 0.30 * work) * plate);
 
-        // ---- 3. worked out: desaturated and dug over. Kept deliberately
-        // light on the grey — the hex still has to read as the FOREST it was,
-        // and a full ash plate buries the duff, the slash and the stumps under
-        // one flat slate tone.
+        // ---- 4. worked out: grey, dug over and scarred.
         if (spent > 0.004) {
-          over(col, a, vec3(0.58, 0.585, 0.60), spent * (0.20 + 0.10 * n) * plate);
+          over(col, a, vec3(0.46, 0.455, 0.44), spent * (0.30 + 0.14 * n) * plate);
           float scar = smoothstep(0.52, 0.92, vn(vW * 1.05 + 21.0)) * spent;
-          over(col, a, vWorn * 0.52, scar * 0.42 * plate);
+          over(col, a, vWorn * 0.50, scar * 0.40 * plate);
+          // a dashed amber warning band right on the boundary: this hex is shut
+          float t2 = fract(atan(vW.y, vW.x) * 3.8 + uTime * 0.30);
+          float dash = step(0.42, t2);
+          over(col, a, vec3(0.92, 0.52, 0.10), rim * dash * spent * 0.75);
         }
 
-        // ---- 4. the owner's rim, drawn last so nothing mutes it. This is the
+        // ---- 5. the owner's rim, drawn last so nothing mutes it. This is the
         // loudest thing on the board that is not a number token, and it is the
         // one signal that survives a hex being completely covered in trees.
         if (own > 0.004) {
-          float pulse = 0.86 + 0.14 * sin(uTime * 2.0);
-          over(col, a, uRim, rim * rim * (0.62 + 0.32 * own) * pulse);
-          // a soft inward bleed so the rim reads as light spilling into the
-          // region, not as a decal someone stuck on the edge
-          over(col, a, uRim, smoothstep(0.30, 0.775, vRim) * 0.17 * own * plate);
-          if (own > 0.75) {
-            float band2 = smoothstep(0.038, 0.0, abs(vRim - 0.640));
-            over(col, a, uRim, band2 * 0.46 * pulse);
-          }
+          float pulse = 0.84 + 0.16 * sin(uTime * 2.0);
+          over(col, a, uRim, rim * rim * (0.80 + 0.20 * own) * pulse);
+          over(col, a, uRim, smoothstep(0.30, 0.775, vRim) * 0.20 * own * plate);
+          float band2 = smoothstep(0.040, 0.0, abs(vRim - 0.640));
+          over(col, a, uRim, band2 * 0.42 * own * pulse);
         }
 
-        // ---- 5. the recovery beat
+        // ---- 6. the recovery beat
         if (flash > 0.004) {
           float ringR = (1.0 - flash) * 1.10;
           float band = smoothstep(0.26, 0.0, abs(vRim - ringR));
           float glow = flash * flash;
-          over(col, a, vLive, min(1.0, band * 0.92 + glow * 0.55) * plate);
+          over(col, a, vLive, min(1.0, band * 0.95 + glow * 0.60) * plate);
         }
 
         if (a < 0.008) discard;
-        gl_FragColor = vec4(col, min(a, 0.90));
+        gl_FragColor = vec4(col, min(a, 0.94));
       }
     `
   });
@@ -341,20 +305,16 @@ export function buildRegions(group, dressing, stumps) {
   const regions = [];
   const byTile = new Map();
   for (const t of tiles) {
-    const list = nodesByTile.get(t.id);
-    if (!list || !list.length) continue;
+    if (!t.resource) continue;
     const rec = {
-      tile: t, nodes: list,
+      tile: t,
+      mood: MOOD[t.id],
       // Clear of the tallest trees, the mountain skyline and — the one that
       // actually bit — the hero's own carry columns, which stack to 5.3.
-      y: heightAt(t.x, t.z) + (t.terrain === 'mountains' ? 10.6 : 9.9),
-      work: 0, spent: 0, flash: 0, own: 0, ownWant: 0,
-      mult: 1, blocked: false,
-      fraction: 1, seconds: 0, progress: 1, exhausted: false,
-      wasExhausted: false, alpha: 0, bob: (t.id * 0.7) % TAU,
+      y: heightAt(t.x, t.z) + (t.terrain === 'mountains' ? 9.4 : 8.5),
+      work: 0, alpha: 0, bob: (t.id * 0.7) % TAU,
       accent: RES_COLOR[t.resource] || 0xffc93c,
-      vStart: 0, vCount: 0,
-      lvl: new Float32Array(list.length)
+      vStart: 0, vCount: 0, rgb: [1, 1, 1]
     };
     regions.push(rec);
     byTile.set(t.id, rec);
@@ -367,11 +327,9 @@ export function buildRegions(group, dressing, stumps) {
   const marker = buildMarkers(regions, atlas);
   group.add(marker.mesh);
 
-  /* The human's colour drives both the rim on the ground and the badge. */
+  /* The human's LIGHT variant, not the base hex: a mid blue laid over grass and
+     clay at 70% alpha reads as a smudge. #7fb2f0 holds against every terrain. */
   const _c = new THREE.Color();
-  // The player's LIGHT variant, not the base hex: the base blue is a mid tone
-  // and a mid tone laid over grass and clay at 60% alpha reads as a smudge.
-  // #7fb2f0 holds against every terrain on the board and against the sea.
   const MINE = (PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#7fb2f0';
   ground.mat.uniforms.uRim.value.set(MINE).convertSRGBToLinear();
   marker.mat.uniforms.uOwn.value.copy(ground.mat.uniforms.uRim.value);
@@ -385,93 +343,62 @@ export function buildRegions(group, dressing, stumps) {
   /* --------------------------------------------------------------- stand */
   const stand = buildStand(group, dressing, stumps);
 
-  /* -------------------------------------------------------- recovery beat */
+  /* -------------------------------------------------------- the two beats */
 
-  function celebrate(rec) {
+  onRestored((m) => {
     const I = match();
     if (!I) return;
-    const w = I.world;
-    if (!w) return;
+    const rec = byTile.get(m.id);
+    if (!rec) return;
     try {
       const t = rec.tile;
-      if (w.effects && w.effects.burst) w.effects.burst(t.x, t.z, t.resource);
+      const w = I.world;
+      if (w && w.effects && w.effects.burst) w.effects.burst(t.x, t.z, t.resource);
       const p = I.state && I.state.players && I.state.players[0];
       const d = p ? Math.hypot(p.x - t.x, p.z - t.z) : 999;
-      if (w.audio && w.audio.sfx) {
+      if (w && w.audio && w.audio.sfx) {
         w.audio.sfx('upgrade', { gain: d < 34 ? 0.6 : 0.22, at: { x: t.x, z: t.z } });
       }
-      if (d < 24 && w.camera && w.camera.shake) w.camera.shake(0.07);
-      if (d < 34 && I.game && I.game.toast) I.game.toast('The region has grown back');
+      if (d < 26 && w && w.camera && w.camera.shake) w.camera.shake(0.08);
+      // Toast only for a hex you own AND are near. Eighteen hexes refilling on
+      // their own clocks will otherwise stack the bottom-left rail high enough
+      // to walk off the bottom of a 444-pixel phone screen.
+      if (m.own > 0.4 && d < 30 && I.game && I.game.toast) {
+        I.game.toast('Grown back — go again');
+      }
     } catch (e) { /* presentation is always optional */ }
-  }
+  });
 
-  function announceSpent(rec) {
+  onSpent((m) => {
     const I = match();
     if (!I) return;
+    const rec = byTile.get(m.id);
+    if (!rec) return;
     try {
       const p = I.state && I.state.players && I.state.players[0];
       if (!p) return;
-      if (Math.hypot(p.x - rec.tile.x, p.z - rec.tile.z) > 26) return;
+      if (Math.hypot(p.x - rec.tile.x, p.z - rec.tile.z) > 30) return;
       if (I.game && I.game.toast) {
-        I.game.toast(`Region worked out — back in ${Math.round(TILE_REGROW_SEC)}s`, 'warn');
+        I.game.toast(`Cleared out — back in ${Math.round(m.seconds)}s`, 'warn');
       }
       if (I.world && I.world.audio && I.world.audio.sfx) {
         I.world.audio.sfx('deny', { gain: 0.45, at: { x: rec.tile.x, z: rec.tile.z } });
       }
     } catch (e) { /* optional */ }
-  }
+  });
 
   /* ------------------------------------------------------------------ loop */
 
   let clock = 0;
-  let poll = 0;
-
-  function sample() {
-    const I = match();
-    const state = I && I.state;
-    const now = state ? state.time : clock;
-    const playing = !!state && state.phase === 'play';
-    const robber = state ? state.robberTile : -1;
-    const robberMine = state ? state.robberOwner === 0 : false;
-
-    for (const rec of regions) {
-      const rem = tileRemaining(rec.tile.id);
-      const rc = tileRecovery(rec.tile.id, now);
-      rec.fraction = rem.fraction;
-      rec.exhausted = isTileExhausted(rec.tile.id);
-      rec.seconds = rc.secondsLeft;
-      rec.progress = rc.progress;
-      rec.blocked = playing && robber === rec.tile.id && !robberMine;
-
-      // Ownership: settlement = x2, city = x3. Read-only, straight off the
-      // frozen rule so the picture can never disagree with the payout.
-      let mult = 1;
-      if (state && state.buildings) {
-        try { mult = ownershipMultiplier(state, 0, rec.tile.id); } catch (e) { mult = 1; }
-      }
-      rec.mult = mult;
-      rec.ownWant = (playing && !rec.blocked && mult > 1) ? (mult >= 3 ? 1 : 0.62) : 0;
-
-      if (rec.exhausted && !rec.wasExhausted) {
-        rec.wasExhausted = true;
-        announceSpent(rec);
-      } else if (!rec.exhausted && rec.wasExhausted) {
-        rec.wasExhausted = false;
-        rec.flash = 1;
-        celebrate(rec);
-      }
-    }
-  }
 
   function update(dt) {
     clock += dt;
     ground.mat.uniforms.uTime.value = clock;
     marker.mat.uniforms.uTime.value = clock;
 
-    if ((poll -= dt) <= 0) { poll = 0.12; sample(); }
+    syncMood();
     stand.update(dt);
 
-    /* ---- ground + markers -------------------------------------------- */
     const st = ground.state;
     const md = marker.aData.array;
     const mp = marker.aPos.array;
@@ -482,78 +409,58 @@ export function buildRegions(group, dressing, stumps) {
 
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
+      const m = r.mood;
 
-      // How worked-over the region looks: the standing stock drives it, and an
-      // exhausted region is pinned at fully worked.
-      const wantWork = r.exhausted ? 1 : clamp01(1 - r.fraction);
-      const wantSpent = r.exhausted || r.blocked ? 1 : 0;
-      const kw = Math.min(1, dt * (wantWork > r.work ? 3.0 : 2.2));
+      // How worked-over the hex looks: how much of its field is still standing.
+      const wantWork = m.exhausted ? 1 : clamp01(1 - m.fraction);
+      const kw = Math.min(1, dt * (wantWork > r.work ? 3.4 : 2.4));
       r.work += (wantWork - r.work) * kw;
-      r.spent += (wantSpent - r.spent) * Math.min(1, dt * (wantSpent ? 3.4 : 4.2));
-      r.own += (r.ownWant - r.own) * Math.min(1, dt * 3.2);
-      if (r.flash > 0) r.flash = Math.max(0, r.flash - dt * 0.52);
 
-      // Per-node churn levels, smoothed, then splashed onto the vertices that
-      // node owns. `r.work` acts as a floor so the hex still reads as a single
-      // worked region rather than seven unrelated puddles.
-      const o0 = r.vStart * 4;
-      let moved = Math.abs(st[o0 + 1] - r.spent) > 0.0015
-        || Math.abs(st[o0 + 2] - r.flash) > 0.0015
-        || Math.abs(st[o0 + 3] - r.own) > 0.0015;
-      const floor = r.work * 0.42;
-      for (let k = 0; k < r.nodes.length; k++) {
-        const want = 1 - clamp01(Math.max(0, r.nodes[k].remaining) / NODE_CAPACITY);
-        const cur = r.lvl[k] + (want - r.lvl[k]) * Math.min(1, dt * 2.6);
-        if (Math.abs(cur - r.lvl[k]) > 0.0015) moved = true;
-        r.lvl[k] = cur;
-      }
+      const o = r.vStart * 4;
+      const moved = Math.abs(st[o] - r.work) > 0.0015
+        || Math.abs(st[o + 1] - m.spent) > 0.0015
+        || Math.abs(st[o + 2] - m.flash) > 0.0015
+        || Math.abs(st[o + 3] - m.tone) > 0.0015;
       if (moved) {
         for (let v = 0; v < r.vCount; v++) {
-          const o = (r.vStart + v) * 4;
-          st[o] = Math.max(floor, r.lvl[r.vn[v]]);
-          st[o + 1] = r.spent;
-          st[o + 2] = r.flash;
-          st[o + 3] = r.own;
+          const k = (r.vStart + v) * 4;
+          st[k] = r.work;
+          st[k + 1] = m.spent;
+          st[k + 2] = m.flash;
+          st[k + 3] = m.tone;
         }
         groundDirty = true;
       }
 
-      /* ---- the badge ----
-       * Silent unless it has something to say. This is the single biggest cut
-       * to on-screen clutter: nineteen permanent floating tabs became two or
-       * three. */
-      let wantA = 0, size = 5.0, fill = r.fraction, cell = GLYPH.sprout, spent = 0;
-      let accent = r.rgb, own = 0;
-      if (r.exhausted) {
-        wantA = 1; size = 6.8; spent = 1;
-        fill = clamp01(r.progress);
-        cell = Math.max(0, Math.min(20, Math.ceil(r.seconds - 0.001)));
+      /* ---- the clock overhead ----
+       * Silent unless it has something to say. Nineteen permanent tabs became
+       * two or three, and the ones that are left are twice the size. */
+      let wantA = 0, size = 6.4, fill = 1, cell = -1, spent = 0;
+      let accent = r.rgb;
+      if (m.exhausted) {
+        wantA = 1; size = 7.4; spent = 1;
+        fill = clamp01(m.progress);
+        cell = Math.max(0, Math.min(MAX_SEC, Math.ceil(m.seconds - 0.001)));
         accent = [EMBER.r, EMBER.g, EMBER.b];
-      } else if (r.blocked) {
-        wantA = 1; size = 6.0; spent = 1; fill = 0;
+      } else if (m.blocked) {
+        wantA = 1; size = 6.4; spent = 1; fill = 0;
         cell = GLYPH.blocked;
         accent = [EMBER.r, EMBER.g, EMBER.b];
-      } else if (r.mult > 1) {
-        wantA = 1; size = 5.4 + (r.mult >= 3 ? 0.5 : 0);
-        cell = r.mult >= 3 ? GLYPH.mult3 : GLYPH.mult2;
-        own = r.own;
       }
-      // A region that has simply grown back says so with the green wave on the
-      // ground and a toast. It does not need a badge as well.
-      r.alpha += (wantA - r.alpha) * Math.min(1, dt * (wantA > r.alpha ? 7 : 3.4));
+      r.alpha += (wantA - r.alpha) * Math.min(1, dt * (wantA > r.alpha ? 8 : 3.6));
 
       r.bob += dt * 1.5;
-      const pop = r.flash > 0.01 ? 1 + r.flash * 0.55 : 1;
-      const pulse = spent ? 1 + Math.sin(clock * 3.6) * 0.045 : 1;
+      const pop = m.flash > 0.01 ? 1 + m.flash * 0.5 : 1;
+      const pulse = spent ? 1 + Math.sin(clock * 3.6) * 0.05 : 1;
       mp[i * 3] = r.tile.x;
       mp[i * 3 + 1] = r.y + Math.sin(r.bob) * 0.28;
       mp[i * 3 + 2] = r.tile.z;
-      ms[i] = size * pop * pulse * (0.55 + r.alpha * 0.45);
+      ms[i] = size * pop * pulse * (0.45 + r.alpha * 0.55);
       md[i * 4] = fill;
       md[i * 4 + 1] = r.alpha;
       md[i * 4 + 2] = spent;
       md[i * 4 + 3] = cell;
-      mo[i] = own;
+      mo[i] = clamp01(m.tone);
       mc[i * 3] = accent[0];
       mc[i * 3 + 1] = accent[1];
       mc[i * 3 + 2] = accent[2];
@@ -574,18 +481,23 @@ export function buildRegions(group, dressing, stumps) {
     drawCalls: 2,
     triangles: ground.triangles + marker.triangles,
 
-    /** Debug / capture hook: how much of the stand has answered the harvest. */
+    /** Debug / capture hook: how much of the dressing has answered. */
     debug(tileId) { return stand.debug(tileId); },
 
-    /** Debug / capture hook: what the badge is currently saying. */
+    /** Debug / capture hook: what every hex is currently saying. */
     readout() {
-      return regions.map(r => ({
-        tile: r.tile.id, terrain: r.tile.terrain,
-        fraction: +r.fraction.toFixed(2),
-        work: +r.work.toFixed(2), spent: +r.spent.toFixed(2),
-        own: +r.own.toFixed(2), mult: r.mult, blocked: r.blocked,
-        exhausted: r.exhausted, seconds: +r.seconds.toFixed(1)
-      }));
+      return regions.map(r => {
+        const m = r.mood;
+        return {
+          tile: r.tile.id, terrain: r.tile.terrain,
+          fraction: +m.fraction.toFixed(2),
+          remaining: m.remaining, capacity: m.capacity,
+          work: +r.work.toFixed(2), spent: +m.spent.toFixed(2),
+          tone: +m.tone.toFixed(2), own: +m.own.toFixed(2),
+          blocked: m.blocked, exhausted: m.exhausted,
+          seconds: +m.seconds.toFixed(1), progress: +m.progress.toFixed(2)
+        };
+      });
     },
 
     dispose() {

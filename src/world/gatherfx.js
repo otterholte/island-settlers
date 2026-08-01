@@ -1,298 +1,304 @@
 /**
- * Island Settlers — "you can pick that up" affordances.
+ * Island Settlers — the PICKUP.
  *
- *   buildGatherFX(group) -> { update(dt), drawCalls, triangles, dispose() }
+ *   buildPickupFX(group) -> {
+ *     update(dt), pop(item, playerId), deny(x, z), drawCalls, triangles, dispose()
+ *   }
  *
  * ---------------------------------------------------------------------------
  * WHAT IS NOT HERE ANY MORE
  * ---------------------------------------------------------------------------
- * Every one of the 126 gather nodes used to wear a pale breathing ring on the
- * ground. The player's verdict was blunt:
+ * The target ring and its radial progress sweep are gone, and so is the little
+ * floating "WOOD" tab that hovered over whatever you were about to latch onto.
+ * They described a mechanic that no longer exists:
  *
- *   "This is WAYYY too visually busy ... instead of having like 5 small circles
- *    inside of it, the whole tile is split into individual trees."
+ *   "I shouldn't have to wait for the weird circle or to cut things down."
  *
- * They were right: 126 UI decals scattered across nineteen hexes read as litter,
- * and they were doing a job the OBJECTS should do. Harvestability is now said by
- * the thing itself — a standing tree is choppable, a stump is not — and by the
- * region tone in `regions.js`. The rings are gone, and with them a draw call,
- * 126 instance writes a frame and most of the screen's visual noise.
+ * Pickup is contact. There is nothing to aim at, nothing to wait for and no
+ * progress to report. What replaces them is a hit — fired on the same frame the
+ * item leaves the world:
  *
- * What is left is the player's OWN action, and only that:
+ *   1. FLASH   a bright ring snapping outward off the ground where it stood.
+ *   2. BURST   six sparks in the resource's own colour, thrown up and out.
+ *   3. THE CHIP a fat resource-coloured token that arcs off the item and flies
+ *      into the settler who took it, landing on their carry columns. This is
+ *      the bit that says WHICH one you got and WHO got it — a rival sweeping a
+ *      hex across the island reads as their chips flying to them, not yours.
  *
- *   1. TARGET RING — the node the human is about to latch onto (or is actively
- *      working) gets one ring with a radial progress sweep that fills over
- *      GATHER_TIME. One shader-driven disc, one colour, no dashes.
- *
- *   2. PROMPT — a small painted tab floating over that node naming the
- *      resource, or warning that the Raider has the region shut.
- *
- * Rivals get none of this: the player asked to stop tracking bot activity in
- * detail, and the loud treatment is reserved for their own actions.
+ * Every particle in all three lives in ONE InstancedBufferGeometry — 168 quads,
+ * one draw call, no shadow pass, positions integrated on the CPU because the
+ * chip has to chase a settler who is still running.
  *
  * Owner: World agent.
  */
 
 import * as THREE from 'three';
-import { RES_COLOR, RES_LABEL, INTERACT_RADIUS } from '../core/constants.js';
-import { nodes } from '../board/nodes.js';
+import { RES_COLOR } from '../core/constants.js';
 import { heightAt } from './terrain.js';
 
-const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
-const KINDS = ['wood', 'brick', 'wool', 'wheat', 'ore', 'blocked'];
+const CAP = 168;
+const SPARK = 0, CHIP = 1, FLASH = 2, DENY = 3;
 
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
   return (g && g.__ISLAND__) || null;
 }
 
-function canvas2d(w, h) {
-  if (typeof document === 'undefined' || !document.createElement) return null;
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext && c.getContext('2d');
-  return ctx ? { c, ctx } : null;
-}
+export function buildPickupFX(group) {
+  /* ------------------------------------------------------------ geometry */
+  const quad = new THREE.PlaneGeometry(1, 1);
+  const geo = new THREE.InstancedBufferGeometry();
+  geo.index = quad.index;
+  geo.setAttribute('position', quad.attributes.position);
+  geo.setAttribute('uv', quad.attributes.uv);
+  geo.instanceCount = CAP;
 
-function texture(w, h, paint) {
-  const cc = canvas2d(w, h);
-  if (!cc) return null;
-  try { paint(cc.ctx, w, h); } catch (e) { return null; }
-  const t = new THREE.CanvasTexture(cc.c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
-  t.needsUpdate = true;
-  return t;
-}
+  const aPos = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+  const aCol = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+  // x = size, y = fade 0..1, z = kind, w = spin
+  const aData = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 4), 4);
+  [aPos, aCol, aData].forEach(a => a.setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aPos', aPos);
+  geo.setAttribute('aCol', aCol);
+  geo.setAttribute('aData', aData);
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 6, 0), 260);
 
-/* ------------------------------------------------------------- the prompt */
-
-function promptTexture() {
-  const CW = 256, CH = 128;
-  return texture(CW * 3, CH * 2, (ctx, w, h) => {
-    ctx.clearRect(0, 0, w, h);
-    KINDS.forEach((kind, idx) => {
-      const ox = (idx % 3) * CW, oy = ((idx / 3) | 0) * CH;
-      const blocked = kind === 'blocked';
-      const accent = blocked ? '#d0472f' : '#' + (RES_COLOR[kind] || 0xffc93c).toString(16).padStart(6, '0');
-      ctx.save();
-      ctx.translate(ox, oy);
-
-      // chunky rounded tab: dark outline, cream face, coloured under-lip
-      const pad = 14, r = 26;
-      const x0 = pad, y0 = pad, x1 = CW - pad, y1 = CH - pad - 16;
-      const round = (a, b, c, d, rr) => {
-        ctx.beginPath();
-        ctx.moveTo(a + rr, b);
-        ctx.arcTo(c, b, c, d, rr); ctx.arcTo(c, d, a, d, rr);
-        ctx.arcTo(a, d, a, b, rr); ctx.arcTo(a, b, c, b, rr);
-        ctx.closePath();
-      };
-      ctx.fillStyle = 'rgba(20,12,6,0.92)';
-      round(x0 - 5, y0 - 5, x1 + 5, y1 + 10, r + 5); ctx.fill();
-      ctx.fillStyle = accent;
-      round(x0, y0 + 8, x1, y1 + 6, r); ctx.fill();
-      ctx.fillStyle = blocked ? '#f4dcd6' : '#f6e7c6';
-      round(x0, y0, x1, y1, r); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.55)';
-      round(x0 + 6, y0 + 5, x1 - 6, y0 + 24, 10); ctx.fill();
-
-      // little pointer down toward the node
-      ctx.fillStyle = 'rgba(20,12,6,0.92)';
-      ctx.beginPath();
-      ctx.moveTo(CW / 2 - 20, y1 + 2); ctx.lineTo(CW / 2 + 20, y1 + 2);
-      ctx.lineTo(CW / 2, y1 + 30); ctx.closePath(); ctx.fill();
-
-      // colour chip + label
-      ctx.fillStyle = accent;
-      round(x0 + 16, y0 + 18, x0 + 52, y1 - 18, 10); ctx.fill();
-      ctx.strokeStyle = 'rgba(20,12,6,0.9)'; ctx.lineWidth = 4; ctx.stroke();
-
-      ctx.fillStyle = '#3a2410';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      const label = blocked ? 'BLOCKED' : (RES_LABEL[kind] || kind).toUpperCase();
-      const maxW = x1 - x0 - 80;
-      let f = 48;
-      ctx.font = `bold ${f}px system-ui, sans-serif`;
-      while (f > 20 && ctx.measureText(label).width > maxW) {
-        f -= 2;
-        ctx.font = `bold ${f}px system-ui, sans-serif`;
-      }
-      ctx.fillText(label, x0 + 66, (y0 + y1) / 2 + 2);
-      ctx.restore();
-    });
-  });
-}
-
-/* ---------------------------------------------------------------- factory */
-
-export function buildGatherFX(group) {
-  let drawCalls = 0;
-  let triangles = 0;
-
-  /* ---- 1. the target ring --------------------------------------------- */
-  const ringGeo = new THREE.CircleGeometry(1, 40);
-  ringGeo.rotateX(-Math.PI / 2);
-  const ringMat = new THREE.ShaderMaterial({
+  const mat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: true,
-    uniforms: {
-      uColor:    { value: new THREE.Color(0xffc93c) },
-      uProgress: { value: 0 },
-      uTime:     { value: 0 },
-      uFade:     { value: 0 },
-      uWarn:     { value: 0 }
-    },
+    blending: THREE.AdditiveBlending,
+    uniforms: {},
     vertexShader: /* glsl */`
-      varying vec2 vP;
+      attribute vec3 aPos;
+      attribute vec3 aCol;
+      attribute vec4 aData;
+      varying vec2 vQ;
+      varying vec3 vCol;
+      varying vec2 vFK;
       void main() {
-        vP = position.xz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vQ = uv * 2.0 - 1.0;
+        vCol = aCol;
+        vFK = aData.yz;
+        float s = aData.x;
+        float c = cos(aData.w), sn = sin(aData.w);
+        vec2 p = vec2(position.x * c - position.y * sn, position.x * sn + position.y * c);
+        vec4 mv = modelViewMatrix * vec4(aPos, 1.0);
+        mv.xy += p * s;
+        gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */`
-      uniform vec3 uColor;
-      uniform float uProgress, uTime, uFade, uWarn;
-      varying vec2 vP;
+      varying vec2 vQ;
+      varying vec3 vCol;
+      varying vec2 vFK;
       void main() {
-        float d = length(vP);
-        if (d > 1.0) discard;
+        float fade = vFK.x;
+        float kind = vFK.y;
+        if (fade < 0.004) discard;
+        float d = length(vQ);
+        float a = 0.0;
+        vec3 col = vCol;
 
-        // ONE ring, gently breathing. The dashed inner guide that used to sit
-        // inside it was a second competing highlight on an already busy screen.
-        float rr = 0.82 + sin(uTime * 3.4) * 0.018;
-        float ring = smoothstep(0.10, 0.0, abs(d - rr) - 0.050);
+        if (kind < 0.5) {
+          // spark — a soft round mote
+          a = smoothstep(1.0, 0.15, d);
+          a *= a;
+          col = mix(vCol, vec3(1.0), 0.35);
+        } else if (kind < 1.5) {
+          // chip — a chunky rounded token with a bright core and a dark edge
+          vec2 q = abs(vQ);
+          float box = max(q.x, q.y) * 0.78 + length(q) * 0.22;
+          a = smoothstep(1.0, 0.86, box);
+          float core = smoothstep(0.80, 0.20, box);
+          col = mix(vCol * 0.55, mix(vCol, vec3(1.0), 0.42), core);
+        } else if (kind < 2.5) {
+          // flash — a hard expanding ring
+          a = smoothstep(0.16, 0.0, abs(d - 0.80)) * 0.95;
+          a += smoothstep(0.85, 0.0, d) * 0.30;
+          col = mix(vCol, vec3(1.0), 0.55);
+        } else {
+          // deny — a red bar, for a hex that is not yours
+          a = smoothstep(0.22, 0.0, abs(d - 0.70));
+          col = vec3(0.95, 0.24, 0.16);
+        }
 
-        // radial progress sweep filling clockwise from straight ahead
-        float ang = atan(vP.y, vP.x);
-        float t = fract((-ang + 1.5707963) / 6.2831853);
-        float sweep = step(t, uProgress) * step(0.34, d) * step(d, 0.76);
-        float head = smoothstep(0.055, 0.0, abs(t - uProgress)) * step(0.32, d) * step(d, 0.80);
-
-        float fill = (1.0 - smoothstep(0.0, 0.86, d)) * 0.13;
-        float a = (ring + sweep * 0.50 + head * 0.9 + fill) * uFade;
+        a *= fade;
         if (a < 0.006) discard;
-
-        vec3 c = mix(uColor, vec3(1.0), head * 0.6 + sweep * 0.18);
-        c = mix(c, vec3(0.86, 0.20, 0.14), uWarn);
-        gl_FragColor = vec4(c, clamp(a, 0.0, 0.92));
+        gl_FragColor = vec4(col * (0.50 + fade * 0.45), min(a, 1.0));
       }
     `
   });
-  const ring = new THREE.Mesh(ringGeo, ringMat);
-  ring.name = 'gather-ring';
-  ring.renderOrder = 4;
-  ring.frustumCulled = false;
-  ring.visible = false;
-  group.add(ring);
-  drawCalls++; triangles += 40;
 
-  /* ---- 2. the floating prompt ----------------------------------------- */
-  const promptTex = promptTexture();
-  const promptMat = new THREE.MeshBasicMaterial({
-    transparent: true, depthWrite: false, depthTest: false, opacity: 0
-  });
-  if (promptTex) {
-    promptTex.repeat.set(1 / 3, 1 / 2);
-    promptMat.map = promptTex;
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.name = 'pickup-fx';
+  mesh.renderOrder = 12;
+  mesh.frustumCulled = false;
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  group.add(mesh);
+
+  /* ---------------------------------------------------------- the pool */
+
+  const P = [];
+  for (let i = 0; i < CAP; i++) {
+    P.push({
+      live: false, kind: SPARK, t: 0, life: 1,
+      x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0,
+      size: 1, spin: 0, dspin: 0,
+      fx: 0, fy: 0, fz: 0,        // chip origin
+      target: -1, r: 1, g: 1, b: 1
+    });
   }
-  const prompt = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.8), promptMat);
-  prompt.name = 'gather-prompt';
-  prompt.renderOrder = 20;
-  prompt.frustumCulled = false;
-  prompt.visible = false;
-  group.add(prompt);
-  if (promptTex) { drawCalls++; triangles += 2; }
-
-  function setCell(idx) {
-    if (!promptTex) return;
-    promptTex.offset.set((idx % 3) / 3, 1 - (((idx / 3) | 0) + 1) / 2);
+  let cursor = 0;
+  function take() {
+    for (let k = 0; k < CAP; k++) {
+      const p = P[cursor];
+      cursor = (cursor + 1) % CAP;
+      if (!p.live) return p;
+    }
+    const p = P[cursor];
+    cursor = (cursor + 1) % CAP;
+    return p;   // steal the oldest rather than drop the hit
   }
 
-  /* ------------------------------------------------------------- update */
+  const _c = new THREE.Color();
+  function colorOf(resource) {
+    _c.setHex(RES_COLOR[resource] || 0xffc93c, THREE.SRGBColorSpace);
+    return _c;
+  }
 
-  let clock = 0;
-  let ringFade = 0;
-  let promptFade = 0;
-  let poll = 0;
-  let robber = -1;
-  let robberOwner = -1;
+  /* --------------------------------------------------------------- spawn */
+
+  /**
+   * An item just left the world. `player` is who took it, so the chip knows
+   * where to fly.
+   */
+  function pop(item, player = -1) {
+    if (!item) return;
+    const x = item.x, z = item.z;
+    const gy = heightAt(x, z);
+    const c = colorOf(item.resource);
+    const cr = c.r, cg = c.g, cb = c.b;
+
+    // 1 — the flash on the ground
+    {
+      const p = take();
+      p.live = true; p.kind = FLASH; p.t = 0; p.life = 0.36;
+      p.x = x; p.y = gy + 0.9; p.z = z;
+      p.vx = p.vy = p.vz = 0;
+      p.size = 1.1; p.spin = 0; p.dspin = 0;
+      p.target = -1; p.r = cr; p.g = cg; p.b = cb;
+    }
+
+    // 2 — the burst
+    for (let i = 0; i < 4; i++) {
+      const p = take();
+      const a = (i / 4) * Math.PI * 2 + Math.random() * 0.7;
+      const sp = 2.6 + Math.random() * 3.4;
+      p.live = true; p.kind = SPARK; p.t = 0; p.life = 0.44 + Math.random() * 0.22;
+      p.x = x + Math.cos(a) * 0.25;
+      p.y = gy + 0.75 + Math.random() * 0.8;
+      p.z = z + Math.sin(a) * 0.25;
+      p.vx = Math.cos(a) * sp; p.vz = Math.sin(a) * sp;
+      p.vy = 3.4 + Math.random() * 3.0;
+      p.size = 0.22 + Math.random() * 0.20;
+      p.spin = 0; p.dspin = 0;
+      p.target = -1; p.r = cr; p.g = cg; p.b = cb;
+    }
+
+    // 3 — the chip that flies to whoever took it
+    {
+      const p = take();
+      p.live = true; p.kind = CHIP; p.t = 0; p.life = 0.50;
+      p.x = p.fx = x; p.y = p.fy = gy + 1.15; p.z = p.fz = z;
+      p.size = 0.92; p.spin = 0; p.dspin = 7.5;
+      p.target = player;
+      p.r = cr; p.g = cg; p.b = cb;
+    }
+  }
+
+  /** "You get nothing here." Fired when a settler walks a hex they do not own. */
+  function deny(x, z) {
+    const p = take();
+    p.live = true; p.kind = DENY; p.t = 0; p.life = 0.55;
+    p.x = x; p.y = heightAt(x, z) + 1.0; p.z = z;
+    p.vx = p.vy = p.vz = 0;
+    p.size = 2.4; p.spin = 0; p.dspin = 0;
+    p.target = -1; p.r = 0.95; p.g = 0.24; p.b = 0.16;
+  }
+
+  /* -------------------------------------------------------------- update */
+
+  const pos = aPos.array, col = aCol.array, dat = aData.array;
 
   function update(dt) {
-    clock += dt;
     const I = match();
-    const state = I && I.state;
-    const cam = I && I.camera;
+    const players = I && I.state && I.state.players;
+    let any = false;
 
-    if ((poll -= dt) <= 0) {
-      poll = 0.25;
-      if (state) { robber = state.robberTile; robberOwner = state.robberOwner; }
-    }
+    for (let i = 0; i < CAP; i++) {
+      const p = P[i];
+      if (!p.live) { dat[i * 4 + 1] = 0; continue; }
+      any = true;
+      p.t += dt;
+      const u = p.t / p.life;
+      if (u >= 1) {
+        p.live = false;
+        dat[i * 4 + 1] = 0;
+        continue;
+      }
 
-    const me = state && state.players && state.players[0];
-    let target = null, working = false, blockedTarget = false;
-    if (me && state.phase === 'play') {
-      if (me.action === 'gather' && me.gatherNode) { target = me.gatherNode; working = true; }
-      else if (me.nearTarget) target = me.nearTarget;
-      if (!target && robber >= 0 && robberOwner !== 0) {
-        // standing in a shut region: say so rather than going silent
-        let best = null, bd = INTERACT_RADIUS * INTERACT_RADIUS * 1.6;
-        for (const n of nodes) {
-          if (n.tile !== robber) continue;
-          const d = (n.x - me.x) * (n.x - me.x) + (n.z - me.z) * (n.z - me.z);
-          if (d < bd) { bd = d; best = n; }
+      let size = p.size, fade = 1;
+
+      if (p.kind === SPARK) {
+        p.vy -= 17 * dt;
+        p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+        p.vx *= 0.94; p.vz *= 0.94;
+        fade = 1 - u * u;
+        size = p.size * (1 - u * 0.55);
+      } else if (p.kind === CHIP) {
+        // arc from where the item stood into the settler's carry stack
+        let tx = p.fx, ty = p.fy + 3.0, tz = p.fz;
+        if (p.target >= 0 && players && players[p.target]) {
+          const pl = players[p.target];
+          tx = pl.x; tz = pl.z;
+          ty = heightAt(pl.x, pl.z) + 3.2;
         }
-        if (best) { target = best; blockedTarget = true; }
+        const e = u * u * (3 - 2 * u);
+        p.x = p.fx + (tx - p.fx) * e;
+        p.z = p.fz + (tz - p.fz) * e;
+        p.y = p.fy + (ty - p.fy) * e + Math.sin(u * Math.PI) * 2.3;
+        p.spin += p.dspin * dt;
+        fade = u < 0.12 ? u / 0.12 : (u > 0.80 ? (1 - u) / 0.20 : 1);
+        size = p.size * (1.25 - u * 0.45);
+      } else if (p.kind === FLASH) {
+        size = p.size * (1.0 + u * 4.2);
+        fade = (1 - u) * (1 - u) * 0.75;
+      } else {
+        size = p.size * (1.0 + u * 0.5);
+        fade = Math.sin(Math.min(1, u * 1.6) * Math.PI) * 0.9;
       }
+
+      pos[i * 3] = p.x; pos[i * 3 + 1] = p.y; pos[i * 3 + 2] = p.z;
+      col[i * 3] = p.r; col[i * 3 + 1] = p.g; col[i * 3 + 2] = p.b;
+      dat[i * 4] = size;
+      dat[i * 4 + 1] = fade;
+      dat[i * 4 + 2] = p.kind;
+      dat[i * 4 + 3] = p.spin;
     }
 
-    const wantRing = target ? 1 : 0;
-    ringFade += (wantRing - ringFade) * Math.min(1, dt * (target ? 9 : 6));
-    promptFade += (wantRing - promptFade) * Math.min(1, dt * (target ? 8 : 6));
-
-    if (ringFade > 0.01 && target) {
-      const anchor = (I && I.world && I.world.props && I.world.props.nodeAnchor)
-        ? I.world.props.nodeAnchor(target) : null;
-      const ax = anchor ? anchor.x : target.x;
-      const az = anchor ? anchor.z : target.z;
-      ring.visible = true;
-      ring.position.set(ax, heightAt(ax, az) + 0.16, az);
-      ring.scale.setScalar(2.3);
-      ringMat.uniforms.uTime.value = clock;
-      ringMat.uniforms.uFade.value = ringFade;
-      ringMat.uniforms.uWarn.value = blockedTarget ? 1 : 0;
-      ringMat.uniforms.uProgress.value = working ? clamp01(me.gatherProgress) : 0;
-      ringMat.uniforms.uColor.value.setHex(
-        blockedTarget ? 0xd0472f : (RES_COLOR[target.resource] || 0xffc93c),
-        THREE.SRGBColorSpace);
-
-      if (promptTex) {
-        setCell(blockedTarget ? 5 : Math.max(0, KINDS.indexOf(target.resource)));
-        prompt.visible = true;
-        // Kept low: the hero's own carry columns start 5.3 units up, and a
-        // prompt any higher than this disappears behind them.
-        prompt.position.set(ax, heightAt(ax, az) + 3.15 + Math.sin(clock * 2.1) * 0.13, az);
-        if (cam && cam.quaternion) prompt.quaternion.copy(cam.quaternion);
-        const k = 0.55 + promptFade * 0.45;
-        prompt.scale.set(k, k, k);
-        promptMat.opacity = promptFade;
-      }
-    } else {
-      ring.visible = ringFade > 0.01;
-      if (!ring.visible) prompt.visible = false;
-      promptMat.opacity = promptFade;
-      if (promptFade < 0.02) prompt.visible = false;
-    }
+    aPos.needsUpdate = true;
+    aCol.needsUpdate = true;
+    aData.needsUpdate = true;
+    mesh.visible = any;
   }
 
   return {
-    group, update, drawCalls, triangles,
-    dispose() {
-      ringGeo.dispose(); prompt.geometry.dispose();
-      ringMat.dispose(); promptMat.dispose();
-      if (promptTex) promptTex.dispose();
-    }
+    group, mesh, update, pop, deny,
+    drawCalls: 1,
+    triangles: CAP * 2,
+    dispose() { geo.dispose(); quad.dispose(); mat.dispose(); }
   };
 }
 
-export default buildGatherFX;
+export const buildGatherFX = buildPickupFX;
+export default buildPickupFX;
