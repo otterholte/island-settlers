@@ -20,6 +20,14 @@ interfaces so parallel work integrates without merge pain.
 - `src/core/constants.js`, `src/board/layout.js`, `src/board/nodes.js`,
   `src/core/rules.js` are **frozen contracts** — read, don't rewrite. If you
   need a change, add a new exported symbol rather than altering an old one.
+- **Gathering is contact-based.** A hex is a dense field of ITEMS; running a
+  settler over one collects it that instant. There is no gather timer, no
+  progress ring and no `action === 'gather'`. A player may only collect on a hex
+  where they own an adjacent settlement or city — everywhere else yields
+  nothing, so there are no ×2/×3 yield badges any more. The number on a hex now
+  means only two things: how many items it holds and how fast the whole hex
+  grows back. Read the header of `src/board/nodes.js` for the full API
+  (`items`, `tileItems`, `tileRecovery`, `canGatherTile`, `playerOwnsTile`).
 - **The ground is not at y=0.** Tile tops run ~1.76–3.71. Everything placed in
   the world must sit on `heightAt(x, z)` exported by `src/world/terrain.js`.
 
@@ -33,8 +41,9 @@ Presentation code reads `state` and consumes `drainEvents(state)` each frame.
 
 | type | payload | meaning |
 |---|---|---|
-| `gatherStart` | player, node, resource | settler began a harvest cycle |
-| `gained` | player, resource, amount, x, z, node, depleted | one cycle completed |
+| `gained` | player, resource, amount, x, z, **item**, **tile**, node, depleted | one item picked up on contact |
+| `exhausted` | tile, player, seconds | last item taken; the hex is bare and counting down |
+| `restored` | tile | every item on the hex is back |
 | `build` | player, kind (`road`/`settlement`/`city`), at (edge or intersection id) | piece placed |
 | `trade` | player, give, get, ratio | exchange completed |
 | `cardDrawn` | player, type, instant | dev card purchased |
@@ -42,7 +51,7 @@ Presentation code reads `state` and consumes `drainEvents(state)` each frame.
 | `roadBuilding` | player, free | two free roads granted |
 | `award` | kind (`longestRoad`/`largestArmy`), player, value | award changed hands |
 | `portUnlocked` | player, port | dock became usable |
-| `blocked` | player, tile | tried to work a blocked region |
+| `blocked` | player, tile, reason (`unowned`/`raider`) | tried to collect where they may not |
 | `victory` | player | match over |
 | `setupComplete` | — | draft finished, play begins |
 

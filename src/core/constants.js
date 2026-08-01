@@ -46,27 +46,60 @@ export function pipsFor(number) {
   return 6 - Math.abs(7 - number);
 }
 
-// Seconds for one gather cycle, indexed by pips (1..5)
-export const GATHER_TIME = { 1: 1.84, 2: 1.57, 3: 1.34, 4: 1.15, 5: 0.96 };
-// Resources granted per completed cycle, indexed by pips.
-// Flat by design: GATHER_TIME carries the productivity difference, which keeps
-// the numbers on the tokens meaningful without making 6/8 tiles run away with
-// the match. Measured over 100 simulated matches.
-export const GATHER_YIELD = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1 };
+/* ------------------------------------------------------------- gathering
+ * THE MODEL (rebuilt — see the header of src/board/nodes.js)
+ *
+ * A hex is FULL of its resource. You collect an item the instant you touch it;
+ * there is no swing timer, no progress ring and no node to latch onto. Sweeping
+ * a whole hex clean takes roughly three seconds of running.
+ *
+ * The number printed on a hex therefore means exactly two things:
+ *   1. TILE_ITEMS  — how many items the hex holds when full.
+ *   2. TILE_REGEN  — how long the whole hex stays bare once it is cleared.
+ * Higher number (more pips) = more items AND a faster comeback. Nothing else.
+ *
+ * You may only collect on a hex where you own an adjacent settlement or city.
+ * Everywhere else yields literally nothing — there is no multiplier any more.
+ */
 
-// Owning a building on a corner of the tile multiplies your yield there.
-// This is what makes placement matter in a real-time game.
-export const OWNERSHIP_MULT = { none: 1, settlement: 2, city: 3 };
+// How close the settler has to pass to sweep an item up. Generous on purpose:
+// this is a phone game played with a thumbstick.
+export const PICKUP_RADIUS = 2.4;
 
-// A node (tree / rock / sheep ...) depletes after this many cycles, then regrows.
+// Items on a full hex, indexed by pips (1..5). ~16 on an average hex, which a
+// settler sweeps clean in about three and a half seconds.
+export const TILE_ITEMS = { 1: 10, 2: 13, 3: 16, 4: 19, 5: 22 };
+
+// Seconds a cleared hex stays bare before EVERY item returns at once.
+// A player working five or six of their own hexes in a loop spends roughly
+// this long getting round them all, so a good rotation barely ever waits and a
+// one-hex player waits a lot. Measured over 40-match simulations.
+export const TILE_REGEN = { 1: 64, 2: 57, 3: 50, 4: 44, 5: 38 };
+
+// Items generated per hex in the position pool. TILE_ITEMS never exceeds this;
+// the pool is fixed so positions stay stable while counts can be retuned.
+export const TILE_ITEM_POOL = 24;
+
+/** Sustained items-per-second a full hex of this productivity can supply. */
+export function tileRateFor(pips) {
+  const n = TILE_ITEMS[pips] || 0;
+  const r = TILE_REGEN[pips] || 1;
+  return n / r;
+}
+
+// Legacy decorative nodes (src/world/* still draws these; see board/nodes.js).
 export const NODE_CAPACITY = 3;
-export const NODE_REGROW_SEC = 20.0;   // legacy per-node value; recovery is now tile-scoped (see board/nodes.js)
+export const NODE_REGROW_SEC = 20.0;
 
 // ---------------------------------------------------------------- costs
+// Retuned for the gathering rebuild. A settlement is the expensive purchase
+// because it is the only thing that opens new land; a city is now a pure
+// victory point (ownership gates, it does not multiply) so it has to be cheap
+// enough to stay worth taking once your corners are claimed.
 export const COST = {
-  road:       { wood: 2, brick: 2 },
-  settlement: { wood: 2, brick: 2, wheat: 2, wool: 2 },
-  city:       { wheat: 4, ore: 6 },
+  road:       { wood: 3, brick: 3 },
+  settlement: { wood: 3, brick: 3, wheat: 2, wool: 2 },
+  city:       { wheat: 3, ore: 4 },
   card:       { wool: 2, wheat: 2, ore: 2 }
 };
 
@@ -105,7 +138,9 @@ export const PORT_GENERIC = 3;           // 3:1
 export const PORT_SPECIAL = 2;           // 2:1 on the port's resource
 
 // ---------------------------------------------------------------- starting kit
-export const START_RESOURCES = { wood: 4, brick: 4, wool: 2, wheat: 2, ore: 2 };
+// Enough for one road and a little change — the point is to send you out to
+// your own hexes in the first few seconds, not to bankroll an opening build.
+export const START_RESOURCES = { wood: 3, brick: 3, wool: 2, wheat: 2, ore: 2 };
 
 // ---------------------------------------------------------------- players
 export const PLAYER_COLORS = [

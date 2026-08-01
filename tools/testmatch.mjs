@@ -263,8 +263,18 @@ window.__tick = function(seconds, o){
 window.__place = function(pid,x,z){
   const p = I().state.players[pid];
   p.x=x; p.z=z; p.vx=0; p.vz=0; p.action='idle';
-  p.gatherNode=null; p.gatherProgress=0; p.gatherIntent=null;
+  p.sweptAt=-1;
   return {x:p.x,z:p.z};
+};
+
+/** Walk a settler over a point and let the contact sweep fire, exactly as the
+ *  frame loop does. Returns how much of res the player gained. */
+window.__walkOver = function(pid,x,z,res,seconds){
+  const st = I().state; const p = st.players[pid];
+  const before = p.res[res];
+  window.__place(pid,x,z);
+  __tick(seconds||0.1,{ gather:true });
+  return p.res[res]-before;
 };
 
 window.__res = pid => ({ ...I().state.players[pid].res });
@@ -284,29 +294,93 @@ window.__snap = () => {
   };
 };
 
-/** A live node on a tile with the given resource and pip count. */
-window.__findNode = function(resource, pips, avoidOwned){
+/**
+ * A standing item, optionally filtered by resource, pip count and who may work
+ * the hex it sits on. owner = a player id who must own that hex, or -1 for a
+ * hex nobody owns at all.
+ */
+window.__findItem = function(resource, pips, owner){
   const st = I().state;
-  for (const n of N.nodes){
-    if (n.remaining<=0) continue;
-    const t = L.tiles[n.tile];
-    if (resource && n.resource!==resource) continue;
+  for (const it of N.items){
+    if (!it.available) continue;
+    const t = L.tiles[it.tile];
+    if (resource && it.resource!==resource) continue;
     if (pips && t.pips!==pips) continue;
-    if (avoidOwned){
-      let owned=false;
-      for (const c of t.corners) if (st.buildings.has(c)) owned=true;
-      if (owned) continue;
+    if (owner !== undefined && owner !== null){
+      if (owner >= 0){ if (!R.playerOwnsTile(st, owner, it.tile)) continue; }
+      else { if ([...t.corners].some(c=>st.buildings.has(c))) continue; }
     }
-    return { id:n.id, x:n.x, z:n.z, tile:n.tile, resource:n.resource,
-             pips:t.pips, remaining:n.remaining };
+    return { id:it.id, x:it.x, z:it.z, tile:it.tile, resource:it.resource,
+             pips:t.pips, items:N.tileItemsRemaining(it.tile),
+             count:N.tileItemCount(it.tile), regen:N.tileRegenSeconds(it.tile) };
   }
   return null;
 };
 
-/** Refill every node so a measurement is not truncated by depletion. */
-window.__refill = function(){
-  for (const n of N.nodes){ n.remaining = C.NODE_CAPACITY; n.regrowAt = 0; n.justRegrew=false; }
-  return N.nodes.length;
+/** Put every hex on the island back to full. */
+window.__refill = function(){ return N.restoreAll(); };
+
+/**
+ * Lay a legal free road chain from pid's network out to intersection iid
+ * and drop a settlement on it — every segment through rules.placeRoad, the
+ * settlement through rules.placeSettlement. This is how a check gives a player
+ * ownership of a region without poking state directly.
+ */
+window.__connect = function(pid, iid){
+  const st = I().state; const p = st.players[pid];
+  if (st.buildings.has(iid)) return { ok:false, why:'occupied' };
+  if (!R.settlementLegal(st,pid,iid,true)) return { ok:false, why:'distance rule' };
+  const own = new Set([...p.settlements, ...p.cities]);
+  for (const e of p.roads){ own.add(L.edges[e].a); own.add(L.edges[e].b); }
+  let path = [];
+  if (!own.has(iid)){
+    const prev=new Map(), seen=new Set(own); let q=[...own], goal=-1;
+    while(q.length && goal<0){
+      const cur=q.shift();
+      const b=st.buildings.get(cur);
+      if (b && b.owner!==pid && !own.has(cur)) continue;   // rival corner severs
+      for (const eid of L.intersections[cur].edges){
+        if (st.roadOwner.has(eid) && st.roadOwner.get(eid)!==pid) continue;
+        const e=L.edges[eid];
+        const nx = e.a===cur ? e.b : e.a;
+        if (seen.has(nx)) continue;
+        seen.add(nx); prev.set(nx,{from:cur,edge:eid});
+        if (nx===iid){ goal=nx; break; }
+        q.push(nx);
+      }
+    }
+    if (goal<0) return { ok:false, why:'no road route' };
+    let c=goal;
+    while(prev.has(c)){ const s=prev.get(c); path.push(s.edge); c=s.from; }
+    path.reverse();
+  }
+  let laid=0;
+  for (const eid of path){
+    if (st.roadOwner.has(eid)) continue;
+    if (!R.placeRoad(st,pid,eid,true)) return { ok:false, why:'road refused', laid };
+  laid++;
+  }
+  const ok = R.placeSettlement(st,pid,iid,true);
+  return { ok, roads:laid, iid };
+};
+
+/** Make sure pid owns at least one hex producing resource. Returns its id. */
+window.__ownAHexOf = function(pid, resource){
+  const st = I().state;
+  for (const t of L.tiles){
+    if (t.resource!==resource) continue;
+    if (R.playerOwnsTile(st,pid,t.id)) return { tile:t.id, built:false };
+  }
+  // Nothing yet: claim a free corner of the best hex of that kind.
+  const cands = L.tiles.filter(t=>t.resource===resource)
+    .sort((a,b)=>b.pips-a.pips);
+  for (const t of cands){
+    for (const c of t.corners){
+      const r = window.__connect(pid, c);
+      if (r.ok) return { tile:t.id, built:true, roads:r.roads, corner:c };
+    }
+  }
+  return { tile:-1, built:false };
 };
 
 window.__grant = function(pid, bag){
@@ -444,80 +518,103 @@ await test(2, 'Opening draft places 8 settlements + 8 roads and reaches phase=pl
 
 /* ---- 3. all five resources gather --------------------------------------- */
 
-await test(3, 'All five resources can be gathered and the inventory increases', async () => {
+await test(3, 'All five resources can be gathered on contact, from hexes you own', async () => {
   await ensurePlay();
   const out = await pev(`(()=>{
     const R=window.__R__, C=window.__C__;
     const st=window.__ISLAND__.state;
     const rows=[];
     for (const r of C.RES){
+      const own = __ownAHexOf(0, r);
+      if (own.tile < 0){ rows.push({res:r, ok:false, why:'could not claim a hex'}); continue; }
       __refill();
-      const n = __findNode(r, null, true) || __findNode(r, null, false);
-      if (!n){ rows.push({res:r, ok:false, why:'no live node'}); continue; }
-      __place(0, n.x, n.z);
+      const n = __findItem(r, null, 0);
+      if (!n){ rows.push({res:r, ok:false, why:'no standing item on an owned hex'}); continue; }
+      // One sixtieth of a second standing on it: pickup is instant on contact.
       const before = st.players[0].res[r];
-      st.players[0].gatherIntent = n.id;
-      const t = __tick(12, { gather:true, stop:'st.players[0].res.'+r+' > '+before });
-      const after = st.players[0].res[r];
-      rows.push({res:r, ok:after>before, before, after, node:n.id, tile:n.tile,
-                 pips:n.pips, secs:+t.seconds.toFixed(2)});
+      const gained = __walkOver(0, n.x, n.z, r, 1/60);
+      rows.push({res:r, ok:gained>0, before, after:st.players[0].res[r], gained,
+                 item:n.id, tile:n.tile, pips:n.pips, claimed:own.built,
+                 roads:own.roads||0, left:R.tileItemsRemaining(n.tile), full:n.count});
     }
     return rows;})()`);
   const bad = out.filter(r => !r.ok);
   return {
     pass: bad.length === 0,
-    evidence: out.map(r => `${r.res}: ${r.before}->${r.after} in ${r.secs}s (node ${r.node}, ${r.pips} pips)`).join('\n')
-      + (bad.length ? `\nFAILED: ${bad.map(b => b.res + ' ' + (b.why || '')).join(', ')}` : '')
+    evidence: out.map(r => r.ok
+      ? `${r.res}: ${r.before}->${r.after} (+${r.gained}) in ONE frame on contact — ` +
+        `item ${r.item}, hex ${r.tile} (${r.pips} pips, ${r.full} items, ${r.left} left)` +
+        (r.claimed ? `, hex claimed with ${r.roads} roads + a settlement` : ', hex already ours')
+      : `${r.res}: FAILED — ${r.why || 'no gain'}`).join('\n')
   };
 });
 
 /* ---- 4. productivity ---------------------------------------------------- */
 
-await test(4, 'Region productivity: a 5-pip tile yields faster than a 1-pip tile', async () => {
+await test(4, 'The hex number means two things: how many items it holds and how fast they come back', async () => {
   await ensurePlay();
   const out = await pev(`(()=>{
-    const C=window.__C__; const st=window.__ISLAND__.state;
+    const C=window.__C__, R=window.__R__, L=window.__L__, N=window.__N__;
+    const st=window.__ISLAND__.state;
+
+    /** Claim a hex of this productivity, strip it bare item by item, and time
+     *  both the sweep and the recovery it triggers. */
     function measure(pips){
+      const t = L.tiles.filter(x=>x.resource && x.pips===pips)
+                       .find(x=>{
+                         if (R.playerOwnsTile(st,0,x.id)) return true;
+                         return x.corners.some(c=>__connect(0,c).ok);
+                       });
+      if (!t) return null;
       __refill();
-      const n = __findNode(null, pips, true) || __findNode(null, pips, false);
-      if (!n) return null;
-      __place(0, n.x, n.z);
-      const r=n.resource, before=st.players[0].res[r];
-      st.players[0].gatherIntent = n.id;
-      // Three swings is one full node, i.e. pure gather time with no regrow wait.
-      const t = __tick(30, { gather:true, stop:'st.players[0].res.'+r+' >= '+(before+3) });
-      const gained = st.players[0].res[r]-before;
-      // Sustained rate over a full minute, including the regrow wait. The
-      // controller runs too, so the settler re-latches after a node regrows
-      // exactly as it does for a player standing still on the tile.
-      __refill(); __place(0,n.x,n.z);
-      const b2 = st.players[0].res[r];
-      st.players[0].gatherIntent = n.id;
-      __tick(60, { gather:true, controller:true });
-      return { pips, tile:n.tile, res:r, node:n.id, gained,
-               burst:+t.seconds.toFixed(2),
-               perSwing:+(t.seconds/Math.max(1,gained)).toFixed(3),
-               perMin: st.players[0].res[r]-b2,
-               declared: C.GATHER_TIME[pips] };
+      const declaredCount = C.TILE_ITEMS[pips];
+      const declaredRegen = C.TILE_REGEN[pips];
+      const count = N.tileItemCount(t.id);
+      const res = t.resource;
+      const before = st.players[0].res[res];
+      // Walk the settler from item to item. Each step is a single frame: the
+      // pickup is on contact, so this is a real measure of a hex's stock.
+      let steps=0, taken=0;
+      for (let k=0;k<80 && N.tileItemsRemaining(t.id)>0;k++){
+        const it = N.nearestItem(st.players[0].x, st.players[0].z, { tile:t.id });
+        if (!it) break;
+        __place(0, it.x, it.z);
+        __tick(1/60, { gather:true });
+        steps++;
+      }
+      taken = st.players[0].res[res]-before;
+      const rec = N.tileRecovery(t.id, st.time);
+      return { pips, tile:t.id, res, count, declaredCount, taken, steps,
+               exhausted: N.isTileExhausted(t.id),
+               secondsLeft:+rec.secondsLeft.toFixed(1), total:rec.total,
+               declaredRegen,
+               rate:+(count/declaredRegen).toFixed(3) };
     }
     return { hi: measure(5), lo: measure(1) };})()`);
   const { hi, lo } = out;
-  if (!hi || !lo) return { pass: false, evidence: `could not find a ${!hi ? '5' : '1'}-pip node` };
-  // Productivity rides on gather TIME, not on yield per swing, and recovery is
-  // now scoped to the whole region: once a tile is worked out it is dormant for
-  // TILE_REGROW_SEC regardless of its number, so a 60-second window caps a
-  // 5-pip and a 1-pip tile at the same total. Sustained throughput is therefore
-  // no longer the right measure — the honest test is how fast a swing lands.
-  const pass = hi.perSwing < lo.perSwing;
+  if (!hi || !lo) return { pass: false, evidence: `could not claim a ${!hi ? '5' : '1'}-pip hex` };
+  // 1. more pips -> MORE items on the hex
+  // 2. more pips -> FASTER whole-hex regrowth
+  // 3. clearing the last item exhausts the hex and starts its countdown
+  const moreItems = hi.count > lo.count && hi.count === hi.declaredCount
+    && lo.count === lo.declaredCount;
+  const fasterBack = hi.total < lo.total && hi.total === hi.declaredRegen
+    && lo.total === lo.declaredRegen;
+  const emptied = hi.exhausted && lo.exhausted
+    && hi.taken === hi.count && lo.taken === lo.count;
   return {
-    pass,
+    pass: moreItems && fasterBack && emptied,
     evidence:
-      `5-pip tile ${hi.tile} (${hi.res}): ${hi.gained} units in ${hi.burst}s = ${hi.perSwing}s/unit ` +
-      `(declared ${hi.declared}s) · ${hi.perMin} units in 60s\n` +
-      `1-pip tile ${lo.tile} (${lo.res}): ${lo.gained} units in ${lo.burst}s = ${lo.perSwing}s/unit ` +
-      `(declared ${lo.declared}s) · ${lo.perMin} units in 60s\n` +
-      `speed ratio ${(lo.perSwing / hi.perSwing).toFixed(2)}x per swing, ` +
-      `${(hi.perMin / Math.max(1, lo.perMin)).toFixed(2)}x sustained`
+      `5-pip hex ${hi.tile} (${hi.res}): ${hi.count} items (declared ${hi.declaredCount}), ` +
+      `all ${hi.taken} swept in ${hi.steps} contacts -> exhausted=${hi.exhausted}, ` +
+      `back in ${hi.secondsLeft}s of ${hi.total}s = ${hi.rate} items/s sustained\n` +
+      `1-pip hex ${lo.tile} (${lo.res}): ${lo.count} items (declared ${lo.declaredCount}), ` +
+      `all ${lo.taken} swept in ${lo.steps} contacts -> exhausted=${lo.exhausted}, ` +
+      `back in ${lo.secondsLeft}s of ${lo.total}s = ${lo.rate} items/s sustained\n` +
+      `more items on the better hex: ${moreItems} (${hi.count} vs ${lo.count}) · ` +
+      `faster regrowth: ${fasterBack} (${hi.total}s vs ${lo.total}s) · ` +
+      `${(hi.rate / lo.rate).toFixed(2)}x sustained supply\n` +
+      `no swing speed involved: every item came off in a single frame of contact`
   };
 });
 
@@ -832,19 +929,20 @@ await test(9, 'Cities upgrade only the owner\'s own settlements', async () => {
     const cost={ wheat:c0.wheat-p.res.wheat, ore:c0.ore-p.res.ore };
     const aTwice = R.upgradeCity(st,0,mine,false);
     return { rival:rival?rival[0]:null, aRival, rivalStill, empty, aEmpty,
-             mine, aMine, cost, aTwice,
+             mine, aMine, cost, aTwice, want:window.__C__.COST.city,
              type: st.buildings.get(mine).type,
              cities:p.cities.size, settlementsHold:p.settlements.has(mine) };})()`);
   const pass = out.aRival === false && out.rivalStill === 'settlement'
     && out.aEmpty === false && out.aMine === true && out.type === 'city'
     && out.aTwice === false && out.settlementsHold === false
-    && out.cost.wheat === 4 && out.cost.ore === 6;
+    && out.cost.wheat === out.want.wheat && out.cost.ore === out.want.ore;
   return {
     pass,
     evidence:
       `rival settlement #${out.rival} -> ${out.aRival} (still a ${out.rivalStill})\n` +
       `empty corner #${out.empty} -> ${out.aEmpty}\n` +
-      `my settlement #${out.mine} -> ${out.aMine}, now a ${out.type}, charged ${JSON.stringify(out.cost)}\n` +
+      `my settlement #${out.mine} -> ${out.aMine}, now a ${out.type}, charged ` +
+      `${JSON.stringify(out.cost)} vs ${JSON.stringify(out.want)}\n` +
       `upgrading the same city again -> ${out.aTwice}; cities=${out.cities}`
   };
 });
@@ -934,47 +1032,138 @@ await test(11, 'The Raider blocks the region for everyone except the player who 
   await ensurePlay();
   const out = await pev(`(()=>{
     const R=window.__R__, L=window.__L__, N=window.__N__;
-    const st=window.__ISLAND__.state; const g=window.__ISLAND__.game;
+    const st=window.__ISLAND__.state;
     __refill();
-    // pick a tile with resources and at least one live node
-    const node = N.nodes.find(n=>n.remaining>0 && L.tiles[n.tile].resource);
-    const tile = node.tile;
+    // We need a hex TWO players may legally work, otherwise "blocked" and
+    // "not yours" are indistinguishable. Find one, or build the second claim.
+    let tile=-1, other=-1;
+    for (const t of L.tiles){
+      if (!t.resource) continue;
+      const owners = new Set();
+      for (const c of t.corners){ const b=st.buildings.get(c); if (b) owners.add(b.owner); }
+      if (owners.has(1) && owners.size>1){ tile=t.id; other=[...owners].find(o=>o!==1); break; }
+    }
+    if (tile<0){
+      for (const t of L.tiles){
+        if (!t.resource || !R.playerOwnsTile(st,1,t.id)) continue;
+        for (const c of t.corners){
+          if (__connect(0,c).ok){ tile=t.id; other=0; break; }
+        }
+        if (tile>=0) break;
+      }
+    }
+    if (tile<0) return { setup:'could not find a hex two players share' };
+
     // player 1 sends the Raider there
     st.players[1].cards.push({type:'knight',id:'test'});
     const moved = R.playKnight(st,1,tile);
     const flags = st.players.map(p=>R.canGatherTile(st,p.id,tile));
+    const owns = st.players.map(p=>R.playerOwnsTile(st,p.id,tile));
     __refill();
-    // functional check: the mover harvests, the human is refused
-    const res = node.resource;
-    __place(1,node.x,node.z);
-    st.players[1].gatherIntent = node.id;
-    const m0 = st.players[1].res[res];
-    __tick(8,{gather:true, stop:'st.players[1].res.'+res+'>'+m0});
-    const moverGain = st.players[1].res[res]-m0;
-    __place(0,node.x,node.z);
-    st.players[0].gatherIntent = node.id;
-    const h0 = st.players[0].res[res];
-    const t2 = __tick(8,{gather:true, drain:true});
-    const humanGain = st.players[0].res[res]-h0;
-    const blockedEvents = (t2.events||[]).filter(e=>e.type==='blocked').length;
-    // and a rival bot
-    __place(2,node.x,node.z);
-    st.players[2].gatherIntent = node.id;
-    const r0 = st.players[2].res[res];
-    __tick(8,{gather:true});
-    const rivalGain = st.players[2].res[res]-r0;
-    return { tile, moved, flags, res, moverGain, humanGain, rivalGain, blockedEvents,
-             robberOwner:st.robberOwner };})()`);
+
+    /** Sweep the whole hex with one settler and report what they took. */
+    function sweep(pid){
+      const res = L.tiles[tile].resource;
+      const p = st.players[pid];
+      const before = p.res[res];
+      let events=0;
+      for (let k=0;k<40;k++){
+        const it = N.nearestItem(p.x, p.z, { tile }) || N.itemsByTile.get(tile).find(i=>i.available);
+        if (!it) break;
+        __place(pid, it.x, it.z);
+        const t = __tick(1/60, { gather:true, drain:true });
+        events += (t.events||[]).filter(e=>e.type==='blocked').length;
+        if (p.res[res] === before && k > 3) break;   // clearly getting nothing
+      }
+      return { gain: p.res[res]-before, blocked: events };
+    }
+    const mover = sweep(1);
+    __refill();
+    const co = sweep(other);
+    __refill();
+    const stranger = sweep(other===2?3:2);
+    return { tile, moved, flags, owns, other,
+             res:L.tiles[tile].resource,
+             moverGain:mover.gain, coOwnerGain:co.gain, coOwnerBlocked:co.blocked,
+             strangerGain:stranger.gain, robberOwner:st.robberOwner };})()`);
+  if (out.setup) return { pass: false, evidence: out.setup };
   const pass = out.moved && out.flags[1] === true
-    && out.flags[0] === false && out.flags[2] === false && out.flags[3] === false
-    && out.moverGain > 0 && out.humanGain === 0 && out.rivalGain === 0;
+    && out.flags[out.other] === false
+    && out.owns[1] === true && out.owns[out.other] === true
+    && out.moverGain > 0 && out.coOwnerGain === 0 && out.strangerGain === 0;
   return {
     pass,
     evidence:
-      `Raider moved by player 1 to tile ${out.tile} (robberOwner=${out.robberOwner})\n` +
-      `canGatherTile per player: ${JSON.stringify(out.flags)}\n` +
-      `8s of harvesting on that tile — mover +${out.moverGain} ${out.res}, ` +
-      `human +${out.humanGain}, rival bot +${out.rivalGain}, blocked events=${out.blockedEvents}`
+      `Raider moved by player 1 onto hex ${out.tile} (robberOwner=${out.robberOwner})\n` +
+      `owns a corner there: ${JSON.stringify(out.owns)}  ` +
+      `canGatherTile: ${JSON.stringify(out.flags)}\n` +
+      `sweeping the whole hex — mover +${out.moverGain} ${out.res}; ` +
+      `player ${out.other}, who also owns a corner, +${out.coOwnerGain} ` +
+      `(${out.coOwnerBlocked} blocked events); a player who owns nothing there ` +
+      `+${out.strangerGain}`
+  };
+});
+
+/* ---- 20. ownership gate ------------------------------------------------- */
+
+await test(20, 'A hex you own nothing next to yields absolutely nothing', async () => {
+  await ensurePlay();
+  const out = await pev(`(()=>{
+    const R=window.__R__, L=window.__L__, N=window.__N__, C=window.__C__;
+    const st=window.__ISLAND__.state; const p=st.players[0];
+    __refill();
+    // a hex nobody has built on at all
+    const free = L.tiles.find(t=>t.resource
+      && !t.corners.some(c=>st.buildings.has(c)));
+    if (!free) return { setup:'every hex already has a building on it' };
+    const res = free.resource;
+    const before = { ...p.res };
+    const total0 = C.totalRes(p.res);
+    const stock0 = N.tileItemsRemaining(free.id);
+    // Camp in the middle of it for three seconds...
+    let blocked=0;
+    __place(0, free.x, free.z);
+    const camp = __tick(3, { gather:true, drain:true });
+    blocked += (camp.events||[]).filter(e=>e.type==='blocked').length;
+    const afterStanding = C.totalRes(p.res)-total0;
+    // ...then walk over every single item on it, one frame each.
+    let contacts=0;
+    for (const it of N.tileItems(free.id)){
+      __place(0, it.x, it.z);
+      const t = __tick(1/60, { gather:true, drain:true });
+      blocked += (t.events||[]).filter(e=>e.type==='blocked').length;
+      contacts++;
+    }
+    const gained = C.totalRes(p.res)-total0;
+    const stock1 = N.tileItemsRemaining(free.id);
+    let claimed=null, afterClaim=0;
+    for (const c of free.corners){
+      const r = __connect(0, c);
+      if (r.ok){ claimed=c; break; }
+    }
+    if (claimed!==null){
+      const it = N.nearestItem(free.x, free.z, { tile:free.id });
+      if (it) afterClaim = __walkOver(0, it.x, it.z, res, 1/60);
+    }
+    return { tile:free.id, res, contacts, blocked, gained, afterStanding,
+             stock0, stock1, owns:R.playerOwnsTile(st,0,free.id),
+             canGather:R.canGatherTile(st,0,free.id), claimed, afterClaim,
+             deltas:C.RES.map(k=>p.res[k]-before[k]) };})()`);
+  if (out.setup) return { pass: false, evidence: out.setup };
+  const pass = out.gained === 0 && out.afterStanding === 0
+    && out.stock1 === out.stock0 && out.blocked > 0
+    && out.claimed !== null && out.afterClaim > 0;
+  return {
+    pass,
+    evidence:
+      `hex ${out.tile} (${out.res}) has no building of anyone's on it\n` +
+      `stood on it for 3s (gained ${out.afterStanding}) then walked over all ` +
+      `${out.contacts} of its items: gained ${out.gained} resources in total\n` +
+      `the field is untouched: ${out.stock1}/${out.stock0} items still standing ` +
+      `(nothing was consumed and thrown away)\n` +
+      `${out.blocked} "blocked" events told the player why\n` +
+      `then a settlement went up on corner ${out.claimed}: playerOwnsTile=${out.owns}, ` +
+      `canGatherTile=${out.canGather}, and the very next contact gave +${out.afterClaim} ${out.res}`
   };
 });
 
@@ -1264,7 +1453,7 @@ await test(15, 'A player can win; the results screen appears with correct rankin
 await test(16, 'Replay/restart works and starts a clean match', async () => {
   const brainSnap = `(()=>{const b=(window.__ISLAND__.game.bots&&window.__ISLAND__.game.bots.brains)||[];
     return b.map(x=>({ pid:x.pid, goal:x.goal?x.goal.kind:null, lastKnight:+(x.lastKnight||0).toFixed(0),
-      sinceAct:+(x.sinceAct||0).toFixed(1), avoidN:x.avoidNodes.size, avoidG:x.avoidGoals.size }));})()`;
+      sinceAct:+(x.sinceAct||0).toFixed(1), avoidN:x.avoidTiles.size, avoidG:x.avoidGoals.size }));})()`;
   const brainsBefore = await pev(brainSnap);
   const clicked = await pev(`__click('.rs-foot .btn')`);
   await sleep(700);
@@ -1281,7 +1470,7 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
       stage:g.flow.stage, isWin:g.flow.isWinSequence,
       brains: brains.map(b=>({ pid:b.pid, goal:b.goal?b.goal.kind:null,
         lastKnight:b.lastKnight, sinceAct:+(b.sinceAct||0).toFixed(1),
-        avoidN:b.avoidNodes.size, avoidG:b.avoidGoals.size })) };})()`);
+        avoidN:b.avoidTiles.size, avoidG:b.avoidGoals.size })) };})()`);
 
   const d2 = await pev('__draft(45)');
   const play = await pev(`(()=>{

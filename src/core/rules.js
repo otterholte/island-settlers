@@ -11,8 +11,7 @@
 import {
   RES, COST, PIECE_LIMIT, VICTORY_POINTS, START_RESOURCES,
   LONGEST_ROAD_MIN, LARGEST_ARMY_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_VP,
-  CARD_WEIGHTS, PLAYER_COLORS, BOT_PROFILES,
-  GATHER_TIME, GATHER_YIELD, OWNERSHIP_MULT,
+  CARD_WEIGHTS, PLAYER_COLORS, BOT_PROFILES, PICKUP_RADIUS,
   TRADE_BASE, canAfford, pay, totalRes
 } from './constants.js';
 
@@ -20,7 +19,11 @@ import {
   tiles, intersections, edges, ports, SPAWNS, DESERT, edgeBetween
 } from '../board/layout.js';
 
-import { nodes, resetNodes, depleteNode, tickNodes, mulberry32 } from '../board/nodes.js';
+import {
+  resetNodes, tickNodes, mulberry32,
+  itemsNear, collectItem, isTileExhausted, tileItemsRemaining,
+  tileItemCount, tileRegenSeconds, tileRecovery
+} from '../board/nodes.js';
 
 /* ==================================================================== state */
 
@@ -50,12 +53,17 @@ export function createMatch(opts = {}) {
       // world presence
       x: SPAWNS[i].x, z: SPAWNS[i].z, facing: SPAWNS[i].facing,
       vx: 0, vz: 0,
-      // activity
-      action: 'idle',       // idle | run | gather | trade | build
+      // activity — there is no 'gather' action any more; pickup is contact.
+      action: 'idle',       // idle | run | trade | build
+      carried: 0,
+      sweptAt: -1,          // match time of this player's last pickup sweep
+      pickedAt: -1,         // match time of the last item they actually took
+      blockedTile: -1,      // last region we complained about
+      blockedAt: -99,
+      // deprecated fields, kept so older presentation code reads a sane value
       gatherNode: null,
       gatherProgress: 0,
-      gatherTime: 1,
-      carried: 0,
+      gatherTime: 0,
       stats: { gathered: 0, traded: 0, built: 0, cardsPlayed: 0, distance: 0 }
     };
   });
@@ -314,65 +322,121 @@ export function recomputeAwards(state) {
   }
 }
 
-/* ================================================================ gathering */
+/* ================================================================ gathering
+ *
+ * Contact pickup. A settler standing within PICKUP_RADIUS of an item takes it
+ * that frame — no timer, no latch, no state to get stuck in. The only gate is
+ * ownership: you may work a hex if, and only if, you own a settlement or a city
+ * on one of its corners. Anywhere else yields nothing at all.
+ *
+ * `sweepPickups` is the ONE way a resource enters a player's hand from the
+ * ground, for the human and for the bots alike, so the simulator's conservation
+ * audit has something honest to check.
+ */
 
-/** Best multiplier this player gets on this tile from adjacent buildings. */
-export function ownershipMultiplier(state, pid, tileId) {
-  let mult = OWNERSHIP_MULT.none;
-  for (const c of tiles[tileId].corners) {
+/** Does this player own a building on a corner of this hex? */
+export function playerOwnsTile(state, pid, tileId) {
+  const t = tiles[tileId];
+  if (!t) return false;
+  for (const c of t.corners) {
     const b = state.buildings.get(c);
-    if (b && b.owner === pid) {
-      mult = Math.max(mult, b.type === 'city' ? OWNERSHIP_MULT.city : OWNERSHIP_MULT.settlement);
+    if (b && b.owner === pid) return true;
+  }
+  return false;
+}
+
+/** Every hex this player may work. */
+export function ownedTiles(state, pid) {
+  const out = new Set();
+  const p = state.players[pid];
+  for (const iid of p.settlements) for (const tid of intersections[iid].tiles) out.add(tid);
+  for (const iid of p.cities) for (const tid of intersections[iid].tiles) out.add(tid);
+  return out;
+}
+
+export function raiderBlocks(state, pid, tileId) {
+  // The player who last moved the Raider may still work the blocked region.
+  return state.robberTile === tileId && state.robberOwner !== pid;
+}
+
+/**
+ * May this player collect on this hex at all? Ownership + the Raider.
+ * Whether the hex currently HAS anything is `isTileExhausted` / the item flags.
+ */
+export function canGatherTile(state, pid, tileId) {
+  const t = tiles[tileId];
+  if (!t || !t.resource) return false;
+  if (!playerOwnsTile(state, pid, tileId)) return false;
+  return !raiderBlocks(state, pid, tileId);
+}
+
+/** Rate-limited "you get nothing here" note, for the human only. */
+function noteBlocked(state, pid, tileId) {
+  if (pid !== 0) return;
+  const p = state.players[pid];
+  if (p.blockedTile === tileId && state.time - p.blockedAt < 2.5) return;
+  p.blockedTile = tileId;
+  p.blockedAt = state.time;
+  emit(state, 'blocked', {
+    player: pid, tile: tileId,
+    reason: raiderBlocks(state, pid, tileId) ? 'raider' : 'unowned'
+  });
+}
+
+const _sweepBuf = [];
+
+/**
+ * Collect everything this settler is touching.
+ *
+ * Returns the number of items taken, or -1 if somebody already swept this
+ * player at this exact instant — that is how `bots.js` knows to defer to
+ * `systems/gathering.js` instead of double-collecting.
+ */
+export function sweepPickups(state, pid, radius = PICKUP_RADIUS) {
+  const p = state.players[pid];
+  if (!p || state.phase !== 'play') return 0;
+  if (p.sweptAt === state.time) return -1;
+  p.sweptAt = state.time;
+
+  const near = itemsNear(p.x, p.z, radius, _sweepBuf);
+  if (!near.length) return 0;
+
+  let got = 0;
+  for (let i = 0; i < near.length; i++) {
+    const it = near[i];
+    if (!it.available) continue;
+    if (!canGatherTile(state, pid, it.tile)) { noteBlocked(state, pid, it.tile); continue; }
+    const spent = collectItem(it, state.time, pid);
+    p.res[it.resource] += 1;
+    p.carried += 1;
+    p.stats.gathered += 1;
+    p.pickedAt = state.time;
+    got++;
+    emit(state, 'gained', {
+      player: pid, resource: it.resource, amount: 1,
+      x: it.x, z: it.z, item: it.id, tile: it.tile,
+      node: it.legacyNode, depleted: spent
+    });
+    if (spent) {
+      emit(state, 'exhausted', {
+        tile: it.tile, player: pid, seconds: tileRegenSeconds(it.tile)
+      });
     }
   }
-  return mult;
+  return got;
 }
 
-export function canGatherTile(state, pid, tileId) {
-  if (state.robberTile !== tileId) return true;
-  // The player who last moved the Raider may still work the blocked tile.
-  return state.robberOwner === pid;
+/**
+ * @deprecated ownership no longer multiplies a yield — it gates it outright.
+ * Returns 1 where this player may collect and 0 where they may not. Kept only
+ * so `src/world/regions.js` keeps importing while the world layer is rebuilt;
+ * delete it once nothing outside this file references it.
+ */
+export function ownershipMultiplier(state, pid, tileId) {
+  return canGatherTile(state, pid, tileId) ? 1 : 0;
 }
 
-export function beginGather(state, pid, node) {
-  const p = state.players[pid];
-  if (!node || node.remaining <= 0) return false;
-  if (!canGatherTile(state, pid, node.tile)) {
-    if (pid === 0) emit(state, 'blocked', { player: pid, tile: node.tile });
-    return false;
-  }
-  const t = tiles[node.tile];
-  p.action = 'gather';
-  p.gatherNode = node;
-  p.gatherProgress = 0;
-  p.gatherTime = GATHER_TIME[t.pips] ?? 1.0;
-  emit(state, 'gatherStart', { player: pid, node: node.id, resource: node.resource });
-  return true;
-}
-
-export function tickGather(state, pid, dt) {
-  const p = state.players[pid];
-  if (p.action !== 'gather' || !p.gatherNode) return;
-  const n = p.gatherNode;
-  if (n.remaining <= 0 || !canGatherTile(state, pid, n.tile)) {
-    p.action = 'idle'; p.gatherNode = null; return;
-  }
-  p.gatherProgress += dt / p.gatherTime;
-  if (p.gatherProgress >= 1) {
-    p.gatherProgress = 0;
-    const t = tiles[n.tile];
-    const amount = (GATHER_YIELD[t.pips] ?? 1) * ownershipMultiplier(state, pid, n.tile);
-    p.res[n.resource] += amount;
-    p.carried += amount;
-    p.stats.gathered += amount;
-    depleteNode(n, state.time);
-    emit(state, 'gained', {
-      player: pid, resource: n.resource, amount,
-      x: n.x, z: n.z, node: n.id, depleted: n.remaining <= 0
-    });
-    if (n.remaining <= 0) { p.action = 'idle'; p.gatherNode = null; }
-  }
-}
+export { tileRecovery, tileItemsRemaining, tileItemCount, tileRegenSeconds, isTileExhausted };
 
 /* ==================================================================== trade */
 
@@ -540,7 +604,8 @@ export function setupPlaceRoad(state, pid, eid) {
 export function tickWorld(state, dt) {
   if (state.phase !== 'play') return;
   state.time += dt;
-  tickNodes(state.time);
+  const back = tickNodes(state.time);
+  for (let i = 0; i < back.length; i++) emit(state, 'restored', { tile: back[i] });
 }
 
 /* ================================================================ helpers */

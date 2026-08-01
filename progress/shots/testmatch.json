@@ -1,5 +1,5 @@
 {
-  "at": "2026-08-01T03:56:38.617Z",
+  "at": "2026-08-01T04:52:09.545Z",
   "w": 960,
   "h": 444,
   "results": [
@@ -8,126 +8,133 @@
       "name": "Match launches with no uncaught exceptions and no broken shaders",
       "pass": true,
       "evidence": "exceptions=0 consoleErrors=1 shaderWarnings=0\nprograms=45 drawCalls=53 triangles=117221\nERR: [intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus",
-      "ms": 8587
+      "ms": 5285
     },
     {
       "id": 2,
       "name": "Opening draft places 8 settlements + 8 roads and reaches phase=play",
       "pass": true,
       "evidence": "phase=play settlements=8 roads=8 humanPicksViaUI=4 draftTime=10.6s\nper-player: 2s/2r 2s/2r 2s/2r 2s/2r\nhuman settlement #21 (Confirm button) | human road #26 (Confirm button) | human settlement #22 (Confirm button) | human road #27 (Confirm button)",
-      "ms": 46
+      "ms": 36
     },
     {
       "id": 3,
-      "name": "All five resources can be gathered and the inventory increases",
+      "name": "All five resources can be gathered on contact, from hexes you own",
       "pass": true,
-      "evidence": "wood: 4->5 in 1.18s (node 49, 4 pips)\nbrick: 4->5 in 0.98s (node 28, 5 pips)\nwool: 2->3 in 1.6s (node 98, 2 pips)\nwheat: 2->3 in 1.87s (node 21, 1 pips)\nore: 3->4 in 1.37s (node 0, 3 pips)",
-      "ms": 5
+      "evidence": "wood: 3->5 (+2) in ONE frame on contact — item 216, hex 10 (2 pips, 13 items, 11 left), hex already ours\nbrick: 3->5 (+2) in ONE frame on contact — item 96, hex 4 (5 pips, 22 items, 20 left), hex claimed with 1 roads + a settlement\nwool: 2->3 (+1) in ONE frame on contact — item 120, hex 5 (3 pips, 16 items, 15 left), hex already ours\nwheat: 2->3 (+1) in ONE frame on contact — item 192, hex 8 (2 pips, 13 items, 12 left), hex already ours\nore: 3->4 (+1) in ONE frame on contact — item 144, hex 6 (3 pips, 16 items, 15 left), hex already ours",
+      "ms": 6
     },
     {
       "id": 4,
-      "name": "Region productivity: a 5-pip tile yields faster than a 1-pip tile",
+      "name": "The hex number means two things: how many items it holds and how fast they come back",
       "pass": true,
-      "evidence": "5-pip tile 4 (brick): 3 units in 2.92s = 0.972s/unit (declared 0.96s) · 3 units in 60s\n1-pip tile 3 (wheat): 3 units in 5.57s = 1.856s/unit (declared 1.84s) · 3 units in 60s\nspeed ratio 1.91x per swing, 1.00x sustained",
-      "ms": 31
+      "evidence": "5-pip hex 4 (brick): 22 items (declared 22), all 22 swept in 13 contacts -> exhausted=true, back in 38s of 38s = 0.579 items/s sustained\n1-pip hex 1 (wool): 10 items (declared 10), all 10 swept in 10 contacts -> exhausted=true, back in 64s of 64s = 0.156 items/s sustained\nmore items on the better hex: true (22 vs 10) · faster regrowth: true (38s vs 64s) · 3.71x sustained supply\nno swing speed involved: every item came off in a single frame of contact",
+      "ms": 3
     },
     {
       "id": 5,
       "name": "Trading post trades at 4:1 and requires physical proximity",
       "pass": true,
       "evidence": "at market (Great Market): trade ok=true ratio=4 wood-4 ore+1\nfar from any post (spot=null): ok=false reason=\"Head to the Great Market or one of your docks to trade\" resourcesMoved=false\ntrade sheet forced open while far: opened=true confirmGreyed=true wood0 ore+0\nfull human loop at the market: prompt=\"Great MarketGIVE4GET14 of anything for t\" -> sheet opened=true, Trade enabled=true (\"4 Wood for 1 Ore\"), wood-4 ore+1, sheet closed=false",
-      "ms": 48
+      "ms": 51
     },
     {
       "id": 6,
       "name": "Ports unlock on a coastal build and then trade at 3:1 / 2:1",
       "pass": true,
-      "evidence": "ports held before build: [4] -> after: [4,3,5]\nport 3 special/ore: 3 roads laid to reach it, declared 2:1, quoted 2:1, charged 2:1, spent 2 got 1, unlocked=true (held before=false)\nport 5 generic: 1 roads laid to reach it, declared 3:1, quoted 3:1, charged 3:1, spent 3 got 1, unlocked=true (held before=false)",
-      "ms": 6
+      "evidence": "ports held before build: [4,3] -> after: [4,3,1,5]\nport 1 special/wheat: 3 roads laid to reach it, declared 2:1, quoted 2:1, charged 2:1, spent 2 got 1, unlocked=true (held before=false)\nport 5 generic: 1 roads laid to reach it, declared 3:1, quoted 3:1, charged 3:1, spent 3 got 1, unlocked=true (held before=false)",
+      "ms": 4
     },
     {
       "id": 7,
       "name": "Roads follow legal connection rules; illegal placements are rejected",
       "pass": true,
-      "evidence": "disconnected edge #0 -> false (charged=false)\nalready-mine edge #26 -> false; rival's edge #58 -> false\nlegal edge #12 -> true, cost {\"wood\":2,\"brick\":2} vs {\"wood\":2,\"brick\":2}\nvia HUD build card -> overview -> Confirm: placed=true cost={\"wood\":2,\"brick\":2}",
-      "ms": 9
+      "evidence": "disconnected edge #0 -> false (charged=false)\nalready-mine edge #26 -> false; rival's edge #58 -> false\nlegal edge #3 -> true, cost {\"wood\":3,\"brick\":3} vs {\"wood\":3,\"brick\":3}\nvia HUD build card -> overview -> Confirm: placed=true cost={\"wood\":3,\"brick\":3}",
+      "ms": 6
     },
     {
       "id": 8,
       "name": "Settlements obey the distance rule and require a connected road",
       "pass": true,
-      "evidence": "beside my own settlement #21 -> corner #20 rejected=true\nno connected road (#3, distanceOk=true, roadTouching=false) -> rejected=true\nlegal corner #37 accepted=true, charged {\"wood\":2,\"brick\":2,\"wheat\":2,\"wool\":2}\nits neighbour #36 now rejected=true",
+      "evidence": "beside my own settlement #21 -> corner #20 rejected=true\nno connected road (#10, distanceOk=true, roadTouching=false) -> rejected=true\nlegal corner #5 accepted=true, charged {\"wood\":3,\"brick\":3,\"wheat\":2,\"wool\":2}\nits neighbour #4 now rejected=true",
       "ms": 2
     },
     {
       "id": 9,
       "name": "Cities upgrade only the owner's own settlements",
       "pass": true,
-      "evidence": "rival settlement #44 -> false (still a settlement)\nempty corner #0 -> false\nmy settlement #21 -> true, now a city, charged {\"wheat\":4,\"ore\":6}\nupgrading the same city again -> false; cities=1",
-      "ms": 3
+      "evidence": "rival settlement #44 -> false (still a settlement)\nempty corner #0 -> false\nmy settlement #21 -> true, now a city, charged {\"wheat\":3,\"ore\":4} vs {\"wheat\":3,\"ore\":4}\nupgrading the same city again -> false; cities=1",
+      "ms": 1
     },
     {
       "id": 10,
       "name": "All three development cards work (Knight, Road Building, Victory Point)",
       "pass": true,
-      "evidence": "drew 9 cards: {\"knight\":5,\"roadBuilding\":3,\"victoryPoint\":1}\nKNIGHT  played=true raider->tile 0 (owner 0), knightsPlayed 0->1, rival stock [17,17,17]->[7,7,7]\nROADBLD played=true freeRoads=2 placed=2 roads 10->12 paid={\"wood\":0,\"brick\":0}\nVICTORY vpCards=1, +1 on draw (instant)",
-      "ms": 3146
+      "evidence": "drew 3 cards: {\"knight\":1,\"victoryPoint\":1,\"roadBuilding\":1}\nKNIGHT  played=true raider->tile 0 (owner 0), knightsPlayed 0->1, rival stock [15,15,15]->[7,6,6]\nROADBLD played=true freeRoads=2 placed=2 roads 2->4 paid={\"wood\":0,\"brick\":0}\nVICTORY vpCards=1, +1 on draw (instant)",
+      "ms": 5434
     },
     {
       "id": 11,
       "name": "The Raider blocks the region for everyone except the player who moved it",
       "pass": true,
-      "evidence": "Raider moved by player 1 to tile 0 (robberOwner=1)\ncanGatherTile per player: [false,true,false,false]\n8s of harvesting on that tile — mover +2 ore, human +0, rival bot +0, blocked events=1",
-      "ms": 5
+      "evidence": "Raider moved by player 1 onto hex 6 (robberOwner=1)\nowns a corner there: [true,true,true,false]  canGatherTile: [false,true,false,false]\nsweeping the whole hex — mover +16 ore; player 0, who also owns a corner, +0 (1 blocked events); a player who owns nothing there +0",
+      "ms": 4
+    },
+    {
+      "id": 20,
+      "name": "A hex you own nothing next to yields absolutely nothing",
+      "pass": true,
+      "evidence": "hex 3 (wheat) has no building of anyone's on it\nstood on it for 3s (gained 0) then walked over all 10 of its items: gained 0 resources in total\nthe field is untouched: 10/10 items still standing (nothing was consumed and thrown away)\n2 \"blocked\" events told the player why\nthen a settlement went up on corner 14: playerOwnsTile=true, canGatherTile=true, and the very next contact gave +1 wheat",
+      "ms": 8
     },
     {
       "id": 12,
       "name": "Bots gather, trade, build and score, with no resource gained outside a rules call",
       "pass": true,
-      "evidence": "45s of simulated play (phase=play); events {\"build\":31,\"portUnlocked\":1,\"setupComplete\":1,\"gatherStart\":27,\"gained\":29,\"roadBuilding\":2,\"award\":2}\n  You   gathered=0 built=4 trades=0 cards=0 roads=2 2S/0C vp=2\n  Alex  gathered=16 built=10 trades=0 cards=0 roads=7 3S/0C vp=7\n  Maya  gathered=36 built=9 trades=0 cards=0 roads=3 0S/3C vp=6\n  Finn  gathered=16 built=8 trades=0 cards=1 roads=5 3S/0C vp=3\nunexplained resource gains: 0\ntrades observed in this window: no (see simulate.mjs — ~0.1/bot/match)",
-      "ms": 545
+      "evidence": "45s of simulated play (phase=play); events {\"build\":30,\"portUnlocked\":2,\"setupComplete\":1,\"blocked\":18,\"roadBuilding\":4,\"gained\":143,\"exhausted\":2,\"victoryPoint\":1,\"award\":1,\"knight\":2}\n  You   gathered=0 built=4 trades=0 cards=0 roads=2 2S/0C vp=2\n  Alex  gathered=47 built=8 trades=0 cards=0 roads=6 2S/0C vp=6\n  Maya  gathered=44 built=8 trades=0 cards=0 roads=3 1S/2C vp=5\n  Finn  gathered=52 built=10 trades=0 cards=3 roads=6 4S/0C vp=5\nunexplained resource gains: 0\ntrades observed in this window: no (see simulate.mjs — ~0.1/bot/match)",
+      "ms": 672
     },
     {
       "id": 13,
       "name": "Longest Road can change hands",
       "pass": true,
-      "evidence": "start holder=1 lengths=[1,6,2,4]\nafter I lay 6 roads: holder=0 len=7 flags=[true,false,false,false] myVP=6\nafter rival out-builds me: holder=1 len=8 flags=[false,true,false,false] myVP=2 theirVP=7\naward events: [{\"player\":1,\"value\":8}]",
-      "ms": 3
+      "evidence": "start holder=1 lengths=[1,5,2,3]\nafter I lay 8 roads: holder=0 len=6 flags=[true,false,false,false] myVP=6\nafter rival out-builds me: holder=1 len=7 flags=[false,true,false,false] myVP=2 theirVP=6\naward events: [{\"player\":1,\"value\":7}]",
+      "ms": 4
     },
     {
       "id": 14,
       "name": "Largest Army can change hands",
       "pass": true,
-      "evidence": "start holder=-1\nafter I play 2 knights: holder=0 counts=[2,0,0,0] myVP=4\nafter Maya plays 3: holder=2 counts=[2,0,3,0] flags=[false,false,true,false] myVP=2\naward events: [{\"player\":2,\"value\":3}]",
+      "evidence": "start holder=-1\nafter I play 2 knights: holder=0 counts=[2,0,0,1] myVP=4\nafter Maya plays 3: holder=2 counts=[2,0,3,1] flags=[false,false,true,false] myVP=2\naward events: [{\"player\":2,\"value\":3}]",
       "ms": 2
     },
     {
       "id": 15,
       "name": "A player can win; the results screen appears with correct rankings",
       "pass": true,
-      "evidence": "HUMAN WINS: winner=0 vp=12 phase=over -> title=\"Victory!\" sub=\"You settled the island with 12 points\" lostStyling=false topOfTable=\"You\"\nRIVAL WINS: phase=over winner=1 winnerVP=12\nflow: isWinSequence=true stage=over cameraOverview=true\nresults panel present=true hidden=false title=\"Defeat\" sub=\"Alex reached 12 points first\"\nrankings shown: 1.Alex=12  2.You=2  3.Maya=2  4.Finn=2\nrankings truth: 1.Alex=12  2.You=2  3.Maya=2  4.Finn=2  match=true\nfrozen after 4s more of bots+gathering: true ({\"b\":10,\"r\":15,\"res\":[15,17,17,17],\"t\":0} -> {\"b\":10,\"r\":15,\"res\":[15,17,17,17],\"t\":0})\nstats rows: 7 · button \"Play Again\"",
-      "ms": 2024
+      "evidence": "HUMAN WINS: winner=0 vp=12 phase=over -> title=\"Victory!\" sub=\"You settled the island with 12 points\" lostStyling=false topOfTable=\"You\"\nRIVAL WINS: phase=over winner=1 winnerVP=12\nflow: isWinSequence=true stage=over cameraOverview=true\nresults panel present=true hidden=false title=\"Defeat\" sub=\"Alex reached 12 points first\"\nrankings shown: 1.Alex=12  2.You=2  3.Maya=2  4.Finn=2\nrankings truth: 1.Alex=12  2.You=2  3.Maya=2  4.Finn=2  match=true\nfrozen after 4s more of bots+gathering: true ({\"b\":10,\"r\":15,\"res\":[13,15,15,15],\"t\":0} -> {\"b\":10,\"r\":15,\"res\":[13,15,15,15],\"t\":0})\nstats rows: 7 · button \"Play Again\"",
+      "ms": 4910
     },
     {
       "id": 16,
       "name": "Replay/restart works and starts a clean match",
       "pass": true,
-      "evidence": "Play Again -> clicked; phase=setup time=0 winner=-1 buildings=0 roads=0 resultsHidden=true\nresources back to START=true; vpCards=[0,0,0,0] knights=[0,0,0,0] awards={\"road\":-1,\"army\":-1}\nsecond draft: phase=play settlements=8 roads=8\n30s of replayed play: buildings +0, gathered=[3,8,19,10], vp=[2,6,4,2]\nbot brains before Play Again: [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]\nbot brains after Play Again:  [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]  (clean)\nbot brains after 45s of play: [{\"pid\":1,\"goal\":\"gather\",\"lastKnight\":-999,\"sinceAct\":11.2,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":\"gather\",\"lastKnight\":-999,\"sinceAct\":2.5,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":\"card\",\"lastKnight\":10,\"sinceAct\":10.8,\"avoidN\":0,\"avoidG\":0}]  (dirty, as expected)\nbot brains after 2nd restart: [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]  (clean)",
-      "ms": 1120
+      "evidence": "Play Again -> clicked; phase=setup time=0 winner=-1 buildings=0 roads=0 resultsHidden=true\nresources back to START=true; vpCards=[0,0,0,0] knights=[0,0,0,0] awards={\"road\":-1,\"army\":-1}\nsecond draft: phase=play settlements=8 roads=8\n30s of replayed play: buildings +3, gathered=[0,56,49,56], vp=[2,7,5,6]\nbot brains before Play Again: [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]\nbot brains after Play Again:  [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]  (clean)\nbot brains after 45s of play: [{\"pid\":1,\"goal\":\"trade\",\"lastKnight\":-999,\"sinceAct\":1.4,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":\"gather\",\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":\"build\",\"lastKnight\":-999,\"sinceAct\":1.3,\"avoidN\":0,\"avoidG\":0}]  (dirty, as expected)\nbot brains after 2nd restart: [{\"pid\":1,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":2,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0},{\"pid\":3,\"goal\":null,\"lastKnight\":-999,\"sinceAct\":0,\"avoidN\":0,\"avoidG\":0}]  (clean)",
+      "ms": 1076
     },
     {
       "id": 19,
       "name": "Performance: draw calls and triangles inside budget",
       "pass": true,
-      "evidence": "draw calls 69 / budget 90  -> 21 under\ntriangles  123858 / budget 130000 -> 6142 under\nprograms=47 textures=23 geometries=78 lines=0 points=1054\nscene state: 8 buildings, 12 roads, t=30s, vp=[2,6,4,5]\nwhere the geometry lives (visible, incl. shadow-only passes):\n     58501 tris   18 objs  props\n     19696 tris    1 objs  island\n     12632 tris    9 objs  settler\n      9729 tris    6 objs  ports\n      6889 tris    4 objs  market\n      3872 tris    1 objs  sea\n      3788 tris    7 objs  settler\n      3788 tris    7 objs  settler\n      3704 tris    7 objs  settler\n      2236 tris   14 objs  structures\n       692 tris    2 objs  sky\n       350 tris    1 objs  sailboats",
-      "ms": 581
+      "evidence": "draw calls 76 / budget 90  -> 14 under\ntriangles  129792 / budget 130000 -> 208 under\nprograms=50 textures=24 geometries=85 lines=0 points=244\nscene state: 10 buildings, 11 roads, t=30.07s, vp=[2,2,5,8]\nwhere the geometry lives (visible, incl. shadow-only passes):\n     58543 tris   20 objs  props\n     19696 tris    1 objs  island\n     11652 tris    8 objs  settler\n      9729 tris    6 objs  ports\n      8092 tris   14 objs  structures\n      6889 tris    4 objs  market\n      3872 tris    1 objs  sea\n      3764 tris    6 objs  settler\n      3506 tris    6 objs  settler\n      3476 tris    6 objs  settler\n       692 tris    2 objs  sky\n       350 tris    1 objs  sailboats",
+      "ms": 536
     },
     {
       "id": 18,
       "name": "Interface is usable at 667x375 and 960x444",
       "pass": true,
       "evidence": "960x444: viewport 960x444, layoutSettled=true, rotate-gate=\"\", offscreen elements=0, sub-36px tap targets=0\n        shot: (skipped: --noshots)\n667x375: viewport 667x375, layoutSettled=true, rotate-gate=\"\", offscreen elements=0, sub-36px tap targets=0\n        shot: (skipped: --noshots)\n(PNGs must still be eyeballed — see progress/shots/)",
-      "ms": 7665
+      "ms": 5182
     },
     {
       "id": 17,
@@ -139,38 +146,31 @@
   ],
   "perf": {
     "perf": {
-      "calls": 69,
-      "triangles": 123858,
+      "calls": 76,
+      "triangles": 129792,
       "lines": 0,
-      "points": 1054,
-      "programs": 47,
-      "textures": 23,
-      "geometries": 78
+      "points": 244,
+      "programs": 50,
+      "textures": 24,
+      "geometries": 85
     },
     "snap": {
       "phase": "play",
-      "time": 30,
+      "time": 30.07,
       "winner": -1,
-      "buildings": 8,
-      "roads": 12,
-      "robberTile": 4,
+      "buildings": 10,
+      "roads": 11,
+      "robberTile": 7,
       "robberOwner": 3,
-      "longestRoadHolder": 1,
+      "longestRoadHolder": -1,
       "largestArmyHolder": 3,
       "vp": [
         2,
-        6,
-        4,
-        5
+        2,
+        5,
+        8
       ],
       "res": [
-        {
-          "wood": 1,
-          "brick": 1,
-          "wool": 0,
-          "wheat": 0,
-          "ore": 0
-        },
         {
           "wood": 0,
           "brick": 0,
@@ -179,17 +179,24 @@
           "ore": 0
         },
         {
-          "wood": 3,
-          "brick": 0,
-          "wool": 0,
-          "wheat": 0,
+          "wood": 4,
+          "brick": 10,
+          "wool": 11,
+          "wheat": 5,
           "ore": 0
         },
         {
-          "wood": 5,
-          "brick": 5,
-          "wool": 0,
-          "wheat": 0,
+          "wood": 0,
+          "brick": 0,
+          "wool": 2,
+          "wheat": 3,
+          "ore": 4
+        },
+        {
+          "wood": 2,
+          "brick": 1,
+          "wool": 4,
+          "wheat": 2,
           "ore": 1
         }
       ],
@@ -222,33 +229,33 @@
           "distance": 0
         },
         {
-          "gathered": 6,
-          "traded": 0,
-          "built": 7,
+          "gathered": 46,
+          "traded": 3,
+          "built": 5,
           "cardsPlayed": 0,
-          "distance": 216.1833139801556
+          "distance": 279.4614275633785
         },
         {
-          "gathered": 19,
-          "traded": 0,
-          "built": 7,
+          "gathered": 69,
+          "traded": 9,
+          "built": 8,
           "cardsPlayed": 0,
-          "distance": 124.8372300196523
+          "distance": 264.34870494943544
         },
         {
-          "gathered": 12,
-          "traded": 0,
-          "built": 4,
+          "gathered": 46,
+          "traded": 1,
+          "built": 8,
           "cardsPlayed": 2,
-          "distance": 134.6196835439437
+          "distance": 266.2936138627194
         }
       ]
     },
     "breakdown": [
       {
         "name": "props",
-        "tris": 58501,
-        "draws": 18
+        "tris": 58543,
+        "draws": 20
       },
       {
         "name": "island",
@@ -257,13 +264,18 @@
       },
       {
         "name": "settler",
-        "tris": 12632,
-        "draws": 9
+        "tris": 11652,
+        "draws": 8
       },
       {
         "name": "ports",
         "tris": 9729,
         "draws": 6
+      },
+      {
+        "name": "structures",
+        "tris": 8092,
+        "draws": 14
       },
       {
         "name": "market",
@@ -277,23 +289,18 @@
       },
       {
         "name": "settler",
-        "tris": 3788,
-        "draws": 7
+        "tris": 3764,
+        "draws": 6
       },
       {
         "name": "settler",
-        "tris": 3788,
-        "draws": 7
+        "tris": 3506,
+        "draws": 6
       },
       {
         "name": "settler",
-        "tris": 3704,
-        "draws": 7
-      },
-      {
-        "name": "structures",
-        "tris": 2236,
-        "draws": 14
+        "tris": 3476,
+        "draws": 6
       },
       {
         "name": "sky",
@@ -534,6 +541,142 @@
       "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "error",
+      "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "error",
+      "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
       "level": "error",
       "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
     },
@@ -666,8 +809,96 @@
       "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
-      "level": "error",
-      "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
       "level": "warning",

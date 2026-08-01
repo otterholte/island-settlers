@@ -17,24 +17,24 @@
  */
 
 import {
-  BOT_SPEED, INTERACT_RADIUS, TRADE_RADIUS, PIECE_LIMIT,
+  BOT_SPEED, PICKUP_RADIUS, TRADE_RADIUS, PIECE_LIMIT,
   COST, canAfford
 } from '../core/constants.js';
 
 import { clampToIsland, MARKET } from '../board/layout.js';
 
-import { mulberry32 } from '../board/nodes.js';
+import { mulberry32, nearestItem, tileItemsRemaining } from '../board/nodes.js';
 
 import {
   placeRoad, placeSettlement, upgradeCity, drawCard,
-  playKnight, playRoadBuilding, doTrade, beginGather, tickGather,
-  legalRoads, setupCurrentPlayer,
+  playKnight, playRoadBuilding, doTrade, sweepPickups,
+  legalRoads, setupCurrentPlayer, canGatherTile,
   setupPlaceSettlement, setupPlaceRoad
 } from '../core/rules.js';
 
 import {
   choosePurchase, chooseRoad, planGather, planTrade, knightTarget, wantsKnight,
-  productionOf, affinityOf, needWeights, chooseNode,
+  productionOf, affinityOf, needWeights, chooseHarvestTile,
   chooseSetupSettlement, chooseSetupRoad,
   INTERSECTION_SPOT, MARKET_SPOT
 } from './botBrain.js';
@@ -46,8 +46,9 @@ export { chooseSetupSettlement, chooseSetupRoad };
 const BOT_ACCEL = 55.0;            // slightly softer than the human's 60
 const RUN_THRESHOLD = 0.6;
 const ARRIVE_BUILD = 1.5;
-const ARRIVE_GATHER = INTERACT_RADIUS * 0.78;
-const LATCH_SPEED = 1.4;           // must be nearly stopped to latch, as p0 is
+// Pickup is contact-based, so a bot sweeping a field aims straight THROUGH each
+// item rather than braking beside it.
+const ARRIVE_GATHER = PICKUP_RADIUS * 0.35;
 const ACTION_HOLD = 0.42;          // seconds a build/trade pose is held
 const REPLAN_MIN = 0.42;
 const REPLAN_SPREAD = 0.34;
@@ -55,7 +56,6 @@ const STUCK_SEC = 2.2;
 const BLACKLIST_SEC = 9.0;
 const DESPERATE_SEC = 18.0;
 const SETUP_FALLBACK_SEC = 3.5;    // only fires if matchflow.js never shows up
-const INTENT_GRACE = 0.09;         // let gathering.js consume gatherIntent first
 
 /* ----------------------------------------------------------------- helpers */
 
@@ -105,14 +105,16 @@ export function createBots(state, world, opts = {}) {
       hold: 0,
       stuck: 0,
       sinceAct: 0,
-      avoidNodes: new Map(),
+      avoidTiles: new Map(),
       avoidGoals: new Map(),
-      watchProgress: -1,
       externalGather: false,
-      intentAge: 0,
       lastKnight: -999
     };
   });
+
+  // `avoidNodes` is the old name for the same map; flowRestart.js still clears
+  // it by name, and it costs nothing to keep the alias pointing at the truth.
+  for (const b of brains) b.avoidNodes = b.avoidTiles;
 
   // Setup-draft watchdog: only ever fires when matchflow.js is absent.
   let setupKey = '';
@@ -131,15 +133,8 @@ export function createBots(state, world, opts = {}) {
     return out;
   }
 
-  function blacklistNode(b, id) { b.avoidNodes.set(id, state.time + BLACKLIST_SEC); }
+  function blacklistTile(b, id) { b.avoidTiles.set(id, state.time + BLACKLIST_SEC); }
   function blacklistGoal(b, key) { b.avoidGoals.set(key, state.time + BLACKLIST_SEC); }
-
-  function stopGathering(p) {
-    if (p.action === 'gather') { p.action = 'idle'; }
-    p.gatherNode = null;
-    p.gatherProgress = 0;
-    p.gatherIntent = null;
-  }
 
   function noteAct(b) { b.sinceAct = 0; b.think = 0.05 + b.rng() * 0.12; }
 
@@ -149,7 +144,7 @@ export function createBots(state, world, opts = {}) {
     const p = b.p;
     const jitter = jitterFor(b);
     const ctx = { aff: affinityOf(p.strategy), prod: productionOf(state, p.id), jitter };
-    const avoidN = liveAvoid(b, b.avoidNodes);
+    const avoidN = liveAvoid(b, b.avoidTiles);
     const avoidG = liveAvoid(b, b.avoidGoals);
     const desperate = b.sinceAct > DESPERATE_SEC;
 
@@ -204,8 +199,8 @@ export function createBots(state, world, opts = {}) {
                tx: route.plan.x, tz: route.plan.z, arrive: ARRIVE_BUILD,
                venue: { x: route.plan.vx, z: route.plan.vz } };
     }
-    const n = route.pick.node;
-    return { kind: 'gather', node: n, tx: n.x, tz: n.z, arrive: ARRIVE_GATHER };
+    const pick = route.pick;
+    return { kind: 'gather', tile: pick.tile, tx: pick.x, tz: pick.z, arrive: ARRIVE_GATHER };
   }
 
   const goalKey = o => `${o.kind}:${o.target}`;
@@ -235,12 +230,18 @@ export function createBots(state, world, opts = {}) {
     return dist(b.p.x, b.p.z, s.x, s.z) / BOT_SPEED;
   }
 
+  /**
+   * Nothing worth buying, or no route to it: go and work our own land. The
+   * `true` opens the search up to hexes of ours that are currently bare, so a
+   * bot with one exhausted forest walks over and waits for it rather than
+   * milling around the market with nothing to do.
+   */
   function gatherFallback(b, avoidN) {
-    const pick = chooseNode(state, b.pid, needWeights(state, b.pid, null),
-                            b.p.x, b.p.z, avoidN);
+    const w = needWeights(state, b.pid, null);
+    const pick = chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, avoidN, true)
+      || chooseHarvestTile(state, b.pid, w, b.p.x, b.p.z, null, true);
     if (!pick) return null;
-    const n = pick.node;
-    return { kind: 'gather', node: n, tx: n.x, tz: n.z, arrive: ARRIVE_GATHER };
+    return { kind: 'gather', tile: pick.tile, tx: pick.x, tz: pick.z, arrive: ARRIVE_GATHER };
   }
 
   /* ------------------------------------------------------------ execution */
@@ -263,34 +264,25 @@ export function createBots(state, world, opts = {}) {
     }
 
     /* -- gathering ------------------------------------------------------ */
+    /* Contact pickup: there is nothing to "start". Chain from one item to the
+       nearest next one and let `sweepPickups` scoop them up as we run over
+       them. The hex empties, we replan. */
     if (g.kind === 'gather') {
-      if (p.action === 'gather' && p.gatherNode) {
-        if (p.gatherNode.id !== g.node.id) { b.goal = null; return; }
-        // Planted at the node. gathering.js owns `p.action` from here; we must
-        // not write 'run' or the harvest is cancelled out from under it.
-        p.vx = 0; p.vz = 0;
-        p.gatherIntent = g.node;                  // hold the lease
+      if (!canGatherTile(state, p.id, g.tile)) {
+        blacklistTile(b, g.tile);
+        b.goal = null; b.think = 0; return;
+      }
+      const it = nearestItem(p.x, p.z, { tile: g.tile });
+      if (it) {
+        g.tx = it.x; g.tz = it.z;
+        b.sinceAct = 0;              // productive: not stalled, do not panic
+        steer(b, g.tx, g.tz, dt);
         return;
       }
-      if (g.node.remaining <= 0) { b.goal = null; b.think = 0; return; }
-
+      // Bare hex of ours: walk onto it and wait for the regrowth. The planner
+      // re-runs twice a second and will pull us off if anything better appears.
       const d = steer(b, g.tx, g.tz, dt);
-      if (d <= g.arrive && Math.hypot(p.vx, p.vz) < LATCH_SPEED) {
-        p.gatherIntent = g.node;
-        b.intentAge += dt;
-        if (b.intentAge > INTENT_GRACE && p.action !== 'gather') {
-          if (!beginGather(state, p.id, g.node)) {
-            blacklistNode(b, g.node.id);
-            p.gatherIntent = null;
-            b.goal = null; b.think = 0;
-          } else {
-            noteAct(b);
-          }
-          b.intentAge = 0;
-        }
-      } else {
-        b.intentAge = 0;
-      }
+      if (d <= 2.6) { p.vx *= 0.4; p.vz *= 0.4; b.stuck = 0; }
       return;
     }
 
@@ -368,7 +360,7 @@ export function createBots(state, world, opts = {}) {
     if (d > (b.goal ? b.goal.arrive : 1.5) && spd < 1.2) {
       b.stuck += dt;
       if (b.stuck > STUCK_SEC) {
-        if (b.goal && b.goal.kind === 'gather') blacklistNode(b, b.goal.node.id);
+        if (b.goal && b.goal.kind === 'gather') blacklistTile(b, b.goal.tile);
         else if (b.goal && b.goal.key) blacklistGoal(b, b.goal.key);
         b.stuck = 0; b.goal = null; b.think = 0;
       }
@@ -409,34 +401,28 @@ export function createBots(state, world, opts = {}) {
     if (spd > 0.35) p.facing = Math.atan2(p.vz, p.vx);
     if (!Number.isFinite(p.facing)) p.facing = 0;
 
-    // `p.action` belongs to gathering.js while a harvest runs, so we only ever
-    // claim it when we are genuinely under power and genuinely moving.
     if (moving && spd > RUN_THRESHOLD && moved > 1e-5) {
-      if (p.action === 'gather') stopGathering(p);
       if (b.hold <= 0) p.action = 'run';
     } else if (p.action === 'run' && b.hold <= 0 && spd <= RUN_THRESHOLD) {
       p.action = 'idle';
     }
   }
 
-  /* --------------------------------------------------------- gather ticks */
+  /* --------------------------------------------------------- pickup sweep */
 
   /**
-   * `gathering.js` owns harvest timing when it is present. We watch
-   * `gatherProgress`; the moment somebody else advances it we stop ticking and
-   * defer forever. Without that module the bots drive `tickGather` themselves
-   * so a headless match still resolves. Either way the resources come from
-   * rules.js.
+   * Collect whatever this settler is touching — the single rules call through
+   * which a bot may ever acquire a resource from the ground.
+   *
+   * `systems/gathering.js` sweeps every player each step when it is present, so
+   * this call normally comes second and is refused with -1. That is the tell we
+   * report as `externalGather`: proof the bots are deferring rather than
+   * double-collecting. Without that module (a bare headless match) the bots do
+   * the sweeping themselves and the match still resolves.
    */
-  function driveGather(b, dt) {
-    const p = b.p;
-    if (p.action !== 'gather' || !p.gatherNode) { b.watchProgress = -1; return; }
-    if (b.watchProgress >= 0 && Math.abs(p.gatherProgress - b.watchProgress) > 1e-9) {
-      b.externalGather = true;
-    }
-    if (!b.externalGather) tickGather(state, p.id, dt);
-    b.watchProgress = p.action === 'gather' ? p.gatherProgress : -1;
-    if (p.gatherNode === null) b.goal = null;
+  function driveGather(b) {
+    const got = sweepPickups(state, b.pid);
+    if (got === -1) b.externalGather = true;
   }
 
   /* ------------------------------------------------------------- setup AI */
@@ -493,7 +479,7 @@ export function createBots(state, world, opts = {}) {
       }
       b.sinceAct += step;
 
-      driveGather(b, step);
+      driveGather(b);
 
       b.think -= step;
       if (b.think <= 0) {
@@ -501,15 +487,8 @@ export function createBots(state, world, opts = {}) {
         const next = planFor(b);
         if (next) {
           const same = b.goal && next.kind === 'gather' && b.goal.kind === 'gather'
-            && b.goal.node.id === next.node.id;
-          if (!same) {
-            if (b.p.action === 'gather' && !(next.kind === 'gather'
-                && b.p.gatherNode && b.p.gatherNode.id === next.node.id)) {
-              stopGathering(b.p);
-            }
-            b.goal = next;
-            b.stuck = 0;
-          }
+            && b.goal.tile === next.tile;
+          if (!same) { b.goal = next; b.stuck = 0; }
         } else if (!b.goal) {
           coast(b, step);
         }
@@ -519,7 +498,24 @@ export function createBots(state, world, opts = {}) {
     }
   }
 
-  return { update, brains };
+  /** Wipe every per-match field, keeping the personalities. Used by the
+   *  in-place restart in systems/flowRestart.js. */
+  function reset() {
+    brains.forEach((b, i) => {
+      b.goal = null;
+      b.hold = 0;
+      b.stuck = 0;
+      b.sinceAct = 0;
+      b.externalGather = false;
+      b.lastKnight = -999;
+      b.think = 0.15 + i * 0.17;
+      b.avoidTiles.clear();
+      b.avoidGoals.clear();
+    });
+    setupKey = ''; setupWait = 0;
+  }
+
+  return { update, reset, brains };
 }
 
 export default createBots;

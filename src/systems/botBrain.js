@@ -13,9 +13,8 @@
 
 import {
   RES, COST, PIECE_LIMIT, VICTORY_POINTS,
-  GATHER_TIME, GATHER_YIELD,
   LONGEST_ROAD_MIN, LARGEST_ARMY_MIN,
-  TRADE_BASE, BOT_SPEED,
+  TRADE_BASE, BOT_SPEED, tileRateFor,
   missingFrom, canAfford
 } from '../core/constants.js';
 
@@ -23,12 +22,30 @@ import {
   tiles, intersections, edges, ports, MARKET, tileAt
 } from '../board/layout.js';
 
-import { nodes } from '../board/nodes.js';
+import {
+  nearestItem, tileItemsRemaining, tileItemCount, tileRecovery
+} from '../board/nodes.js';
 
 import {
   legalSettlements, legalRoads, legalCities,
-  longestRoadFor, scoreOf, ownershipMultiplier, canGatherTile
+  longestRoadFor, scoreOf, canGatherTile, ownedTiles
 } from '../core/rules.js';
+
+/* ---------------------------------------------------------------- gathering
+ * Ownership is now a hard gate, so "how much land do I work" IS the economy.
+ * Everything below scores land in items-per-second rather than pips, and a
+ * corner that only re-covers hexes you already own is worth very little.
+ */
+
+/** Roughly how long it takes to run from one item to the next inside a hex. */
+export const SWEEP_SEC = 0.24;
+
+/** Sustained supply, per resource, from a set of tile ids. */
+function rateOf(tileId) { return tileRateFor(tiles[tileId].pips); }
+
+// Land scores are quoted on the old 1..5 "pips" scale so the rest of the
+// heuristics keep their feel: a 5-pip hex rates ~1.2 items/s, a 1-pip hex ~0.33.
+const RATE_TO_SCORE = 5.5;
 
 /* ===================================================== strategic personality */
 
@@ -40,10 +57,15 @@ export const AFFINITY = {
   human:     { wood: 1, brick: 1, wheat: 1, wool: 1, ore: 1 }
 };
 
-/** Per-strategy purchase priorities. */
+/**
+ * Per-strategy purchase priorities. Land is the economy now, so every identity
+ * has to buy some — the difference is what they do with it. Alex sprawls and
+ * chases the road trophy, Maya claims fewer, better corners and upgrades them,
+ * Finn buys land to feed the card engine and raids whoever is ahead.
+ */
 export const WEIGHTS = {
   expansion: { settlement: 1.05, city: 0.95, road: 1.60, card: 0.62 },
-  cities:    { settlement: 1.18, city: 1.50, road: 0.78, card: 0.58 },
+  cities:    { settlement: 1.30, city: 1.55, road: 0.90, card: 0.58 },
   cards:     { settlement: 1.00, city: 0.92, road: 0.74, card: 1.32 },
   human:     { settlement: 1, city: 1, road: 1, card: 1 }
 };
@@ -107,39 +129,50 @@ export const PORT_SPOT_REACH = ports.map((p, i) =>
 
 /* ============================================================= board reading */
 
-/** Weighted pip production a player currently owns, per resource. */
+/**
+ * Sustained supply, in items per second, that this player can actually reach —
+ * i.e. only from hexes they own a corner on. Duplicate corners on the same hex
+ * add nothing, because a hex is not worked twice as fast for being touched
+ * twice.
+ */
 export function productionOf(state, pid) {
   const out = { wood: 0, brick: 0, wool: 0, wheat: 0, ore: 0 };
-  const p = state.players[pid];
-  const add = (iid, mult) => {
-    for (const tid of intersections[iid].tiles) {
-      const t = tiles[tid];
-      if (t.resource) out[t.resource] += t.pips * mult;
-    }
-  };
-  for (const iid of p.settlements) add(iid, 2);
-  for (const iid of p.cities) add(iid, 3);
+  for (const tid of ownedTiles(state, pid)) {
+    const t = tiles[tid];
+    if (t.resource) out[t.resource] += rateOf(tid);
+  }
   return out;
 }
 
 /**
  * How good is this corner for this player, right now?
- * Pips + diversity + scarcity of what it supplies + port access - crowding.
+ *
+ * The dominant term is NEW LAND: hexes this corner would unlock that the player
+ * cannot already work. Re-touching a hex you already own buys you nothing but a
+ * shorter walk, so it is worth a fraction. Then diversity, scarcity of what it
+ * supplies, port access, minus crowding.
  */
-export function intersectionScore(state, pid, iid, prod, aff) {
+export function intersectionScore(state, pid, iid, prod, aff, owned = null) {
   const n = intersections[iid];
+  const mine = owned || ownedTiles(state, pid);
   let s = 0;
   const kinds = new Set();
+  let fresh = 0;
   for (const tid of n.tiles) {
     const t = tiles[tid];
     if (!t.resource) { s += 0.4; continue; }   // desert corner: market adjacency
-    const owned = prod[t.resource] || 0;
-    const scarce = owned <= 0 ? 1.75 : owned < 6 ? 1.2 : 0.85;
-    s += t.pips * (aff[t.resource] || 1) * scarce;
-    kinds.add(t.resource);
+    const isNew = !mine.has(tid);
+    const have = prod[t.resource] || 0;
+    // Nothing at all of this resource is a crisis: without a hex you can only
+    // trade 4:1 for it.
+    const scarce = have <= 0.001 ? 2.6 : have < 0.5 ? 1.35 : 0.9;
+    const gain = rateOf(tid) * RATE_TO_SCORE * (aff[t.resource] || 1) * scarce;
+    s += isNew ? gain : gain * 0.22;
+    if (isNew) { fresh++; kinds.add(t.resource); }
   }
-  s += kinds.size * 1.8;
-  if (n.tiles.length < 3) s -= 1.4;          // coastal corners work fewer tiles
+  s += kinds.size * 2.4;
+  s += fresh * 1.6;
+  if (n.tiles.length < 3) s -= 1.8;          // coastal corners work fewer hexes
 
   const pt = n.port;
   if (pt !== null && pt !== undefined) {
@@ -158,14 +191,18 @@ export function intersectionScore(state, pid, iid, prod, aff) {
   return s;
 }
 
-/** Value of turning an owned settlement into a city (yield 2x -> 3x). */
+/**
+ * Value of turning a settlement into a city. A city no longer gathers faster —
+ * ownership is binary — so this is a pure victory-point play, sweetened a
+ * little by holding good land against a rival Raider.
+ */
 export function cityScore(state, pid, iid, aff) {
   const n = intersections[iid];
-  let s = 0;
+  let s = 4;
   for (const tid of n.tiles) {
     const t = tiles[tid];
     if (!t.resource) continue;
-    s += t.pips * (aff[t.resource] || 1);
+    s += rateOf(tid) * RATE_TO_SCORE * 0.45 * (aff[t.resource] || 1);
   }
   return s;
 }
@@ -185,6 +222,7 @@ export function chooseRoad(state, pid, fromX, fromZ, ctx = {}) {
 
   const aff = ctx.aff || affinityOf(p.strategy);
   const prod = ctx.prod || productionOf(state, pid);
+  const owned = ctx.owned || ownedTiles(state, pid);
   const jitter = ctx.jitter || (() => 0);
   const openSpot = (iid) => !state.buildings.has(iid)
     && !intersections[iid].neighbors.some(nb => state.buildings.has(nb));
@@ -196,12 +234,12 @@ export function chooseRoad(state, pid, fromX, fromZ, ctx = {}) {
     for (const end of [e.a, e.b]) {
       const other = end === e.a ? e.b : e.a;
       if (openSpot(end)) {
-        best = Math.max(best, 9 + intersectionScore(state, pid, end, prod, aff) * 0.55);
+        best = Math.max(best, 9 + intersectionScore(state, pid, end, prod, aff, owned) * 0.55);
       } else {
         for (const nb of intersections[end].neighbors) {
           if (nb === other || state.buildings.has(nb)) continue;
           if (!openSpot(nb)) continue;
-          best = Math.max(best, 2.4 + intersectionScore(state, pid, nb, prod, aff) * 0.30);
+          best = Math.max(best, 2.4 + intersectionScore(state, pid, nb, prod, aff, owned) * 0.30);
         }
       }
       const pt = intersections[end].port;
@@ -262,6 +300,7 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
   const aff = ctx.aff || affinityOf(p.strategy);
   const W = weightsOf(p.strategy);
   const prod = ctx.prod || productionOf(state, pid);
+  const owned = ctx.owned || ownedTiles(state, pid);
   const jitter = ctx.jitter || (() => 0);
   const vp = scoreOf(state, p);
   const toWin = VICTORY_POINTS - vp;
@@ -275,7 +314,7 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
     const legal = legalSettlements(state, pid);
     let bi = -1, bs = -Infinity;
     for (const iid of legal) {
-      const s = intersectionScore(state, pid, iid, prod, aff)
+      const s = intersectionScore(state, pid, iid, prod, aff, owned)
         - Math.hypot(intersections[iid].x - fromX, intersections[iid].z - fromZ) * 0.05
         + jitter(1.5);
       if (s > bs) { bs = s; bi = iid; }
@@ -307,7 +346,7 @@ export function choosePurchase(state, pid, fromX, fromZ, ctx = {}) {
   }
 
   /* ---- road ---- */
-  const rd = chooseRoad(state, pid, fromX, fromZ, { aff, prod, jitter });
+  const rd = chooseRoad(state, pid, fromX, fromZ, { aff, prod, owned, jitter });
   if (rd) {
     // A road is only worth buying when it opens something or chases the award;
     // otherwise it burns the wood/brick a settlement wants. Chasing Longest
@@ -418,47 +457,68 @@ export function planTrade(state, pid, cost, fromX, fromZ) {
 
 /* ================================================================ gathering */
 
-/** Is another settler already working this node? */
-function contested(state, pid, n) {
+/** Is a rival settler already sweeping this hex? */
+function contested(state, pid, tileId) {
   for (const o of state.players) {
     if (o.id === pid) continue;
-    if (o.action === 'gather' && o.gatherNode && o.gatherNode.id === n.id) return true;
+    const t = tileAt(o.x, o.z);
+    if (t && t.id === tileId) return true;
   }
   return false;
 }
 
 /**
- * Pick the node with the best (useful yield) / (travel + harvest) ratio.
- * `weights` maps resource -> how badly we want it.
- * Returns { node, eta, value } or null.
+ * Which of MY hexes should I go and sweep?
+ *
+ * A hex is a field, not a node: once you are standing on it you scoop roughly
+ * one item every SWEEP_SEC until it is bare. So the sum that matters is
+ *   (useful items left) / (run there + sweep them up).
+ *
+ * With `includeExhausted` a bare hex of ours is still a candidate, valued by how
+ * soon it comes back — which is how a bot learns to walk over and wait for the
+ * forest to grow rather than standing in the market doing nothing.
+ *
+ * Returns { tile, items, x, z, eta, value, perSecond, wait } or null.
  */
-export function chooseNode(state, pid, weights, fromX, fromZ, avoid = null) {
+export function chooseHarvestTile(state, pid, weights, fromX, fromZ,
+                                  avoid = null, includeExhausted = false) {
   let best = null, bestV = 0;
-  for (const n of nodes) {
-    if (n.remaining <= 0) continue;
-    if (avoid && avoid.has(n.id)) continue;
-    if (!canGatherTile(state, pid, n.tile)) continue;
-    const w = weights[n.resource] || 0;
+  for (const t of tiles) {
+    if (!t.resource) continue;
+    if (avoid && avoid.has(t.id)) continue;
+    if (!canGatherTile(state, pid, t.id)) continue;
+    const w = weights[t.resource] || 0;
     if (w <= 0) continue;
-    const t = tiles[n.tile];
-    const mult = ownershipMultiplier(state, pid, n.tile);
-    const cycles = n.remaining;
-    const yieldTotal = (GATHER_YIELD[t.pips] || 1) * mult * cycles;
-    const harvest = (GATHER_TIME[t.pips] || 1) * cycles;
-    const travel = Math.hypot(n.x - fromX, n.z - fromZ) / BOT_SPEED;
-    let v = (yieldTotal * w) / (travel + harvest + 0.35);
-    if (contested(state, pid, n)) v *= 0.35;
-    if (v > bestV) { bestV = v; best = n; }
+
+    const left = tileItemsRemaining(t.id);
+    const travel = Math.hypot(t.x - fromX, t.z - fromZ) / BOT_SPEED;
+    let wait = 0, count = left;
+    if (left <= 0) {
+      if (!includeExhausted) continue;
+      wait = tileRecovery(t.id, state.time).secondsLeft;
+      count = tileItemCount(t.id);
+    }
+    if (count <= 0) continue;
+
+    const sweep = count * SWEEP_SEC;
+    let v = (count * w) / (travel + Math.max(0, wait - travel) + sweep + 0.4);
+    if (contested(state, pid, t.id)) v *= 0.55;
+    if (v > bestV) { bestV = v; best = { tile: t, left, wait, count, travel, sweep }; }
   }
   if (!best) return null;
-  const t = tiles[best.tile];
-  const mult = ownershipMultiplier(state, pid, best.tile);
+
+  const t = best.tile;
+  // Head for the nearest item still standing; if the hex is bare, its centre.
+  const it = nearestItem(fromX, fromZ, { tile: t.id });
   return {
-    node: best,
+    tile: t.id,
+    items: best.left,
+    x: it ? it.x : t.x,
+    z: it ? it.z : t.z,
+    wait: best.wait,
+    perSecond: 1 / SWEEP_SEC,
     value: bestV,
-    perCycle: (GATHER_YIELD[t.pips] || 1) * mult,
-    cycleTime: GATHER_TIME[t.pips] || 1,
-    eta: Math.hypot(best.x - fromX, best.z - fromZ) / BOT_SPEED
+    eta: best.travel + Math.max(0, best.wait - best.travel)
   };
 }
 
@@ -473,8 +533,11 @@ export function needWeights(state, pid, cost) {
 }
 
 /**
- * Rough seconds to gather everything still missing for `cost`.
- * Returns { eta, first } where `first` is the node to head for now.
+ * Rough seconds to gather everything still missing for `cost`, or null if some
+ * part of it simply cannot be gathered — which, now that ownership is a hard
+ * gate, is the normal case for a resource whose hexes you do not own. The
+ * caller then falls through to trading or to buying more land.
+ * Returns { eta, first } where `first` is the hex to head for now.
  */
 export function planGather(state, pid, cost, fromX, fromZ, avoid) {
   const p = state.players[pid];
@@ -482,7 +545,8 @@ export function planGather(state, pid, cost, fromX, fromZ, avoid) {
   const keys = Object.keys(miss);
 
   if (!keys.length) {
-    const any = chooseNode(state, pid, needWeights(state, pid, null), fromX, fromZ, avoid);
+    const any = chooseHarvestTile(state, pid, needWeights(state, pid, null),
+                                  fromX, fromZ, avoid, true);
     return any ? { eta: any.eta, first: any } : null;
   }
 
@@ -490,21 +554,27 @@ export function planGather(state, pid, cost, fromX, fromZ, avoid) {
   for (const r of keys) {
     const w = { wood: 0, brick: 0, wool: 0, wheat: 0, ore: 0 };
     w[r] = 1;
-    const pick = chooseNode(state, pid, w, x, z, avoid);
+    const pick = chooseHarvestTile(state, pid, w, x, z, avoid, true);
     if (!pick) return null;
-    const cycles = Math.max(1, Math.ceil(miss[r] / Math.max(1, pick.perCycle)));
-    total += pick.eta + cycles * pick.cycleTime;
+    total += pick.eta + miss[r] * SWEEP_SEC;
     if (!first) first = pick;
-    x = pick.node.x; z = pick.node.z;
+    x = pick.x; z = pick.z;
   }
   return { eta: total, first };
 }
 
+/** @deprecated nodes are gone; kept so nothing imports a missing symbol. */
+export const chooseNode = chooseHarvestTile;
+
 /* ================================================================== raiding */
 
 /**
- * Knight target: the strongest tile belonging to the current VP leader.
- * Never blocks a tile we work ourselves, never re-blocks the same tile.
+ * Knight target: the strongest hex belonging to the current VP leader.
+ * Never blocks a hex we work ourselves, never re-blocks the same hex.
+ *
+ * The Raider bites much harder now — a blocked hex yields the owner nothing at
+ * all rather than a reduced trickle — so this is the single most disruptive
+ * thing a bot can do.
  */
 export function knightTarget(state, pid) {
   let leader = -1, bestVp = -Infinity;
@@ -527,7 +597,8 @@ export function knightTarget(state, pid) {
       else others += w;
     }
     if (mine > 0) continue;                       // never sabotage ourselves
-    const s = t.pips * (theirs * 2.4 + others * 0.5 + 0.2);
+    if (theirs <= 0 && others <= 0) continue;     // blocking nobody's land is free but useless
+    const s = rateOf(t.id) * RATE_TO_SCORE * (theirs * 2.4 + others * 0.5 + 0.2);
     if (s > bestS) { bestS = s; best = t.id; }
   }
   if (best < 0) {
@@ -563,9 +634,11 @@ export function wantsKnight(state, pid, sinceLast = Infinity) {
 /* ============================================================= setup draft */
 
 /**
- * Opening snake-draft settlement. Maximises pip total across adjacent tiles,
- * rewards resource diversity and port access, and steers clear of corners
- * rivals are already clustered on.
+ * Opening snake-draft settlement. These two corners are the whole opening
+ * economy now: they are the only land you may work until you can afford to
+ * expand, so the draft weighs raw supply rate hardest, then insists on covering
+ * as many DIFFERENT resources as possible — a settler who opens with no wheat
+ * corner cannot build a settlement without trading 4:1 for it.
  */
 export function chooseSetupSettlement(state, pid, rand = Math.random) {
   const legal = legalSettlements(state, pid, true);
@@ -573,16 +646,25 @@ export function chooseSetupSettlement(state, pid, rand = Math.random) {
   const p = state.players[pid];
   const aff = affinityOf(p.strategy);
   const prod = productionOf(state, pid);
+  const owned = ownedTiles(state, pid);
   const own = [...p.settlements];
+  const have = new Set();
+  for (const tid of owned) if (tiles[tid].resource) have.add(tiles[tid].resource);
 
   let best = legal[0], bestS = -Infinity;
   for (const iid of legal) {
     const n = intersections[iid];
-    let s = intersectionScore(state, pid, iid, prod, aff);
-    // Raw pip total dominates the opening — this is the single biggest lever.
-    let pips = 0;
-    for (const tid of n.tiles) pips += tiles[tid].pips;
-    s += pips * 0.9;
+    let s = intersectionScore(state, pid, iid, prod, aff, owned);
+    // Raw supply rate dominates the opening — the single biggest lever.
+    let rate = 0, novel = 0;
+    for (const tid of n.tiles) {
+      const t = tiles[tid];
+      if (!t.resource || owned.has(tid)) continue;
+      rate += rateOf(tid);
+      if (!have.has(t.resource)) novel++;
+    }
+    s += rate * RATE_TO_SCORE * 1.5;
+    s += novel * 3.2;                     // cover five resources, not two
     // Second pick: spread out rather than double up on one region.
     for (const o of own) {
       const d = Math.hypot(intersections[o].x - n.x, intersections[o].z - n.z);
@@ -602,6 +684,7 @@ export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random) {
   const p = state.players[pid];
   const aff = affinityOf(p.strategy);
   const prod = productionOf(state, pid);
+  const owned = ownedTiles(state, pid);
 
   let best = legal[0], bestS = -Infinity;
   for (const eid of legal) {
@@ -611,7 +694,7 @@ export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random) {
     for (const nb of intersections[far].neighbors) {
       if (nb === anchorIid || state.buildings.has(nb)) continue;
       if (intersections[nb].neighbors.some(x => state.buildings.has(x))) continue;
-      s = Math.max(s, intersectionScore(state, pid, nb, prod, aff));
+      s = Math.max(s, intersectionScore(state, pid, nb, prod, aff, owned));
     }
     const pt = intersections[far].port;
     if (pt !== null && pt !== undefined) s += ports[pt].kind === 'generic' ? 2.5 : 3.5;
@@ -624,5 +707,5 @@ export function chooseSetupRoad(state, pid, anchorIid, rand = Math.random) {
 
 export default {
   chooseSetupSettlement, chooseSetupRoad, choosePurchase, chooseRoad,
-  chooseNode, planGather, planTrade, knightTarget, wantsKnight
+  chooseHarvestTile, planGather, planTrade, knightTarget, wantsKnight
 };

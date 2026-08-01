@@ -17,15 +17,15 @@
 import {
   createMatch, drainEvents, tickWorld, scoreOf,
   setupCurrentPlayer, setupPlaceSettlement, setupPlaceRoad,
-  beginGather, tickGather
+  sweepPickups, playerOwnsTile, ownedTiles
 } from '../src/core/rules.js';
 import { createBots, chooseSetupSettlement, chooseSetupRoad } from '../src/systems/bots.js';
 import { PORT_SPOT_REACH } from '../src/systems/botBrain.js';
-import { tileAt, ports } from '../src/board/layout.js';
-import { mulberry32 } from '../src/board/nodes.js';
+import { tileAt, ports, tiles } from '../src/board/layout.js';
+import { mulberry32, tileItemCount } from '../src/board/nodes.js';
 import {
   RES, MATCH_SOFT_CAP_SEC, BOT_PROFILES, TRADE_RADIUS, VICTORY_POINTS,
-  GATHER_YIELD, GATHER_TIME, OWNERSHIP_MULT, COST, PIECE_LIMIT
+  TILE_ITEMS, TILE_REGEN, PICKUP_RADIUS, START_RESOURCES, COST, PIECE_LIMIT
 } from '../src/core/constants.js';
 
 /* ------------------------------------------------------------------- args */
@@ -48,47 +48,60 @@ const DT = 1 / 60;
 const STRATS = BOT_PROFILES.map(b => b.strategy);          // expansion, cities, cards
 
 /* ------------------------------------------------------- pacing experiments
- * These flags exist so the next tuning pass can measure a candidate economy
- * *before* anyone edits the frozen constants file. They mutate the exported
- * lookup tables in-process only; with no flags the simulator runs the shipped
- * numbers exactly. Nothing here touches src/.
- *   --vp=10       victory target (simulator keeps play alive past 7)
- *   --yield=0.5   scale GATHER_YIELD (floor 1)
- *   --gtime=1.6   scale GATHER_TIME
- *   --mult=1,2,3  OWNERSHIP_MULT none,settlement,city
- *   --cost=1.5    scale every COST entry (ceil)
+ * These flags exist so a tuning pass can measure a candidate economy *before*
+ * anyone edits constants.js. They mutate the exported lookup tables in-process
+ * only; with no flags the simulator runs the shipped numbers exactly. Nothing
+ * here touches src/.
+ *   --vp=10             victory target (simulator keeps play alive past it)
+ *   --items=1.3         scale TILE_ITEMS (round, floor 1)
+ *   --itemset=8,11,...  TILE_ITEMS for pips 1..5 outright
+ *   --regen=1.4         scale TILE_REGEN
+ *   --regenset=30,...   TILE_REGEN for pips 1..5 outright
+ *   --cost=1.5          scale every COST entry (ceil)
+ *   --start=1.5         scale START_RESOURCES (round)
+ *   --pieces=r,s,c      PIECE_LIMIT
  */
 const VP_TARGET = Math.max(VICTORY_POINTS, parseInt(args.vp ?? VICTORY_POINTS, 10));
 const TUNED = [];
 
-if (args.yield) {
-  const k = parseFloat(args.yield);
-  for (const p of Object.keys(GATHER_YIELD)) {
-    GATHER_YIELD[p] = Math.max(1, Math.round(GATHER_YIELD[p] * k));
+if (args.items) {
+  const k = parseFloat(args.items);
+  for (const p of Object.keys(TILE_ITEMS)) {
+    TILE_ITEMS[p] = Math.max(1, Math.round(TILE_ITEMS[p] * k));
   }
-  TUNED.push(`GATHER_YIELD x${k} -> ${JSON.stringify(GATHER_YIELD)}`);
+  TUNED.push(`TILE_ITEMS x${k} -> ${JSON.stringify(TILE_ITEMS)}`);
 }
-if (args.yieldset) {
-  const v = String(args.yieldset).split(',').map(Number);
-  for (let i = 1; i <= 5; i++) GATHER_YIELD[i] = v[i - 1];
-  TUNED.push(`GATHER_YIELD -> ${JSON.stringify(GATHER_YIELD)}`);
+if (args.itemset) {
+  const v = String(args.itemset).split(',').map(Number);
+  for (let i = 1; i <= 5; i++) TILE_ITEMS[i] = v[i - 1];
+  TUNED.push(`TILE_ITEMS -> ${JSON.stringify(TILE_ITEMS)}`);
 }
-if (args.gtimeset) {
-  const v = String(args.gtimeset).split(',').map(Number);
-  for (let i = 1; i <= 5; i++) GATHER_TIME[i] = v[i - 1];
-  TUNED.push(`GATHER_TIME -> ${JSON.stringify(GATHER_TIME)}`);
-}
-if (args.gtime) {
-  const k = parseFloat(args.gtime);
-  for (const p of Object.keys(GATHER_TIME)) {
-    GATHER_TIME[p] = Math.round(GATHER_TIME[p] * k * 100) / 100;
+if (args.regen) {
+  const k = parseFloat(args.regen);
+  for (const p of Object.keys(TILE_REGEN)) {
+    TILE_REGEN[p] = Math.round(TILE_REGEN[p] * k * 10) / 10;
   }
-  TUNED.push(`GATHER_TIME x${k} -> ${JSON.stringify(GATHER_TIME)}`);
+  TUNED.push(`TILE_REGEN x${k} -> ${JSON.stringify(TILE_REGEN)}`);
 }
-if (args.mult) {
-  const [a, b, c] = String(args.mult).split(',').map(Number);
-  OWNERSHIP_MULT.none = a; OWNERSHIP_MULT.settlement = b; OWNERSHIP_MULT.city = c;
-  TUNED.push(`OWNERSHIP_MULT -> ${JSON.stringify(OWNERSHIP_MULT)}`);
+if (args.regenset) {
+  const v = String(args.regenset).split(',').map(Number);
+  for (let i = 1; i <= 5; i++) TILE_REGEN[i] = v[i - 1];
+  TUNED.push(`TILE_REGEN -> ${JSON.stringify(TILE_REGEN)}`);
+}
+if (args.start) {
+  const k = parseFloat(args.start);
+  for (const r of Object.keys(START_RESOURCES)) {
+    START_RESOURCES[r] = Math.max(0, Math.round(START_RESOURCES[r] * k));
+  }
+  TUNED.push(`START_RESOURCES x${k} -> ${JSON.stringify(START_RESOURCES)}`);
+}
+if (args.costs) {
+  // --costs=city.ore=4,city.wheat=3 — surgical, unlike the blanket --cost.
+  for (const part of String(args.costs).split(',')) {
+    const m = /^([a-z]+)\.([a-z]+)=(\d+)$/.exec(part.trim());
+    if (m && COST[m[1]]) COST[m[1]][m[2]] = Number(m[3]);
+  }
+  TUNED.push(`COST -> ${JSON.stringify(COST)}`);
 }
 if (args.cost) {
   const k = parseFloat(args.cost);
@@ -154,15 +167,10 @@ if (EXT_GATHER) {
   }
 }
 
-/** Stand-in for systems/gathering.js — consumes gatherIntent, owns the clock. */
-function externalGathering(st, dt) {
-  for (const p of st.players) {
-    if (p.gatherIntent && p.action !== 'gather') {
-      beginGather(st, p.id, p.gatherIntent);
-      p.gatherIntent = null;
-    }
-    if (p.action === 'gather') tickGather(st, p.id, dt);
-  }
+/** Stand-in for systems/gathering.js — sweeps every settler's contact pickup
+ *  first, so the bots' own call is the one that gets refused. */
+function externalGathering(st) {
+  for (const p of st.players) sweepPickups(st, p.id);
 }
 
 /* ----------------------------------------------------------------- audit */
@@ -229,6 +237,8 @@ function runMatch(index) {
   let frames = 0;
   let botMs = 0;
   let offIsland = 0;
+  let exhausted = 0, restored = 0;
+  const gathered = state.players.map(() => 0);
 
   const before = state.players.map(p => ({ ...p.res }));
 
@@ -250,7 +260,7 @@ function runMatch(index) {
     }
 
     if (gathering) gathering.update(DT);          // real systems/gathering.js
-    else if (EXT_GATHER) externalGathering(state, DT);
+    else if (EXT_GATHER) externalGathering(state);
 
     const t0 = process.hrtime.bigint();
     bots.update(DT);
@@ -259,8 +269,26 @@ function runMatch(index) {
 
     /* --- audit: resource conservation --- */
     const expect = state.players.map(() => ({ wood: 0, brick: 0, wool: 0, wheat: 0, ore: 0 }));
-    for (const ev of drainEvents(state)) {
-      if (ev.type === 'gained') expect[ev.player][ev.resource] += ev.amount;
+    const frameEvents = drainEvents(state);
+    // A Knight played later in the same frame moves the Raider under a pickup
+    // that was legal when it happened; don't misread that as a rules breach.
+    const raiderMoved = frameEvents.some(e => e.type === 'knight');
+    for (const ev of frameEvents) {
+      if (ev.type === 'gained') {
+        expect[ev.player][ev.resource] += ev.amount;
+        // Ownership is a hard gate: nothing may ever be picked up off a hex the
+        // player has no settlement or city on.
+        if (!playerOwnsTile(state, ev.player, ev.tile)) {
+          flag(`match ${index} t=${fmt(state.time)}: p${ev.player} collected ` +
+               `${ev.resource} on tile ${ev.tile}, which they do not own`);
+        }
+        if (!raiderMoved && state.robberTile === ev.tile && state.robberOwner !== ev.player) {
+          flag(`match ${index} t=${fmt(state.time)}: p${ev.player} collected on ` +
+               `tile ${ev.tile} while the Raider blocked it`);
+        }
+        gathered[ev.player]++;
+      } else if (ev.type === 'exhausted') exhausted++;
+      else if (ev.type === 'restored') restored++;
       else if (ev.type === 'trade') {
         expect[ev.player][ev.get] += 1;
         if (ports.some(p => p.ratio === ev.ratio && p.ratio < 4)) tradesAt.port++;
@@ -314,6 +342,7 @@ function runMatch(index) {
   const rows = state.players.map(p => ({
     id: p.id,
     strategy: p.strategy,
+    tilesOwned: ownedTiles(state, p.id).size,
     vp: scoreOf(state, p),
     settlements: p.settlements.size,
     cities: p.cities.size,
@@ -336,7 +365,7 @@ function runMatch(index) {
     winStrategy: finished ? state.players[state.winner].strategy : null,
     rows, awards, tradesAt, frames,
     msPerFrame: frames ? botMs / frames : 0,
-    offIsland,
+    offIsland, exhausted, restored,
     draftPips
   };
 }
@@ -357,9 +386,13 @@ for (let i = 0; i < MATCHES; i++) {
   const r = runMatch(i);
   if (r) results.push(r);
   if (VERBOSE && r) {
+    const w = r.rows[r.winner] || null;
     console.log(`  #${String(i).padStart(2)}  ${fmt(r.duration)}s  ` +
       `win=${r.winStrategy ?? 'NONE'}  ` +
-      r.rows.map(x => `${x.strategy.slice(0, 3)}:${x.vp}`).join(' '));
+      r.rows.map(x => `${x.strategy.slice(0, 3)}:${x.vp}`).join(' ') +
+      (w ? `  | winner ${w.settlements}S ${w.cities}C ${w.vpCards}vpc ` +
+           `${w.awardVp}awd road${w.longestRoad} kn${w.knights} ` +
+           `hex${w.tilesOwned} got${w.gathered} trd${w.traded}` : ''));
   }
 }
 const wall = (Date.now() - t0) / 1000;
@@ -449,20 +482,45 @@ console.log('\n=== PER-BOT ACTIVITY (average per match) ===');
 {
   const acc = {};
   for (const s of STRATS) {
-    acc[s] = { n: 0, g: 0, t: 0, cp: 0, b: 0, rd: 0, d: 0 };
+    acc[s] = { n: 0, g: 0, t: 0, cp: 0, b: 0, rd: 0, d: 0, tl: 0 };
   }
   for (const r of results) for (const row of r.rows) {
     const a = acc[row.strategy];
     a.n++; a.g += row.gathered; a.t += row.traded; a.cp += row.cardsPlayed;
     a.b += row.built; a.rd += row.roads; a.d += row.distance;
+    a.tl += row.tilesOwned;
   }
   console.log(table(
-    ['strategy', 'gathered', 'trades', 'cards played', 'pieces built', 'roads', 'metres run'],
+    ['strategy', 'gathered', 'hexes owned', 'trades', 'cards played', 'pieces built', 'roads', 'metres run'],
     STRATS.map(s => {
       const a = acc[s];
-      return [s, fmt(a.g / a.n, 1), fmt(a.t / a.n, 2), fmt(a.cp / a.n, 2),
+      return [s, fmt(a.g / a.n, 1), fmt(a.tl / a.n, 2), fmt(a.t / a.n, 2), fmt(a.cp / a.n, 2),
               fmt(a.b / a.n, 2), fmt(a.rd / a.n, 2), fmt(a.d / a.n, 0)];
     })
+  ));
+}
+
+console.log('\n=== THE FIELD (per match) ===');
+{
+  const ex = results.reduce((s, r) => s + r.exhausted, 0) / results.length;
+  const re = results.reduce((s, r) => s + r.restored, 0) / results.length;
+  const picked = results.reduce((s, r) =>
+    s + r.rows.reduce((t, x) => t + x.gathered, 0), 0) / results.length;
+  const secs = results.reduce((s, r) => s + r.duration, 0) / results.length;
+  const island = tiles.filter(t => t.resource)
+    .reduce((s, t) => s + tileItemCount(t.id), 0);
+  console.log(table(
+    ['metric', 'value'],
+    [
+      ['items on a full island', String(island)],
+      ['items per hex by pips', JSON.stringify(TILE_ITEMS)],
+      ['regen seconds by pips', JSON.stringify(TILE_REGEN)],
+      ['pickup radius', String(PICKUP_RADIUS)],
+      ['items picked up / match', fmt(picked, 0)],
+      ['items picked up / second', fmt(picked / secs, 2)],
+      ['hexes cleared out / match', fmt(ex, 1)],
+      ['hexes grown back / match', fmt(re, 1)]
+    ]
   ));
 }
 
