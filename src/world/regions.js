@@ -42,7 +42,7 @@ import * as THREE from 'three';
 import { RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
 import { heightAt, APOTHEM } from './terrain.js';
-import { MOOD, syncMood, onRestored, onSpent } from './mood.js';
+import { MOOD, syncMood, onRestored, onSpent, uMoodTime, GLOW_HZ } from './mood.js';
 import { buildMarkers, markerAtlas, GLYPH, MAX_SEC } from './regionmark.js';
 import { buildStand } from './stand.js';
 
@@ -86,6 +86,30 @@ const SEGS = 12;
 const RINGS = [0.24, 0.46, 0.66, 0.775, 0.865];
 const RIM_AT = 0.775;
 
+/* THE LIGHT WALL.
+ *
+ * The single loudest change in this pass. On top of the terrain-conforming fan
+ * the same mesh now grows a short vertical skirt around the edge of every hex
+ * you may work: a band of the player's blue standing off the ground, brightest
+ * at the base and fading out at the top, breathing on the shared mood clock.
+ *
+ * Why a wall and not a brighter decal. A ground decal is foreshortened to
+ * nearly nothing at the play camera's 50-degree pitch and disappears entirely
+ * behind a forest of three-unit trees — which is precisely why the last two
+ * attempts at "make it obvious" did not read. A vertical band is seen face-on
+ * from that camera, it stands ABOVE the grass, it survives being half occluded
+ * by props, and at the edge of vision the eye catches it as motion rather than
+ * as colour.
+ *
+ * It costs 24 triangles per hex and not one extra draw call — it is more
+ * vertices on a buffer that was already being drawn.
+ *
+ * Placed at hexFrac 0.905, out in the tan border strip: the props stop at 0.78,
+ * so the wall never grows through a tree, and the hex TOP the player runs
+ * around stays completely clear. */
+const WALL_AT = 0.905;
+const WALL_H = 1.85;
+
 function hexReach(a) {
   const c = Math.cos(a), s = Math.sin(a);
   const m = Math.max(
@@ -97,15 +121,17 @@ function hexReach(a) {
 }
 
 function buildOverlay(list) {
-  const perTile = 1 + RINGS.length * SEGS;
+  // fan: centre + the ground rings.  wall: a base ring and a lifted top ring.
+  const perTile = 1 + RINGS.length * SEGS + SEGS * 2;
   const vtx = list.length * perTile;
   const pos = new Float32Array(vtx * 3);
   const rim = new Float32Array(vtx);
+  const up = new Float32Array(vtx);
   const worn = new Float32Array(vtx * 3);
   const live = new Float32Array(vtx * 3);
   const state = new Float32Array(vtx * 4);
 
-  const triPerTile = SEGS + (RINGS.length - 1) * SEGS * 2;
+  const triPerTile = SEGS + (RINGS.length - 1) * SEGS * 2 + SEGS * 2;
   const idx = new Uint16Array(list.length * triPerTile * 3);
 
   const cw = new THREE.Color(), cl = new THREE.Color();
@@ -119,11 +145,12 @@ function buildOverlay(list) {
     rec.vStart = v;
     rec.vCount = perTile;
 
-    const put = (x, z, r) => {
+    const put = (x, z, r, lift = 0, u = 0) => {
       // Lifted well clear of the tile top: the decal is a coarse fan and the
       // painted undulation under it runs +-0.19.
-      pos[v * 3] = x; pos[v * 3 + 1] = heightAt(x, z) + 0.30; pos[v * 3 + 2] = z;
+      pos[v * 3] = x; pos[v * 3 + 1] = heightAt(x, z) + 0.30 + lift; pos[v * 3 + 2] = z;
       rim[v] = r;
+      up[v] = u;
       worn[v * 3] = cw.r; worn[v * 3 + 1] = cw.g; worn[v * 3 + 2] = cw.b;
       live[v * 3] = cl.r; live[v * 3 + 1] = cl.g; live[v * 3 + 2] = cl.b;
       v++;
@@ -136,6 +163,18 @@ function buildOverlay(list) {
         const d = RINGS[r] * hexReach(a);
         put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, RINGS[r]);
       }
+    }
+    // the light wall: same ring twice, once on the ground and once in the air
+    const wallBase = v;
+    for (let s = 0; s < SEGS; s++) {
+      const a = (s / SEGS) * TAU;
+      const d = WALL_AT * hexReach(a);
+      put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, WALL_AT, 0, 0);
+    }
+    for (let s = 0; s < SEGS; s++) {
+      const a = (s / SEGS) * TAU;
+      const d = WALL_AT * hexReach(a);
+      put(t.x + Math.cos(a) * d, t.z + Math.sin(a) * d, WALL_AT, WALL_H, 1);
     }
 
     for (let s = 0; s < SEGS; s++) {
@@ -152,11 +191,18 @@ function buildOverlay(list) {
         idx[f++] = a0 + s; idx[f++] = b0 + s1; idx[f++] = a0 + s1;
       }
     }
+    for (let s = 0; s < SEGS; s++) {
+      const s1 = (s + 1) % SEGS;
+      const lo = wallBase, hi = wallBase + SEGS;
+      idx[f++] = lo + s; idx[f++] = hi + s; idx[f++] = hi + s1;
+      idx[f++] = lo + s; idx[f++] = hi + s1; idx[f++] = lo + s1;
+    }
   });
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('aRim', new THREE.BufferAttribute(rim, 1));
+  geo.setAttribute('aUp', new THREE.BufferAttribute(up, 1));
   geo.setAttribute('aWorn', new THREE.BufferAttribute(worn, 3));
   geo.setAttribute('aLive', new THREE.BufferAttribute(live, 3));
   const stateAttr = new THREE.BufferAttribute(state, 4);
@@ -167,32 +213,52 @@ function buildOverlay(list) {
 
   const mat = new THREE.ShaderMaterial({
     // DoubleSide is not laziness: a fan wound counter-clockwise in (x, z) faces
-    // AWAY from a camera looking down +y.
+    // AWAY from a camera looking down +y — and the light wall has to be lit from
+    // both inside the hex and outside it.
     transparent: true, depthWrite: false, depthTest: true, side: THREE.DoubleSide,
+    // PREMULTIPLIED. This is what makes the glow a glow. With premultiplied
+    // alpha the blend is `src.rgb + dst * (1 - src.a)`, so a fragment is free to
+    // emit MORE colour than its own alpha carries: the mute wash and the ash
+    // still darken the ground exactly as before (they emit col * a), while the
+    // owner's rim and the light wall add energy on top of whatever is behind
+    // them. One material, one draw call, and no additive second pass.
+    premultipliedAlpha: true,
     uniforms: {
       uTime: { value: 0 },
+      // The shared ownership heartbeat, straight off mood.js — the same object
+      // the trees and the terrain breathe on, so nothing can drift out of step.
+      uPulse: uMoodTime,
       uRim:  { value: new THREE.Color(0x7fb2f0) },
+      // The ADDITIVE blue is a different, far more saturated colour than the
+      // decal blue above, and it has to be. Adding the pale #7fb2f0 on top of
+      // sunlit sand clips red and green long before blue and the whole rim goes
+      // white — which is what "make it glow" must not turn into. This one is
+      // nearly pure blue, so it stays unmistakably the PLAYER'S colour all the
+      // way up to the few pixels at the base of the wall where it does blow out
+      // to white, and that hot core is the part that carries across the island.
+      uGlow: { value: new THREE.Color(0x1f6ff2) },
       uWarm: { value: new THREE.Color(WARM) },
       uMute: { value: new THREE.Color(MUTE) }
     },
     vertexShader: /* glsl */`
       attribute float aRim;
+      attribute float aUp;
       attribute vec3 aWorn, aLive;
       attribute vec4 aState;
-      varying float vRim;
+      varying float vRim, vUp;
       varying vec3 vWorn, vLive;
       varying vec4 vState;
       varying vec2 vW;
       void main() {
-        vRim = aRim; vWorn = aWorn; vLive = aLive; vState = aState;
+        vRim = aRim; vUp = aUp; vWorn = aWorn; vLive = aLive; vState = aState;
         vW = position.xz;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
     fragmentShader: /* glsl */`
-      uniform float uTime;
-      uniform vec3 uRim, uWarm, uMute;
-      varying float vRim;
+      uniform float uTime, uPulse;
+      uniform vec3 uRim, uGlow, uWarm, uMute;
+      varying float vRim, vUp;
       varying vec3 vWorn, vLive;
       varying vec4 vState;
       varying vec2 vW;
@@ -220,10 +286,30 @@ function buildOverlay(list) {
       void main() {
         float work = vState.x, spent = vState.y, flash = vState.z, tone = vState.w;
         // A hex you own but have cleared out is not "available" any more, so it
-        // gives up its blue rim and its sunlight until the clock runs out. The
-        // rim is the promise; an empty hex has nothing to promise.
-        float own = max(tone, 0.0) * (1.0 - spent * 0.86);
+        // gives up its rim, its wall and its sunlight completely until the clock
+        // runs out. The glow is the promise; an empty hex has nothing to
+        // promise, and the moment it refills it lights straight back up.
+        float own = max(tone, 0.0) * (1.0 - spent);
         float off = max(-tone, 0.0);
+
+        // The one heartbeat. Terrain, props, rim and wall all ride this.
+        float breath = 0.5 + 0.5 * sin(uPulse * ${GLOW_HZ.toFixed(2)});
+
+        /* ---- THE LIGHT WALL -------------------------------------------- */
+        if (vUp > 0.0001 || vRim > ${(WALL_AT - 0.001).toFixed(3)}) {
+          if (own < 0.004) discard;
+          // brightest where it meets the ground, gone by the top
+          float fall = 1.0 - vUp;
+          fall = fall * fall * (0.45 + 0.55 * fall);
+          // a slow vertical shimmer so it never reads as a flat printed band
+          float shim = 0.86 + 0.14 * sin(uPulse * 2.7 + vW.x * 0.34 + vW.y * 0.29);
+          float amp = own * fall * shim * (0.55 + 0.45 * breath);
+          // a hot core right at the base — this is what carries across the
+          // board, and it is only a few pixels tall
+          vec3 c = mix(uGlow, uRim, smoothstep(0.26, 0.0, vUp) * 0.42);
+          gl_FragColor = vec4(c * amp * 1.62, 0.0);
+          return;
+        }
 
         // The wash fills the whole prop zone and stops at the tan road strip.
         float plate = 1.0 - smoothstep(0.72, 0.865, vRim);
@@ -233,6 +319,7 @@ function buildOverlay(list) {
 
         vec3 col = vec3(0.0);
         float a = 0.0;
+        vec3 glow = vec3(0.0);      // additive energy, premultiplied output
 
         // ---- 1. OFF LIMITS. Flat, cold and inert, with a black border that
         // cuts the hex away from its neighbours. The mood shader has already
@@ -243,9 +330,13 @@ function buildOverlay(list) {
           over(col, a, uMute, rim * 0.62 * off);
         }
 
-        // ---- 2. YOURS. Warm sunlight pooling in from the border.
+        // ---- 2. YOURS. Warm sunlight pooling in from the border. Pulled back
+        // from what it was: the cream wash was the last thing still bleaching
+        // the ground and the items standing on it, and the emissive rim below
+        // now says "yours" far more loudly than a translucent cream plate ever
+        // could. It survives only as a faint warmth under the rim.
         if (own > 0.004) {
-          float lift = 0.05 + 0.17 * smoothstep(0.15, 0.80, vRim);
+          float lift = 0.03 + 0.11 * smoothstep(0.15, 0.80, vRim);
           over(col, a, uWarm, lift * own * plate);
         }
 
@@ -265,27 +356,37 @@ function buildOverlay(list) {
           over(col, a, vec3(0.92, 0.52, 0.10), rim * dash * spent * 0.75);
         }
 
-        // ---- 5. the owner's rim, drawn last so nothing mutes it. This is the
-        // loudest thing on the board that is not a number token, and it is the
-        // one signal that survives a hex being completely covered in trees.
+        // ---- 5. THE GLOW. The owner's rim is no longer a translucent stripe
+        // laid over the grass — it is emitted, so it brightens whatever is
+        // underneath instead of averaging with it, and it breathes. Three
+        // layers: a hard luminous line on the boundary, a broad bloom bleeding
+        // inward across the hex floor, and a faint inner ring that keeps the
+        // shape reading even when the border is behind a stand of trees.
         if (own > 0.004) {
-          float pulse = 0.84 + 0.16 * sin(uTime * 2.0);
-          over(col, a, uRim, rim * rim * (0.80 + 0.20 * own) * pulse);
-          over(col, a, uRim, smoothstep(0.30, 0.775, vRim) * 0.20 * own * plate);
-          float band2 = smoothstep(0.040, 0.0, abs(vRim - 0.640));
-          over(col, a, uRim, band2 * 0.42 * own * pulse);
+          float pulse = 0.62 + 0.38 * breath;
+          float band2 = smoothstep(0.055, 0.0, abs(vRim - 0.640));
+          glow += uGlow * (rim * rim) * own * pulse * 1.55;
+          glow += uRim * rim * own * pulse * 0.42;
+          // The inward bloom is deliberately held to the outer third of the
+          // hex. Spread across the whole floor it tinted the grass teal, and a
+          // pasture that is not green is exactly the "washed out" failure this
+          // glow had to avoid; kept near the border it reads as light spilling
+          // in off the rim and the middle of the hex keeps its own colour.
+          glow += uGlow * smoothstep(0.34, 0.90, vRim) * plate * own * (0.06 + 0.08 * breath);
+          glow += uGlow * band2 * own * pulse * 0.42;
         }
 
         // ---- 6. the recovery beat
         if (flash > 0.004) {
           float ringR = (1.0 - flash) * 1.10;
           float band = smoothstep(0.26, 0.0, abs(vRim - ringR));
-          float glow = flash * flash;
-          over(col, a, vLive, min(1.0, band * 0.95 + glow * 0.60) * plate);
+          float g = flash * flash;
+          glow += vLive * min(1.0, band * 1.20 + g * 0.75) * plate;
         }
 
-        if (a < 0.008) discard;
-        gl_FragColor = vec4(col, min(a, 0.94));
+        float aOut = min(a, 0.94);
+        if (aOut < 0.008 && dot(glow, vec3(0.33)) < 0.004) discard;
+        gl_FragColor = vec4(col * aOut + glow, aOut);
       }
     `
   });

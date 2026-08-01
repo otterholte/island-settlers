@@ -62,9 +62,14 @@ const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeOut = t => 1 - (1 - t) * (1 - t) * (1 - t);
 
+/* The sheaf moved off the `wheat` material and onto `tree`. `wheat` sways at
+   0.145 per unit of height, which is right for a flat blade card and turns a
+   solid, closed, two-unit-tall bundle into jelly: at the top of the crown it
+   was shearing the geometry a third of a unit sideways. A bound stook should
+   barely move, and 0.026 is exactly that. */
 const KIT = {
   tree:    { make: K.fieldTree,  mat: 'tree',  cast: true },
-  wheat:   { make: K.fieldWheat, mat: 'wheat', cast: false },
+  wheat:   { make: K.fieldWheat, mat: 'tree',  cast: false },
   sheep:   { make: K.fieldSheep, mat: 'solid', cast: true },
   claypit: { make: K.fieldClay,  mat: 'solid', cast: true },
   orerock: { make: K.fieldOre,   mat: 'solid', cast: true }
@@ -80,15 +85,27 @@ const TINTS = {
 };
 
 /* How big each item stands, and how far it sinks into the ground. Deliberately
-   chunky: an item you cannot see is an item you cannot decide to run at. */
+   chunky: an item you cannot see is an item you cannot decide to run at.
+   The tree is untouched — the player likes the tree, it is the benchmark — and
+   the other four have been walked up toward it until each one is a real
+   two-unit object rather than a trinket in tall grass. */
 const SCALE = {
   tree:    [1.10, 1.50],
-  wheat:   [1.05, 1.40],
-  sheep:   [1.06, 1.30],
-  claypit: [1.00, 1.28],
-  orerock: [1.00, 1.30]
+  wheat:   [1.06, 1.32],
+  sheep:   [1.12, 1.34],
+  claypit: [1.14, 1.40],
+  orerock: [1.06, 1.32]
 };
-const SINK = { tree: 0.10, wheat: 0.04, sheep: 0.02, claypit: 0.06, orerock: 0.10 };
+const SINK = { tree: 0.10, wheat: 0.06, sheep: 0.02, claypit: 0.10, orerock: 0.18 };
+
+/* Per-item size jitter, folded on top of SCALE. The board hands out
+   `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a
+   0.86..1.18 band, and with items now twice as wide the biggest of them started
+   colliding with their neighbours on a 22-item hex. Tightened to 0.92..1.14,
+   which keeps the field from looking stamped without letting anything grow into
+   the blue-noise gaps a settler runs down. */
+const JITTER_MID = 0.92;
+const JITTER_GAIN = 0.62;
 
 /* Seconds. TAKE is short on purpose — the player asked to not wait for it. */
 const TAKE = 0.26;
@@ -150,7 +167,8 @@ export function buildField(group, mats, opts = {}) {
     list.forEach((it, i) => {
       const rng = mulberry32(60013 + it.id * 7919);
       const tile = tiles[it.tile];
-      const s = (sc[0] + rng() * (sc[1] - sc[0])) * (0.86 + (it.scale - 0.86) * 0.9);
+      const s = (sc[0] + rng() * (sc[1] - sc[0]))
+        * (JITTER_MID + (it.scale - 0.86) * JITTER_GAIN);
       const v = table[variantOf(it.x, it.z, table.length)];
       const sl = {
         item: it, kind, i,

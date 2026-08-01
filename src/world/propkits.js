@@ -105,12 +105,27 @@ export function broadleaf() {
  * three hundred across the island. Every one of them is a separate instance you
  * can run at, take, and see missing afterwards.
  *
- * Which means the triangle budget per item is brutal. These kits run 16 to 28
- * faces each — every cap that faces away from a 50-degree downward camera is
- * dropped, filler volumes are 8-face octahedra, and nothing carries a detail
- * you could not resolve at the twenty-pixel size an item actually draws at.
- * Together the whole field costs about 6.6k triangles, less than half of what
- * the 378 old node sub-units cost.
+ * SIZE IS THE WHOLE POINT. The player's words:
+ *
+ *   "Make the bricks, wheat, ore and sheep all larger. I like how large the
+ *    trees are. That's the idea. Right now they're so small it's like hard to
+ *    tell it's even brick."
+ *
+ * The harvestable tree was the only item authored at hero scale; the other four
+ * were half-metre trinkets sitting in grass that was nearly as tall as they
+ * were. They are now built to stand between 1.5 and 2.5 world units, and — more
+ * important than height — each one is re-silhouetted so it is identifiable from
+ * its OUTLINE alone at the twenty-odd pixels it actually draws at:
+ *
+ *   brick  a stepped stack of five fat terracotta bricks on a spoil mound
+ *   wheat  a bound sheaf, tied at the waist and flaring into a head of ears
+ *   ore    a hero stone with three bright faceted crystals breaking out of it
+ *   sheep  a plump, lumpy fleece on a dark leg block with the head held clear
+ *
+ * Nothing is round-and-grey twice, nothing is a cone twice. The triangle budget
+ * is still brutal — these run 46 to 66 faces each and there are three hundred of
+ * them — so every cap that faces away from a 50-degree downward camera is
+ * dropped and filler volumes are 8-face octahedra.
  *
  * Every one stands on y = 0 with its mass centred on the origin, so an instance
  * matrix can punch it, spin it and collapse it about its own base.
@@ -134,66 +149,125 @@ export function fieldTree() {
 }
 
 /**
- * One sheep of the flock.  (40 tris)
+ * One plump sheep of the flock.  (56 tris)
  *
- * The fleece keeps its 20 faces. An octahedron body was a fifth cheaper and
- * read as a white crystal shard sitting in the grass — and "exactly which sheep
- * did I pick up" is not a question a crystal shard can answer. Head, ears and
- * legs stay coarse.
+ * Half again the size it used to be and a good deal rounder. The fleece is
+ * three overlapping volumes rather than one, because a single smooth ellipsoid
+ * reads as a white boulder and "exactly which sheep did I pick up" is not a
+ * question a boulder can answer. The dark head is held out clear of the wool on
+ * a short neck and the four legs are one dark block: at the size an item draws
+ * at, a block under a white lump IS four legs, and it costs 12 faces instead of
+ * 48.
  */
 export function fieldSheep() {
   const parts = [];
-  // Two overlapping fleece lumps, not one: a single icosahedron reads as a
-  // white boulder sitting in the grass, and "exactly which sheep did I pick up"
-  // is not a question a boulder can answer.
-  const body = ball(0.40, 0, C.wool);
-  place(body, 0, 0.58, 0, 0, 0, 0, 1.24, 0.94, 1.02);
-  parts.push(gradient(body, 0xbfb6a0, C.wool));
-  parts.push(gradient(place(blob(0.30, C.wool), -0.30, 0.70, 0.02), 0xbfb6a0, C.wool));
+  const body = ball(0.44, 0, C.wool);
+  place(body, 0, 0.80, 0, 0, 0, 0, 1.24, 1.04, 1.10);
+  parts.push(gradient(body, C.woolShade, C.wool));
+  // rump and shoulder lumps break the outline into wool
+  parts.push(gradient(place(blob(0.32, C.wool), -0.36, 0.90, 0.02, 0.3, 0.5, 0),
+    C.woolShade, C.wool));
+  parts.push(gradient(place(blob(0.27, C.wool), 0.28, 1.00, -0.02, 0, 0.9, 0.22),
+    C.woolShade, C.wool));
   // a dark head held well clear of the fleece — the one feature that separates
   // a sheep from a rock at twenty pixels
-  const head = blob(0.24, C.face);
-  place(head, 0.62, 0.48, 0, 0, 0, 0.24, 1.15, 1.05, 0.88);
+  const head = blob(0.27, C.face);
+  place(head, 0.62, 0.74, 0, 0, 0, 0.22, 1.18, 1.06, 0.86);
   parts.push(head);
-  parts.push(place(box(0.52, 0.44, 0.28, C.face), 0.02, 0.22, 0));
+  parts.push(place(box(0.68, 0.58, 0.42, C.face), 0.02, 0.30, 0));
   return merge(parts);
 }
 
-/** One standing bundle of wheat — four blades and three fat ears.  (17 tris) */
+/**
+ * One bound sheaf of wheat.  (46 tris)
+ *
+ * Not four loose blades any more — a STOOK: stalks gathered and tied at the
+ * waist, flaring into a fat head of ears that is wider at the top than the
+ * bundle is at the bottom. That hourglass is the silhouette, and it is the only
+ * one in the field that gets wider as it goes up, so a wheat hex never reads as
+ * anything else. Four loose ears break the crown so the outline is not a cone.
+ */
 export function fieldWheat() {
   const parts = [];
-  for (let i = 0; i < 4; i++) {
-    const a = i * 1.62;
-    const x = Math.cos(a) * 0.13, z = Math.sin(a) * 0.13;
-    const h = 0.92 + (i % 2) * 0.22;
-    const b = blade(0.24, h, C.wheat, C.wheatHi, 0.18, 1);
-    place(b, x, 0, z, 0, a, 0.12);
-    parts.push(b);
-    if (i < 3) {
-      const ear = cone(0.15, 0.46, 3, C.wheatHi, 0, true);
-      place(ear, x + 0.02, h + 0.04, z, 0, a, 0.15);
-      parts.push(gradient(ear, C.wheat, C.wheatHi));
-    }
+  // The bound stalks run a deep amber, not the bleached gold the ears wear:
+  // a sheaf standing on pale sand needs its own dark value at the bottom or the
+  // whole thing dissolves into the ground it grew out of.
+  parts.push(gradient(place(cyl(0.38, 0.24, 1.02, 6, C.wheat, true), 0, 0.51, 0),
+    0x7d5410, C.wheat));
+  // the twine at the waist
+  parts.push(gradient(place(cyl(0.30, 0.30, 0.18, 5, C.hay, true), 0, 0.32, 0),
+    0x63481a, 0x9c7830));
+  // The head of ears: a cone stood on its point, so the sheaf spreads as it
+  // rises. Its cap now faces the sky and earns its six faces.
+  const crown = cone(0.56, 1.02, 6, C.wheatHi);
+  place(crown, 0, 1.50, 0, Math.PI, 0, 0);
+  parts.push(gradient(crown, 0x9c6c17, C.wheatHi));
+  for (let i = 0; i < 3; i++) {
+    const a = i * 2.14 + 0.4;
+    const ear = cone(0.17, 0.56, 3, C.wheatHi, 0, true);
+    place(ear, Math.cos(a) * 0.30, 1.92, Math.sin(a) * 0.30, 0, a, (i % 2 ? 0.30 : -0.26));
+    parts.push(gradient(ear, C.wheat, C.wheatHi));
   }
   return merge(parts);
 }
 
-/** One clay working — a dug heap of spoil with a moulded brick on it. (20 tris) */
+/**
+ * One stack of moulded bricks on its spoil heap.  (66 tris)
+ *
+ * The old kit was a 50cm mound with a pebble on it, and the player could not
+ * tell it was brick at all. This is a chunky three-course STACK — five fat
+ * terracotta blocks, every course laid across the one under it — standing on a
+ * dug heap. Hard right-angled edges and a saturated red: the only cuboid mass
+ * anywhere in the field, so it cannot be confused with an ore chunk or a sheep
+ * even in silhouette.
+ */
 export function fieldClay() {
   const parts = [];
-  parts.push(gradient(place(cone(0.62, 0.52, 6, C.clay), 0, 0.25, 0), C.clay, C.clayHi));
-  parts.push(place(blob(0.24, C.brick), 0.42, 0.16, 0.20, 0, 0.6, 0, 1.3, 0.7, 1.0));
+  parts.push(gradient(place(cone(0.64, 0.50, 6, C.clay, 0, true), 0, 0.24, 0),
+    C.clay, C.clayHi));
+  const brick = (x, y, z, ry, hi) => parts.push(
+    place(box(0.94, 0.36, 0.44, hi ? C.brickHi : C.brick), x, y, z, 0, ry, 0));
+  brick(0, 0.54, -0.25, 0, false);
+  brick(0, 0.54, 0.25, 0, true);
+  brick(-0.25, 0.90, 0, Math.PI / 2, true);
+  brick(0.25, 0.90, 0, Math.PI / 2, false);
+  brick(0.04, 1.26, 0.02, 0.24, true);
   return merge(parts);
 }
 
-/** One crystal-bearing chunk of ore.  (16 tris) */
+/**
+ * One crystal-bearing chunk of ore.  (52 tris)
+ *
+ * A hero stone at full 20-face resolution — it holds the silhouette and it is
+ * twice the size it used to be — with a chip beside it and THREE tall faceted
+ * crystals breaking out of the top in the bright glacial blue nothing else on
+ * the island wears. The crystals are what say "ore" rather than "boulder": the
+ * mountains are already full of grey rocks, and an item you cannot tell from
+ * the scenery is an item you cannot decide to run at.
+ */
 export function fieldOre() {
   const parts = [];
-  parts.push(place(rock(0.52, 0, C.slate, 0.34, 41, true), 0, 0.34, 0));
-  const g = new THREE.OctahedronGeometry(0.19, 0);
-  tint(g, C.oreGlint);
-  place(g, 0.02, 0.64, 0.04, 0.2, 0.6, 0.25, 1, 2.3, 1);
-  parts.push(g);
+  // A mountain hex is bare pale rock flour, so a mid-grey stone standing on it
+  // is invisible. The seam runs a long way DARKER than the ground it sits on —
+  // near-black at the base, gunmetal at the shoulder — which is what makes the
+  // chunk a shape rather than a texture.
+  // The ramp tops out at gunmetal, not at highlight grey: a mountain is looked
+  // at from ABOVE, so the top of the chunk is the part that has to hold the
+  // contrast, and the pale spires and boulders already dressing the hex are
+  // exactly the thing it must not be mistaken for.
+  parts.push(gradient(place(rock(0.62, 0, C.iron, 0.26, 41), 0, 0.54, 0),
+    0x1e222a, 0x5a6472));
+  parts.push(gradient(place(rock(0.38, 0, C.iron, 0.42, 47, true), 0.62, 0.24, 0.32),
+    0x1e222a, 0x4a5260));
+  const spike = (x, y, z, rx, ry, rz, r, tall) => {
+    const g = new THREE.OctahedronGeometry(r, 0);
+    tint(g, C.oreGlint);
+    place(g, x, y, z, rx, ry, rz, 1, tall, 1);
+    parts.push(gradient(g, 0x1f9ec4, 0xbdf4ff));
+  };
+  spike(-0.04, 1.12, 0.02, 0.10, 0.60, 0.14, 0.31, 2.35);
+  spike(0.34, 0.96, -0.20, 0.26, 1.10, -0.42, 0.22, 2.10);
+  spike(-0.36, 0.90, 0.24, -0.20, 0.30, 0.46, 0.18, 1.90);
   return merge(parts);
 }
 

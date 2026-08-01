@@ -11,11 +11,12 @@
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
- * Twice now the player has said the same thing and twice been fobbed off with
- * a decal:
+ * Three times now the player has said the same thing:
  *
  *   "It's still way too hard to tell which hexes I can use and which I can't.
  *    Make it much more drastic and clear."
+ *   "I still want the hexes I can choose from to be even more obvious. Can you
+ *    make them glow."
  *
  * A translucent wash over the ground was never going to carry that, because the
  * thing that fills a hex is not the ground — it is four hundred trees, sheep and
@@ -24,10 +25,20 @@
  * is saturated, warm and lit. A hex you may not is desaturated to near-monochrome
  * and dropped half a stop, cool and inert. There is no reading past it.
  *
- *   tone  +1  yours — collect here
+ * And now it GLOWS. The tint above is a multiply, and a multiply can only ever
+ * take light away or push it around; it cannot make a hex look lit from within,
+ * which is what the player is asking for. So a second, additive term is injected
+ * further down the shader — into `outgoingLight`, AFTER the sun and the shadow
+ * map, so it survives both — that breathes a cool blue emissive over every
+ * surface on a hex you may work. Terrain, trunk, fleece and brick all rise and
+ * fall together on one clock, and the region layer's rim and light wall
+ * (`regions.js`) breathe on the very same uniform, so the whole hex pulses as
+ * one object rather than as a decal sitting on top of some scenery.
+ *
+ *   tone  +1  yours — collect here, and it glows
  *   tone   0  neutral (the desert; nobody's crop)
  *   tone  -1  off limits — you own no corner of it, or the Raider has it shut
- *   spent  1  worked out; grey stubble and a countdown overhead
+ *   spent  1  worked out; grey stubble, NO glow, and a countdown overhead
  *   flash  1  the moment it all comes back
  *
  * ---------------------------------------------------------------------------
@@ -97,7 +108,19 @@ moodTexture.needsUpdate = true;
 
 const uMoodTex = { value: moodTexture };
 const uMoodN = { value: N };
-const uMoodTime = { value: 0 };
+
+/**
+ * The one clock the whole ownership read breathes on. Exported as a live
+ * uniform object (not a number) so `regions.js` can hand the very same
+ * reference to its own ShaderMaterial: the ground rim, the light wall and the
+ * emissive on every tree standing inside it then pulse in exact lockstep, with
+ * no second timer to drift.
+ */
+export const uMoodTime = { value: 0 };
+
+/** Radians per second of the ownership breath. Slow — this is a heartbeat, not
+ *  a strobe, and it has to sit under the game for four minutes at a time. */
+export const GLOW_HZ = 1.85;
 
 function writeTexture() {
   for (let i = 0; i < N; i++) {
@@ -268,8 +291,8 @@ const MOOD_BODY_FRAG = /* glsl */`
     vec3 dead = mix(diffuseColor.rgb, vec3(mLum) * vec3(0.80, 0.87, 1.16), 0.74) * 0.64;
     diffuseColor.rgb = mix(diffuseColor.rgb, dead, -mTone);
   } else if (mTone > 0.003) {
-    vec3 lit = clamp(diffuseColor.rgb * vec3(1.20, 1.12, 0.94)
-                     + vec3(0.055, 0.042, 0.014), 0.0, 1.0);
+    vec3 lit = clamp(diffuseColor.rgb * vec3(1.22, 1.14, 0.95)
+                     + vec3(0.060, 0.046, 0.016), 0.0, 1.0);
     diffuseColor.rgb = mix(diffuseColor.rgb, lit, mTone);
   }
   if (mSpent > 0.003) {
@@ -283,6 +306,43 @@ const MOOD_BODY_FRAG = /* glsl */`
   if (mFlash > 0.003) {
     diffuseColor.rgb = mix(diffuseColor.rgb,
       clamp(diffuseColor.rgb * 1.85 + vec3(0.09, 0.24, 0.05), 0.0, 1.0), mFlash * 0.85);
+  }
+}
+`;
+
+/*
+ * THE GLOW.
+ *
+ * Everything above is a multiply on the ALBEDO, and no multiply can make a
+ * surface look lit from inside — the best it can do is stop taking light away.
+ * That is why two rounds of "warm bias plus a rim" did not land.
+ *
+ * This term is different in three ways that matter:
+ *
+ *   1. It is ADDITIVE, and it goes into `outgoingLight` — after the sun, the
+ *      hemisphere fill and the shadow map. A tree standing in its own shadow on
+ *      a hex you own still glows; nothing can subtract it back out.
+ *   2. It BREATHES, on the shared `uMoodTime`, between 30% and 100% of its
+ *      amplitude roughly every three and a half seconds. Motion is what the
+ *      periphery actually detects — a static tint at this strength reads as
+ *      "that hex is a slightly different colour", and a breathing one reads as
+ *      "that hex is alive".
+ *   3. It is COOL and small in the red channel (0.026 / 0.054 / 0.110 at full
+ *      amplitude, in linear light). Terrain and items keep their own hue —
+ *      grass stays green, brick stays terracotta, gold stays gold — they simply
+ *      sit in a pool of the player's blue. Anything stronger and a wheat hex
+ *      goes lilac, which is the "washing out" failure this had to avoid.
+ *
+ * It dies completely when the hex is worked out (`mSpent`), so a cleared hex is
+ * grey, still and counting down, and lights straight back up on restore.
+ */
+const MOOD_GLOW_FRAG = /* glsl */`
+{
+  float gTone = vMood.x, gSpent = vMood.y;
+  float glow = max(gTone, 0.0) * (1.0 - gSpent);
+  if (glow > 0.004) {
+    float breath = 0.30 + 0.70 * (0.5 + 0.5 * sin(uMoodTime * ${GLOW_HZ.toFixed(2)}));
+    outgoingLight += vec3(0.026, 0.054, 0.110) * glow * breath;
   }
 }
 `;
@@ -309,6 +369,15 @@ export function applyMood(mat) {
     sh.fragmentShader = MOOD_PARS_FRAG + sh.fragmentShader;
     sh.fragmentShader = sh.fragmentShader.replace(
       '#include <color_fragment>', '#include <color_fragment>\n' + MOOD_BODY_FRAG);
+    // r152 renamed <output_fragment> to <opaque_fragment>; accept either so the
+    // glow never silently vanishes if the vendored three is swapped out.
+    const hook = sh.fragmentShader.indexOf('#include <opaque_fragment>') >= 0
+      ? '#include <opaque_fragment>'
+      : (sh.fragmentShader.indexOf('#include <output_fragment>') >= 0
+        ? '#include <output_fragment>' : null);
+    if (hook) {
+      sh.fragmentShader = sh.fragmentShader.replace(hook, MOOD_GLOW_FRAG + '\n' + hook);
+    }
   };
   mat.customProgramCacheKey = () =>
     'mood|' + (prevKey ? prevKey.call(mat) : (mat.type || ''));

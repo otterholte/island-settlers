@@ -135,17 +135,25 @@ const STATIC_KITS = {
  *
  * The OFF-TERRAIN entries stay culled. A clay hill with spruces on it, a
  * mountain with packing crates, a wheat field with a broadleaf: each was a
- * second silhouette competing with the one thing the hex is supposed to say. */
+ * second silhouette competing with the one thing the hex is supposed to say.
+ *
+ * The four small item kits doubled in size, which changes what the dressing is
+ * FOR on those hexes. A fields tile no longer needs ninety-two decorative wheat
+ * tufts to read as gold — twenty-two bound sheaves do that on their own — and
+ * every tuft standing between them is now a triangle spent hiding the thing the
+ * player came for. Wheat, pasture grass and mountain rubble are down
+ * accordingly; the forest, which the player says already reads correctly, is
+ * untouched. */
 const RECIPE = {
   forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
                undergrowth: 12, grass: 26, rockSmall: 3 },
-  fields:    { wheat: 92, hay: 3, fence: 6, crate: 2, grass: 8,
+  fields:    { wheat: 66, hay: 3, fence: 6, crate: 2, grass: 8,
                rockSmall: 2, undergrowth: 3 },
-  pasture:   { grass: 56, flower: 14, fence: 4, undergrowth: 6, rockSmall: 3,
+  pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
                broadleaf: 2, hay: 2 },
-  hills:     { clayWorks: 3, rockSmall: 14, boulder: 7, grass: 24,
+  hills:     { clayWorks: 3, rockSmall: 11, boulder: 6, grass: 22,
                undergrowth: 5, crate: 2, deadwood: 1 },
-  mountains: { spire: 6, boulder: 8, rockSmall: 13, conifer: 2, coniferShort: 2,
+  mountains: { spire: 6, boulder: 7, rockSmall: 12, conifer: 2, coniferShort: 2,
                grass: 10, timber: 2 },
   desert:    { rockSmall: 9, boulder: 4, crate: 3, grass: 8, hay: 2,
                deadwood: 2, coniferShort: 1 }
@@ -192,9 +200,12 @@ const FOOT = {
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
   // Every field item reserves a disc so no backdrop prop ever sprouts through
   // a sheep or a tree you are supposed to be able to see and run at. There are
-  // up to twenty-two of them per hex, blue-noise spaced about 2.6 apart, so
-  // this is as wide as it can be without starving the placer.
-  item: 0.95
+  // up to twenty-two of them per hex, blue-noise spaced about 2.3 apart, so
+  // this is as wide as it can be without starving the placer. Widened with the
+  // items themselves: a brick stack is now two units across and a tuft of grass
+  // growing out of the top of it is the sort of thing that made them hard to
+  // read in the first place.
+  item: 1.12
 };
 
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */

@@ -21,7 +21,6 @@ import { PLAYER_SPEED, CHAR_HEIGHT } from '../core/constants.js';
 import { buildRig, buildShadowBlob, paletteFor, RIG, TOOL_FOR, UNIT as S } from './settlerBody.js';
 import { createCarry } from './settlerCarry.js';
 import { createCarryColumns } from './carryColumns.js';
-import { groundAt } from './ground.js';
 
 /* ---------------------------------------------------------------- presence */
 /**
@@ -75,9 +74,9 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
   const group = new THREE.Group();
   group.name = 'settler';
 
-  // `group` stays at world scale 1 because the trailing cart positions itself
-  // with world-space deltas; everything body-shaped hangs off `avatar`, which
-  // carries the presence scale.
+  // `group` stays at world scale 1 so the overhead carry columns can be
+  // authored in plain world units and billboard against the play camera;
+  // everything body-shaped hangs off `avatar`, which carries the presence scale.
   const avatar = new THREE.Group();
   avatar.name = 'settlerAvatar';
   avatar.scale.setScalar(scale);
@@ -91,11 +90,16 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
 
   const carry = createCarry(pal, scale, detailed);
   rig.pack.add(carry.stack);
-  group.add(carry.cart);
 
-  // The hero's stock reads from overhead columns; the pack behind them stays on
-  // as dressing. Rivals get neither columns nor a cart — the player explicitly
-  // asked for less noise from the other three.
+  // THE TRAILING CART IS GONE, for the hero and for the bots alike:
+  //
+  //   "I'm just getting distracted by the carts we're carrying around behind
+  //    us. Just have it be the resources that count above us in those stacks."
+  //
+  // Nothing hangs off `group` behind the settler any more. What they are
+  // carrying is said in exactly one place — the overhead columns — and the
+  // small pack on their back is silhouette, not a second readout. Rivals get
+  // no columns either; the player asked for less noise from the other three.
   const columns = detailed ? createCarryColumns() : null;
   if (columns) group.add(columns.group);
 
@@ -345,12 +349,6 @@ export function createSettler(colorHex = 0x3b7fd4, isHuman = false) {
     const blobK = (1 - lift * 0.45) * (1 + runBob * runW * 0.6);
     blob.scale.set(blobK, 1, blobK * 1.06);
     blob.material.opacity = 0.85 * (1 - lift * 0.55);
-
-    /* ------------------------------------------------------------ cart */
-    const gy = groundAt(px, pz);
-    const backS = 1.4 * S * scale;
-    carry.update(dt, { x: px, y: Number.isFinite(group.position.y) ? group.position.y : gy, z: pz },
-      yaw, groundAt(px - Math.sin(yaw) * backS, pz - Math.cos(yaw) * backS), isRun);
 
     /* ------------------------------------------------- overhead columns */
     if (columns) {
