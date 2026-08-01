@@ -37,7 +37,7 @@ export const RES_COLOR = {
 };
 
 // ---------------------------------------------------------------- pacing
-export const VICTORY_POINTS = 12;
+export const VICTORY_POINTS = 13;
 export const MATCH_SOFT_CAP_SEC = 420;   // safety net; match should end well before
 
 // Productivity: pips = 6 - |7 - number|  (6/8 -> 5 pips, 2/12 -> 1 pip)
@@ -74,7 +74,7 @@ export const TILE_ITEMS = { 1: 10, 2: 13, 3: 16, 4: 19, 5: 22 };
 // A player working five or six of their own hexes in a loop spends roughly
 // this long getting round them all, so a good rotation barely ever waits and a
 // one-hex player waits a lot. Measured over 40-match simulations.
-export const TILE_REGEN = { 1: 64, 2: 57, 3: 50, 4: 44, 5: 38 };
+export const TILE_REGEN = { 1: 26, 2: 23, 3: 20, 4: 17, 5: 14 };
 
 // Items generated per hex in the position pool. TILE_ITEMS never exceeds this;
 // the pool is fixed so positions stay stable while counts can be retuned.
@@ -97,10 +97,10 @@ export const NODE_REGROW_SEC = 20.0;
 // victory point (ownership gates, it does not multiply) so it has to be cheap
 // enough to stay worth taking once your corners are claimed.
 export const COST = {
-  road:       { wood: 3, brick: 3 },
-  settlement: { wood: 3, brick: 3, wheat: 2, wool: 2 },
-  city:       { wheat: 3, ore: 4 },
-  card:       { wool: 2, wheat: 2, ore: 2 }
+  road:       { wood: 4, brick: 4 },
+  settlement: { wood: 4, brick: 4, wheat: 3, wool: 3 },
+  city:       { wheat: 4, ore: 6 },
+  card:       { wool: 3, wheat: 3, ore: 3 }
 };
 
 export const PIECE_LIMIT = { road: 18, settlement: 7, city: 5 };
