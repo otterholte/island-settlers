@@ -454,7 +454,36 @@ if (TRACE === 'knight') {
     back.chip === false && back.knightsHeld === 0 && back.autoPending === false,
     `class="${back.cls}"`);
 
-  /* --- 3. a RIVAL's Knight must never take the human's screen ------------ */
+  /* --- 3. the manual routes still work: the chip, and the CARDS sheet ---- */
+  const manual = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, st=I().state, g=I().game;
+    const out={};
+    // (a) the standing chip, tapped.
+    st.players[0].cards.push({type:'knight',id:'trace-chip'});
+    for(let i=0;i<20;i++) g.hud.update(1/60);
+    document.querySelector('.kn-cue').click();
+    out.chip={open:g.overview.isOpen, mode:g.overview.mode};
+    g.overview.close(); __frame(30);
+    // (b) the card in the CARDS sheet, tapped.
+    g.openCards();
+    const card=document.querySelector('.hand .dcard.c-knight');
+    out.cardOnScreen=!!card;
+    out.cta=card?card.querySelector('.dc-play').textContent:'';
+    if(card) card.click();
+    out.sheet={open:g.overview.isOpen, mode:g.overview.mode, panel:g.panels.kind};
+    g.overview.close(); __frame(30);
+    st.players[0].cards=st.players[0].cards.filter(c=>c.type!=='knight');
+    for(let i=0;i<20;i++) g.hud.update(1/60);
+    return out;})()`);
+  say('the two routes a thumb can take', manual);
+  check('the KNIGHT READY chip still opens the board when tapped',
+    manual.chip.open === true && manual.chip.mode === 'place-robber');
+  check('and so does the card in the CARDS sheet',
+    manual.cardOnScreen === true && manual.sheet.open === true
+    && manual.sheet.mode === 'place-robber' && manual.sheet.panel === null,
+    `card says "${manual.cta}"`);
+
+  /* --- 4. a RIVAL's Knight must never take the human's screen ------------ */
   const bot = await ev(`(()=>{
     const I=()=>window.__ISLAND__, st=I().state, g=I().game, R=window.__R__, L=window.__L__;
     g.closeOverview(); __frame(30);
