@@ -32,7 +32,7 @@ import {
 } from '../core/constants.js';
 
 import {
-  playRoadBuilding, placeRoad, scoreOf, rankings
+  playRoadBuilding, placeRoad, legalRoads, scoreOf, rankings
 } from '../core/rules.js';
 
 import { el, button, clear, toggle, setText, fmtTime } from './dom.js';
@@ -41,6 +41,14 @@ import { createEndgame } from './hud-end.js';
 import { createTradeSheet } from './trade.js';
 
 const CARD_ART = { knight: 'knight', roadBuilding: 'road', victoryPoint: 'trophy' };
+
+/* What tapping the card actually does, said on the card itself. "Tap to play"
+   told the player nothing about what was about to happen to their screen. */
+const CARD_CTA = {
+  knight: 'Tap · pick a region on the map',
+  roadBuilding: 'Tap · place two roads free',
+  victoryPoint: 'Already counted'
+};
 
 export function createPanels(root, state, game) {
   const me = state.players[0];
@@ -104,7 +112,7 @@ export function createPanels(root, state, game) {
         el('span', { class: 'dc-art', html: icon(CARD_ART[c.type] || 'cards', 44) }),
         el('span', { class: 'dc-name', text: CARD_LABEL[c.type] }),
         el('span', { class: 'dc-text', text: CARD_BLURB[c.type] }),
-        el('span', { class: 'dc-play', text: 'Tap to play' }));
+        el('span', { class: 'dc-play', text: CARD_CTA[c.type] || 'Tap to play' }));
       hand.appendChild(card);
     });
     setText(vpNote, me.vpCards
@@ -120,31 +128,65 @@ export function createPanels(root, state, game) {
     return ok;
   }
 
+  /**
+   * Playing a card is one tap, and both playable cards go straight to the map.
+   *
+   *   KNIGHT         hud-knight.js owns the whole gesture: it closes this
+   *                  sheet, opens the FULL board in Raider mode with every
+   *                  legal region lit and "Choose a region to block" on the
+   *                  plate, commits through rules.js and holds the board for a
+   *                  beat afterwards so the Raider can be seen landing.
+   *   ROAD BUILDING  economy.js checks there is somewhere legal to build
+   *                  BEFORE spending the card. If there is not, it says so and
+   *                  the card stays in hand — no panel, nothing consumed.
+   *                  Otherwise the placement map opens immediately and two
+   *                  roads go down for nothing.
+   */
   function playCard(c) {
     if (state.phase !== 'play') return;
+    if (c.type === 'victoryPoint') return;   // already scored; nothing to play
+
     if (c.type === 'knight') {
+      const cue = game.knightCue;
+      if (cue && typeof cue.play === 'function') { cue.play(); return; }
       close();
       game.openOverview('place-robber', {
         title: 'Send the Raider',
-        hint: 'Block a region and rivals drop what they carry'
+        hint: 'Choose a region to block',
+        pickLabel: 'Choose a region'
       });
       return;
     }
+
     if (c.type === 'roadBuilding') {
+      const eco = game.economy;
+      if (eco && typeof eco.useRoadBuilding === 'function') {
+        // Only close the sheet once the card is actually spent — a refusal
+        // leaves the player looking at the card they still hold.
+        if (eco.useRoadBuilding()) close();
+        else syncCards();
+        return;
+      }
+      if (!legalRoads(state, 0).length) {
+        if (game.toast) game.toast('Nowhere to lay a road — keep the card', 'warn');
+        return;
+      }
       if (!playRoadBuilding(state, 0)) return;
       close();
-      if (game.toast) game.toast('Two free roads!', 'good');
+      if (game.toast) game.toast('Two free roads — place them now', 'good');
       freeRoad();
     }
   }
 
+  /** Fallback chain, used only when economy.js is not attached. */
   function freeRoad() {
     const left = me.freeRoads || 0;
     if (left <= 0) return;
     game.openOverview('place-road', {
       free: true,
-      title: 'Free Road',
-      hint: `${left} free road${left > 1 ? 's' : ''} remaining`,
+      title: left > 1 ? 'Free Road · 1 of 2' : 'Free Road · Last One',
+      hint: 'Tap a glowing edge, then Confirm — this one is free',
+      pickLabel: 'Pick an edge',
       onConfirm(eid) {
         const ok = placeRoad(state, 0, eid, true);
         if (ok) {

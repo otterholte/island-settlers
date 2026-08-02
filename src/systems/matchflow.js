@@ -11,13 +11,15 @@
  *   2. the snake draft, delegated to flowDraft.js — the draft holds one stable
  *      board view from its first beat to its last, and this module performs the
  *      single transition out of it;
- *   3. the handoff into third-person play, plus the pacing beats that keep a
- *      real-time match legible (halfway, match point, final minute);
- *   4. the stalemate safety net at MATCH_SOFT_CAP_SEC;
- *   5. the victory sequence — freeze, announce and celebrate over the live
- *      board, pull out to the whole island, light up the winner's network, and
- *      only then release the results panel. See `WIN` for the timeline: the
- *      player is never taken off the board to be shown a score.
+ *   3. the handoff into third-person play — including the 3 · 2 · 1 · GO start
+ *      line (flowCountdown.js), which freezes the bots as well as the player so
+ *      nobody gets a head start off the last road of the draft;
+ *   4. the pacing beats that keep a real-time match legible (halfway, match
+ *      point, final minute) and the stalemate safety net at MATCH_SOFT_CAP_SEC;
+ *   5. the victory sequence — freeze, pull out to the whole island, flood every
+ *      hex with the winner's colour, and only then celebrate and release the
+ *      results panel. See `WIN` for the timeline: the player is never taken off
+ *      the board to be shown a score.
  *
  * All rules mutation goes through rules.js; all speech goes through hud.js and
  * overview.js. `state.flowActive` is set immediately so the 3.5s draft
@@ -44,6 +46,7 @@ import { scoreOf, rankings, emit } from '../core/rules.js';
 import { createFlowUI } from './flowUI.js';
 import { createFlowCamera } from './flowCamera.js';
 import { createDraft } from './flowDraft.js';
+import { createCountdown } from './flowCountdown.js';
 import { resetMatchInPlace } from './flowRestart.js';
 import { createTutorial } from './tutorial.js';
 
@@ -56,28 +59,55 @@ const T = {
   // the player. This is only a safety net for an abandoned tab.
   title: 90.0,
   draftIntro: 1.90,    // board is up, the order is on it — let it be read
-  handoff: 2.30
+  // The camera blend out of the board framing runs under the start countdown,
+  // so this is only the fallback for a build with no countdown view at all.
+  handoff: 2.30,
+  handoffCap: 9.0      // hard safety net: never strand the player at the line
 };
 
 /*
- * The last ten seconds, and why they are spaced like this.
+ * THE LAST SEVEN SECONDS
  *
- * The old sequence gave the finished island 2.2 seconds and then covered it
- * with a scoreboard. You never got to look at the thing you had just spent a
- * match building. Now the announcement and the celebration play over the LIVE
- * board — close third-person first, so the win reads on the settler — and the
- * camera only pulls out to the whole island afterwards, where it sits for
- * several seconds while the winner's network lights up hex by hex. The
- * scoreboard is last, and it is dismissible (panels.js), so the player can go
- * back to either view for as long as they like.
+ *   "I don't understand why random tiles light up at the end when someone wins,
+ *    it seems to be random tiles. Could you actually animate that all of the
+ *    hexes/tiles turn into the color of the winner, and then the celebration
+ *    happens right after that."
+ *
+ * They were not random — they were the winner's own five or six hexes, lit one
+ * every 0.12s, which from a whole-island framing is indistinguishable from
+ * flickering. It is gone. In its place is the victory flood from
+ * `world/mood.js`: one continuous wavefront that starts on the winner's land
+ * and sweeps the ENTIRE island into their colour — terrain, trees, flock,
+ * boulders, all on the same per-hex texture, so nineteen hexes turn as one
+ * object rather than as a sequence of nineteen events.
+ *
+ * The order is now exactly the order the player asked for:
+ *
+ *   0.00  freeze. The winner is named, the horn goes, the board is live.
+ *   0.25  pull straight out to the whole island — the flood needs to be seen
+ *         across the board, not over the settler's shoulder.
+ *   0.75  the flood starts and crosses the island (`floodDur`), then holds
+ *         (`floodHold`). Nothing else happens while it runs.
+ *   3.10  THE CELEBRATION, once every hex is their colour: the win/lose plate
+ *         and the shower of paper (panels.endBanner) and the camera's orbit of
+ *         the winner's holdings, together.
+ *   5.05  the orbit stops and the board framing comes back.
+ *   5.85  the results panel — dismissible, so the flooded island is still
+ *         there to go back to. The camera is released here and stays released:
+ *         free navigation after the match belongs to camera.js/overview.js.
+ *
+ * The whole thing lands inside six seconds, which is where the old sequence
+ * finished too — the flood replaces the tile-by-tile lighting, it is not
+ * stacked on top of it.
  */
 const WIN = {
-  celebrate: 0.30,     // orbit the winner's holdings, still close in
-  endOrbit: 2.45,      // hand the camera back so the pull-out can be seen
-  overview: 2.55,      // pull to the board framing
-  firstTile: 2.95,     // begin lighting the winner's network
-  tileStep: 0.12,
-  reveal: 6.00         // results panel — a long look at the island first
+  overview: 0.25,
+  flood: 0.75,
+  floodDur: 1.90,      // seconds for the wave to cross the island
+  floodHold: 0.45,     // fully flooded, held, before anything else moves
+  celebrate: 3.10,     // = flood + floodDur + floodHold
+  endOrbit: 5.05,
+  reveal: 5.85
 };
 
 const HALF_TARGET = Math.ceil(VICTORY_POINTS / 2);
@@ -130,8 +160,9 @@ export function createMatchFlow(state, game) {
   let elapsed = 0;
 
   const win = {
-    active: false, done: false, t: 0, wid: -1,
-    byTime: false, tiles: [], lit: 0,
+    active: false, done: false, t: 0, celT: 0, wid: -1,
+    byTime: false, tiles: [],
+    flooded: false, hasFlood: false,
     celebrated: false, orbitEnded: false, board: true
   };
 
@@ -219,6 +250,14 @@ export function createMatchFlow(state, game) {
     onDone: () => enterHandoff()
   });
 
+  /* -------------------------------------------------------------- start line */
+
+  // 3 · 2 · 1 · GO. Owns the freeze on both sides of the line: it zeroes the
+  // bots by borrowing `game.bots.update` (see flowCountdown.js for why that is
+  // the only interception main.js's frame order allows) while this module holds
+  // the human's stick down.
+  const count = createCountdown(state, g, { root, warn, sfx });
+
   /* --------------------------------------------------------------- tutorial */
 
   // Owns the TUTORIAL button on the opening screen (it listens for that
@@ -278,13 +317,19 @@ export function createMatchFlow(state, game) {
     if (me) cam.snap(me.x, me.z);
     closeOverview();
     cam.overview(false);
-    ui.showObjective('Gather. Build. Win.', `First to ${VICTORY_POINTS} points`, 2.8);
+    // The last road of the draft flips `state.phase` to 'play', and bots.js
+    // starts driving on that flag alone — which is exactly the head start the
+    // player could feel. Arm the start line on the same tick, before anybody
+    // has been given a frame to move in.
+    setInput(false);
+    count.begin();
   }
 
   function enterPlay(immediate) {
     stage = 'play';
     stageT = 0;
     draft.reset();
+    count.cancel();
     cam.release();
     // Terminal state for the opening: whatever route got us here, the board
     // map does not survive into third-person play.
@@ -293,6 +338,10 @@ export function createMatchFlow(state, game) {
     setInput(true);
     ui.hideDraft();
     if (immediate) ui.hideIntro();
+    // The objective card lands ON GO, not under the countdown — it used to sit
+    // in the middle of the screen exactly where the numerals are. `immediate`
+    // is the harness/restored-match route, which never had one.
+    if (!immediate) ui.showObjective('Gather. Build. Win.', `First to ${VICTORY_POINTS} points`, 2.6);
   }
 
   /* ---------------------------------------------------------- pacing beats */
@@ -368,12 +417,14 @@ export function createMatchFlow(state, game) {
     win.active = true;
     win.done = false;
     win.t = 0;
-    win.lit = 0;
     const ranked = rankings(state)[0];
     win.wid = (wid === undefined || wid === null || wid < 0)
       ? (ranked ? ranked.p.id : 0) : wid;
     win.tiles = winnerTiles(win.wid);
+    win.flooded = false;
+    win.hasFlood = false;
     win.celebrated = false;
+    win.celT = 0;
     win.orbitEnded = false;
     win.board = true;
     stage = 'over';
@@ -387,15 +438,48 @@ export function createMatchFlow(state, game) {
         ? `Match called on points · ${scoreOf(state, w)} VP`
         : `${w.name} reached ${scoreOf(state, w)} points`, 'good');
     }
-    // The end-game moment, played over the board rather than across it: a
-    // win/lose plate and a shower of paper that take no pointer events and
-    // leave the middle of the screen — and the island — completely clear.
-    const panels = g.panels;
-    if (panels && typeof panels.endBanner === 'function') {
-      try { panels.endBanner(win.wid); } catch (e) { warn(e); }
-    }
     cam.shake(0.6);
     sfx('horn');
+  }
+
+  /* ------------------------------------------------------------- the flood */
+
+  /** `game.world.props` — may be a stub in a degraded build. Always optional. */
+  function floodApi() {
+    const p = world().props;
+    return p && typeof p.startVictoryFlood === 'function' ? p : null;
+  }
+
+  /**
+   * Every hex sweeps to the winner's colour, seeded on the land they hold.
+   * mood.js advances it inside `props.update(dt)`, which main.js already calls
+   * every frame, so this is one call and then a wait.
+   */
+  function startFlood() {
+    const p = floodApi();
+    const w = state.players[win.wid];
+    if (!p) return 0;
+    try {
+      return p.startVictoryFlood(win.wid, {
+        color: w ? w.color.hex : undefined,
+        from: win.tiles,
+        duration: WIN.floodDur,
+        hold: WIN.floodHold
+      }) || 0;
+    } catch (e) { warn(e); return 0; }
+  }
+
+  /** 0..1 — how far the wave has travelled. -1 when there is no flood at all. */
+  function floodAt() {
+    const p = floodApi();
+    if (!p || typeof p.floodProgress !== 'function') return -1;
+    try { return p.floodProgress(); } catch (e) { return -1; }
+  }
+
+  function stopFlood() {
+    const p = floodApi();
+    if (!p || typeof p.stopVictoryFlood !== 'function') return;
+    try { p.stopVictoryFlood(); } catch (e) { warn(e); }
   }
 
   /**
@@ -415,6 +499,9 @@ export function createMatchFlow(state, game) {
   function freezeMatch() {
     state.phase = 'over';
     state.flowActive = true;
+    // A match that ends during the start line (a restart, or a rules-side
+    // victory) must not leave the bots' update borrowed.
+    count.cancel();
     setInput(false);
     closeOverview();
     ui.hideDraft();
@@ -440,40 +527,55 @@ export function createMatchFlow(state, game) {
     win.t += d;
     if (state.phase !== 'over') state.phase = 'over';
 
-    // 1. celebrate where the match was won — close in, on the winner's holdings
-    if (!win.celebrated && win.t >= WIN.celebrate) {
+    // 1. the whole island, framed. The flood has to be watched across the
+    //    board, so this happens before anything else moves.
+    if (win.t >= WIN.overview && !win.celebrated) cam.overview(true);
+
+    // 2. the flood: one wavefront out of the winner's land, every hex turning
+    //    to their colour. mood.js runs the clock from props.update(dt).
+    if (!win.flooded && win.t >= WIN.flood) {
+      win.flooded = true;
+      win.hasFlood = startFlood() > 0;
+    }
+
+    // 3. the celebration — and not one frame before the island is entirely
+    //    their colour. The plate, the paper and the orbit land together.
+    //
+    //    `WIN.celebrate` is already flood + floodDur + floodHold, so the wave
+    //    is due to be finished by then and the usual answer is simply "yes".
+    //    The reading only matters when it disagrees: a wave still crossing
+    //    (0 < p < 1) buys up to 1.2s of grace. A wave sitting at exactly 0 is
+    //    a caller who never drove `props.update` — a harness stepping the flow
+    //    on its own — and waiting on a clock nobody is winding would strand
+    //    the whole end of the match.
+    const fp = win.hasFlood ? floodAt() : -1;
+    const floodDone = !(fp > 0 && fp < 0.999) || win.t >= WIN.celebrate + 1.2;
+    if (!win.celebrated && win.t >= WIN.celebrate && floodDone) {
       win.celebrated = true;
+      win.celT = win.t;
+      const panels = g.panels;
+      if (panels && typeof panels.endBanner === 'function') {
+        try { panels.endBanner(win.wid); } catch (e) { warn(e); }
+      }
       const w = state.players[win.wid];
       if (realCelebrate) realCelebrate(w);
+      cam.shake(0.4);
+      sfx('horn', { gain: 0.9 });
     }
 
-    // 2. release the orbit, then pull out. The orbit is applied after the
-    //    overview blend inside camera.js, so it has to stop first or the
-    //    board framing never appears.
-    if (!win.orbitEnded && win.t >= WIN.endOrbit) {
+    // 4. release the orbit and go back to the whole island. The orbit is
+    //    applied after the overview blend inside camera.js, so it has to stop
+    //    first or the board framing never comes back. Everything from here is
+    //    measured off the celebration, not off the freeze, so a slow flood
+    //    stretches the sequence instead of eating the end of it.
+    if (win.celebrated && !win.orbitEnded
+        && win.t >= win.celT + (WIN.endOrbit - WIN.celebrate)) {
       win.orbitEnded = true;
       cam.endCelebrate();
+      cam.overview(true);
     }
 
-    if (win.t >= WIN.overview) cam.overview(true);
-
-    if (win.t >= WIN.firstTile && win.lit < win.tiles.length) {
-      const want = Math.min(
-        win.tiles.length,
-        Math.floor((win.t - WIN.firstTile) / WIN.tileStep) + 1
-      );
-      const w = state.players[win.wid];
-      const island = world().island;
-      while (win.lit < want) {
-        const tid = win.tiles[win.lit++];
-        if (island && typeof island.highlightTile === 'function') {
-          try { island.highlightTile(tid, w ? w.color.hex : 0xffe07a, 0.40); } catch (e) { warn(e); }
-        }
-        cam.shake(0.05);
-      }
-    }
-
-    if (win.t >= WIN.reveal) {
+    if (win.celebrated && win.t >= win.celT + (WIN.reveal - WIN.celebrate)) {
       win.done = true;
       // Hand the camera back before the scoreboard lands. From here the player
       // owns the view: BOARD VIEW / CLOSE VIEW on the end-of-match bar toggles
@@ -545,7 +647,15 @@ export function createMatchFlow(state, game) {
         break;
 
       case 'handoff':
-        if (stageT >= T.handoff) enterPlay(false);
+        // The countdown is the gate. Without one (a headless build, or a UI
+        // that failed to construct) the old fixed beat still gets the player
+        // onto the island, and `handoffCap` catches anything stranger.
+        if (count.active) {
+          if (count.update(d)) enterPlay(false);
+          else if (stageT >= T.handoffCap) { count.cancel(); enterPlay(false); }
+        } else if (stageT >= T.handoff) {
+          enterPlay(false);
+        }
         break;
 
       case 'play':
@@ -572,10 +682,14 @@ export function createMatchFlow(state, game) {
 
     // Rewind the flow itself, skipping the title card — a replay wants the
     // draft, not the credits.
-    win.active = false; win.done = false; win.t = 0; win.wid = -1;
-    win.byTime = false; win.tiles = []; win.lit = 0;
+    win.active = false; win.done = false; win.t = 0; win.celT = 0; win.wid = -1;
+    win.byTime = false; win.tiles = [];
+    win.flooded = false; win.hasFlood = false;
     win.celebrated = false; win.orbitEnded = false; win.board = true;
     beats.half = false; beats.finalCall = false; beats.matchPoint.clear();
+    // A replay starts on a clean island, not on the last winner's colour.
+    stopFlood();
+    count.cancel();
     draft.reset();
     started = true;
     elapsed = 0;
@@ -615,8 +729,15 @@ export function createMatchFlow(state, game) {
      */
     get winT() { return win.active ? win.t : -1; },
     get winner() { return win.wid; },
+    /** 0..1 sweep of the victory flood, -1 when there is no flood running. */
+    get floodProgress() { return win.flooded ? floodAt() : -1; },
+    /** True once the win/lose plate and the orbit have fired — after the flood. */
+    get celebrated() { return win.celebrated; },
+    /** The start line: '3' | '2' | '1' | 'GO' | '' when it is not running. */
+    get countdown() { return count.label; },
+    get counting() { return count.active; },
     get tutorial() { return tutorial; },
-    destroy() { cam.release(); ui.destroy(); tutorial.destroy(); }
+    destroy() { cam.release(); count.destroy(); ui.destroy(); tutorial.destroy(); }
   };
 }
 

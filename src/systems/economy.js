@@ -53,6 +53,19 @@ import { MARKET, ports } from '../board/layout.js';
  *  overview's close transition to run before it re-opens. */
 const FREE_ROAD_GAP_MS = 340;
 
+/**
+ * Seconds of breathing room after the player cancels out of a free-road
+ * placement.
+ *
+ * main.js reconciles the debt from state every single frame — any frame the
+ * player is owed a road and nothing is in the way, it calls `placeFreeRoads`
+ * again. That is what makes the feature self-healing, and it is also what made
+ * Cancel look broken: the map came straight back on the next frame. The debt is
+ * still owed and the map still returns; it just waits long enough for the tap
+ * to have visibly done something and for the player to look at the board.
+ */
+const FREE_ROAD_DEFER_SEC = 2.4;
+
 /* Radii match the HUD prompt exactly: economy must never refuse a trade the
    on-screen prompt just offered. (playerController uses the tighter plain
    TRADE_RADIUS for `nearTrade`, which we prefer when it is available.) */
@@ -186,9 +199,11 @@ export function buy(kind, game = G) {
     if (!card) return deny(g, 'card', 'Cannot draw a card right now');
     if (card.type === 'victoryPoint') {
       safe(() => g.hud && g.hud.announce && g.hud.announce('+1 Victory Point!', '#ffc93c'));
-    } else {
-      say(g, `Drew ${card.type === 'knight' ? 'Knight' : 'Road Building'}`, 'good');
+    } else if (card.type === 'roadBuilding') {
+      say(g, 'Road Building — open CARDS to lay two roads free', 'good');
     }
+    // A Knight says nothing here: hud-knight.js takes the centre banner and
+    // raises the standing "send the Raider" chip the moment it sees the card.
     // A Knight goes to the hand; nothing auto-plays. `playKnightAt(tile)`
     // resolves it later, once the place-robber overview returns a tile.
     return true;
@@ -229,42 +244,88 @@ function openPlacement(g, kind) {
   return opened !== false;
 }
 
+const now = () => (typeof performance !== 'undefined' && performance.now
+  ? performance.now() / 1000
+  : Date.now() / 1000);
+
+let freeRoadDeferUntil = 0;
+
+/**
+ * Is there anywhere at all to put a road right now?
+ *
+ * Asked BEFORE the Road Building card is spent, so a player holding a card they
+ * cannot use keeps it instead of burning it on a placement panel that has
+ * nothing to offer. `reason` is display-ready.
+ */
+export function roadRoom(game = G) {
+  const g = game || G;
+  const state = g && g.state;
+  const p = me(g);
+  if (!state || !p) return { ok: false, reason: 'No match running' };
+  if (state.phase !== 'play') return { ok: false, reason: 'The match is not running' };
+  if (p.roads.size >= PIECE_LIMIT.road) {
+    return { ok: false, reason: 'All 18 of your roads are already on the board' };
+  }
+  if (!legalRoads(state, 0).length) {
+    return {
+      ok: false,
+      reason: 'Nowhere to lay a road — every spot off your network is taken'
+    };
+  }
+  return { ok: true, reason: '' };
+}
+
 /**
  * Road Building grants `player.freeRoads = 2`. Place them back to back: each
  * confirm decrements the counter and, while any remain, re-opens the map.
  * Cancelling keeps whatever is left so the player can finish later.
+ *
+ * Nothing is ever paid on this path — `placeRoad(..., free = true)` skips the
+ * bank entirely — and the map opens the instant the card is played, which is
+ * the whole point of the card.
  */
 export function placeFreeRoads(game = G) {
   const g = game || G;
   const state = g && g.state;
   const p = me(g);
   if (!state || !p || freeRoadsOf(p) <= 0) return false;
+  if (state.phase !== 'play') return false;
+  if (now() < freeRoadDeferUntil) return false;
 
   const step = () => {
     const left = freeRoadsOf(p);
     if (left <= 0) return;
-    if (!legalRoads(state, 0).length) {
-      say(g, 'No legal spot for a free road', 'warn');
+    const room = roadRoom(g);
+    if (!room.ok) {
+      // main.js re-checks this debt every frame, so an unspendable one would
+      // otherwise re-announce itself sixty times a second. Write it off, once,
+      // and say so plainly.
+      p.freeRoads = 0;
+      say(g, `${room.reason} — the free road is forfeit`, 'warn');
       return;
     }
     safe(() => g.openOverview('place-road', {
       free: true,
-      title: 'Free Road',
-      hint: `${left} free road${left > 1 ? 's' : ''} remaining`,
+      title: left > 1 ? 'Free Road · 1 of 2' : 'Free Road · Last One',
+      hint: 'Tap a glowing edge, then Confirm — this one is free',
+      pickLabel: 'Pick an edge',
       onConfirm(eid) {
         const ok = placeRoad(state, 0, eid, true);   // free: nothing is paid
         if (!ok) { sfx(g, 'deny'); return false; }
         p.freeRoads = Math.max(0, freeRoadsOf(p) - 1);
         if (p.freeRoads > 0) {
+          say(g, 'One more free road — place it', 'good');
           if (typeof setTimeout === 'function') setTimeout(step, FREE_ROAD_GAP_MS);
           else step();
+        } else {
+          say(g, 'Both roads laid — nothing paid', 'good');
         }
         return true;
       },
       onCancel() {
-        if (freeRoadsOf(p) > 0) {
-          say(g, `${freeRoadsOf(p)} free road${freeRoadsOf(p) > 1 ? 's' : ''} still owed`, 'info');
-        }
+        if (freeRoadsOf(p) <= 0) return;
+        freeRoadDeferUntil = now() + FREE_ROAD_DEFER_SEC;
+        say(g, `${freeRoadsOf(p)} free road${freeRoadsOf(p) > 1 ? 's' : ''} still owed`, 'info');
       }
     }));
   };
@@ -273,11 +334,30 @@ export function placeFreeRoads(game = G) {
   return true;
 }
 
-/** Play a Road Building card from hand and immediately start placing. */
+/**
+ * Play a Road Building card from hand and go straight to placement.
+ *
+ * If there is genuinely nowhere legal to lay a road the card is NOT spent and
+ * no panel opens — the player is told why and keeps the card for later.
+ */
 export function useRoadBuilding(game = G) {
   const g = game || G;
-  if (!g || !playRoadBuilding(g.state, 0)) return false;
-  say(g, 'Two free roads!', 'good');
+  const state = g && g.state;
+  const p = me(g);
+  if (!state || !p) return false;
+  if (!hasCard(p, 'roadBuilding')) {
+    say(g, 'No Road Building card in hand', 'warn');
+    return false;
+  }
+  const room = roadRoom(g);
+  if (!room.ok) {
+    sfx(g, 'deny');
+    say(g, `${room.reason}. Keep the card for now.`, 'warn');
+    return false;
+  }
+  if (!playRoadBuilding(state, 0)) return false;
+  freeRoadDeferUntil = 0;
+  say(g, 'Two free roads — place them now', 'good');
   return placeFreeRoads(g);
 }
 
@@ -428,6 +508,7 @@ export function attach(game) {
     missingFor: kind => missingFor(kind, game),
     placeFreeRoads: () => placeFreeRoads(game),
     useRoadBuilding: () => useRoadBuilding(game),
+    roadRoom: () => roadRoom(game),
     playKnightAt: tile => playKnightAt(tile, game),
     hasKnight: () => hasKnight(game),
     get freeRoads() { return freeRoadsOf(me(game)); }

@@ -33,6 +33,7 @@ import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
 import { createBuildBar } from './hud-build.js';
 import { createTradeCue } from './hud-trade.js';
+import { createKnightCue } from './hud-knight.js';
 import {
   createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere,
   REGION_ONE
@@ -48,7 +49,8 @@ const HOW_TO = [
   ['Build', 'Each card fills as you gather. When it glows gold you can afford it — tap it, then pick a glowing spot.'],
   ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
   ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
-  ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.']
+  ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.'],
+  ['Cards', 'A Knight opens the whole board so you can pick the region the Raider shuts down. Road Building opens the map and lays two roads for nothing.']
 ];
 
 export function createHUD(root, state, game) {
@@ -212,6 +214,12 @@ export function createHUD(root, state, game) {
      measure itself against the same box everything else is laid out in. */
   const tradeCue = createTradeCue(hud, state, game);
 
+  /* A Knight is the one card that needs the whole board to play, so it gets its
+     own standing call-to-action rather than hiding behind the CARDS button.
+     hud-knight.js announces the draw and owns the Raider placement gesture. */
+  const knightCue = createKnightCue(hud, state, game);
+  game.knightCue = knightCue;
+
   /* ---------------------------------------------------------------- toast */
   const liveToasts = [];
 
@@ -273,8 +281,12 @@ export function createHUD(root, state, game) {
     if (kind === 'card') {
       const card = drawCard(state, 0);
       if (!card) { flashCost('card'); return false; }
+      // A Knight gets the centre banner from hud-knight.js, which also raises
+      // the standing "play me" chip — so it deliberately says nothing here.
       if (card.type === 'victoryPoint') announce('+1 Victory Point!', '#ffc93c');
-      else toast(`Drew ${CARD_LABEL[card.type]}`, 'good');
+      else if (card.type === 'roadBuilding') {
+        toast('Road Building — open CARDS to lay two roads free', 'good');
+      } else toast(`Drew ${CARD_LABEL[card.type]}`, 'good');
       refreshAll(true);
       return true;
     }
@@ -519,6 +531,7 @@ export function createHUD(root, state, game) {
     if (annT > 0) { annT -= d; if (annT <= 0) toggle(annWrap, 'show', false); }
 
     tradeCue.update(d);
+    knightCue.update(d);
   }
 
   function onPlayBegan() {
@@ -536,8 +549,10 @@ export function createHUD(root, state, game) {
     update, toast, announce, pulseResource, flashCost, requestBuild, onPlayBegan,
     get root() { return hud; },
     openSettings: () => toggleSettings(true),
+    get knightCue() { return knightCue; },
     destroy() {
       tradeCue.destroy();
+      knightCue.destroy();
       if (hud.parentNode) hud.parentNode.removeChild(hud);
     }
   };
