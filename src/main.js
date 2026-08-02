@@ -253,10 +253,22 @@ async function boot() {
     input.update();
 
     let steps = 0;
+    // THE BOARD MAP PAUSES THE MATCH.
+    //
+    // Opening the map is a thinking action — choosing where the Raider goes,
+    // where a road runs, which corner to claim. Letting the clock and three
+    // rivals run while the player reads the board punished them for looking,
+    // and made the Knight in particular feel like it never stopped to ask.
+    // So while the overview is up, the simulation holds: no match clock, no
+    // bots, no gathering, no settler. Flow still ticks, because it is what
+    // drives the panel that is open.
+    const mapPaused = !!(overview && overview.isOpen);
+
     while (acc >= FIXED && steps++ < 4) {
       acc -= FIXED;
-      tickWorld(state, FIXED);
       flow.update(FIXED);
+      if (mapPaused) continue;
+      tickWorld(state, FIXED);
       controller.update(FIXED);
       gathering.update(FIXED);
       bots.update(FIXED);
