@@ -159,7 +159,7 @@ export function createTutorial(state, game, deps = {}) {
         setupPlaceRoad(state, pid, list[0]);
       }
     }
-    // The Raider starts on the desert and, with the bots frozen, never moves.
+    // The Knight starts on the desert and, with the bots frozen, never moves.
     state.robberTile = DESERT.id;
     state.robberOwner = -1;
   }

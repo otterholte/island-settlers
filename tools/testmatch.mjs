@@ -1021,7 +1021,7 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
     pass: kOk && rbOk && vpOk,
     evidence:
       `drew ${out.draws.length} cards: ${JSON.stringify(out.seen)}\n` +
-      `KNIGHT  played=${k.ok} raider->tile ${k.robberTile} (owner ${k.robberOwner}), ` +
+      `KNIGHT  played=${k.ok} knight->tile ${k.robberTile} (owner ${k.robberOwner}), ` +
       `knightsPlayed ${k.played.before}->${k.played.after}, rival stock ${JSON.stringify(k.rivalBefore)}->${JSON.stringify(k.rivalAfter)}\n` +
       `ROADBLD played=${rb.ok} freeRoads=${rb.freeAfterPlay} placed=${rb.placedFree} ` +
       `roads ${rb.roads.before}->${rb.roads.after} paid=${JSON.stringify(rb.paid)}\n` +
@@ -1029,9 +1029,9 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
   };
 });
 
-/* ---- 11. the Raider ----------------------------------------------------- */
+/* ---- 11. the Knight ----------------------------------------------------- */
 
-await test(11, 'The Raider blocks the region for everyone except the player who moved it', async () => {
+await test(11, 'The Knight blocks the region for everyone except the player who moved it', async () => {
   await ensurePlay();
   const out = await pev(`(()=>{
     const R=window.__R__, L=window.__L__, N=window.__N__;
@@ -1057,7 +1057,7 @@ await test(11, 'The Raider blocks the region for everyone except the player who 
     }
     if (tile<0) return { setup:'could not find a hex two players share' };
 
-    // player 1 sends the Raider there
+    // player 1 sends the Knight there
     st.players[1].cards.push({type:'knight',id:'test'});
     const moved = R.playKnight(st,1,tile);
     const flags = st.players.map(p=>R.canGatherTile(st,p.id,tile));
@@ -1097,7 +1097,7 @@ await test(11, 'The Raider blocks the region for everyone except the player who 
   return {
     pass,
     evidence:
-      `Raider moved by player 1 onto hex ${out.tile} (robberOwner=${out.robberOwner})\n` +
+      `Knight moved by player 1 onto hex ${out.tile} (robberOwner=${out.robberOwner})\n` +
       `owns a corner there: ${JSON.stringify(out.owns)}  ` +
       `canGatherTile: ${JSON.stringify(out.flags)}\n` +
       `sweeping the whole hex — mover +${out.moverGain} ${out.res}; ` +

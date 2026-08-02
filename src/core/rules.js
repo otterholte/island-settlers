@@ -14,7 +14,7 @@ import {
   CARD_WEIGHTS, PLAYER_COLORS, BOT_PROFILES, PICKUP_RADIUS,
   TRADE_BASE, canAfford, pay, totalRes
 } from './constants.js';
-import { raidersOn } from './options.js';
+import { knightsOn } from './options.js';
 
 import {
   tiles, intersections, edges, ports, SPAWNS, DESERT, edgeBetween
@@ -355,25 +355,25 @@ export function ownedTiles(state, pid) {
   return out;
 }
 
-export function raiderBlocks(state, pid, tileId) {
+export function knightBlocks(state, pid, tileId) {
   // Switched off for this match: nothing blocks anything, whatever the board
-  // happens to say. Belt and braces — with no Knights in the deck the Raider
+  // happens to say. Belt and braces — with no Knights in the deck the Knight
   // never leaves the desert, and the desert yields nothing to anybody anyway —
   // but a restored or replayed match must not be able to strand a live block.
-  if (!raidersOn()) return false;
-  // The player who last moved the Raider may still work the blocked region.
+  if (!knightsOn()) return false;
+  // The player who last moved the Knight may still work the blocked region.
   return state.robberTile === tileId && state.robberOwner !== pid;
 }
 
 /**
- * May this player collect on this hex at all? Ownership + the Raider.
+ * May this player collect on this hex at all? Ownership + the Knight.
  * Whether the hex currently HAS anything is `isTileExhausted` / the item flags.
  */
 export function canGatherTile(state, pid, tileId) {
   const t = tiles[tileId];
   if (!t || !t.resource) return false;
   if (!playerOwnsTile(state, pid, tileId)) return false;
-  return !raiderBlocks(state, pid, tileId);
+  return !knightBlocks(state, pid, tileId);
 }
 
 /** Rate-limited "you get nothing here" note, for the human only. */
@@ -385,7 +385,7 @@ function noteBlocked(state, pid, tileId) {
   p.blockedAt = state.time;
   emit(state, 'blocked', {
     player: pid, tile: tileId,
-    reason: raiderBlocks(state, pid, tileId) ? 'raider' : 'unowned'
+    reason: knightBlocks(state, pid, tileId) ? 'knight' : 'unowned'
   });
 }
 
@@ -492,7 +492,7 @@ export function drawCard(state, pid, free = false) {
    * Pick a type from the weight table, over only the types this match is
    * actually playing.
    *
-   * With Raiders switched off (`core/options.js`) the Knight leaves the deck
+   * With Knights switched off (`core/options.js`) the Knight leaves the deck
    * entirely, and what is left is re-normalised — otherwise the 0.5 the Knight
    * held would be a hole in the distribution and every roll landing in it would
    * fall through to the loop's default. That default used to be the string
@@ -503,7 +503,7 @@ export function drawCard(state, pid, free = false) {
   const table = [];
   let total = 0;
   for (const k in CARD_WEIGHTS) {
-    if (k === 'knight' && !raidersOn()) continue;
+    if (k === 'knight' && !knightsOn()) continue;
     const w = CARD_WEIGHTS[k];
     if (!(w > 0)) continue;
     table.push([k, w]);

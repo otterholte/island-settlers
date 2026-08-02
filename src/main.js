@@ -220,9 +220,9 @@ async function boot() {
           if (tookFromMe) {
             audio.sfx('deny');
             gameCamera.shake && gameCamera.shake(0.5);
-            hud.announce(`${state.players[ev.player].name} raided you!`, '#ff8a6a');
+            hud.announce(`${state.players[ev.player].name} played a Knight!`, '#ff8a6a');
           } else {
-            hud.announce(`${state.players[ev.player].name} sent the Raider!`,
+            hud.announce(`${state.players[ev.player].name} sent the Knight!`,
                          state.players[ev.player].color.css);
           }
           break;
@@ -240,7 +240,7 @@ async function boot() {
           portsView.setUnlocked && portsView.setUnlocked(ev.port, ev.player);
           break;
         case 'blocked':
-          hud.toast('The Raider blocks this region', 'warn');
+          hud.toast('The Knight blocks this region', 'warn');
           audio.sfx('deny');
           break;
         case 'victory':
@@ -276,7 +276,7 @@ async function boot() {
     let steps = 0;
     // ANYTHING THAT OWNS THE SCREEN PAUSES THE MATCH.
     //
-    // Opening the map is a thinking action — choosing where the Raider goes,
+    // Opening the map is a thinking action — choosing where the Knight goes,
     // where a road runs, which corner to claim. Letting the clock and three
     // rivals run while the player reads the board punished them for looking,
     // and made the Knight in particular feel like it never stopped to ask.

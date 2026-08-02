@@ -8,7 +8,7 @@
  *
  * Everything the map paints that is not the BOARD lives here: the corners you
  * may claim, the edges you may build a road along, the region you may send the
- * Raider to, and the mark that says which corner a rival is about to take.
+ * Knight to, and the mark that says which corner a rival is about to take.
  * `overview.js` owns the interaction, `ovmap.js` owns the board underneath;
  * this file owns the invitation on top of them.
  *
@@ -50,10 +50,10 @@
  *    The chosen edge stays solid and stays in the player's own colour: there is
  *    only ever one of it, and it should look like the road about to exist.
  *
- * 3. The Raider used to tint EIGHTEEN of the nineteen hexes gold — every legal
+ * 3. The Knight used to tint EIGHTEEN of the nineteen hexes gold — every legal
  *    one — so the board read as uniformly gold and the terrain washed out. It
  *    is the other way round now: the one hex you may NOT choose (the one the
- *    Raider is already on) is dimmed and struck through, the legal ones keep
+ *    Knight is already on) is dimmed and struck through, the legal ones keep
  *    their own colour under a thin gold rim, and gold fill is spent only on the
  *    hex under the finger and the hex you have chosen.
  *
@@ -333,14 +333,14 @@ export function createTargets(ctx, proj, paint, state) {
     ctx.restore();
   }
 
-  /* ----------------------------------------------------------- the Raider */
+  /* ----------------------------------------------------------- the Knight */
 
   /**
    * Mark the ONE hex that is not a choice, and leave the other eighteen alone.
    *
    * Tinting every legal region gold painted 18 of 19 hexes the same colour and
    * the board stopped being a board — you cannot pick the best region to block
-   * if you cannot read which region is which. The hex the Raider already
+   * if you cannot read which region is which. The hex the Knight already
    * occupies gets a dark scrim and a red strike instead; everything else keeps
    * its terrain and takes a thin gold rim.
    */

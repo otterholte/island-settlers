@@ -5,7 +5,7 @@
  * and shaped into a soft annulus in the fragment shader. The whole pool is ONE
  * draw call and 2 triangles per live ring; nothing is allocated per frame.
  *
- * Used for the gather highlight (`ring`) and for the Raider's arrival wave
+ * Used for the gather highlight (`ring`) and for the Knight's arrival wave
  * (`shockwave`), which is the same primitive at hex scale with a dark fill.
  */
 

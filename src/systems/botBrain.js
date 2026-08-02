@@ -30,7 +30,7 @@ import {
   legalSettlements, legalRoads, legalCities,
   longestRoadFor, scoreOf, canGatherTile, ownedTiles
 } from '../core/rules.js';
-import { raidersOn } from '../core/options.js';
+import { knightsOn } from '../core/options.js';
 
 import { difficultyParams } from './difficulty.js';
 
@@ -205,7 +205,7 @@ export function intersectionScore(state, pid, iid, prod, aff, owned = null) {
 /**
  * Value of turning a settlement into a city. A city no longer gathers faster —
  * ownership is binary — so this is a pure victory-point play, sweetened a
- * little by holding good land against a rival Raider.
+ * little by holding good land against a rival Knight.
  */
 export function cityScore(state, pid, iid, aff) {
   const n = intersections[iid];
@@ -601,7 +601,7 @@ export const chooseNode = chooseHarvestTile;
  * Knight target: the strongest hex belonging to the current VP leader.
  * Never blocks a hex we work ourselves, never re-blocks the same hex.
  *
- * The Raider bites much harder now — a blocked hex yields the owner nothing at
+ * The Knight bites much harder now — a blocked hex yields the owner nothing at
  * all rather than a reduced trickle — so this is the single most disruptive
  * thing a bot can do.
  */
@@ -614,7 +614,7 @@ export function knightTarget(state, pid, opts = {}) {
     const vp = scoreOf(state, o);
     if (vp > bestVp) { bestVp = vp; leader = o.id; }
   }
-  // A weaker raider does not read the scoreboard: it drops the Raider on
+  // A weaker knight does not read the scoreboard: it drops the Knight on
   // somebody, but not necessarily on whoever is running away with the match.
   if (rand() >= d.knightAim) {
     const rivals = state.players.filter(o => o.id !== pid);
@@ -652,9 +652,9 @@ export function knightTarget(state, pid, opts = {}) {
  * flattens everyone's economy and drags matches out, so it is rate limited.
  */
 export function wantsKnight(state, pid, sinceLast = Infinity, opts = {}) {
-  // Raiders switched off for this match: no Knight is ever dealt, so this is
+  // Knights switched off for this match: no Knight is ever dealt, so this is
   // only ever reached by a card left over from a restored match. Refuse it.
-  if (!raidersOn()) return false;
+  if (!knightsOn()) return false;
   const p = state.players[pid];
   if (!p.cards.some(c => c.type === 'knight')) return false;
   const d = dOf(opts);

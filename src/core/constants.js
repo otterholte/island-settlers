@@ -181,7 +181,7 @@ export const CARD_LABEL = {
    is destroyed rather than stolen. The player had to ask whether the game did
    this at all, so the card now says exactly what it does before it is played. */
 export const CARD_BLURB = {
-  knight: 'Takes HALF of every resource from every rival. Then move the Raider to shut down a region.',
+  knight: 'Takes HALF of every resource from every rival. Then move the Knight to shut down a region.',
   roadBuilding: 'Place two roads for free.',
   victoryPoint: '+1 Victory Point, immediately.'
 };

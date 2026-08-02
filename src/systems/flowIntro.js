@@ -38,7 +38,7 @@ import { icon, avatar } from '../ui/icons.js';
 import {
   DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
 } from './difficulty.js';
-import { raidersOn, setRaiders } from '../core/options.js';
+import { knightsOn, setKnights } from '../core/options.js';
 
 export const INTRO_CSS = `
 /* --------------------------------------------------------- opening screen */
@@ -130,10 +130,10 @@ export const INTRO_CSS = `
              0 0 22px rgba(255,201,60,.45),inset 0 2px 0 rgba(255,255,255,.9);
 }
 
-/* ------------------------------------------------------------- the Raider
+/* ------------------------------------------------------------- the Knight
    A SWITCH, not two buttons.
 
-     "Can you make the raiders be a toggle instead of two large buttons."
+     "Can you make the knights be a toggle instead of two large buttons."
 
    ON and OFF as a pair of 110px plates was the difficulty picker's shape used
    for a question that does not have four answers — two chunky mutually
@@ -389,15 +389,18 @@ export function buildIntro(state, onBegin) {
 
   paint();
 
+  /* No heading. "Rival Skill" sat over four buttons reading EASY, MEDIUM, HARD
+     and EXPERT — a label explaining a row that explains itself, on the screen
+     with the least room to spare. The Knights row below keeps its label because
+     a switch on its own says nothing about what it switches. */
   const difficulty = el('div', { class: 'mf-i-diff' },
-    el('div', { class: 'mf-i-dlab', text: 'Rival Skill' }),
     el('div', { class: 'mf-i-drow' }, diffButtons));
 
-  /* --------------------------------------------------------------- raiders
+  /* --------------------------------------------------------------- knights
    *
    *   "Add a feature to turn off the robber/knight if you want, for that
    *    specific game, before the game started."
-   *   "Can you make the raiders be a toggle instead of two large buttons."
+   *   "Can you make the knights be a toggle instead of two large buttons."
    *
    * A Knight takes half of every resource off every rival at once and then
    * shuts a hex down, and it is half the card deck — so a match with them and a
@@ -406,12 +409,12 @@ export function buildIntro(state, onBegin) {
    *
    * Switching it off pulls the Knight out of the deck (`rules.drawCard`
    * re-normalises what is left), stops anything blocking a hex, hides the
-   * Raider in the world and on the map, and takes LARGEST ARMY out of reach —
+   * Knight in the world and on the map, and takes LARGEST ARMY out of reach —
    * which is stated on the caption under the switch, because a silent two
    * victory points going missing is exactly the kind of thing that gets found
    * out at the wrong moment.
    *
-   * Storage is the same model as Rival Skill above (see `core/options.js`): the
+   * Storage is the same model as the difficulty picker above (see `core/options.js`): the
    * choice sticks between matches, and the switch is right here on every
    * opening screen so it is still a per-match decision.
    */
@@ -419,31 +422,31 @@ export function buildIntro(state, onBegin) {
   const raidState = el('b', { class: 'mf-raid-state', text: 'On' });
   const raidSwitch = button('mf-switch', {
     role: 'switch',
-    'aria-label': 'Raiders — Knight cards, the Raider and Largest Army',
-    on: { click: () => pickRaid(!raidersOn()) }
+    'aria-label': 'Knights — the Knight card, the blocked region and Largest Army',
+    on: { click: () => pickRaid(!knightsOn()) }
   });
 
   function paintRaid() {
-    const cur = raidersOn();
+    const cur = knightsOn();
     raidSwitch.classList.toggle('on', cur);
     raidSwitch.setAttribute('aria-checked', cur ? 'true' : 'false');
     raidState.classList.toggle('on', cur);
     raidState.textContent = cur ? 'On' : 'Off';
     raidNote.textContent = cur
-      ? 'Knights take half of every rival\u2019s goods and block a region'
+      ? 'A Knight takes half of every rival\u2019s goods and blocks a region'
       : 'No Knight cards \u00b7 nothing blocks a region \u00b7 no Largest Army';
     raidNote.classList.toggle('off', !cur);
   }
 
   function pickRaid(on) {
-    setRaiders(on);
+    setKnights(on);
     paintRaid();
   }
 
   paintRaid();
 
-  const raiders = el('div', { class: 'mf-i-diff' },
-    el('div', { class: 'mf-i-dlab', text: 'Raiders' }),
+  const knights = el('div', { class: 'mf-i-diff' },
+    el('div', { class: 'mf-i-dlab', text: 'Knights' }),
     el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
     raidNote);
 
@@ -480,7 +483,7 @@ export function buildIntro(state, onBegin) {
       el('span', { text: `First to ${VICTORY_POINTS} Points` })),
     el('div', { class: 'mf-i-row' }, cards),
     difficulty,
-    raiders,
+    knights,
     el('div', { class: 'mf-i-foot' },
       el('div', { class: 'mf-i-cta' }, playBtn),
       el('div', { class: 'mf-i-hint' },
@@ -491,7 +494,7 @@ export function buildIntro(state, onBegin) {
   return {
     node, cards, playBtn, tutBtn, diffButtons, raidSwitch,
     refreshDifficulty: paint,
-    refreshRaiders: paintRaid
+    refreshKnights: paintRaid
   };
 }
 

@@ -35,7 +35,7 @@ import {
   playRoadBuilding, placeRoad, legalRoads, scoreOf, rankings
 } from '../core/rules.js';
 
-import { raidersOn } from '../core/options.js';
+import { knightsOn } from '../core/options.js';
 import { el, button, clear, toggle, setText, fmtTime } from './dom.js';
 import { icon, resIcon, avatar } from './icons.js';
 import { createEndgame } from './hud-end.js';
@@ -99,7 +99,7 @@ export function createPanels(root, state, game) {
       hand.appendChild(el('div', { class: 'hand-empty' },
         el('span', { html: icon('cards', 40) }),
         el('p', {
-          text: raidersOn()
+          text: knightsOn()
             ? 'No cards in hand. Buy one to raise an army or lay free roads.'
             : 'No cards in hand. Buy one for free roads or a straight victory point.'
         })));
@@ -122,11 +122,11 @@ export function createPanels(root, state, game) {
     });
     setText(vpNote, me.vpCards
       ? `${me.vpCards} victory point card${me.vpCards > 1 ? 's' : ''} held`
-      // With Raiders switched off the deck holds no Knights at all, so the
+      // With Knights switched off the deck holds no Knights at all, so the
       // standing hint would be advertising a card that cannot be drawn.
-      : (raidersOn()
+      : (knightsOn()
         ? 'Knights also win you the Largest Army'
-        : 'Raiders are off — no Knights in this deck'));
+        : 'Knights are off for this match — none in this deck'));
     const afford = canAfford(me.res, COST.card);
     toggle(buyBtn, 'off', !afford || state.phase !== 'play');
   }
@@ -141,10 +141,10 @@ export function createPanels(root, state, game) {
    * Playing a card is one tap, and both playable cards go straight to the map.
    *
    *   KNIGHT         hud-knight.js owns the whole gesture: it closes this
-   *                  sheet, opens the FULL board in Raider mode with every
+   *                  sheet, opens the FULL board in Knight mode with every
    *                  legal region lit and "Choose a region to block" on the
    *                  plate, commits through rules.js and holds the board for a
-   *                  beat afterwards so the Raider can be seen landing.
+   *                  beat afterwards so the Knight can be seen landing.
    *   ROAD BUILDING  economy.js checks there is somewhere legal to build
    *                  BEFORE spending the card. If there is not, it says so and
    *                  the card stays in hand — no panel, nothing consumed.
@@ -160,7 +160,7 @@ export function createPanels(root, state, game) {
       if (cue && typeof cue.play === 'function') { cue.play(); return; }
       close();
       game.openOverview('place-robber', {
-        title: 'Send the Raider',
+        title: 'Send the Knight',
         hint: 'Tap a region, tap it again to send',
         pickLabel: 'Choose a region'
       });
@@ -294,7 +294,7 @@ export function createPanels(root, state, game) {
    * That left the most interesting number on the screen — how close everybody
    * else came — nowhere at all. This strip carries it for all four, and the
    * holder's chip goes gold and names the award. Knights are dropped entirely
-   * when Raiders were switched off before the draft, since a column of zeroes
+   * when Knights were switched off before the draft, since a column of zeroes
    * that could never have been anything else is not a statistic.
    */
   function tally(p) {
@@ -305,7 +305,7 @@ export function createPanels(root, state, game) {
     // the only difference, and gold alone is a thin thing to hang a badge on.
     let h = chip(p.hasLongestRoad, 'road', p.longestRoadLen,
       p.hasLongestRoad ? 'Longest Road' : 'Road');
-    if (raidersOn()) {
+    if (knightsOn()) {
       h += chip(p.hasLargestArmy, 'knight', p.knightsPlayed,
         p.hasLargestArmy ? 'Largest Army' : (p.knightsPlayed === 1 ? 'Knight' : 'Knights'));
     }

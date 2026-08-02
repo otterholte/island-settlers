@@ -14,8 +14,8 @@
  *              road of the draft to GO — nobody may move by so much as 1e-6
  *   road       Road Building: two roads land, nothing is paid; and with no
  *              legal edge anywhere the card is NOT spent and no panel opens
- *   knight     the Knight RAISES the full board itself in Raider mode, the
- *              simulation is held still for as long as it is up, and the Raider
+ *   knight     the Knight RAISES the full board itself in Knight mode, the
+ *              simulation is held still for as long as it is up, and the Knight
  *              lands on the region that was chosen. A rival's Knight must never
  *              open the human's map.
  *   flood      floodProgress() sampled across the win sequence, with the
@@ -360,7 +360,7 @@ if (TRACE === 'knight') {
   const open = await ev(`(()=>{
     const I=()=>window.__ISLAND__, g=I().game, L=window.__L__, st=I().state;
     const ov=g.overview;
-    // The chosen region: a productive hex the Raider is not already on.
+    // The chosen region: a productive hex the Knight is not already on.
     const want=L.tiles.filter(t=>t.id!==st.robberTile&&t.resource).slice(-1)[0].id;
     window.__want=want;
     const bar=document.querySelector('.ov-bar');
@@ -374,7 +374,7 @@ if (TRACE === 'knight') {
       want, robberWas:st.robberTile };})()`);
   say('board opened', open);
   if (SHOT) { await sleep(250); await shot('fl-knight-board'); done(); }
-  check('the FULL board opens in Raider mode',
+  check('the FULL board opens in Knight mode',
     open.open === true && open.mode === 'place-robber' && open.overviewCam === true,
     `mode=${open.mode} overviewCamera=${open.overviewCam} legalRegions=${open.targets}`);
   check('the instruction is plain', /choose a region to block/i.test(open.hint || ''),
@@ -417,15 +417,15 @@ if (TRACE === 'knight') {
       stillUp:g.overview.isOpen, mode:g.overview.mode,
       title:(document.querySelector('.ov-title')||{}).textContent };})()`);
   say('after Confirm', landed);
-  check('the Raider lands on the region that was chosen',
+  check('the Knight lands on the region that was chosen',
     landed.robber === landed.want && landed.owner === 0
     && landed.knights.after === landed.knights.before + 1,
-    `chose ${landed.want}, Raider is on ${landed.robber}`);
+    `chose ${landed.want}, Knight is on ${landed.robber}`);
   check('rivals drop what they were carrying',
     landed.rivalsAfter.some((v, i) => v < landed.rivalsBefore[i]),
     `${JSON.stringify(landed.rivalsBefore)} -> ${JSON.stringify(landed.rivalsAfter)}`);
   check('the board is held so the landing can be watched',
-    landed.stillUp === true && /raider lands/i.test(landed.title || ''),
+    landed.stillUp === true && /knight lands/i.test(landed.title || ''),
     `"${landed.title}"`);
 
   await sleep(600);
@@ -497,7 +497,7 @@ if (TRACE === 'knight') {
       openedOnUs, humanKnights:g.knightCue.pending,
       autoPending:g.knightCue.autoPending, ovOpen:g.overview.isOpen };})()`);
   say('a rival plays a Knight', bot);
-  check('a bot Knight moves the Raider without opening the human\'s map',
+  check('a bot Knight moves the Knight without opening the human\'s map',
     bot.played === true && bot.robber === bot.target && bot.owner === 1
     && bot.openedOnUs === 0 && bot.autoPending === false,
     `map open on ${bot.openedOnUs} of 180 frames`);

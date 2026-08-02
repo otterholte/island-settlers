@@ -17,7 +17,7 @@
  *                  when it will be restored ... if you cut all of the trees
  *                  down, you have to wait for them all to grow again."
  *
- *   BLOCKED     the Raider has the hex shut: ash face, a barred glyph.
+ *   BLOCKED     the Knight has the hex shut: ash face, a barred glyph.
  *
  * The x2 / x3 ownership badges are GONE. Ownership is a hard gate now, not a
  * multiplier, and the player asked for the badges to go with it — the hexes you
@@ -88,7 +88,7 @@ export function markerAtlas() {
       cell(n, () => stroked(label, label.length > 1 ? 72 : 90));
     }
 
-    // barred — the Raider has this hex shut
+    // barred — the Knight has this hex shut
     cell(GLYPH.blocked, () => {
       ctx.lineCap = 'round';
       ctx.strokeStyle = '#fff3d0'; ctx.lineWidth = 28;

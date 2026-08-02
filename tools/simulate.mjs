@@ -340,9 +340,9 @@ function runMatch(index) {
     /* --- audit: resource conservation --- */
     const expect = state.players.map(() => ({ wood: 0, brick: 0, wool: 0, wheat: 0, ore: 0 }));
     const frameEvents = drainEvents(state);
-    // A Knight played later in the same frame moves the Raider under a pickup
+    // A Knight played later in the same frame moves the Knight under a pickup
     // that was legal when it happened; don't misread that as a rules breach.
-    const raiderMoved = frameEvents.some(e => e.type === 'knight');
+    const knightMoved = frameEvents.some(e => e.type === 'knight');
     for (const ev of frameEvents) {
       if (ev.type === 'gained') {
         expect[ev.player][ev.resource] += ev.amount;
@@ -352,9 +352,9 @@ function runMatch(index) {
           flag(`match ${index} t=${fmt(state.time)}: p${ev.player} collected ` +
                `${ev.resource} on tile ${ev.tile}, which they do not own`);
         }
-        if (!raiderMoved && state.robberTile === ev.tile && state.robberOwner !== ev.player) {
+        if (!knightMoved && state.robberTile === ev.tile && state.robberOwner !== ev.player) {
           flag(`match ${index} t=${fmt(state.time)}: p${ev.player} collected on ` +
-               `tile ${ev.tile} while the Raider blocked it`);
+               `tile ${ev.tile} while the Knight blocked it`);
         }
         gathered[ev.player]++;
       } else if (ev.type === 'exhausted') exhausted++;

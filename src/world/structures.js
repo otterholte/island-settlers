@@ -16,7 +16,7 @@
  *   ground     one pooled mesh of painted owner rings, terrain-following
  *   people     one villager InstancedMesh for every settlement and city
  *   fx         one billboarded puff pool for chimney smoke and build dust
- *   raider     hooded figure, red ground vignette
+ *   knight     hooded figure, red ground vignette
  *   ghost      one translucent preview mesh, geometry swapped per request
  *
  * OWNERSHIP IS THE SILHOUETTE, NOT A TRIM. The player could not find their own
@@ -37,7 +37,7 @@
 
 import * as THREE from 'three';
 import { HEX_SIZE, PLAYER_COLORS, PIECE_LIMIT } from '../core/constants.js';
-import { raidersOn } from '../core/options.js';
+import { knightsOn } from '../core/options.js';
 import { tiles, intersections, edges } from '../board/layout.js';
 import { heightAt, topOf } from './terrain.js';
 import { instanced, setInstance, hideInstance, triCount } from './geo.js';
@@ -175,8 +175,8 @@ export function buildStructures(scene, state) {
     cityTower: T.cityTowerGeo(),
     cityTint: T.cityTintGeo(),
     folk: villagerGeo(true),
-    raider: T.raiderGeo(),
-    vignette: T.raiderVignetteGeo(HEX_SIZE * 0.94),
+    knight: T.knightGeo(),
+    vignette: T.knightVignetteGeo(HEX_SIZE * 0.94),
     ghostRoad: T.ghostRoadGeo(ROAD_L),
     ghostVillage: T.ghostSettlementGeo(),
     puff: new THREE.PlaneGeometry(1, 1, 1, 1)
@@ -591,20 +591,20 @@ export function buildStructures(scene, state) {
     return rec;
   }
 
-  /* ---------------------------------------------------------------- raider
+  /* ---------------------------------------------------------------- knight
    *
-   * A match with Raiders switched off (`core/options.js`) has no Knight in the
+   * A match with Knights switched off (`core/options.js`) has no Knight in the
    * deck, so the figure would stand on the desert for the whole match doing
    * nothing and telling the player something untrue. Both it and its ground
    * vignette stay hidden — checked once here and once more inside `setRobber`,
    * since that is the only thing that ever turns the vignette back on. */
-  const raidersLive = raidersOn();
+  const knightsLive = knightsOn();
 
-  const raider = new THREE.Mesh(G.raider, solid);
-  raider.castShadow = true;
-  raider.frustumCulled = false;
-  raider.visible = raidersLive;
-  group.add(raider);
+  const knight = new THREE.Mesh(G.knight, solid);
+  knight.castShadow = true;
+  knight.frustumCulled = false;
+  knight.visible = knightsLive;
+  group.add(knight);
 
   const vignetteMat = new THREE.MeshBasicMaterial({
     vertexColors: true, transparent: true, opacity: 0.3,
@@ -635,14 +635,14 @@ export function buildStructures(scene, state) {
     rob.x = s.x; rob.y = s.y; rob.z = s.z;
     rob.t = instant ? 1 : 0;
     if (rob.t >= 1) {
-      raider.position.set(rob.x, rob.y, rob.z);
-      raider.scale.set(1, 1, 1);
-      raider.rotation.y = 0;
+      knight.position.set(rob.x, rob.y, rob.z);
+      knight.scale.set(1, 1, 1);
+      knight.rotation.y = 0;
     }
     const t = s.tile;
     // the vignette is a flat annulus on the tile's plateau, not on the peaks
     vignette.position.set(t.x, topOf(t) + 0.07, t.z);
-    vignette.visible = raidersLive;
+    vignette.visible = knightsLive;
   }
 
   function stepRobber(dt) {
@@ -653,14 +653,14 @@ export function buildStructures(scene, state) {
       const z = rob.fz + (rob.z - rob.fz) * p;
       const arc = Math.sin(Math.PI * p) * 6.5;
       const y = rob.fy + (rob.y - rob.fy) * p + arc;
-      raider.position.set(x, y, z);
+      knight.position.set(x, y, z);
       const spin = (1 - p) * 6.0;
-      raider.rotation.y = spin;
+      knight.rotation.y = spin;
       const land = clamp01((p - 0.86) / 0.14);
-      raider.scale.set(1 + land * 0.30, 1 - land * 0.26, 1 + land * 0.30);
+      knight.scale.set(1 + land * 0.30, 1 - land * 0.26, 1 + land * 0.30);
       if (p >= 1) {
-        raider.scale.set(1, 1, 1);
-        raider.rotation.y = 0;
+        knight.scale.set(1, 1, 1);
+        knight.rotation.y = 0;
         dustRing(rob.x, rob.y, rob.z, 3.4, 12, {
           life: 1.0, s1: 2.6, speed: 3.4, color: 0x6b5f4d, a: 0.7
         });
@@ -859,7 +859,7 @@ export function buildStructures(scene, state) {
       village: triCount(G.village), villageTint: triCount(G.villageTint),
       cityCore: triCount(G.cityCore), cityWall: triCount(G.cityWall),
       cityTower: triCount(G.cityTower), cityTint: triCount(G.cityTint),
-      folk: triCount(G.folk), raider: triCount(G.raider),
+      folk: triCount(G.folk), knight: triCount(G.knight),
       vignette: triCount(G.vignette), puff: 2
     };
     const counts = {
@@ -867,7 +867,7 @@ export function buildStructures(scene, state) {
       village: M.village.count, villageTint: M.villageTint.count,
       cityCore: M.cityCore.count, cityWall: M.cityWall.count,
       cityTower: M.cityTower.count, cityTint: M.cityTint.count,
-      folk: M.folk.count, raider: 1, vignette: 1, puff: CAP.puff
+      folk: M.folk.count, knight: 1, vignette: 1, puff: CAP.puff
     };
     let tris = 0;
     for (const k in counts) tris += counts[k] * per[k];
@@ -881,7 +881,7 @@ export function buildStructures(scene, state) {
     group,
     meshes: M,
     puffMesh,
-    raider,
+    knight,
     ghost,
     rings,
     materials: { solid, banner, ghostMat, vignetteMat, puffMat },

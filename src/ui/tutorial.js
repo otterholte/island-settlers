@@ -148,7 +148,7 @@ function buildPages() {
       title: 'Development Cards',
       h: 'Three cards, one price',
       body: [
-        `${CARD_LABEL.knight}: every rival loses HALF of every resource they hold — gone, not stolen — and you move the Raider onto a hex to shut it down.`,
+        `${CARD_LABEL.knight}: every rival loses HALF of every resource they hold — gone, not stolen — and you move the Knight onto a hex to shut it down.`,
         `${CARD_LABEL.roadBuilding}: two roads, free.`,
         `${CARD_LABEL.victoryPoint}: one point, straight away.`
       ],

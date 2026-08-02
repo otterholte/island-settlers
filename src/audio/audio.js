@@ -20,7 +20,7 @@ import { BANK } from './sfxbank.js';
 import { createBeds } from './beds.js';
 import { haptic, PATTERNS } from '../fx/haptics.js';
 
-/* Sounds that also get a buzz. Construction and the Raider are the moments
+/* Sounds that also get a buzz. Construction and the Knight are the moments
    worth feeling; gather completion is handled by the FX side. */
 const HAPTIC_FOR = {
   build: PATTERNS.build,

@@ -34,7 +34,7 @@
  * Painting lives in two siblings: ./ovmap.js draws the BOARD (sea, island,
  * tokens, docks, everybody's pieces) and ./ovtargets.js draws the PLACEMENT
  * LAYER over it (the corner rings you may claim, the road slabs you may build
- * along, the Raider marks, the confirm preview and the rival telegraph). This
+ * along, the Knight marks, the confirm preview and the rival telegraph). This
  * file decides what is legal and what the finger touched; those two decide what
  * it looks like.
  *
@@ -65,7 +65,7 @@ const MODE_INFO = {
   'place-road':        { title: 'Place a Road', hint: 'Tap a glowing edge · tap it again to place' },
   'place-settlement':  { title: 'Place a Settlement', hint: 'Tap a glowing corner · tap it again to place' },
   'place-city':        { title: 'Upgrade to a City', hint: 'Tap one of your settlements · tap it again to upgrade' },
-  'place-robber':      { title: 'Send the Raider', hint: 'Tap a region · tap it again to send' },
+  'place-robber':      { title: 'Send the Knight', hint: 'Tap a region · tap it again to send' },
   'draft-watch':       { title: 'Opening Draft', hint: 'Watch the board' }
 };
 
@@ -413,7 +413,7 @@ export function createOverview(root, state, game) {
   /* ------------------------------------------------------------ placement
    *
    * Every pixel of the placement layer — the corner rings, the road slabs, the
-   * Raider marks, the confirm preview and the rival telegraph — is painted by
+   * Knight marks, the confirm preview and the rival telegraph — is painted by
    * `./ovtargets.js`. It moved out when this file crossed the 900-line budget,
    * and the split fell where it should: this file decides WHAT is legal and
    * what the finger touched, that one decides what it looks like.

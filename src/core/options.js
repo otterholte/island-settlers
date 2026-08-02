@@ -1,15 +1,15 @@
 /**
  * Island Settlers — per-match rules options.
  *
- *   raidersOn()                  -> boolean
- *   setRaiders(on)               -> boolean actually in force
+ *   knightsOn()                  -> boolean
+ *   setKnights(on)               -> boolean actually in force
  *   getOption(key) / setOption(key, value)
  *   onOptionsChange(fn)          -> unsubscribe
  *
  * ---------------------------------------------------------------------------
  * WHY THIS IS A MODULE AND NOT A FIELD ON `state`
  * ---------------------------------------------------------------------------
- * The player asked to be able to switch the Raider off before a match starts:
+ * The player asked to be able to switch the Knight off before a match starts:
  *
  *   "Add a feature to turn off the robber/knight if you want, for that specific
  *    game, before the game started."
@@ -24,18 +24,18 @@
  * restart comes back with it intact.
  *
  * It lives in `core/` rather than `systems/` because the rules themselves read
- * it — `drawCard` and `raiderBlocks` are the two places the option actually
+ * it — `drawCard` and `knightBlocks` are the two places the option actually
  * changes what is legal — and `core` may not import from `systems`.
  *
  * ---------------------------------------------------------------------------
- * WHAT "RAIDERS OFF" ACTUALLY DOES
+ * WHAT "KNIGHTS OFF" ACTUALLY DOES
  * ---------------------------------------------------------------------------
  *   * No Knight is ever dealt. `drawCard` drops it from the weight table and
  *     re-normalises what is left, so the card deck becomes Road Building and
  *     Victory Point at 60/40 rather than 30/20 with a 50% hole in it.
- *   * Nothing can block a hex. `raiderBlocks` returns false outright, so even a
- *     Raider left standing somewhere by a restored match costs nobody anything.
- *   * Bots do not look for a Knight to play (`wantsKnight`), the Raider is not
+ *   * Nothing can block a hex. `knightBlocks` returns false outright, so even a
+ *     Knight left standing somewhere by a restored match costs nobody anything.
+ *   * Bots do not look for a Knight to play (`wantsKnight`), the Knight is not
  *     drawn in the world or on the board map, and the HUD's Largest Army line
  *     reads OFF.
  *
@@ -48,8 +48,8 @@
 const STORE_KEY = 'island-settlers.options';
 
 export const OPTION_DEFAULTS = Object.freeze({
-  /** Knight cards, the Raider, and Largest Army with them. */
-  raiders: true
+  /** Knight cards, the Knight, and Largest Army with them. */
+  knights: true
 });
 
 const current = { ...OPTION_DEFAULTS };
@@ -74,6 +74,15 @@ function readStored() {
     if (!got || typeof got !== 'object') return;
     for (const k in OPTION_DEFAULTS) {
       if (typeof got[k] === typeof OPTION_DEFAULTS[k]) current[k] = got[k];
+    }
+    // The option shipped as `raiders` before the whole mechanic was renamed to
+    // KNIGHTS. Anyone who had already switched it off would silently get it
+    // back on, which is the one thing a per-match setting must not do, so the
+    // old key is still read when the new one is absent. It is never written
+    // again: the next `setOption` stores the new shape and the legacy key is
+    // simply left behind in whatever entry it was already part of.
+    if (typeof got.knights !== 'boolean' && typeof got.raiders === 'boolean') {
+      current.knights = got.raiders;
     }
   } catch (e) { /* a corrupt entry is not worth a crash */ }
 }
@@ -112,9 +121,9 @@ export function onOptionsChange(fn) {
 
 /* ------------------------------------------------------------- shorthands */
 
-/** Are Knight cards, the Raider and Largest Army in play this match? */
-export function raidersOn() { return current.raiders !== false; }
+/** Are Knight cards, the Knight and Largest Army in play this match? */
+export function knightsOn() { return current.knights !== false; }
 
-export function setRaiders(on) { return setOption('raiders', !!on) !== false; }
+export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
-export default { getOption, setOption, onOptionsChange, raidersOn, setRaiders };
+export default { getOption, setOption, onOptionsChange, knightsOn, setKnights };

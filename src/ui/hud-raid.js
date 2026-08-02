@@ -33,7 +33,7 @@
  *
  * This module is that payload, on screen, at the size the event deserves: the
  * card lands hard, names who did it, spells out the loss resource by resource,
- * gives the total, and says which hex the Raider has just shut down. It is
+ * gives the total, and says which hex the Knight has just shut down. It is
  * SHORT — a couple of seconds, see `HOLD_LOSS` — because it is five numbers and
  * a total, not a paragraph, and the thing it is explaining (the counters at the
  * top of the screen) stays changed long after the card has gone.
@@ -190,7 +190,7 @@ export function createRaidCue(root, state, game) {
   try {
     injectStyle(doc);
     headIco = el('span', { class: 'ico', html: icon('knight', 40) });
-    ttl = el('div', { class: 'raid-ttl', text: 'Raided' });
+    ttl = el('div', { class: 'raid-ttl', text: 'Knight' });
     who = el('div', { class: 'raid-who' });
     bill = el('div', { class: 'raid-bill' });
     totalNum = el('b', { text: '0' });
@@ -235,10 +235,10 @@ export function createRaidCue(root, state, game) {
   }
 
   function dress(ev) {
-    const raider = state.players[ev.player];
+    const knight = state.players[ev.player];
     const mine = (ev.losses || []).find(l => l.player === 0);
     const stolenFromMe = ev.player !== 0;
-    const colour = raider ? raider.color : null;
+    const colour = knight ? knight.color : null;
 
     toggle(wrap, 'good', !stolenFromMe);
     wrap.style.setProperty('--rc', stolenFromMe ? '#ff8a6a' : '#ffc93c');
@@ -250,9 +250,9 @@ export function createRaidCue(root, state, game) {
       /* Somebody Knighted YOU. This is the whole reason the module exists, so
          it says the rule as well as the number: half of everything, gone. */
       const total = mine ? mine.total | 0 : 0;
-      setText(ttl, total > 0 ? 'Raided!' : 'Raider Sent');
+      setText(ttl, total > 0 ? 'Knight!' : 'Knight Sent');
       who.innerHTML = '';
-      who.appendChild(el('b', { text: raider ? raider.name : 'A rival' }));
+      who.appendChild(el('b', { text: knight ? knight.name : 'A rival' }));
       who.appendChild(el('span', {
         text: total > 0
           ? ' played a Knight — half of everything you held is gone'
@@ -271,7 +271,7 @@ export function createRaidCue(root, state, game) {
         total += l.total | 0;
         for (const r of RES) sum[r] = (sum[r] || 0) + (l.lost && l.lost[r] ? l.lost[r] | 0 : 0);
       }
-      setText(ttl, 'Raid Sent');
+      setText(ttl, 'Knight Sent');
       who.innerHTML = '';
       who.appendChild(el('span', { text: 'Your Knight takes half of everything from ' }));
       who.appendChild(el('b', { text: `all ${Math.max(1, all.length)} rivals` }));
@@ -281,7 +281,7 @@ export function createRaidCue(root, state, game) {
       hold = HOLD_GAIN;
     }
 
-    setText(foot, `The Raider now shuts down ${regionName(ev.tile)} · nothing comes off it`);
+    setText(foot, `The Knight now shuts down ${regionName(ev.tile)} · nothing comes off it`);
   }
 
   /**

@@ -29,7 +29,7 @@ import {
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
-import { raidersOn } from '../core/options.js';
+import { knightsOn } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
@@ -44,7 +44,7 @@ import {
 
 const RES_ICON_PX = 28;
 
-/* Built per match: the two Raider lines are removed outright when the option is
+/* Built per match: the two Knight lines are removed outright when the option is
    switched off before the draft, because a How to Play that explains a mechanic
    the match does not have is worse than one that says nothing about it. */
 const HOW_TO_ALL = [
@@ -56,17 +56,17 @@ const HOW_TO_ALL = [
   ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
   ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
   ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.'],
-  ['Cards', 'A Knight opens the whole board so you can pick the region the Raider shuts down. Road Building opens the map and lays two roads for nothing.'],
-  ['The Raider', 'Playing a Knight takes HALF of every resource off every rival at once — and it is gone, not stolen. The hex the Raider then sits on gives nothing to anybody but the player who sent it.'],
+  ['Cards', 'A Knight opens the whole board so you can pick the region it shuts down. Road Building opens the map and lays two roads for nothing.'],
+  ['The Knight', 'Playing one takes HALF of every resource off every rival at once — and it is gone, not stolen. The hex you then send it to gives nothing to anybody but you.'],
   ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
 ];
 
-const RAIDER_TOPICS = new Set(['Cards', 'The Raider']);
-const HOW_TO = raidersOn() ? HOW_TO_ALL : HOW_TO_ALL
-  .filter(([t]) => !RAIDER_TOPICS.has(t))
+const KNIGHT_TOPICS = new Set(['Cards', 'The Knight']);
+const HOW_TO = knightsOn() ? HOW_TO_ALL : HOW_TO_ALL
+  .filter(([t]) => !KNIGHT_TOPICS.has(t))
   .concat([
     ['Cards', 'Road Building opens the map and lays two roads for nothing. Victory Point scores the moment you draw it.'],
-    ['No Raiders', 'You switched Raiders off before the draft, so there are no Knight cards, nothing ever blocks a region, and Largest Army is out of play for everyone.']
+    ['No Knights', 'You switched Knights off before the draft, so there are no Knight cards, nothing ever blocks a region, and Largest Army is out of play for everyone.']
   ]);
 
 export function createHUD(root, state, game) {
@@ -245,7 +245,7 @@ export function createHUD(root, state, game) {
    *                        world, where the player is already looking
    *   what is left on it   the five bars under the resource pill
    *   worked out, back in  the recovery clock floating over the hex itself
-   *   the Raider is here   the Raider is standing on the hex, and the recovery
+   *   the Knight is here   the Knight is standing on the hex, and the recovery
    *                        badge wears the barred glyph
    *
    * `toast()` is kept as a no-op rather than deleted: it is called from about
@@ -295,7 +295,7 @@ export function createHUD(root, state, game) {
 
   /* A Knight is the one card that needs the whole board to play, so it gets its
      own standing call-to-action rather than hiding behind the CARDS button.
-     hud-knight.js announces the draw and owns the Raider placement gesture. */
+     hud-knight.js announces the draw and owns the Knight placement gesture. */
   const knightCue = createKnightCue(hud, state, game);
   game.knightCue = knightCue;
 
@@ -526,17 +526,17 @@ export function createHUD(root, state, game) {
   function refreshAwards() {
     awardLine(awRoad, LONGEST_ROAD_MIN, state.longestRoadHolder,
       state.players.map(p => p.longestRoadLen), 'road');
-    // With Raiders switched off before the draft there are no Knights in the
+    // With Knights switched off before the draft there are no Knights in the
     // deck, so Largest Army cannot be won by anybody. The line says so rather
     // than sitting at "Open · you 0 · +2 knights" for a whole match, inviting
     // the player to chase two points that are not on the table.
-    if (!raidersOn()) {
+    if (!knightsOn()) {
       if (awArmy.last !== 'off') {
         awArmy.last = 'off';
         toggle(awArmy.row, 'unheld', true);
         toggle(awArmy.row, 'ours', false);
         setText(awArmy.size, '—');
-        setText(awArmy.holder, 'Raiders off');
+        setText(awArmy.holder, 'Knights off');
         awArmy.holder.style.setProperty('--c', 'rgba(233,243,255,.5)');
         setText(awArmy.mine, 'not in play');
         setText(awArmy.need, '');

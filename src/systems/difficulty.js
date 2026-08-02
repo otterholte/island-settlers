@@ -42,7 +42,7 @@ export const DEFAULT_DIFFICULTY = 'easy';
  *                   instead of spending, and the biggest single brake on how
  *                   relentlessly a rival expands
  *   trade           willingness to route a purchase through a dock at all
- *   knight/knightAim/knightGap  how often the Raider flies and how well aimed
+ *   knight/knightAim/knightGap  how often the Knight flies and how well aimed
  *   endgame         whether the "one point from winning" VP rush applies
  *   award           multiplies the Longest Road / Largest Army chase
  *   setupNoise      randomness in the opening draft picks

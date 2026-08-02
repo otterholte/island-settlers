@@ -229,7 +229,7 @@ ok(s.buildings.size === 8, 'eight starting settlements', String(s.buildings.size
 ok(s.roadOwner.size === 8, 'eight starting roads', String(s.roadOwner.size));
 ok(s.players.every(p => scoreOf(s, p) === 2), 'everyone opens on 2 VP');
 ok(s.players.every(p => longestRoadFor(s, p.id) === 1), 'longest road starts at 1');
-ok(s.robberTile === DESERT.id, 'the Raider starts on the desert', String(s.robberTile));
+ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robberTile));
 
 // A pinned seed must reproduce a board exactly — that is what makes a bug
 // report reproducible.

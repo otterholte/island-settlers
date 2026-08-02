@@ -1,5 +1,5 @@
 /**
- * Island Settlers — road, village, city, raider and ghost geometry.
+ * Island Settlers — road, village, city, knight and ghost geometry.
  *
  * Every kit is authored in canonical local space so the runtime in
  * structures.js can drive it entirely through InstancedMesh matrices:
@@ -314,10 +314,10 @@ export function cityTintGeo() {
   return merge(parts);
 }
 
-/* ================================================================== raider */
+/* ================================================================== knight */
 
 /** Hooded figure with a torch, ~2.4 units tall, standing on a scorched rock. */
-export function raiderGeo() {
+export function knightGeo() {
   const parts = [
     // scorched stone underfoot
     place(gradient(new THREE.CylinderGeometry(0.72, 0.86, 0.26, 7), 0x2b2119, 0x4a3a2c), 0, 0.13, 0),
@@ -340,7 +340,7 @@ export function raiderGeo() {
 }
 
 /** Red ground vignette over the blocked tile — one flat annulus with a fade. */
-export function raiderVignetteGeo(radius) {
+export function knightVignetteGeo(radius) {
   const g = new THREE.RingGeometry(radius * 0.12, radius, 22, 2);
   const pos = g.attributes.position;
   const col = new Float32Array(pos.count * 3);
@@ -391,5 +391,5 @@ export default {
   roadBedGeo, roadPlankGeo, roadTrimGeo,
   villageBaseGeo, villageTintGeo,
   cityCoreGeo, cityWallGeo, cityTowerGeo, cityTintGeo,
-  raiderGeo, raiderVignetteGeo, ghostRoadGeo, ghostSettlementGeo
+  knightGeo, knightVignetteGeo, ghostRoadGeo, ghostSettlementGeo
 };

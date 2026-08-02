@@ -186,7 +186,7 @@ function card(E, t, ch, o) {
 
 /* ----------------------------------------------------------- event stingers */
 
-/** Low ominous war horn with a fifth above it. The Raider is coming. */
+/** Low ominous war horn with a fifth above it. The Knight is coming. */
 function horn(E, t, ch, o) {
   const k = cents(o.detune);
   const root = 78 * k;
@@ -246,7 +246,7 @@ function deny(E, t, ch, o) {
 
 /* ------------------------------------------------------------- extra colour */
 
-/** Ash and dust falling — used by the Raider shockwave. */
+/** Ash and dust falling — used by the Knight shockwave. */
 function rumble(E, t, ch, o) {
   const k = cents(o.detune);
   E.tone({ dest: ch, t, type: 'sine', f0: 54 * k, f1: 30 * k, glide: 0.6,

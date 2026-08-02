@@ -21,11 +21,11 @@
  *              played, so there is no way to end up holding one without
  *              knowing it.
  *   USE        tapping it (or the card in the hand) opens the FULL BOARD MAP in
- *              Raider mode. overview.js already lights every legal region and
+ *              Knight mode. overview.js already lights every legal region and
  *              carries a Confirm bar; all this adds is the plain instruction
  *              ("Choose a region to block"), the commit through rules.js, and
  *              the beat afterwards where the map stays up long enough to watch
- *              the Raider land on the hex you picked before it hands the board
+ *              the Knight land on the hex you picked before it hands the board
  *              back to third-person play.
  *
  * ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@
  *
  * A Knight now RAISES THE BOARD ITSELF. `AUTO_DELAY` after the card lands — long
  * enough for the "Knight Card!" plate to be read and not one beat longer — the
- * full map comes up in Raider mode with every legal region lit, and main.js
+ * full map comes up in Knight mode with every legal region lit, and main.js
  * holds the entire simulation still for as long as it is open (no clock, no
  * bots, no gathering, no settler). The match genuinely stops and asks.
  *
@@ -128,7 +128,7 @@ const CSS = `
 }
 `;
 
-/** How long the board stays up after Confirm so the Raider can be seen landing. */
+/** How long the board stays up after Confirm so the Knight can be seen landing. */
 const WATCH_MS = 1150;
 
 /**
@@ -262,8 +262,8 @@ export function createKnightCue(root, state, game) {
   }
 
   /**
-   * Open the FULL board map in Raider mode. overview.js computes the legal
-   * regions (every hex but the one the Raider already sits on) and pulses each
+   * Open the FULL board map in Knight mode. overview.js computes the legal
+   * regions (every hex but the one the Knight already sits on) and pulses each
    * of them; we supply the plain instruction and the commit.
    *
    * main.js holds the whole simulation still for as long as the map is open, so
@@ -290,13 +290,13 @@ export function createKnightCue(root, state, game) {
     }
 
     const opened = safe(() => ov.open('place-robber', {
-      title: 'Send the Raider',
+      title: 'Send the Knight',
       // The match is genuinely held still while this is up (main.js stops the
       // clock, the bots, the gathering and the settler), so say so.
       hint: 'Match paused · tap a region, tap it again to send',
       pickLabel: 'Choose a region',
       cancellable: true,
-      keepOpen: true,          // stay up long enough to watch the Raider land
+      keepOpen: true,          // stay up long enough to watch the Knight land
       onConfirm: tile => land(tile),
       onCancel() {
         // Cancelling is not a refusal of the card, only of this moment: the
@@ -313,7 +313,7 @@ export function createKnightCue(root, state, game) {
     // The player did not ask for this one, so say what just happened to their
     // screen as well as what to do with it.
     if (auto) {
-      shout('Send the Raider', '#ffc93c');
+      shout('Send the Knight', '#ffc93c');
       say('The match is paused — choose a region to block', 'info');
     } else {
       say('Pick the region to shut down', 'info');
@@ -333,20 +333,20 @@ export function createKnightCue(root, state, game) {
     if (!ok) { say('That region cannot be blocked', 'bad'); return false; }
 
     const where = regionName(tile);
-    shout('Raider Sent', '#ffc93c');
-    say(`The Raider shuts down ${where}`, 'good');
+    shout('Knight Sent', '#ffc93c');
+    say(`The Knight shuts down ${where}`, 'good');
     safe(() => g.camera && g.camera.shake && g.camera.shake(0.35));
     refresh(true);
 
     // Re-dress the same open panel as a plain view so the freshly baked board —
-    // Raider now sitting on the hex the player chose — is what they look at.
+    // Knight now sitting on the hex the player chose — is what they look at.
     // `keepOpen` has to be carried over: overview.commit() re-reads `opts`
     // AFTER this callback returns, and without it the panel we just re-dressed
     // would be closed out from under the beat it exists for.
     const ov = overview();
     safe(() => ov && ov.open('view', {
       keepOpen: true,
-      title: 'The Raider Lands',
+      title: 'The Knight Lands',
       hint: `Blocking ${where}`
     }));
     watching = WATCH_MS / 1000;

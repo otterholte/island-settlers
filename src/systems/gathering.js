@@ -84,12 +84,12 @@ export function createGathering(state, world) {
       return t >= 0 && canGatherTile(state, pid, t);
     },
 
-    /** Why not, if not: 'ok' | 'unowned' | 'raider' | 'empty' | 'none'. */
+    /** Why not, if not: 'ok' | 'unowned' | 'knight' | 'empty' | 'none'. */
     statusHere(pid = 0) {
       const t = api.tileUnder(pid);
       if (t < 0) return 'none';
       if (!playerOwnsTile(state, pid, t)) return 'unowned';
-      if (!canGatherTile(state, pid, t)) return 'raider';
+      if (!canGatherTile(state, pid, t)) return 'knight';
       if (isTileExhausted(t)) return 'empty';
       return 'ok';
     },

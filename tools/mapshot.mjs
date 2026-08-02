@@ -246,7 +246,7 @@ if (STAGE === 'intro') {
   await ev(`(()=>{const {state,game}=window.__ISLAND__;
     const L=window.__L__; return 1})()`);
   await ev(`import('/src/board/layout.js').then(m=>{window.__L__=m}).then(()=>1)`, true);
-  /* `where`: mine | other | raider | swept. Every case is produced the way the
+  /* `where`: mine | other | knight | swept. Every case is produced the way the
      game produces it — walk there, and for `swept` actually collect the field
      through rules.collectItem rather than poking a flag. */
   const stand = async where => ev(`(()=>{const {state,game}=window.__ISLAND__;
@@ -260,7 +260,7 @@ if (STAGE === 'intro') {
       : L.tiles.find(t=>t.resource&&owned.has(t.id));
     if(!pick) return 'no tile';
     me.x=pick.x; me.z=pick.z; me.vx=0; me.vz=0;
-    if(W==='raider'){ state.robberTile=pick.id; state.robberOwner=1; }
+    if(W==='knight'){ state.robberTile=pick.id; state.robberOwner=1; }
     if(W==='swept') for(const it of N.tileItems(pick.id)) N.collectItem(it,state.time,0);
     for(let i=0;i<20;i++){ game.gathering.update(1/60); game.hud.update(1/60); }
     const g=game.gathering;
@@ -271,7 +271,7 @@ if (STAGE === 'intro') {
       hidden:(document.querySelector('.prompt')||{className:''}).className.indexOf('hid')>=0};})()`);
   console.log('  MINE     ' + JSON.stringify(await stand('mine')));
   console.log('  UNOWNED  ' + JSON.stringify(await stand('other')));
-  console.log('  RAIDER   ' + JSON.stringify(await stand('raider')));
+  console.log('  KNIGHT   ' + JSON.stringify(await stand('knight')));
   console.log('  SWEPT    ' + JSON.stringify(await stand('swept')));
   console.log('  MINE     ' + JSON.stringify(await stand('mine')));
 

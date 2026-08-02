@@ -271,7 +271,7 @@ if (STAGE === 'intro') {
       if(!t) return 'could not claim a '+${JSON.stringify(TERRAIN)}+' hex';
       window.__T__=t;
       // The bots keep playing knights while the capture sleeps between frames;
-      // park the Raider somewhere harmless so the shot is about the field.
+      // park the Knight somewhere harmless so the shot is about the field.
       window.__UNBLOCK__=()=>{state.robberTile=L.DESERT.id; state.robberOwner=0; return 1;};
       window.__UNBLOCK__();
       const p=state.players[0];

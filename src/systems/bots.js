@@ -118,7 +118,7 @@ const RAMP_PANIC_SPAN = 50;     // ...reaching RAMP_CEILING this many seconds la
 
 /* How much of the distance to the target each knob is allowed to travel on the
    SOFT ramp. Anything the player can see and feel — how fast a rival crosses
-   the island, how often the Raider lands on them, how hard the trophies are
+   the island, how often the Knight lands on them, how hard the trophies are
    chased — barely moves. Everything that only makes a bot stop wasting its own
    time moves nearly all the way. Panic scales all of these toward 1. */
 const RAMP_WEIGHT = {

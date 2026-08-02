@@ -81,7 +81,7 @@ const RECIPES = {
 };
 const DEFAULT_KIND = 'wood';
 
-/* Ash + ember palette for the Raider shockwave. */
+/* Ash + ember palette for the Knight shockwave. */
 const ASH = [0x3a332c, 0x554c42, 0x241f1a, 0x6b6055];
 const EMBER = [0xff7a2c, 0xffb347, 0xff4d1a];
 

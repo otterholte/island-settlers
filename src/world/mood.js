@@ -44,7 +44,7 @@
  *
  *   tone  +1  yours — collect here, and it glows
  *   tone   0  neutral (the desert; nobody's crop)
- *   tone  -1  off limits — you own no corner of it, or the Raider has it shut
+ *   tone  -1  off limits — you own no corner of it, or the Knight has it shut
  *   spent  1  worked out; calm bare ground, NO glow, a countdown overhead
  *   flash  1  the moment it all comes back
  *
