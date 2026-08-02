@@ -245,6 +245,11 @@ export function createTradeCue(root, state, game) {
     if (next && (!cur || cur.key !== next.key)) {
       cur = next;
       dress(next);
+      // Position it BEFORE it is ever displayed. A chip shown at its default
+      // transform sits at the layer's origin with its own translate(-50%,-100%)
+      // on top, which puts it off the top-left corner of the screen for however
+      // long it takes the next line to run.
+      place();
       toggle(wrap, 'hid', false);
       toggle(wrap, 'out', false);
       toggle(wrap, 'prompt', true);
@@ -268,13 +273,31 @@ export function createTradeCue(root, state, game) {
       if (outT > 0.3) { toggle(wrap, 'hid', true); cur = null; }
     }
 
-    if (vis && cur) place();
+    // Re-placed on EVERY tick it is on screen, the fade-out included. A chip
+    // that is visible but not being positioned is a chip parked at whatever the
+    // last viewport made of it — and after a resize that is very often outside
+    // the new one, which is exactly what acceptance check 18 kept catching.
+    if (cur && !wrap.classList.contains('hid')) place();
+  }
+
+  /* A resize lands between frames, so correct on the event as well rather than
+     waiting for the next tick to notice. */
+  const onResize = () => { if (cur) place(); };
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
   }
 
   return {
     update,
     get node() { return wrap; },
-    destroy() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+    destroy() {
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('orientationchange', onResize);
+      }
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    }
   };
 }
 

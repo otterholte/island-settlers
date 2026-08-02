@@ -105,7 +105,23 @@ export function createBuildBar(state, game, hooks = {}) {
       for (const part of pr.parts) {
         const chip = c.chips[part.res];
         if (!chip) continue;
-        setText(chip.have, part.have > 99 ? '99' : part.have);
+        /*
+         * The `have` half of the fraction is CAPPED AT THE NEED.
+         *
+         * It is progress toward one purchase, not a bank statement — the
+         * resource pill across the top of the screen is the bank statement, and
+         * it is the most-read thing in the game. Once a part is covered, `4/4`
+         * says the true thing ("this part is paid") and the chip is already
+         * green; `12/4` says the same thing in two digits.
+         *
+         * Which matters because every cost is 1..4, so capping here makes the
+         * numerator PERMANENTLY one digit. The number column then never widens,
+         * and SETTLEMENT's four chips and CARD's three can never wrap an extra
+         * line — which is what was intermittently pushing the cost strip off the
+         * bottom of the viewport at both shipping sizes, depending only on
+         * whether the player happened to be holding ten of something.
+         */
+        setText(chip.have, Math.min(part.have, part.need));
         toggle(chip.node, 'met', part.met);
         toggle(chip.node, 'miss', !part.met);
       }

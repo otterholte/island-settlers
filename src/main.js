@@ -274,7 +274,7 @@ async function boot() {
     input.update();
 
     let steps = 0;
-    // THE BOARD MAP PAUSES THE MATCH.
+    // ANYTHING THAT OWNS THE SCREEN PAUSES THE MATCH.
     //
     // Opening the map is a thinking action — choosing where the Raider goes,
     // where a road runs, which corner to claim. Letting the clock and three
@@ -283,7 +283,33 @@ async function boot() {
     // So while the overview is up, the simulation holds: no match clock, no
     // bots, no gathering, no settler. Flow still ticks, because it is what
     // drives the panel that is open.
-    const mapPaused = !!(overview && overview.isOpen);
+    //
+    // THE TRADE SHEET NOW COUNTS TOO.
+    //
+    //   "Have the game pause for the bots in the background if you are actively
+    //    at a port or the trading post, so that I can't be stolen from while
+    //    actively trading."
+    //
+    // The board map has held the match since the Knight flow needed it, and the
+    // trade sheet — which is a modal that covers the island, takes the keyboard
+    // off the settler and cannot be reacted through — never did. So a rival
+    // could play a Knight and take half of everything the player owned while
+    // that player was mid-way through counting out a 4:1 exchange, with no
+    // warning they could act on and nothing they could have done about it. A
+    // sheet the player cannot see past should not be a window rivals can hit
+    // them through.
+    //
+    // Every in-play sheet is covered, not only the trade one: the CARDS sheet
+    // is the same kind of modal for the same reason. The results sheet is
+    // excluded by the phase test, because a finished match is already frozen by
+    // `matchflow.freezeMatch` and nothing here should second-guess that.
+    //
+    // Note this is the sheet being OPEN, not the settler standing near a post.
+    // The trade chip appears whenever you are on a post's own hex, and freezing
+    // three rivals every time somebody runs across the desert — or parks there
+    // — would be a very different feature.
+    const sheetPaused = !!(panels && panels.isOpen && state.phase === 'play');
+    const mapPaused = !!(overview && overview.isOpen) || sheetPaused;
 
     while (acc >= FIXED && steps++ < 4) {
       acc -= FIXED;

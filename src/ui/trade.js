@@ -74,6 +74,13 @@ export function createTradeSheet(state, game, opts = {}) {
   /* ---------------------------------------------------------------- markup */
 
   const where = el('span', { class: 'tr-where', text: 'Great Market' });
+  /* The match genuinely stops while this sheet is up — main.js holds the clock,
+     the bots, the gathering and the settler on any open in-play sheet, so a
+     rival cannot Knight the player out of half their pack mid-exchange. Said
+     out loud, because a safety the player cannot see is a safety they still
+     have to hurry against. */
+  const paused = el('span', { class: 'tr-paused' },
+    el('i'), el('span', { text: 'Match paused' }));
   const closeBtn = button('cbtn small ghost x', {
     'aria-label': 'Close', on: { click: () => requestClose() }
   }, el('span', { class: 'cb-ico', html: icon('close', 18) }));
@@ -120,7 +127,7 @@ export function createTradeSheet(state, game, opts = {}) {
 
   const node = el('div', { class: 'sheet trade hid' },
     el('div', { class: 'sheet-head' },
-      el('span', { class: 'sheet-title', text: 'Trade' }), where, closeBtn),
+      el('span', { class: 'sheet-title', text: 'Trade' }), where, paused, closeBtn),
     el('div', { class: 'trade-body' },
       el('span', { class: 'tr-cap give', text: 'You give' }),
       row,
