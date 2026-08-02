@@ -94,24 +94,33 @@ const TINTS = {
    The tree is untouched — the player likes the tree, it is the benchmark — and
    the other four have been walked up toward it until each one is a real
    two-unit object rather than a trinket in tall grass. */
-/* The ore is the odd one out: its GEOMETRY grew (a 2.3-unit-wide boulder in
-   place of a 1.3-unit stone with spires on it), so its instance scale comes
-   down to keep the widest of them from growing into the blue-noise gaps a
-   settler has to run down. Sunk deeper too — a boulder sits IN the ground. */
-/* Wheat is the other odd one out now: its GEOMETRY went from a 2.0-unit sheaf to
-   a 2.2-unit standing plant, and twenty-two of those on a 5-pip hex is a lot of
-   vertical. The instance scale comes down to match, which lands a plant between
-   2.0 and 2.4 units tall — a clear step over the sheep, the brick stack and the
-   ore boulder, a clear step under the harvestable tree, and narrow enough at the
-   base that the blue-noise lanes a settler runs down stay open. */
+/* The ore is the odd one out: its GEOMETRY is a 3.5-unit-long jagged oval in
+   place of a 2.3-unit-wide dome, so its instance scale comes down to keep the
+   longest of them from growing into the blue-noise gaps a settler has to run
+   down. The world footprint lands in the same 2.6..3.8 band the old boulder
+   occupied. Sunk deeper too — a lump of ore sits IN the ground. */
+/* WHEAT IS THE ONE THAT MOVED. "Make the wheat resources much larger, they're
+   too small."
+   The plant's own geometry grew from 2.12 to 2.72 units and got a good deal
+   fatter in leaf and ear (see `fieldWheat`), and the instance scale is walked UP
+   on top of that rather than down: 0.92..1.10 -> 1.12..1.26, which after the
+   per-item jitter below lands a takeable plant between 2.8 and 3.9 world units
+   tall against the 2.0..2.4 it used to stand at. That is a clear step over the
+   sheep (1.5), the brick stack (1.8) and the ore lump (1.5), a clear step under
+   the harvestable tree (3.1..4.2), and — the point of the exercise — big enough
+   that twenty-two of them on a 5-pip hex read as a crop from the play camera
+   instead of as wire stuck in sand. The plants brush each other at the leaves
+   and stay clear at the stalk, so the blue-noise lanes a settler sweeps down are
+   untouched: nothing about the item POSITIONS changed, only how much of the sky
+   each one fills. */
 const SCALE = {
   tree:    [1.10, 1.50],
-  wheat:   [0.92, 1.10],
+  wheat:   [1.12, 1.26],
   sheep:   [1.12, 1.34],
   claypit: [1.14, 1.40],
-  orerock: [0.98, 1.12]
+  orerock: [0.80, 0.92]
 };
-const SINK = { tree: 0.10, wheat: 0.04, sheep: 0.02, claypit: 0.10, orerock: 0.10 };
+const SINK = { tree: 0.10, wheat: 0.05, sheep: 0.02, claypit: 0.10, orerock: 0.14 };
 
 /* Per-item size jitter, folded on top of SCALE. The board hands out
    `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a

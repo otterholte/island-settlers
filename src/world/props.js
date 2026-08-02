@@ -149,35 +149,48 @@ const STATIC_KITS = {
  * accordingly; the forest, which the player says already reads correctly, is
  * untouched.
  *
- * The one that moved AGAIN is wheat, in the other direction. The item is a tall
- * STANDING PLANT now rather than a squat sheaf, and a tall narrow plant covers
- * far less ground than a fat one: twenty-two of them on a hex is a stand of
- * corn, not a field. So the decorative crop goes UP, 66 to 96, on a tighter
- * footprint — a knee-high version of the same plant packed into the blue-noise
- * lanes the harvestable ones leave. The hex has to read as a solid mass of gold
- * from the play camera and still have ground you can see to run down, and the
- * height difference between the two is what keeps "run at this" legible inside
- * it. The loose green grass goes almost entirely: stubble under a gold crop was
- * the one thing breaking the mass. */
+ * The one that moved AGAIN is wheat, and it has now moved twice. The item was a
+ * squat sheaf, then a 2.2-unit standing plant, and is now a 2.8-to-3.9-unit one
+ * — because "make the wheat resources much larger, they're too small" was the
+ * complaint about the last version. A plant that tall and that broad in the leaf
+ * covers a great deal more ground than the old one, so the decorative crop comes
+ * back DOWN, 96 to 62, and each tuft is half again the size it was. The hex has
+ * to read as a solid mass of gold from the play camera and still have ground you
+ * can see to run down; the mass now comes mostly from the takeable plants, which
+ * is the right way round — every tuft standing between them is a triangle spent
+ * hiding the thing the player came for. The loose green grass stays almost
+ * entirely gone: stubble under a gold crop was the one thing breaking the mass. */
 const RECIPE = {
   forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
                undergrowth: 12, grass: 26, rockSmall: 3 },
-  fields:    { wheat: 96, hay: 3, fence: 6, crate: 2, grass: 3,
+  fields:    { wheat: 84, hay: 3, fence: 6, crate: 2, grass: 3,
                rockSmall: 2, undergrowth: 2 },
   pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
                broadleaf: 2, hay: 2 },
   hills:     { clayWorks: 3, rockSmall: 8, boulder: 3, grass: 22,
                undergrowth: 5, crate: 2, deadwood: 1 },
-  // "Can you make the ore look more like large boulders."
+  // A MOUNTAIN IS A MINING HILL. NOTHING TREE-SHAPED STANDS ON IT.
   //
-  // Which means the mountain's own scenery has to get out of the way. The
-  // harvestable ore is now a low, wide, dark, ore-veined BOULDER, and it can
-  // only own that silhouette if the hex is not already carpeted in grey stones
-  // the same size. Decorative boulders 7 -> 3, loose rubble 12 -> 6, skyline
-  // spires 6 -> 4, and `boulder()` / `smallRock()` themselves are smaller than
-  // they were. What is left is a skyline and a scatter, not a rival.
-  mountains: { spire: 4, boulder: 3, rockSmall: 6, conifer: 2, coniferShort: 2,
-               grass: 10, timber: 2 },
+  //   "Also remove the trees from the ore hex. I want it to look more like a
+  //    mining hill."
+  //
+  // So the two conifers and two short pines are gone outright — not thinned,
+  // gone — and with them the last silhouette on the hex that said "forest".
+  // Nothing here is derived from a tree either: no deadwood (a stump and a
+  // fallen log are tree-shaped), no undergrowth, no broadleaf. What is left is
+  // rock and diggings — a skyline of spires, scree and rubble across the floor,
+  // the timbered portal with its rails and carts (placed procedurally below),
+  // stacked pit props, and a few tufts of scrub clinging on in the shale.
+  //
+  // The counts that were cut back when the ore became a boulder now go the other
+  // way, because the trees they were competing with have left: spires 4 -> 6,
+  // rubble 6 -> 12, scree stones and pit props up with them. The harvestable ore
+  // keeps its silhouette all the same — it is a LONG JAGGED OVAL now, and every
+  // decorative stone on the hex is a smooth pale dome (`boulder()` is built with
+  // `facetStone` at a fifth of the ore's roughness), so the two can share a hex
+  // without ever being mistaken for each other.
+  mountains: { spire: 6, boulder: 5, rockSmall: 12, timber: 3, crate: 2,
+               grass: 7 },
   desert:    { rockSmall: 8, boulder: 3, crate: 3, grass: 8, hay: 2,
                deadwood: 2, coniferShort: 1 }
 };
@@ -220,7 +233,7 @@ const TINTS = {
    forest tile read as scattered copses with lawn between them. */
 const FOOT = {
   conifer: 0.54, coniferShort: 0.48, broadleaf: 0.72, deadwood: 0.85,
-  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.15, hay: 0.62,
+  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.24, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
   // Every field item reserves a disc so no backdrop prop ever sprouts through
@@ -233,6 +246,20 @@ const FOOT = {
   item: 1.12
 };
 
+/*
+ * ...except on a FIELD, where the rule is exactly wrong.
+ *
+ * A sheep with a fern growing out of it is a bug. A wheat plant with shorter
+ * wheat growing between its leaves is a wheat field — the crop is supposed to be
+ * continuous, and the tall plants are told apart from the short ones by HEIGHT,
+ * not by a ring of bare sand around each one. With the harvestable plant now
+ * three and a half units tall the 1.12 exclusion disc was reserving about 110 of
+ * the hex's ~128 usable square units, so almost none of the decorative crop
+ * could be placed at all and the hex came back as tall plants standing on open
+ * beach. At 0.55 the ground closes up and the field reads as a field.
+ */
+const ITEM_FOOT = { fields: 0.55 };
+
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */
 const STYLE = {
   conifer:      { s: [0.95, 1.65], sink: 0.10, tilt: 0.16, yaw: true },
@@ -242,14 +269,18 @@ const STYLE = {
   undergrowth:  { s: [0.75, 1.45], sink: 0.05, tilt: 0.35, yaw: true },
   grass:        { s: [0.70, 1.50], sink: 0.04, tilt: 0.35, yaw: true },
   flower:       { s: [0.75, 1.35], sink: 0.04, tilt: 0.35, yaw: true },
-  // Kept under the harvestable plant on purpose: the tallest tuft tops out at
-  // about 1.2 units, the shortest takeable plant at 2.0. Height alone is what
-  // separates "run at this" from "scenery" on a full fields hex.
-  wheat:        { s: [0.86, 1.42], sink: 0.04, tilt: 0.25, yaw: true },
+  // Kept under the harvestable plant on purpose, and re-capped now that both
+  // grew: the tallest tuft tops out at about 1.8 units, the shortest takeable
+  // plant at 2.8. Height alone is what separates "run at this" from "scenery"
+  // on a full fields hex, so the gap between the two bands is never allowed to
+  // close — the tuft geometry went up by half and the scale range came down to
+  // pay for it.
+  wheat:        { s: [0.62, 1.02], sink: 0.04, tilt: 0.25, yaw: true },
   hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
   rockSmall:    { s: [0.55, 1.35], sink: 0.12, tilt: 0.85, yaw: true },
-  // Capped well under the harvestable ore boulder, which runs 0.98..1.18 on a
-  // geometry that is already wider than this one.
+  // Capped well under the harvestable ore lump, which runs 0.86..1.00 on a
+  // geometry two and a half times longer than this one. Smooth dome versus
+  // jagged oval does most of the separating; size does the rest.
   boulder:      { s: [0.62, 1.10], sink: 0.20, tilt: 0.65, yaw: true },
   spire:        { s: [0.75, 1.60], sink: 0.20, tilt: 0.45, yaw: true },
   clayWorks:    { s: [0.80, 1.25], sink: 0.08, tilt: 0.30, yaw: true },
@@ -272,8 +303,10 @@ function tiltAt(x, z, amount) {
 /** Rejection sampler: non-overlapping discs inside one hex, off the road strip. */
 function makePlacer(tile, rng) {
   const blocked = [];
+  const itemFoot = ITEM_FOOT[tile.terrain] !== undefined
+    ? ITEM_FOOT[tile.terrain] : FOOT.item;
   for (const it of tileItems(tile.id)) {
-    blocked.push({ x: it.x, z: it.z, r: FOOT.item });
+    blocked.push({ x: it.x, z: it.z, r: itemFoot });
   }
   // Keep the market clear — on EVERY tile, not just the desert it stands on.
   // The plaza floor reaches 6.6 and its steps 7.95, but the real problem was the

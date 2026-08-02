@@ -34,6 +34,17 @@ export const TERRAIN = {
 const FONT = `'Trebuchet MS','Avenir Next Condensed','Segoe UI',system-ui,sans-serif`;
 export const f = (w, s) => `${w} ${s}px ${FONT}`;
 
+/**
+ * Radius of a PLACED settlement's owner pip, in canvas css px.
+ *
+ * Exported because `overview.js` draws the same disc for the confirm preview,
+ * and because the player drew a hard line between the two things that used to
+ * scale together: "make the little gold circles a little smaller, but keep my
+ * circle of the settlement after I place it the same size." This is the one
+ * that does not move. A city is 1.22x it.
+ */
+export const pipRadius = proj => Math.max(11, proj.s * 1.05);
+
 export function createPainter(ctx, proj) {
   const PX = x => x * proj.s + proj.ox;
   const PY = z => z * proj.s + proj.oy;
@@ -754,8 +765,9 @@ export function createPainter(ctx, proj) {
   function drawBuildings(state) {
     // A step up from the old 0.9 / 9.5px floor. With the gold gone the disc is
     // the only thing carrying "a settlement stands here", so it has to be big
-    // enough to read at a glance on a 375px-tall phone.
-    const r = Math.max(11, proj.s * 1.05);
+    // enough to read at a glance on a 375px-tall phone. Frozen at the player's
+    // request — only the choose-a-spot target shrank.
+    const r = pipRadius(proj);
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
       const col = state.players[b.owner].color;
