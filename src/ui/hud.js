@@ -10,7 +10,8 @@
  * control carries `data-ui` so the joystick layer ignores touches on it.
  *
  * The HUD's whole job is legibility of progress:
- *   top-left     who you are and how far along the 12-point track
+ *   top-left     the scoreboard: your victory track, and who holds each award
+ *                with what it would take to take it off them
  *   top-centre   what you own, which regions still have it, and the one line
  *                that answers "what should I do right now?"
  *   top-right    standings, deliberately quiet
@@ -23,7 +24,7 @@
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL,
+  CARD_LABEL, LONGEST_ROAD_MIN, LARGEST_ARMY_MIN,
   canAfford, missingFrom
 } from '../core/constants.js';
 
@@ -35,6 +36,7 @@ import { createBuildBar } from './hud-build.js';
 import { createTradeCue } from './hud-trade.js';
 import { createKnightCue } from './hud-knight.js';
 import { createRoadCue } from './hud-road.js';
+import { createRaidCue } from './hud-raid.js';
 import {
   createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere,
   REGION_ONE
@@ -51,7 +53,9 @@ const HOW_TO = [
   ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
   ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
   ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.'],
-  ['Cards', 'A Knight opens the whole board so you can pick the region the Raider shuts down. Road Building opens the map and lays two roads for nothing.']
+  ['Cards', 'A Knight opens the whole board so you can pick the region the Raider shuts down. Road Building opens the map and lays two roads for nothing.'],
+  ['The Raider', 'Playing a Knight takes HALF of every resource off every rival at once — and it is gone, not stolen. The hex the Raider then sits on gives nothing to anybody but the player who sent it.'],
+  ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
 ];
 
 export function createHUD(root, state, game) {
@@ -63,7 +67,26 @@ export function createHUD(root, state, game) {
   const hud = el('div', { class: 'hud pre', id: 'hud' });
   const mk = (tag, cls, html) => el(tag, { class: cls, html });
 
-  /* --- top-left: settings, identity, victory track ---------------------- */
+  /* --- top-left: settings, the score, and the two awards -----------------
+   *
+   *   "I don't need to see the badge that says YOU in the top left corner, but
+   *    I would like to see somewhere what the longest road and largest army
+   *    size, as well as my current road size, so that if I don't have it I know
+   *    how many road pieces it will take me to get it."
+   *
+   * The identity card is GONE. It carried an avatar, the word "You", the word
+   * "BLUE" and a colour swatch — four different ways of saying the one thing
+   * the player already knew, in the most valuable corner of the screen. The
+   * standings on the right still name and colour every player, including you.
+   *
+   * What takes its place is the thing that corner should always have held: a
+   * scoreboard. The victory track survives (it was the one useful thing in the
+   * badge), and under it sit the two awards, each as one line — WHO holds it and
+   * at what size, YOUR own number, and, when it is not yours, exactly how many
+   * more roads or knights it takes to take it. That last figure is the whole
+   * request and it is not derivable from anything the HUD showed before: ties go
+   * to the incumbent, so taking Longest Road needs strictly MORE than the holder
+   * has, not equal to it. */
   const gearBtn = button('cbtn small ghost', {
     'aria-label': 'Settings', on: { click: () => toggleSettings() }
   }, mk('span', 'cb-ico', icon('gear', 22)));
@@ -75,27 +98,33 @@ export function createHUD(root, state, game) {
     const c = el('i', { class: i === VICTORY_POINTS - 1 ? 'goal' : '' });
     vpCells.push(c); vpTrack.appendChild(c);
   }
-  /* The identity chip carries the player's colour hard: a full-height banner
-     down its edge, a coloured frame and a coloured wash behind the name. The
-     whole point is that "me" and "the blue buildings out there" are obviously
-     the same thing, without a word of explanation. */
-  const idCard = el('div', {
-    class: 'idcard plate mine',
-    style: { '--me': me.color.css, '--mel': me.color.light }
-  },
-    el('span', { class: 'idc-banner' }),
-    el('span', { class: 'idc-av', html: avatar(me.color.css, me.color.light, 32) }),
-    el('div', { class: 'idc-txt' },
-      el('b', { class: 'idc-name', text: me.name }),
-      el('span', { class: 'idc-hue' }, el('i'), el('em', { text: me.color.key })),
-      vpTrack),
-    el('div', { class: 'idc-vp' }, iconEl('trophy', 20), vpNum)
-  );
 
+  /** One award line: icon, who holds it and at what size, your own standing. */
+  function awardRow(ico, label) {
+    const holder = el('b', { class: 'aw-holder', text: '—' });
+    const size = el('em', { class: 'aw-size', text: '0' });
+    const mine = el('span', { class: 'aw-mine', text: 'you 0' });
+    const need = el('span', { class: 'aw-need', text: '' });
+    const row = el('div', { class: 'aw-row' },
+      el('span', { class: 'aw-ico', html: icon(ico, 18) }),
+      el('span', { class: 'aw-body' },
+        el('span', { class: 'aw-top' },
+          el('span', { class: 'aw-lab', text: label }), size),
+        el('span', { class: 'aw-bot' }, holder, mine, need)));
+    return { row, holder, size, mine, need, last: '' };
+  }
+  const awRoad = awardRow('road', 'Longest Road');
+  const awArmy = awardRow('knight', 'Largest Army');
+
+  const scoreCard = el('div', { class: 'scorecard plate' },
+    el('div', { class: 'sc-vp' },
+      iconEl('trophy', 20), vpNum,
+      el('span', { class: 'sc-goal', text: `/ ${VICTORY_POINTS}` }), vpTrack),
+    el('div', { class: 'sc-awards' }, awRoad.row, awArmy.row));
   const timerTxt = el('b', { text: '0:00' });
   const timeChip = el('div', { class: 'timechip plate' }, iconEl('clock', 14), timerTxt);
   const tl = el('div', { class: 'hud-tl' },
-    el('div', { class: 'tl-row' }, gearBtn, idCard), timeChip);
+    el('div', { class: 'tl-row' }, gearBtn, timeChip), scoreCard);
 
   /* --- top-centre: resources, region availability, next step -------------
      One beveled pill in the prime slot: five 28px objects, 20px stroked
@@ -162,7 +191,31 @@ export function createHUD(root, state, game) {
   });
   const btnCards = mkCircle('cards', 'Cards', 'cream', () => game.openCards());
   const btnMap = mkCircle('map', 'Map', 'blue', () => game.openOverview('view'));
-  const br = el('div', { class: 'hud-br' }, btnMap.node, btnCards.node, btnBuild.node);
+  /*
+   * PAUSE.
+   *
+   *   "I also want a way to pause the game easily, and pausing the game should
+   *    still show me the full scores and board so I can review where we are in
+   *    the game and who's winning."
+   *
+   * All three of those things already existed and none of them were joined up.
+   * The board map ALREADY stops the match dead — main.js gates the clock, the
+   * bots, the gathering and the settler on `overview.isOpen` — and it ALREADY
+   * draws the whole island plus a per-player rail with score, settlements,
+   * cities, road length and knights. Nothing said so. The MAP button reads as
+   * "look at the map", the settings popover is titled "Paused" and pauses
+   * nothing at all, and the one place in the game that admits the match stops
+   * is a hint line inside the Knight flow.
+   *
+   * So this is a real control over the mechanism that was already there: a
+   * PAUSE button next to MAP, the P and Escape keys, and the board coming up
+   * titled "Paused" with the standings beside it. `paused` is only a label —
+   * the freeze itself remains `overview.isOpen`, so there is exactly one way
+   * for the match to be stopped and no way for the two to disagree.
+   */
+  const btnPause = mkCircle('pause', 'Pause', 'ghost', () => togglePause());
+  const br = el('div', { class: 'hud-br' },
+    btnPause.node, btnMap.node, btnCards.node, btnBuild.node);
 
   /* --- bottom-left: what the ground here is offering ---------------------- */
   let promptAction = null;
@@ -193,7 +246,7 @@ export function createHUD(root, state, game) {
 
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     el('div', { class: 'pop-head' },
-      el('span', { class: 'pop-title', text: 'Paused' }),
+      el('span', { class: 'pop-title', text: 'Settings' }),
       button('cbtn small ghost x', { 'aria-label': 'Close', on: { click: () => toggleSettings(false) } },
         mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
@@ -228,6 +281,11 @@ export function createHUD(root, state, game) {
      standing chip, and brings the placement map up by itself. */
   const roadCue = createRoadCue(hud, state, game);
   game.roadCue = roadCue;
+
+  /* A Knight takes half of everything from every rival at once, and until now
+     the game never said so — `playKnight` has always emitted a full per-player
+     breakdown that nothing read. hud-raid.js is that payload on screen. */
+  const raidCue = createRaidCue(hud, state, game);
 
   /* ---------------------------------------------------------------- toast */
   const liveToasts = [];
@@ -499,10 +557,114 @@ export function createHUD(root, state, game) {
     const vp = scoreOf(state, me);
     setText(vpNum, vp);
     for (let i = 0; i < vpCells.length; i++) toggle(vpCells[i], 'on', i < vp);
+    refreshAwards();
     refreshRanks();
     setBadge(btnBuild, buildBar.refresh());
     setBadge(btnCards, me.cards.length);
     if (force) { refreshRegions(); refreshPrompt(); refreshObjective(); }
+  }
+
+  /**
+   * The two awards, and the one number that is hard to work out by eye.
+   *
+   * Ties go to the INCUMBENT (`recomputeAwards` in rules.js keeps the holder on
+   * `>=`), so matching the leader's road length wins nothing — you need one
+   * more than they have. And with nobody holding it you still need the floor:
+   * four segments, two knights. Both cases collapse to the same expression,
+   * which is what the `need` figure is:
+   *
+   *     max(FLOOR, holderValue + 1) - yourValue
+   *
+   * Written out in words on the line rather than left to the player, because
+   * "how many road pieces will it take me to get it" was the actual question.
+   */
+  function awardLine(aw, floor, holderId, values, unit) {
+    const mine = values[0] | 0;
+    const held = holderId >= 0;
+    const holder = held ? state.players[holderId] : null;
+    const top = held ? values[holderId] | 0 : 0;
+    const need = Math.max(0, Math.max(floor, top + 1) - mine);
+    const key = `${holderId}|${top}|${mine}|${need}`;
+    if (key === aw.last) return;
+    aw.last = key;
+
+    setText(aw.size, held ? String(top) : '—');
+    toggle(aw.row, 'unheld', !held);
+    toggle(aw.row, 'ours', holderId === 0);
+    if (holder) {
+      setText(aw.holder, holderId === 0 ? 'YOURS' : holder.name);
+      aw.holder.style.setProperty('--c', holder.color.light);
+    } else {
+      setText(aw.holder, 'Open');
+      aw.holder.style.setProperty('--c', 'rgba(233,243,255,.55)');
+    }
+    setText(aw.mine, `you ${mine}`);
+    // The player already holding it does not need to be told how to take it.
+    setText(aw.need, holderId === 0 ? '' : `+${need} ${unit}${need === 1 ? '' : 's'}`);
+    toggle(aw.need, 'hid', holderId === 0);
+  }
+
+  function refreshAwards() {
+    awardLine(awRoad, LONGEST_ROAD_MIN, state.longestRoadHolder,
+      state.players.map(p => p.longestRoadLen), 'road');
+    awardLine(awArmy, LARGEST_ARMY_MIN, state.largestArmyHolder,
+      state.players.map(p => p.knightsPlayed), 'knight');
+  }
+
+  /* ---------------------------------------------------------------- pause */
+
+  let paused = false;
+
+  const mapOpen = () => !!(game.overview && game.overview.isOpen);
+  /** True only for the plain board view — a placement map is not a pause. */
+  const viewOpen = () => mapOpen() && game.overview.mode === 'view';
+
+  function togglePause(force) {
+    const want = force === undefined ? !paused : !!force;
+    if (want === paused) return paused;
+    if (want) {
+      if (state.phase !== 'play') return false;
+      // Something else already owns the screen — a trade sheet, a placement
+      // map, the results. Pausing on top of it would fight for the same panel.
+      if (mapOpen() || (game.panels && game.panels.isOpen)) return false;
+      toggleSettings(false);
+      const opened = game.openOverview('view', {
+        title: 'Paused',
+        hint: 'Nothing moves · Esc or P to resume',
+        keepOpen: true
+      });
+      if (opened === false) return false;
+      paused = true;
+    } else {
+      if (viewOpen()) game.closeOverview();
+      paused = false;
+    }
+    toggle(btnPause.node, 'on', paused);
+    return paused;
+  }
+
+  /**
+   * P toggles. Escape pauses, and un-pauses.
+   *
+   * Everything that could already own the keyboard is checked first and left
+   * alone: panels.js runs its own Escape handler for the trade, cards and
+   * results sheets, and a placement map has a Cancel button of its own that
+   * means something different from "resume".
+   */
+  function onPauseKey(ev) {
+    const code = ev.code || ev.key;
+    if (code !== 'KeyP' && code !== 'Escape') return;
+    if (game.panels && game.panels.isOpen) return;
+    if (mapOpen() && !viewOpen()) return;
+    if (state.phase !== 'play') return;
+    if (ev.preventDefault) ev.preventDefault();
+    // A map the player opened themselves is not a pause, but Escape closing it
+    // is still the least surprising thing that key can do.
+    if (!paused && viewOpen()) { game.closeOverview(); return; }
+    togglePause();
+  }
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('keydown', onPauseKey);
   }
 
   /* ----------------------------------------------------------------- loop */
@@ -514,6 +676,14 @@ export function createHUD(root, state, game) {
     // Safety net: if play started without a setupComplete event reaching us,
     // still reveal the controls rather than leaving the player with no HUD.
     if (state.phase === 'play' && hud.classList.contains('pre')) onPlayBegan();
+
+    // The map can be dismissed by its own close button, and the match ends on
+    // its own clock. Either way the pause label follows the real state rather
+    // than trying to be it.
+    if (paused && (!viewOpen() || state.phase !== 'play')) {
+      paused = false;
+      toggle(btnPause.node, 'on', false);
+    }
 
     slow += d;
     if (slow >= 0.1) { slow = 0; refreshAll(false); }
@@ -542,6 +712,7 @@ export function createHUD(root, state, game) {
     tradeCue.update(d);
     knightCue.update(d);
     roadCue.update(d);
+    raidCue.update(d);
   }
 
   function onPlayBegan() {
@@ -561,10 +732,19 @@ export function createHUD(root, state, game) {
     openSettings: () => toggleSettings(true),
     get knightCue() { return knightCue; },
     get roadCue() { return roadCue; },
+    /** Put the Knight's bill on screen. Driven by main.js's `knight` event. */
+    raid(ev) { raidCue.show(ev); },
+    get raidOpen() { return raidCue.open; },
+    togglePause,
+    get isPaused() { return paused; },
     destroy() {
+      if (typeof window !== 'undefined' && window.removeEventListener) {
+        window.removeEventListener('keydown', onPauseKey);
+      }
       tradeCue.destroy();
       knightCue.destroy();
       roadCue.destroy();
+      raidCue.destroy();
       if (hud.parentNode) hud.parentNode.removeChild(hud);
     }
   };

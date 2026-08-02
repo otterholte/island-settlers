@@ -516,8 +516,20 @@ export function playKnight(state, pid, targetTile) {
     const lost = {};
     let any = 0;
     for (const r of RES) {
-      // Rivals drop what they are carrying — half their stock, rounded up,
-      // so an early knight stings without ending anyone's match.
+      // Half of every resource type, ROUNDED UP, off every rival at once.
+      //
+      // The round-up lands on each of the five types independently, so the real
+      // bite is a good deal more than "half": a rival holding 5 of everything
+      // loses 3 of each and keeps 40%, and an odd single unit is always lost
+      // whole. Destroyed, not stolen — nothing is credited to `p`. There is no
+      // card-count threshold, and this is the ONLY mechanic in the game that
+      // takes back a resource somebody has already banked.
+      //
+      // The per-player breakdown below rides out on the `knight` event and is
+      // drawn by `ui/hud-raid.js`. For a long time nothing read it, and a bot
+      // Knighting the human out of most of their pack arrived as a horn and
+      // five counters quietly dropping — which left the player unsure the
+      // mechanic existed at all.
       const drop = Math.min(o.res[r], Math.ceil(o.res[r] / 2));
       o.res[r] -= drop; any += drop; lost[r] = drop;
     }

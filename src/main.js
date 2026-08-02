@@ -203,14 +203,30 @@ async function boot() {
           audio.sfx('card');
           if (ev.player === 0) hud.toast('Road Building — place two roads free');
           break;
-        case 'knight':
+        case 'knight': {
           structures.setRobber(ev.tile);
           audio.sfx('horn');
-          hud.announce(`${state.players[ev.player].name} sent the Raider!`,
-                       state.players[ev.player].color.css);
           effects.shockwave(ev.tile);
           state.players.forEach(p => avatars[p.id].setCarry(p.res));
+          // THE BILL. `playKnight` has always emitted a full per-player
+          // breakdown of what it took and nothing has ever read it, so a bot
+          // Knighting the human out of well over half their goods arrived as a
+          // horn and five counters quietly dropping. hud-raid.js puts the
+          // numbers on screen for a few seconds; the centre banner and the
+          // camera shake are there to make sure they are looked at.
+          const mine = (ev.losses || []).find(l => l.player === 0);
+          const tookFromMe = ev.player !== 0 && mine && mine.total > 0;
+          hud.raid(ev);
+          if (tookFromMe) {
+            audio.sfx('deny');
+            gameCamera.shake && gameCamera.shake(0.5);
+            hud.announce(`${state.players[ev.player].name} raided you!`, '#ff8a6a');
+          } else {
+            hud.announce(`${state.players[ev.player].name} sent the Raider!`,
+                         state.players[ev.player].color.css);
+          }
           break;
+        }
         case 'award':
           audio.sfx('award');
           hud.announce(

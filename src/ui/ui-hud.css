@@ -12,61 +12,65 @@
   opacity:0;transform:translateY(26px);pointer-events:none}
 .hud-bc,.hud-br,.hud-bl{transition:opacity .34s ease,transform .34s cubic-bezier(.2,.9,.3,1)}
 
-/* --- top-left: settings, identity, victory track ------------------------ */
+/* --- top-left: settings, clock, scoreboard ------------------------------- */
 .hud-tl{
   position:absolute;left:var(--gL);top:var(--gT);
   display:flex;flex-direction:column;gap:6px;align-items:flex-start;
 }
 .tl-row{display:flex;align-items:center;gap:8px}
 
-.idcard{
-  display:flex;align-items:center;gap:8px;height:48px;padding:0 11px 0 7px;
-  border-radius:13px;
+/* --- the scoreboard -------------------------------------------------------
+   Where the identity badge used to be. That chip said "You", in blue, next to
+   a blue avatar, under the word BLUE — the one fact on screen the player could
+   never be in doubt about, occupying the corner they look at first. This says
+   the things they cannot work out by looking: how close they are to winning,
+   who holds each award and at what size, and how many more roads or knights it
+   would take to take one off them. */
+.scorecard{
+  display:flex;flex-direction:column;gap:0;width:226px;padding:0;
+  border-radius:13px;overflow:hidden;
 }
-/* --- this is you, and this is your colour -------------------------------
-   The chip wears the player's colour the way their buildings do: a solid
-   banner down the leading edge, a coloured frame, a wash behind the name and
-   a matching ring on the portrait. Nothing else on screen is this colour
-   except the pieces they own. */
-.idcard.mine{
-  position:relative;overflow:hidden;padding-left:15px;
-  background:
-    linear-gradient(90deg,
-      color-mix(in srgb,var(--me,#3b7fd4) 42%,transparent) 0%,
-      color-mix(in srgb,var(--me,#3b7fd4) 12%,transparent) 46%,
-      rgba(12,32,58,0) 78%),
-    linear-gradient(180deg,rgba(20,48,80,.9),rgba(8,22,40,.92));
-  border:1.5px solid var(--mel,#7fb2f0);
-  box-shadow:
-    0 5px 5px -1px rgba(0,0,0,.45),0 9px 20px rgba(0,0,0,.34),
-    inset 0 2px 0 rgba(255,255,255,.24),
-    0 0 14px color-mix(in srgb,var(--me,#3b7fd4) 55%,transparent);
+.sc-vp{
+  display:flex;align-items:center;gap:6px;padding:7px 10px 8px;
+  border-bottom:1px solid rgba(255,255,255,.10);
+  background:linear-gradient(180deg,rgba(255,201,60,.14),rgba(255,201,60,0));
 }
-@supports not (color:color-mix(in srgb,red 50%,transparent)){
-  .idcard.mine{background:linear-gradient(180deg,rgba(20,48,80,.92),rgba(8,22,40,.94))}
-}
-.idc-banner{
-  position:absolute;left:0;top:0;bottom:0;width:8px;
-  background:linear-gradient(180deg,var(--mel,#7fb2f0),var(--me,#3b7fd4));
-  box-shadow:1px 0 0 rgba(4,12,24,.8),0 0 10px color-mix(in srgb,var(--me,#3b7fd4) 80%,transparent);
-}
-.idcard.mine .idc-av{position:relative;filter:drop-shadow(0 0 5px color-mix(in srgb,var(--me,#3b7fd4) 85%,transparent))}
-.idc-hue{display:flex;align-items:center;gap:4px}
-.idc-hue i{width:9px;height:9px;border-radius:3px;flex:0 0 auto;
-  background:var(--me,#3b7fd4);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 0 1.3px rgba(4,12,24,.85)}
-.idc-hue em{font:800 8.5px/1 var(--ff);font-style:normal;letter-spacing:.17em;
-  text-transform:uppercase;color:var(--mel,#7fb2f0);text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.idc-av{line-height:0;flex:0 0 auto}
-.idc-txt{display:flex;flex-direction:column;line-height:1;gap:3px;min-width:0}
-.idc-name{font:800 14px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#fff;
-  text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.idc-vp{display:flex;align-items:center;gap:4px;margin-left:1px;padding-left:9px;
-  border-left:1px solid rgba(255,201,60,.28)}
-.idc-vp .ico{line-height:0}
-.idc-vp b{font:800 22px/1 var(--ff);color:var(--gold);
+.sc-vp .ico{line-height:0;flex:0 0 auto}
+.sc-vp b{font:800 22px/1 var(--ff);color:var(--gold);
   -webkit-text-stroke:2px rgba(10,18,30,.85);paint-order:stroke fill;
   text-shadow:0 2px 4px rgba(0,0,0,.5)}
+.sc-goal{font:800 10px/1 var(--ff);letter-spacing:.08em;
+  color:rgba(255,222,140,.72);margin:4px 3px 0 -1px}
+.sc-vp .vp-track{margin-left:auto}
+
+.sc-awards{display:flex;flex-direction:column;gap:3px;padding:6px 9px 8px}
+.aw-row{display:flex;align-items:center;gap:7px}
+.aw-ico{line-height:0;flex:0 0 auto;opacity:.9}
+.aw-row.unheld .aw-ico{opacity:.42}
+.aw-row.ours .aw-ico{filter:drop-shadow(0 0 5px rgba(255,201,60,.85))}
+.aw-body{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto}
+.aw-top{display:flex;align-items:baseline;gap:5px}
+.aw-lab{font:800 8.5px/1 var(--ff);letter-spacing:.15em;text-transform:uppercase;
+  color:rgba(226,240,255,.62);white-space:nowrap}
+/* The holder's SIZE, which is the number to beat. Biggest thing on the line. */
+.aw-size{font:800 15px/1 var(--ff);font-style:normal;color:var(--gold);
+  margin-left:auto;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.aw-row.unheld .aw-size{color:rgba(233,243,255,.38)}
+.aw-bot{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+/* Coloured to the holder, the way every other reference to a player is. */
+.aw-holder{font:800 9.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--c,#e9f3ff);text-shadow:0 1px 2px rgba(0,0,0,.7);
+  overflow:hidden;text-overflow:ellipsis;max-width:92px}
+.aw-mine{font:800 9.5px/1 var(--ff);letter-spacing:.05em;
+  color:rgba(226,240,255,.66);margin-left:auto}
+/* The answer to "how many more?" — the whole reason this readout exists. */
+.aw-need{
+  font:800 9.5px/1 var(--ff);letter-spacing:.04em;color:#0e2338;
+  padding:3px 5px 4px;border-radius:5px;
+  background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  box-shadow:0 1px 0 rgba(0,0,0,.35);
+}
+.aw-need.hid{display:none}
 
 /* The road to twelve, drawn as twelve steps. The last cell is the finish
    post, outlined even when empty so the target is always visible. */
@@ -397,45 +401,61 @@
 }
 .tradecue.hid,.tradecue.off{display:none}
 
-/* The whole prompt: a 26px navy chip. Key cap, word, rate. Nothing else — the
-   sheet one keypress away carries the offer, and this only has to say that
-   there IS one and which key opens it. */
+/* The whole prompt: a navy chip carrying the key cap, the word, and the rate.
+   Nothing else — the sheet one keypress away carries the offer, and this only
+   has to say that there IS one and which key opens it.
+
+   IT IS NOW ROUGHLY HALF AGAIN THE SIZE IT WAS.
+
+     "Make the press enter to trade on the ports and trading post larger so
+      it's easier to see."
+
+   The chip was cut right back after an earlier pass called the old full trade
+   banner the loudest thing on the screen, and it was cut too far: 9px type at
+   .16em tracking, on a 26px plate, floating over a busy 3D island at play
+   camera distance. It was legible in a screenshot and easy to run straight past
+   in motion. The type is the fix — 9 -> 14px on the label and key cap, 11 -> 18
+   on the rate — with the plate and the key cap grown to hold it. That lands the
+   chip near 42px tall, which is about the size of a build card and roughly a
+   third of the old banner, so it is findable at a glance without going back to
+   being the thing you look at first. */
 .tc-card{
   position:relative;transform:translate(-50%,-100%);
-  display:flex;align-items:center;gap:8px;
-  padding:5px 9px 6px;border-radius:9px;
+  display:flex;align-items:center;gap:11px;
+  padding:8px 14px 9px;border-radius:12px;
   background:var(--navy);
-  border:1px solid rgba(255,255,255,.22);
-  box-shadow:0 3px 10px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.14);
+  border:1.5px solid rgba(255,255,255,.26);
+  box-shadow:0 4px 14px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.16);
   cursor:pointer;touch-action:manipulation;white-space:nowrap;
   backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
 }
-/* the plate is 26px tall; the tap target is 44 */
-.tc-card::after{content:'';position:absolute;left:-10px;right:-10px;top:-9px;bottom:-9px}
+/* the plate now clears 44px on its own, so the pad is only a small margin */
+.tc-card::after{content:'';position:absolute;left:-8px;right:-8px;top:-6px;bottom:-6px}
 .tc-card:active{transform:translate(-50%,-100%) translateY(2px);
-  box-shadow:0 1px 5px rgba(0,0,0,.4)}
+  box-shadow:0 1px 6px rgba(0,0,0,.44)}
 
-.tc-cta{display:flex;align-items:center;gap:6px;
-  font:800 9px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
-  color:rgba(233,243,255,.92)}
+.tc-cta{display:flex;align-items:center;gap:9px;
+  font:800 14px/1 var(--ff);letter-spacing:.13em;text-transform:uppercase;
+  color:rgba(238,246,255,.96)}
 .tc-cta i{font-style:normal}
 .tc-key{
-  padding:2px 5px 3px;border-radius:4px;
-  font:800 9px/1 var(--ff);letter-spacing:.06em;color:#12304f;
-  background:rgba(240,247,255,.92);
+  padding:4px 8px 5px;border-radius:6px;
+  font:800 14px/1 var(--ff);letter-spacing:.05em;color:#12304f;
+  background:rgba(244,250,255,.95);
+  box-shadow:0 2px 0 rgba(0,0,0,.28);
 }
 .tc-rate{
-  padding-left:8px;border-left:1px solid rgba(255,255,255,.2);
-  font:800 11px/1 var(--ff);letter-spacing:.02em;color:var(--gold);
+  padding-left:12px;border-left:1.5px solid rgba(255,255,255,.24);
+  font:800 18px/1 var(--ff);letter-spacing:.02em;color:var(--gold);
 }
 
 /* the tie to the building underneath, one small triangle */
-.tc-pin{position:absolute;left:-5px;top:-1px;width:0;height:0;
-  border-left:5px solid transparent;border-right:5px solid transparent;
-  border-top:6px solid rgba(12,32,58,.86)}
+.tc-pin{position:absolute;left:-6px;top:-1px;width:0;height:0;
+  border-left:6px solid transparent;border-right:6px solid transparent;
+  border-top:8px solid rgba(12,32,58,.86)}
 
 /* a dock is the same chip; only the rate changes */
-.tradecue.port .tc-card{padding:4px 8px 5px}
+.tradecue.port .tc-card{padding:7px 13px 8px}
 
 /* entrance: a short rise and a fade. No shimmer, no pulse, no fanfare. */
 .tradecue.in .tc-card{animation:tcIn .2s ease}
@@ -518,11 +538,11 @@
    never does. Every one of these selectors is scoped to `.hud` so it beats
    ui.css's older phone block, which is imported after this file. */
 @media (max-height:400px),(max-width:760px){
-  .hud .idcard{height:44px;max-width:none;padding:0 9px 0 6px;gap:6px}
-  .hud .idc-name{font-size:12.5px}
-  .hud .idc-txt{gap:3px}
-  .hud .idc-vp{padding-left:7px;gap:3px}
-  .hud .idc-vp b{font-size:20px}
+  .hud .scorecard{width:196px}
+  .hud .sc-vp{padding:5px 8px 6px;gap:5px}
+  .hud .sc-vp b{font-size:20px}
+  .hud .aw-size{font-size:14px}
+  .hud .sc-awards{padding:5px 7px 6px}
   .hud .vp-track i{width:3px;height:7px}
   .hud .vp-track i.goal{width:4px;height:10px}
 
@@ -572,16 +592,13 @@
   .hud .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
   .hud .ann-txt{font-size:22px}
 
-  .hud .idcard.mine{padding-left:13px}
-  .hud .idc-banner{width:6px}
-  .hud .idc-hue i{width:8px;height:8px}
-  .hud .idc-hue em{font-size:8px;letter-spacing:.13em}
 
-  /* The banner keeps its objects at full size; the chrome around them gives. */
-  .hud .tc-card{padding:4px 8px 5px;gap:7px}
-  .hud .tc-cta{font-size:8.5px;letter-spacing:.13em;gap:5px}
-  .hud .tc-key{font-size:8.5px;padding:2px 4px 3px}
-  .hud .tc-rate{font-size:10px;padding-left:7px}
+  /* The chip gives up its chrome on a small screen, never its type: the whole
+     point of this pass was that the words were too small to catch. */
+  .hud .tc-card{padding:6px 11px 7px;gap:9px}
+  .hud .tc-cta{font-size:12.5px;letter-spacing:.11em;gap:7px}
+  .hud .tc-key{font-size:12.5px;padding:3px 6px 4px}
+  .hud .tc-rate{font-size:16px;padding-left:9px}
 }
 
 /* Very short viewports: reclaim vertical space without shrinking any object.

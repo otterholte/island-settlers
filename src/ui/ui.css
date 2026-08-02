@@ -496,14 +496,9 @@
 @media (max-height:400px),(max-width:760px){
   :root{--edge:9px}
 
-  /* top-left stacks so the identity chip never reaches the resource pill */
-  .tl-row{flex-direction:column;align-items:flex-start;gap:6px}
-  .idcard{height:44px;max-width:150px;padding:0 9px 0 6px;gap:6px}
-  .idc-name{font-size:12.5px}
-  .idc-sub{display:none}
-  .idc-vp{padding-left:7px;gap:3px}
-  .idc-vp b{font-size:20px}
-  .idc-vp i{font-size:10px}
+  /* The gear and the clock stay side by side — together they are narrower than
+     the scoreboard under them, so there is nothing to stack out of the way. */
+  .tl-row{flex-direction:row;align-items:center;gap:8px}
   .pop{top:calc(var(--gT) + 104px)}
 
   .resbar{height:42px;padding:0 3px}
@@ -560,10 +555,12 @@
   .rr-vp{font-size:17px}
   .rr-stats{margin-top:4px;gap:3px}
   .rr-stats i{padding:1px 4px}
-  /* Four 20px stat chips will not sit on one 144px line, and two wrapped rows
-     per player overflow a 375px-tall rail. Awards only earn their space once
-     someone actually holds them. */
-  .rr-stats i.aw:not(.won){display:none}
+  /* Four 20px chips will not sit on one 144px line, so the ICONS come down
+     rather than the chips coming out. They used to be hidden until somebody
+     held the award, which is exactly backwards on the screen a player opens to
+     work out how far off holding it they are. */
+  .rr-stats i svg{width:16px;height:16px}
+  .rr-stats i em{font-size:12px}
   .rs-side{flex-basis:180px}
   .rs-title{font-size:27px}
   .dcard{flex-basis:108px;width:108px;min-height:140px}
@@ -601,4 +598,20 @@
 
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.001s !important;transition-duration:.06s !important}
+}
+
+/* The pause screen has to keep the standings on ANY screen, so the rail stops
+   disappearing below 560px and goes to a 126px column instead. Everything in
+   it gives a little; nothing in it is dropped. */
+@media (max-width:560px){
+  .ov-rail{width:126px;padding:5px;gap:4px}
+  .rr{padding:4px 5px 4px 10px}
+  .rr-av svg{width:22px;height:22px}
+  .rr-name{font-size:10.5px}
+  .rr-col{display:none}
+  .rr-vp{font-size:15px}
+  .rr-stats{margin-top:3px;gap:2px}
+  .rr-stats i{padding:1px 3px;gap:2px}
+  .rr-stats i svg{width:14px;height:14px}
+  .rr-stats i em{font-size:11px}
 }

@@ -353,8 +353,14 @@ export function createOverview(root, state, game) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lastW = w; lastH = h;
     }
-    // Matches the .ov-rail widths in ui.css (186px, 158px on compact phones).
-    const railW = w > 560 ? (w <= 760 ? 158 : 186) : 0;
+    // Matches the .ov-rail widths in ui.css (186px, 158px compact, 126px tiny).
+    //
+    // The rail used to vanish entirely under 560px, which was fine when this
+    // panel was only ever a map. It is now also the PAUSE screen — "pausing the
+    // game should still show me the full scores and board" — and a pause that
+    // drops the scores on a phone is half a feature. It gets narrower instead
+    // of going away; the board keeps the rest.
+    const railW = w > 760 ? 186 : (w > 560 ? 158 : 126);
 
     // The framed map area: everything the board may occupy. The rail sits
     // outside it, so the frame never runs underneath the player list.
@@ -399,7 +405,7 @@ export function createOverview(root, state, game) {
       ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
       oy: f.y + padT + availH / 2 - BOUNDS.cz * s
     });
-    toggle(rail, 'hid', railW === 0);
+    toggle(rail, 'hid', false);
   }
 
   /* ------------------------------------------------------------ placement

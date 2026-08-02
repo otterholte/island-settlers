@@ -119,8 +119,14 @@ export const CARD_LABEL = {
   roadBuilding: 'Road Building',
   victoryPoint: 'Victory Point'
 };
+/* The Knight line used to read "rivals drop their carried resources", which is
+   wrong in the one way that matters: there is no separate carried pool in this
+   game, so what a Knight takes is half of every rival's whole stockpile —
+   `ceil(n/2)` per resource type, which lands nearer 57% of a full pack — and it
+   is destroyed rather than stolen. The player had to ask whether the game did
+   this at all, so the card now says exactly what it does before it is played. */
 export const CARD_BLURB = {
-  knight: 'Rivals drop their carried resources. Move the Raider to block a region.',
+  knight: 'Takes HALF of every resource from every rival. Then move the Raider to shut down a region.',
   roadBuilding: 'Place two roads for free.',
   victoryPoint: '+1 Victory Point, immediately.'
 };

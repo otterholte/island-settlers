@@ -11,11 +11,23 @@
  * had already called visually busy, and it followed them around a whole hex of
  * grass before they had decided to trade at all.
  *
- * What is left is one small navy chip: the key to press, the word, and the
- * rate. Roughly 26px tall. It appears only when the settler is standing ON the
- * post's own hex — the desert tile that carries the Great Market, or the
- * coastal tile that owns one of the player's docks — and it says nothing about
- * the deal, because the sheet one keypress away says all of it properly.
+ * What is left is one navy chip: the key to press, the word, and the rate. It
+ * appears only when the settler is standing ON the post's own hex — the desert
+ * tile that carries the Great Market, or the coastal tile that owns one of the
+ * player's docks — and it says nothing about the deal, because the sheet one
+ * keypress away says all of it properly.
+ *
+ * The cut went one stop too far, though, and the chip is now about half again
+ * the size it shrank to:
+ *
+ *   "Make the press enter to trade on the ports and trading post larger so it's
+ *    easier to see."
+ *
+ * At 9px type on a 26px plate it was legible in a screenshot and easy to run
+ * straight past in motion, over a 3D island at play-camera distance. The type
+ * carries the fix (9 -> 14px, rate 11 -> 18px, see `.tc-*` in ui-hud.css) and
+ * the plate grew to hold it — about 42px tall now, a third of the old banner.
+ * It also floats a little higher, because a taller chip hangs lower.
  *
  * Pure DOM. The world-to-screen projection is done by hand off the camera's
  * two matrices so this file stays free of a three.js import.
@@ -28,10 +40,12 @@ import { nearestPortFor } from '../core/rules.js';
 import { MARKET, DESERT, edges, tileAt } from '../board/layout.js';
 import { el, setText, toggle } from './dom.js';
 
-/* How high above the landmark the chip floats, in world units. Lower than the
-   old banner: it is a fifth of the size and does not need the clearance. */
-const MARKET_LIFT = 5.4;
-const PORT_LIFT = 4.2;
+/* How high above the landmark the chip floats, in world units. Still well under
+   the old banner, but up a notch with the chip's own height: the card hangs
+   DOWNWARD from this point (`translate(-50%,-100%)`), so growing it by 16px
+   pushed its bottom edge that much closer to the roof it is labelling. */
+const MARKET_LIFT = 6.1;
+const PORT_LIFT = 4.9;
 
 /** Don't re-chime for the same place more often than this. */
 const CHIME_GAP = 8;

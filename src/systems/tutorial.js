@@ -317,7 +317,9 @@ export function createTutorial(state, game, deps = {}) {
         title: 'That is a point',
         text: () => `You are on ${scoreOf(state, me)} points. A city is worth 2, and the first settler to ${VICTORY_POINTS} takes the island.`,
         live: true,
-        dom: ['.idcard'],
+        // The identity badge this used to point at is gone; the victory track
+        // it carried now lives at the top of the scoreboard in its place.
+        dom: ['.sc-vp', '.scorecard'],
         action: 'Got it'
       },
       {
