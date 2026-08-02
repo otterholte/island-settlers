@@ -275,20 +275,12 @@ function askForTutorial() {
 
 /** The whole opening screen as one detached node. */
 export function buildIntro(state, onBegin) {
-  // The rivals are deliberately absent. `cards` stays an array so flowUI.js's
-  // staggered reveal keeps working without knowing how many there are.
-  const me = state.players[0] || { color: { css: '#3b7fd4', light: '#7fb2f0' } };
-  const cards = [
-    el('div', {
-      class: 'mf-cmp you',
-      style: { '--c': me.color.css, '--cl': me.color.light }
-    },
-      el('span', { class: 'mf-c-band' }),
-      el('span', { class: 'mf-c-av', html: avatar(me.color.css, me.color.light, 34) }),
-      el('div', { class: 'mf-c-txt' },
-        el('b', { class: 'mf-c-name', text: 'You' }),
-        el('span', { class: 'mf-c-desc', text: 'Your island to claim' })))
-  ];
+  // No competitor cards at all — not the rivals, and not the player's own.
+  // The title, the goal and the two buttons say everything this screen needs
+  // to, and the empty band lets them breathe. `cards` stays an array so
+  // flowUI.js's staggered reveal keeps working without knowing how many
+  // there are.
+  const cards = [];
 
   /* ----------------------------------------------------------- difficulty */
   // One chunky, obviously-tappable option per rung of DIFFICULTY_ORDER — four
@@ -301,11 +293,13 @@ export function buildIntro(state, onBegin) {
     const level = LEVELS[key];
     const b = button('cream mf-diff', {
       'data-level': key,
+      // The blurb stays on the accessible label, where a screen reader can
+      // still reach it, but the button itself is just the name. Four rungs of
+      // two-line copy was more words than the choice deserved.
       'aria-label': `${level.label} — ${level.blurb}`,
       on: { click: () => pick(key) }
     },
-      el('b', { class: 'mf-d-name', text: level.label }),
-      el('span', { class: 'mf-d-sub', text: level.blurb }));
+      el('b', { class: 'mf-d-name', text: level.label }));
     return b;
   });
 

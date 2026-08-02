@@ -1,147 +1,42 @@
 {
-  "at": "2026-08-02T00:52:03.196Z",
+  "at": "2026-08-02T01:43:52.238Z",
   "w": 960,
   "h": 444,
   "results": [
     {
-      "id": 1,
-      "name": "Match launches with no uncaught exceptions and no broken shaders",
-      "pass": true,
-      "evidence": "exceptions=0 consoleErrors=1 shaderWarnings=0\nprograms=48 drawCalls=51 triangles=92793\nERR: [intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus",
-      "ms": 16257
-    },
-    {
-      "id": 2,
-      "name": "Opening draft places 8 settlements + 8 roads and reaches phase=play",
-      "pass": true,
-      "evidence": "phase=play settlements=8 roads=8 humanPicksViaUI=4 draftTime=23.3s\nper-player: 2s/2r 2s/2r 2s/2r 2s/2r\nhuman settlement #22 (Confirm button) | human road #27 (Confirm button) | human settlement #27 (Confirm button) | human road #33 (Confirm button)",
-      "ms": 63
-    },
-    {
-      "id": 3,
-      "name": "All five resources can be gathered on contact, from hexes you own",
-      "pass": true,
-      "evidence": "wood: 3->5 (+2) in ONE frame on contact — item 24, hex 1 (4 pips, 19 items, 17 left), hex claimed with 5 roads + a settlement\nbrick: 3->5 (+2) in ONE frame on contact — item 48, hex 2 (5 pips, 22 items, 20 left), hex claimed with 0 roads + a settlement\nwool: 3->4 (+1) in ONE frame on contact — item 168, hex 7 (2 pips, 13 items, 12 left), hex already ours\nwheat: 2->3 (+1) in ONE frame on contact — item 144, hex 6 (1 pips, 10 items, 9 left), hex already ours\nore: 2->3 (+1) in ONE frame on contact — item 0, hex 0 (3 pips, 16 items, 15 left), hex claimed with 4 roads + a settlement",
-      "ms": 11
-    },
-    {
-      "id": 4,
-      "name": "The hex number means two things: how many items it holds and how fast they come back",
-      "pass": true,
-      "evidence": "5-pip hex 2 (brick): 22 items (declared 22), all 22 swept in 14 contacts -> exhausted=true, back in 14s of 14s = 1.571 items/s sustained\n1-pip hex 5 (wood): 10 items (declared 10), all 10 swept in 10 contacts -> exhausted=true, back in 26s of 26s = 0.385 items/s sustained\nmore items on the better hex: true (22 vs 10) · faster regrowth: true (14s vs 26s) · 4.08x sustained supply\nno swing speed involved: every item came off in a single frame of contact",
-      "ms": 7
-    },
-    {
-      "id": 5,
-      "name": "Trading post trades at 4:1 and requires physical proximity",
-      "pass": true,
-      "evidence": "at market (Great Market): trade ok=true ratio=4 wood-4 ore+1\nfar from any post (spot=null): ok=false reason=\"Head to the Great Market or one of your docks to trade\" resourcesMoved=false\ntrade sheet forced open while far: opened=true confirmGreyed=true arrowsLive=[false,false] wood0 ore+0\nfull human loop at the market: prompt=\"EnterTrade4:1\" -> sheet opened=true, Trade enabled=true (\"Give 4 Wood for 1 Ore\"), wood-4 ore+1, sheet closed=false",
-      "ms": 52
-    },
-    {
       "id": 6,
       "name": "Ports unlock on a coastal build and then trade at 3:1 / 2:1",
-      "pass": false,
-      "evidence": "ports held before build: [4,0,1] -> after: [4,0,1,5]\nport 5 special/wood: 1 roads laid to reach it, declared 2:1, quoted 2:1, charged 2:1, spent 2 got 1, unlocked=true (held before=false)\nport null: NOT BUILT — no road route to a generic dock",
-      "ms": 1286
+      "pass": true,
+      "evidence": "ports held before build: [4] -> after: [4,3,5]\nport 3 special/wheat: 3 roads laid to reach it, declared 2:1, quoted 2:1, charged 2:1, spent 2 got 1, unlocked=true (held before=false)\nport 5 generic: 1 roads laid to reach it, declared 3:1, quoted 3:1, charged 3:1, spent 3 got 1, unlocked=true (held before=false)",
+      "ms": 18003
     },
     {
       "id": 7,
       "name": "Roads follow legal connection rules; illegal placements are rejected",
-      "pass": false,
-      "evidence": "disconnected edge #0 -> false (charged=false)\nalready-mine edge #49 -> false; rival's edge #49 -> false\nlegal edge #2 -> false, cost {\"wood\":0,\"brick\":0} vs {\"wood\":4,\"brick\":4}\nvia HUD build card -> overview -> Confirm: placed=false cost=null",
-      "ms": 23
+      "pass": true,
+      "evidence": "disconnected edge #1 -> false (charged=false)\nalready-mine edge #57 -> false; rival's edge #57 -> false\nlegal edge #7 -> true, cost {\"wood\":4,\"brick\":4} vs {\"wood\":4,\"brick\":4}\nvia HUD build card -> overview -> Confirm: placed=true cost={\"wood\":4,\"brick\":4}",
+      "ms": 57
     },
     {
       "id": 8,
       "name": "Settlements obey the distance rule and require a connected road",
-      "pass": false,
-      "evidence": "beside my own settlement #22 -> corner #23 rejected=true\nno connected road (#5, distanceOk=true, roadTouching=false) -> rejected=true\nlegal corner #16 accepted=false, charged {\"wood\":0,\"brick\":0,\"wheat\":0,\"wool\":0}\nits neighbour #15 now rejected=true",
-      "ms": 27
+      "pass": true,
+      "evidence": "beside my own settlement #20 -> corner #12 rejected=true\nno connected road (#4, distanceOk=true, roadTouching=false) -> rejected=true\nlegal corner #8 accepted=true, charged {\"wood\":4,\"brick\":4,\"wheat\":3,\"wool\":3}\nits neighbour #7 now rejected=true",
+      "ms": 11
     },
     {
       "id": 9,
       "name": "Cities upgrade only the owner's own settlements",
       "pass": true,
-      "evidence": "rival settlement #30 -> false (still a settlement)\nempty corner #0 -> false\nmy settlement #22 -> true, now a city, charged {\"wheat\":4,\"ore\":6} vs {\"wheat\":4,\"ore\":6}\nupgrading the same city again -> false; cities=1",
-      "ms": 5
+      "evidence": "rival settlement #43 -> false (still a settlement)\nempty corner #1 -> false\nmy settlement #20 -> true, now a city, charged {\"wheat\":4,\"ore\":6} vs {\"wheat\":4,\"ore\":6}\nupgrading the same city again -> false; cities=1",
+      "ms": 9
     },
     {
       "id": 10,
       "name": "All three development cards work (Knight, Road Building, Victory Point)",
-      "pass": false,
-      "evidence": "drew 8 cards: {\"knight\":5,\"victoryPoint\":2,\"roadBuilding\":1}\nKNIGHT  played=true raider->tile 0 (owner 0), knightsPlayed 0->1, rival stock [15,29,14]->[6,14,5]\nROADBLD played=true freeRoads=2 placed=2 roads 18->18 paid={\"wood\":0,\"brick\":0}\nVICTORY vpCards=2, +1 on draw (instant)",
-      "ms": 678
-    },
-    {
-      "id": 11,
-      "name": "The Raider blocks the region for everyone except the player who moved it",
       "pass": true,
-      "evidence": "Raider moved by player 1 onto hex 3 (robberOwner=1)\nowns a corner there: [false,true,false,true]  canGatherTile: [false,true,false,false]\nsweeping the whole hex — mover +22 wool; player 3, who also owns a corner, +0 (0 blocked events); a player who owns nothing there +0",
-      "ms": 432
-    },
-    {
-      "id": 20,
-      "name": "A hex you own nothing next to yields absolutely nothing",
-      "pass": true,
-      "evidence": "hex 16 (ore) has no building of anyone's on it\nstood on it for 3s (gained 0) then walked over all 13 of its items: gained 0 resources in total\nthe field is untouched: 13/13 items still standing (nothing was consumed and thrown away)\n2 \"blocked\" events told the player why\nthen a settlement went up on corner 42: playerOwnsTile=true, canGatherTile=true, and the very next contact gave +1 ore",
-      "ms": 3
-    },
-    {
-      "id": 12,
-      "name": "Bots gather, trade, build and score, with no resource gained outside a rules call",
-      "pass": true,
-      "evidence": "45s of simulated play (phase=play); events {\"build\":19,\"setupComplete\":1,\"blocked\":18,\"gained\":94,\"exhausted\":1}\n  You   gathered=0 built=4 trades=0 cards=0 roads=2 2S/0C vp=2\n  Alex  gathered=31 built=5 trades=0 cards=0 roads=3 2S/0C vp=2\n  Maya  gathered=32 built=5 trades=0 cards=0 roads=2 1S/1C vp=3\n  Finn  gathered=31 built=5 trades=0 cards=0 roads=2 1S/1C vp=3\nunexplained resource gains: 0\ntrades observed in this window: no (see simulate.mjs — ~0.1/bot/match)",
-      "ms": 531
-    },
-    {
-      "id": 13,
-      "name": "Longest Road can change hands",
-      "pass": true,
-      "evidence": "start holder=-1 lengths=[1,2,1,1]\nafter I lay 2 roads: holder=0 len=4 flags=[true,false,false,false] myVP=6\nafter rival out-builds me: holder=1 len=5 flags=[false,true,false,false] myVP=2 theirVP=6\naward events: [{\"player\":1,\"value\":5}]",
-      "ms": 7
-    },
-    {
-      "id": 14,
-      "name": "Largest Army can change hands",
-      "pass": true,
-      "evidence": "start holder=-1\nafter I play 2 knights: holder=0 counts=[2,0,0,0] myVP=4\nafter Maya plays 3: holder=2 counts=[2,0,3,0] flags=[false,false,true,false] myVP=2\naward events: [{\"player\":2,\"value\":3}]",
-      "ms": 2
-    },
-    {
-      "id": 15,
-      "name": "A player can win; the results screen appears with correct rankings",
-      "pass": false,
-      "evidence": "HUMAN WINS: winner=0 vp=13 phase=over -> title=\"Victory!\" sub=\"\" lostStyling=false topOfTable=\"undefined\"\nRIVAL WINS: phase=over winner=1 winnerVP=13\nflow: isWinSequence=true stage=over cameraOverview=true\nresults panel present=true hidden=false title=\"Defeat\" sub=\"Alex reached 13 points first\"\nrankings shown: 1.Alex=13  2.You=2  3.Maya=2  4.Finn=2\nrankings truth: 1.Alex=13  2.You=2  3.Maya=2  4.Finn=2  match=true\nfrozen after 4s more of bots+gathering: true ({\"b\":11,\"r\":20,\"res\":[14,15,15,15],\"t\":0} -> {\"b\":11,\"r\":20,\"res\":[14,15,15,15],\"t\":0})\nstats rows: 7 · button \"Play Again\"",
-      "ms": 2073
-    },
-    {
-      "id": 16,
-      "name": "Replay/restart works and starts a clean match",
-      "pass": false,
-      "evidence": "harness threw: page: TypeError: Cannot read properties of undefined (reading 'state')",
-      "ms": 12362
-    },
-    {
-      "id": 19,
-      "name": "Performance: draw calls and triangles inside budget",
-      "pass": false,
-      "evidence": "harness threw: page: TypeError: Cannot read properties of undefined (reading 'state')",
-      "ms": 5
-    },
-    {
-      "id": 18,
-      "name": "Interface is usable at 667x375 and 960x444",
-      "pass": false,
-      "evidence": "harness threw: page: TypeError: Cannot read properties of undefined (reading 'state')",
-      "ms": 6
-    },
-    {
-      "id": 17,
-      "name": "Typical matches last 3-5 minutes",
-      "pass": null,
-      "evidence": "delegated: tools/simulate.mjs --matches=60 --gathersys is the pacing rig",
-      "ms": 0
+      "evidence": "drew 10 cards: {\"knight\":4,\"roadBuilding\":5,\"victoryPoint\":1}\nKNIGHT  played=true raider->tile 0 (owner 0), knightsPlayed 0->1, rival stock [17,14,15]->[8,6,7]\nROADBLD played=true freeRoads=2 placed=2 roads 8->10 paid={\"wood\":0,\"brick\":0}\nVICTORY vpCards=1, +1 on draw (instant)",
+      "ms": 1583
     }
   ],
   "perf": null,
@@ -220,78 +115,6 @@
       "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "error",
-      "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
       "level": "error",
       "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
     },
@@ -520,6 +343,74 @@
       "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
+      "level": "warning",
+      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+    },
+    {
       "level": "error",
       "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
     },
@@ -584,148 +475,8 @@
       "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
     },
     {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
-    },
-    {
-      "level": "warning",
-      "text": "[other] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio"
+      "level": "error",
+      "text": "[intervention] Blocked call to navigator.vibrate because user hasn't tapped on the frame or any embedded frame yet: https://www.chromestatus.com/feature/5644273861001216."
     }
   ]
 }
