@@ -244,28 +244,53 @@ const readTrade = async () => ev(`(()=>{
   // class from the last show(), so reading the sheet alone always says "open".
   const wrap=document.querySelector('.panels');
   const sheet=document.querySelector('.sheet.trade');
-  const cur=document.querySelector('.sheet.trade .pick.cur');
-  const cols=[...document.querySelectorAll('.sheet.trade .pickrow')];
-  const rowOf=n=>{ if(!n) return null; return cols.indexOf(n.parentNode)===0?'give':'get'; };
-  const onOf=i=>{const n=cols[i]&&cols[i].querySelector('.pick.on');return n?n.getAttribute('data-res'):null;};
+  const cols=[...document.querySelectorAll('.sheet.trade .tr-col')];
+  const cur=document.querySelector('.sheet.trade .tr-col.cur');
+  const txt=n=>(n&&n.textContent||'').trim();
+  const cards={};
+  for(const c of cols){
+    const r=c.getAttribute('data-res');
+    const up=c.querySelector('.tr-arr.up'), dn=c.querySelector('.tr-arr.dn');
+    cards[r]={
+      rate:txt(c.querySelector('.tr-rate')),
+      have:txt(c.querySelector('.tr-have')),
+      up:!!up&&!up.classList.contains('off'),
+      dn:!!dn&&!dn.classList.contains('off'),
+      giving:c.classList.contains('giving'),
+      getting:c.classList.contains('getting'),
+      upN:txt(c.querySelector('.tr-arr.up .tr-badge')),
+      dnN:txt(c.querySelector('.tr-arr.dn .tr-badge'))
+    };
+  }
   return {
     kind:g.panels?g.panels.kind:null,
     open:!!(wrap&&!wrap.classList.contains('hid')&&sheet&&!sheet.classList.contains('hid')),
     cls:(wrap?wrap.className:'-')+' / '+(sheet?sheet.className:'-'),
     cursor:cur?cur.getAttribute('data-res'):null,
-    side:rowOf(cur),
-    give:onOf(0), get:onOf(1),
-    lots:(document.querySelector('.sheet.trade .amt-n')||{}).textContent||'',
-    ratio:(document.querySelector('.sheet.trade .ratio b')||{}).textContent||'',
-    where:(document.querySelector('.sheet.trade .ratio-where')||{}).textContent||'',
-    deal:((document.querySelector('.sheet.trade .tdeal')||{}).textContent||'').replace(/\\s+/g,' ').trim(),
-    why:(document.querySelector('.sheet.trade .why')||{}).textContent||'',
-    tradeOff:!!document.querySelector('.sheet.trade .sheet-foot .btn.off, .sheet.trade .sheet-foot button.off'),
+    order:cols.map(c=>c.getAttribute('data-res')),
+    cards,
+    give:cols.filter(c=>c.classList.contains('giving')).map(c=>c.getAttribute('data-res')),
+    get:cols.filter(c=>c.classList.contains('getting')).map(c=>c.getAttribute('data-res')),
+    upsLive:cols.filter(c=>!c.querySelector('.tr-arr.up').classList.contains('off'))
+      .map(c=>c.getAttribute('data-res')),
+    dnsLive:cols.filter(c=>!c.querySelector('.tr-arr.dn').classList.contains('off'))
+      .map(c=>c.getAttribute('data-res')),
+    where:txt(document.querySelector('.sheet.trade .tr-where')),
+    why:txt(document.querySelector('.sheet.trade .why')),
+    tradeOff:!!document.querySelector('.sheet.trade .sheet-foot .btn.off'),
     captured:!!(g.input&&g.input.keyboardCaptured),
     res:{...s.players[0].res}, traded:s.players[0].stats.traded,
     px:+s.players[0].x.toFixed(2), pz:+s.players[0].z.toFixed(2),
     cue:!!document.querySelector('.tradecue:not(.hid)')
   };})()`);
+
+/** The world prompt: is it up, how big is it, and what does it say. */
+const readCue = async () => ev(`(()=>{
+  const n=document.querySelector('.tradecue:not(.hid) .tc-card');
+  if(!n) return {up:false};
+  const r=n.getBoundingClientRect();
+  return {up:true,w:Math.round(r.width),h:Math.round(r.height),
+    text:(n.textContent||'').replace(/\\s+/g,' ').trim()};})()`);
 
 const endState = async () => ev(`(()=>{
   const I=window.__ISLAND__, g=I.game;
@@ -284,12 +309,20 @@ if (STAGE === 'trade') {
   await finishDraft();
   await frames(24);                       // let matchflow hand off into play
 
-  // Stand the settler on the market with a full pack, so every rate is legal.
-  await ev(`(()=>{const {state}=window.__ISLAND__,M=window.__L__.MARKET;
+  const FILL = `['wood','brick','wool','wheat','ore']`;
+  /** Stand the settler on the market's own hex, with the pack set as asked. */
+  const standAtMarket = async (pack = 12) => ev(`(()=>{
+    const {state}=window.__ISLAND__,M=window.__L__.MARKET;
     const p=state.players[0];
     p.x=M.x; p.z=M.z+1.2; p.vx=0; p.vz=0;
-    for(const r of ['wood','brick','sheep','wheat','ore']) p.res[r]=12;
-    return [p.x,p.z];})()`);
+    for(const r of ${FILL}) p.res[r]=${pack};
+    return [+p.x.toFixed(2),+p.z.toFixed(2)];})()`);
+  const setPack = async obj => ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    const o=${JSON.stringify(obj)};
+    for(const r of ${FILL}) p.res[r]=(o[r]===undefined?o['*']:o[r])|0;
+    return {...p.res};})()`);
+
+  await standAtMarket(12);
   await frames(8);
 
   /* Baseline: the arrows drive the settler BEFORE any panel exists. Without
@@ -317,108 +350,148 @@ if (STAGE === 'trade') {
       `${base0.from} -> ${base0.to}  (${base0.d.toFixed(2)}u)`);
   }
 
-  // Put them back on the market for the trade run.
-  await ev(`(()=>{const {state}=window.__ISLAND__,M=window.__L__.MARKET;
-    const p=state.players[0]; p.x=M.x; p.z=M.z+1.2; p.vx=0; p.vz=0; return 1;})()`);
+  await standAtMarket(12);
   await frames(6);
 
-  /* ------------------------------------------------------------- part A */
+  /* ------------------------------------------------------------- part A
+     The whole fast path, keystroke by keystroke: Enter, one arrow, Up, one
+     arrow, Down, Enter. */
   if (partA) {
   let t = await readTrade();
-  ok(t.cue === true, 'world cue is up at the market');
+  ok(t.cue === true, 'world prompt is up while standing ON the market hex');
   ok(t.kind === null, 'nothing open before Enter');
-  const cueText = await ev(`((document.querySelector('.tradecue .tc-cta')||{}).textContent||'')
-    .replace(/\\s+/g,' ').trim()`);
-  ok(/Enter/i.test(String(cueText)), 'cue names the Enter key', JSON.stringify(cueText));
+  const cue = await readCue();
+  ok(/Enter/i.test(String(cue.text)), 'the prompt names the Enter key', JSON.stringify(cue.text));
+  ok(cue.h <= 34, 'and it is a small chip, not a banner',
+    `${cue.w}x${cue.h}px "${cue.text}"`);
   await shot(`kb${TAG}-01-cue`);
+
+  // Walking off the market hex must take the prompt away entirely.
+  await ev(`(()=>{const p=window.__ISLAND__.state.players[0],M=window.__L__.MARKET;
+    p.x=M.x; p.z=M.z+14; p.vx=0; p.vz=0; return 1;})()`);
+  await frames(30);
+  ok((await readCue()).up === false, 'off the hex, the prompt is gone');
+  await standAtMarket(12);
+  await frames(10);
+  ok((await readCue()).up === true, 'back on the hex, it is up again');
 
   // ---- Enter opens
   await tap('Enter', 400);
   t = await readTrade();
   ok(t.open && t.kind === 'trade', 'Enter opened the trade sheet');
   ok(t.captured === true, 'input.js keyboard capture is ON while open');
-  console.log(`  ratio ${t.ratio}:1 at ${t.where} | cursor ${t.side}/${t.cursor} | ${t.deal}`);
+  ok(t.order.length === 5, 'one row of five cards', t.order.join(' '));
+  ok(Object.values(t.cards).every(c => c.rate === '4:1'),
+    'every card carries this post\'s rate in its corner',
+    t.order.map(r => `${r} ${t.cards[r].rate}`).join('  '));
+  ok(t.order.every(r => +t.cards[r].have === (t.res[r] | 0)),
+    'and how many you hold', t.order.map(r => `${r} ${t.cards[r].have}`).join('  '));
+  ok(t.dnsLive.length === 0,
+    'with nothing staged EVERY receive arrow is greyed out', `live: [${t.dnsLive}]`);
+  console.log(`  at ${t.where} | cursor ${t.cursor} | ${t.why}`);
   await shot(`kb${TAG}-02-panel`);
 
-  // ---- Left / Right move the selection
-  const c0 = `${t.side}/${t.cursor}`;
+  // ---- Left / Right move between cards
+  const c0 = t.cursor;
   await tap('ArrowRight');
   const t1 = await readTrade();
-  ok(`${t1.side}/${t1.cursor}` !== c0, 'ArrowRight moved the cursor', `${c0} -> ${t1.side}/${t1.cursor}`);
+  ok(t1.cursor !== c0, 'ArrowRight moved to the next card', `${c0} -> ${t1.cursor}`);
   await tap('ArrowLeft');
-  const t2 = await readTrade();
-  ok(`${t2.side}/${t2.cursor}` === c0, 'ArrowLeft moved it back', `-> ${t2.side}/${t2.cursor}`);
-  await tap('ArrowRight'); await tap('ArrowRight'); await tap('ArrowRight');
-  const t3 = await readTrade();
-  ok(t3.give !== t3.get, 'give and get never collide', `${t3.give} -> ${t3.get}`);
+  ok((await readTrade()).cursor === c0, 'ArrowLeft moved back', `-> ${c0}`);
 
-  // ---- Up / Down change the amount, and Up clamps at what you can afford
+  // ---- Up stages a give
   await tap('ArrowUp');
   const u1 = await readTrade();
-  ok(+u1.lots === +t3.lots + 1, 'ArrowUp raised the amount', `${t3.lots} -> ${u1.lots}`);
-  console.log(`  deal at ${u1.lots}: ${u1.deal}  (${u1.why})`);
+  ok(u1.give.length === 1 && u1.give[0] === c0, 'ArrowUp staged it into YOU GIVE',
+    `give=[${u1.give}]`);
+  ok(u1.cards[c0].upN === '4', 'the give arrow counts the cards it will cost',
+    `badge "${u1.cards[c0].upN}"`);
+  ok(u1.dnsLive.length === 5,
+    'and now every receive arrow is live, because something pays for it',
+    `live: [${u1.dnsLive}]`);
+  ok(u1.tradeOff === true, 'half a deal is not a deal yet', JSON.stringify(u1.why));
+
+  // ---- Down on another card stages the receive
+  await tap('ArrowRight');
+  const target = (await readTrade()).cursor;
   await tap('ArrowDown');
   const d1 = await readTrade();
-  ok(+d1.lots === +t3.lots, 'ArrowDown lowered it again', `-> ${d1.lots}`);
-  for (let i = 0; i < 9; i++) await tap('ArrowUp', 60);
-  const cl = await readTrade();
-  const afford = Math.floor((cl.res[cl.give] | 0) / (+cl.ratio || 4));
-  ok(+cl.lots <= afford, 'Up clamps to what the player can afford',
-    `lots ${cl.lots} <= floor(${cl.res[cl.give]}/${cl.ratio})=${afford}`);
-  ok(/for/i.test(cl.why) || /Need/i.test(cl.why), 'the reason line explains the deal', JSON.stringify(cl.why));
-  await shot(`kb${TAG}-03-amount`);
+  ok(d1.get.length === 1 && d1.get[0] === target, 'ArrowDown staged YOU RECEIVE',
+    `get=[${d1.get}]`);
+  ok(d1.cards[target].dnN === '1', 'counted on the receive arrow');
+  ok(d1.cards[target].dn === false && d1.dnsLive.length === 1 && d1.dnsLive[0] === c0,
+    'every receive arrow greys out again — one lot pays for exactly one card '
+    + '(only the staged give stays live, to undo it)', `still live: [${d1.dnsLive}]`);
+  ok(d1.tradeOff === false, 'the deal is now legal and Trade lights up');
+  ok(/for/i.test(d1.why), 'the backstop line names the deal', JSON.stringify(d1.why));
+  await shot(`kb${TAG}-03-staged`);
 
   // ---- Enter trades, and the sheet stays open
-  // Drop back to two lots so there is change left in the pack afterwards: the
-  // point of the check is that the sheet survives a deal, not that it empties.
-  await tap('ArrowDown', 80);
-  const before = await readTrade();
+  const before = d1;
   await tap('Enter', 520);
   const after = await readTrade();
   ok(after.traded > before.traded, 'Enter did the deal', `trades ${before.traded} -> ${after.traded}`);
-  ok(after.res[before.give] < before.res[before.give], 'the give resource was spent',
-    `${before.give} ${before.res[before.give]} -> ${after.res[before.give]}`);
-  ok(after.res[before.get] > before.res[before.get], 'the get resource arrived',
-    `${before.get} ${before.res[before.get]} -> ${after.res[before.get]}`);
+  ok(after.res[c0] === before.res[c0] - 4, 'four of the give resource were spent',
+    `${c0} ${before.res[c0]} -> ${after.res[c0]}`);
+  ok(after.res[target] === before.res[target] + 1, 'one of the wanted resource arrived',
+    `${target} ${before.res[target]} -> ${after.res[target]}`);
   ok(after.kind === 'trade' && after.open, 'the sheet STAYED OPEN after trading');
-  ok(+after.lots === 1, 'the amount reset to 1 for the next deal');
+  ok(after.give.length === 0 && after.get.length === 0,
+    'and the row reset, ready for the next one');
 
-  // ---- a second deal without leaving
-  await tap('Enter', 520);
-  const two = await readTrade();
-  ok(two.traded > after.traded && two.kind === 'trade',
-    'a second Enter traded again without reopening', `trades -> ${two.traded}`);
+  // ---- a second deal without leaving: Up, Left, Down, Enter
+  await tap('ArrowUp');            // stage the card the cursor is already on
+  const s2 = await readTrade();
+  if (s2.give.length) {
+    await tap('ArrowLeft');
+    await tap('ArrowDown');
+    const r2 = await readTrade();
+    ok(r2.tradeOff === false, 'a second deal staged in three keys', JSON.stringify(r2.why));
+    await tap('Enter', 520);
+    ok((await readTrade()).traded > after.traded,
+      'and Enter traded again without ever reopening the sheet');
+  } else ok(false, 'a second give could be staged');
   await tap('Escape', 420);
   }
 
-  /* ------------------------------------------------------------- part B */
+  /* ------------------------------------------------------------- part B
+     Grey-out is the whole brief: nothing impossible may ever be stageable. */
   if (partB) {
-  // ---- Enter with nothing stageable closes instead of trading
-  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
-    for(const r of ['wood','brick','sheep','wheat','ore']) p.res[r]=12; return 1;})()`);
+  // Two brick at 4:1 — brick cannot be given, and the card says so.
+  await setPack({ '*': 12, brick: 2 });
+  await standAtMarket(12);
+  await setPack({ '*': 12, brick: 2 });
+  await frames(6);
   await tap('Enter', 420);
-  ok((await readTrade()).kind === 'trade', 'Enter opened the sheet');
-  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
-    for(const r of ['wood','brick','sheep','wheat','ore']) p.res[r]=0; return 1;})()`);
+  const g = await readTrade();
+  ok(g.kind === 'trade', 'Enter opened the sheet');
+  ok(g.cards.brick.up === false, 'holding 2 brick at 4:1, brick\'s GIVE arrow is dead',
+    `have ${g.cards.brick.have} rate ${g.cards.brick.rate}`);
+  ok(g.cards.wood.up === true, 'while wood, with twelve, is live');
+  ok(g.upsLive.length === 4, 'exactly the four affordable cards can be given',
+    `live: [${g.upsLive}]`);
+  await shot(`kb${TAG}-04-disabled`);
+
+  // Empty the pack outright: nothing at all can be staged.
+  await setPack({ '*': 0 });
   await frames(20);                       // panels.update() re-syncs at 5Hz
   const broke = await readTrade();
-  ok(broke.tradeOff === true, 'with an empty pack the Trade button greys out',
-    JSON.stringify(broke.why));
+  ok(broke.upsLive.length === 0 && broke.dnsLive.length === 0,
+    'with an empty pack every arrow on the row is greyed out');
+  ok(broke.tradeOff === true, 'and the Trade button is off', JSON.stringify(broke.why));
   await tap('Enter', 700);
   const shut = await readTrade();
   ok(shut.kind === null && !shut.open, 'Enter with nothing staged closed the sheet',
     `kind=${shut.kind} open=${shut.open} [${shut.cls}]`);
 
   // ---- Escape closes too
-  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
-    for(const r of ['wood','brick','sheep','wheat','ore']) p.res[r]=12; return 1;})()`);
+  await setPack({ '*': 12 });
   await tap('Enter', 420);
   ok((await readTrade()).kind === 'trade', 'Enter opened it again');
   await tap('Escape', 460);
   const cl2 = await readTrade();
   ok(cl2.kind === null && !cl2.open, 'Escape closed the sheet');
   ok(cl2.captured === false, 'keyboard capture was released');
-
   }
 
   /* ------------------------------------------------------------- part C */
@@ -437,8 +510,7 @@ if (STAGE === 'trade') {
     `stick ${rest}`);
 
   // ---- Enter re-opens; a click outside closes
-  await ev(`(()=>{const {state}=window.__ISLAND__,M=window.__L__.MARKET;
-    const p=state.players[0]; p.x=M.x; p.z=M.z+1.2; p.vx=0; p.vz=0; return 1;})()`);
+  await standAtMarket(12);
   await frames(6);
   await tap('Enter'); await frames(4);
   ok((await readTrade()).kind === 'trade', 'Enter re-opened it');
@@ -455,32 +527,54 @@ if (STAGE === 'trade') {
     await clickAt(xr[0], xr[1]);
     ok((await readTrade()).kind === null, 'the X closed it', `at ${xr}`);
   } else ok(false, 'the X button exists');
+
+  // ---- an arrow tap does the same job as the key
+  await tap('Enter', 400);
+  const upBtn = await ev(`(()=>{const c=document.querySelector('.sheet.trade .tr-col');
+    const b=c&&c.querySelector('.tr-arr.up'); if(!b) return null;
+    const r=b.getBoundingClientRect();
+    return [Math.round(r.x+r.width/2),Math.round(r.y+r.height/2),Math.round(r.height)];})()`);
+  if (Array.isArray(upBtn)) {
+    await clickAt(upBtn[0], upBtn[1]);
+    const tapd = await readTrade();
+    ok(tapd.give.length === 1, 'tapping a give arrow stages it for a thumb too',
+      `give=[${tapd.give}]`);
+  } else ok(false, 'the give arrows are tappable');
+  await tap('Escape', 400);
   }
 
   if (partB) {
   /* ---- and the same routine at one of the player's own docks -------------
      The brief names the Great Market AND unlocked docks. The rate is the whole
-     point of walking to a dock, so the cue and the sheet both have to quote the
-     dock's rate rather than the market's 4:1. */
-  const dock = await ev(`(()=>{const {state}=window.__ISLAND__,P=window.__L__.ports;
-    const p=state.players[0];
-    // Prefer a specialised dock (2:1) so the rate visibly differs from 4:1.
+     point of walking to a dock, so the prompt and the row both have to quote
+     the dock's rate rather than the market's 4:1. The settler must be standing
+     on the coastal hex the dock was built on, so we place them just inside the
+     edge the dock hangs off. */
+  const dock = await ev(`(()=>{const {state}=window.__ISLAND__,L=window.__L__;
+    const P=L.ports,p=state.players[0];
     let id=P.findIndex(x=>x&&x.resource); if(id<0) id=0;
     p.ports.add(id);
-    p.x=P[id].x; p.z=P[id].z; p.vx=0; p.vz=0;
-    for(const r of ['wood','brick','sheep','wheat','ore']) p.res[r]=12;
-    return {id,resource:P[id].resource,ratio:P[id].ratio};})()`);
-  await frames(8);
-  const cueTxt = await ev(`((document.querySelector('.tradecue')||{}).textContent||'')
-    .replace(/\s+/g,' ').trim()`);
-  ok(/dock/i.test(String(cueTxt)) && /Enter/i.test(String(cueTxt)),
-    'the dock flies its own ENTER cue', JSON.stringify(String(cueTxt).slice(0, 74)));
+    const e=L.edges[P[id].edge], t=L.tiles[e.tiles[0]];
+    p.x=e.x+(t.x-e.x)*0.18; p.z=e.z+(t.z-e.z)*0.18; p.vx=0; p.vz=0;
+    for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=12;
+    return {id,resource:P[id].resource,ratio:P[id].ratio,
+      d:+Math.hypot(p.x-P[id].x,p.z-P[id].z).toFixed(2)};})()`);
+  await frames(10);
+  const dcue = await readCue();
+  ok(dcue.up === true && /Enter/i.test(String(dcue.text)),
+    'the dock flies its own small ENTER prompt', JSON.stringify(dcue.text));
+  ok(String(dcue.text).includes(`${dock.ratio}:1`),
+    'and it quotes the DOCK rate, not the market 4:1',
+    `dock ${dock.ratio}:1 (${dock.resource || 'any'}) ${dock.d}u away`);
+  await shot(`kb${TAG}-05-dock`);
   await tap('Enter'); await frames(4);
   const dt = await readTrade();
   ok(dt.kind === 'trade', 'Enter opens the sheet at the dock too');
-  ok(+dt.ratio === dock.ratio, 'and it quotes the DOCK rate, not the market 4:1',
-    `sheet ${dt.ratio}:1 vs dock ${dock.ratio}:1 (${dock.resource || 'any'}) — "${dt.where}"`);
-  await shot(`kb${TAG}-04-dock`);
+  const key = dock.resource || 'wood';
+  ok(dt.cards[key].rate === `${dock.ratio}:1`,
+    'the specialised card carries the dock\'s own rate',
+    `${key} ${dt.cards[key].rate} — "${dt.where}"`);
+  await shot(`kb${TAG}-06-dockpanel`);
   await tap('Escape'); await frames(3);
   ok((await readTrade()).kind === null, 'Escape closes it at the dock as well');
   }

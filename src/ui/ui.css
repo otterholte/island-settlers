@@ -139,138 +139,143 @@
 .why,.vp-note{font:700 10.5px/1.25 var(--ff);letter-spacing:.06em;color:#6b4a26;
   text-transform:uppercase;flex:1 1 auto}
 
-/* --- trade --------------------------------------------------------------- */
-.inv-strip{display:flex;gap:10px;justify-content:center;padding:6px 10px;border-radius:12px;
-  background:linear-gradient(180deg,rgba(90,58,30,.06),rgba(90,58,30,.16));
-  border:1.5px solid rgba(90,58,30,.26);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
-.inv{display:flex;align-items:center;gap:5px}
-.inv b{font:800 17px/1 var(--ff);color:#3f2a12;text-shadow:0 1px 0 rgba(255,255,255,.6)}
+/* --- trade ----------------------------------------------------------------
+   ONE ROW OF FIVE CARDS. Above each card the arrow that pushes it up into YOU
+   GIVE, below it the arrow that pulls it down into YOU RECEIVE, and on the
+   card itself the only three facts that decide a maritime deal: what it is,
+   how many you hold, and what this post charges for it.
 
-/* The foot carries the deal and the key legend and must never be the thing
-   that gets clipped when the sheet meets a 375px-tall viewport. */
-.sheet-foot{flex:0 0 auto}
-.trade-body{display:flex;align-items:stretch;gap:10px;min-height:0}
-.tcol{flex:1 1 0;min-width:0}
-.tmid{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  flex:0 0 92px;padding:0 4px}
-.ratio{display:flex;align-items:baseline;gap:3px}
-.ratio b{font:800 30px/1 var(--ff);color:var(--brown);
-  text-shadow:0 2px 0 rgba(255,255,255,.8),0 3px 6px rgba(90,58,30,.3)}
-.ratio i{font:800 22px/1 var(--ff);font-style:normal;color:var(--gold-d)}
-.ratio-where{font:800 8.5px/1.1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
-  color:var(--brown-2);text-align:center}
-.ratio-note{font:700 8px/1.15 var(--ff);letter-spacing:.06em;text-transform:uppercase;
-  color:#9a6b2c;text-align:center;min-height:9px}
+   Deliberately flat. No inner boxes, no rails, no plates inside plates — the
+   cream sheet is the only frame and everything else is drawn with a hairline
+   and a shadow. See src/ui/trade.js for the staging model. */
 
-/* how many — the up/down arrows the keyboard drives, as real 44px buttons */
-.amt{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:3px}
-.amt-b{
-  width:46px;height:34px;padding:0;border-radius:9px;cursor:pointer;
-  background:linear-gradient(180deg,#fffaee,#e9d6ac);
-  border:2px solid rgba(90,58,30,.55);
-  box-shadow:0 2px 0 rgba(90,58,30,.35),inset 0 2px 0 rgba(255,255,255,.85);
-  display:flex;align-items:center;justify-content:center;
-  touch-action:manipulation;position:relative;
+.sheet.trade{width:min(600px,calc(100vw - 28px - var(--sal) - var(--sar)))}
+.sheet.trade .sheet-head{justify-content:flex-start}
+.tr-where{
+  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:800 9px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--brown-2);opacity:.8;padding-top:2px;
 }
-/* the hit area is 46x44 even though the plate is 34 tall */
-.amt-b::after{content:'';position:absolute;left:0;right:0;top:-5px;bottom:-5px}
-.amt-b::before{content:'';width:0;height:0;border-left:9px solid transparent;
-  border-right:9px solid transparent}
-.amt-b.up::before{border-bottom:11px solid var(--brown)}
-.amt-b.dn::before{border-top:11px solid var(--brown)}
-.amt-b:active{transform:translateY(2px);box-shadow:0 0 0 rgba(90,58,30,.35)}
-.amt-b.off{opacity:.4}
-.amt-b.off:active{transform:none}
-.amt-n{font:800 26px/1 var(--ff);color:#3f2a12;
-  text-shadow:0 2px 0 rgba(255,255,255,.7)}
-.amt-lab{font:800 7.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
-  color:var(--brown-2)}
+.trade-body{display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:0}
 
-/* the live readout: what leaves, what arrives */
+/* the two lane labels — the whole explanation of the row, in nine words */
+.tr-cap{
+  font:800 8.5px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--brown-2);text-align:center;opacity:.72;
+}
+.tr-cap.give::before{content:'\25B2\2002'}
+.tr-cap.get::after{content:'\2002\25BC'}
+
+.tr-row{display:flex;gap:8px;align-items:stretch}
+.tr-col{
+  flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:4px;
+  transition:transform .12s ease;
+}
+
+/* --- the arrows.
+   The visible plate is 28px tall; the hit area is 44 (::after reaches out into
+   the lane label above/below it, which is plain text and never interactive). */
+.tr-arr{
+  position:relative;height:28px;padding:0;border-radius:8px;cursor:pointer;
+  background:linear-gradient(180deg,#fffaee,#ead9b3);
+  border:1.5px solid rgba(90,58,30,.42);
+  box-shadow:0 2px 0 rgba(90,58,30,.26),inset 0 1px 0 rgba(255,255,255,.85);
+  display:flex;align-items:center;justify-content:center;
+  touch-action:manipulation;
+  transition:opacity .14s ease,filter .14s ease,background .14s ease;
+}
+.tr-arr::after{content:'';position:absolute;left:0;right:0}
+.tr-arr.up::after{top:-16px;bottom:0}
+.tr-arr.dn::after{top:0;bottom:-16px}
+.tr-arr::before{content:'';width:0;height:0;
+  border-left:8px solid transparent;border-right:8px solid transparent}
+.tr-arr.up::before{border-bottom:10px solid var(--brown)}
+.tr-arr.dn::before{border-top:10px solid var(--brown)}
+.tr-arr:active{transform:translateY(2px);box-shadow:0 0 0 rgba(90,58,30,.3)}
+
+/* DISABLED IS THE POINT. Two brick and a 4:1 rate means a dead up arrow, and
+   the player reads that before they read anything else on the sheet. */
+.tr-arr.off{cursor:default}
+.tr-arr.off::before{border-bottom-color:#b3a084;border-top-color:#b3a084}
+.tr-arr.off:active{transform:none}
+/* An arrow already carrying a staged amount is AT its cap, not dead: it keeps
+   its plate so the counter riding it never reads as greyed out too. */
+.tr-arr.off:not(.staged){opacity:.3;box-shadow:none;background:rgba(90,58,30,.06);
+  border-color:rgba(90,58,30,.17)}
+
+/* the staged counter, riding the arrow it was staged with */
+.tr-badge{
+  position:absolute;top:50%;right:6px;transform:translateY(-50%);
+  min-width:19px;height:19px;padding:0 4px;border-radius:10px;
+  display:none;align-items:center;justify-content:center;
+  font:800 11px/1 var(--ff);font-style:normal;
+}
+.tr-badge.on{display:flex}
+.tr-arr.up .tr-badge.on{background:#5a3a1e;color:#ffeec4;
+  box-shadow:0 1px 0 rgba(255,255,255,.5)}
+.tr-arr.dn .tr-badge.on{background:var(--green-d);color:#eafce9;
+  box-shadow:0 1px 0 rgba(255,255,255,.5)}
+
+/* --- the card */
+.tr-card{
+  position:relative;flex:1 1 auto;min-height:76px;padding:6px 4px 5px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  border-radius:12px;cursor:pointer;touch-action:manipulation;
+  background:linear-gradient(180deg,#fffcf3,#f0e2c2);
+  border:2px solid rgba(90,58,30,.34);
+  box-shadow:0 2px 0 rgba(90,58,30,.2);
+  transition:transform .12s ease,box-shadow .14s ease,border-color .14s ease,
+             background .14s ease,filter .14s ease;
+}
+.tr-ico{line-height:0}
+.tr-have{font:800 25px/1 var(--ff);color:#3f2a12;
+  text-shadow:0 1px 0 rgba(255,255,255,.75)}
+/* the rate this post charges for THIS resource, in the corner where a trading
+   card would carry it. It is the other half of the disabled-arrow story. */
+.tr-rate{
+  position:absolute;top:4px;left:6px;
+  font:800 9px/1 var(--ff);letter-spacing:.02em;color:#96703c;
+}
+
+/* nothing you hold enough of to give: the pile reads as spent, not as broken */
+.tr-col.broke .tr-have{color:#a08a68}
+.tr-col.broke .tr-ico{opacity:.5;filter:grayscale(.7)}
+
+/* staged: warm on the give side, green on the take side */
+.tr-col.giving .tr-card{border-color:var(--gold-d);
+  background:linear-gradient(180deg,#fff3d0,#f6dfa4)}
+.tr-col.getting .tr-card{border-color:#4f9a5c;
+  background:linear-gradient(180deg,#eefae9,#d3ecd0)}
+
+/* THE CURSOR. There is no mouse pointer to fall back on, so the focused card
+   lifts off the row and takes a cobalt collar against the cream sheet. */
+.tr-col.cur{transform:translateY(-2px)}
+.tr-col.cur .tr-card{
+  border-color:#123a66;
+  box-shadow:0 0 0 3px rgba(47,107,176,.9),0 4px 0 rgba(90,58,30,.25);
+}
+.tr-col.cur .tr-arr{border-color:rgba(18,58,102,.55)}
+.tr-col.cur .tr-arr.off{border-color:rgba(90,58,30,.18)}
+
+/* a refused key press: one short shake, nothing else */
+.tr-row.nope{animation:trNope .22s ease}
+@keyframes trNope{
+  0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}
+  75%{transform:translateX(4px)}
+}
+.sheet.trade.done .tr-row{animation:trDone .45s cubic-bezier(.2,1.4,.4,1)}
+@keyframes trDone{0%{transform:scale(1)}34%{transform:scale(1.035)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){
+  .tr-row.nope,.sheet.trade.done .tr-row{animation:none}
+}
+
+/* the foot: one line of reason, one line of keys, one button */
 .tfoot{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
-.tdeal{display:flex;align-items:center;gap:8px}
-.td-side{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 3px;
-  border-radius:9px;background:rgba(90,58,30,.12);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
-.td-side b{font:800 17px/1 var(--ff);color:#3f2a12}
-.td-side u{font:800 8.5px/1 var(--ff);text-decoration:none;letter-spacing:.12em;
-  text-transform:uppercase;color:var(--brown-2)}
-.td-side svg{margin:0 -1px}
-.td-side.get{background:rgba(37,105,47,.16)}
-.td-side.get b{color:#1d5c26}
-.td-arrow{line-height:0;color:#8a5a1c}
-.sheet.trade.done .tdeal{animation:dealPop .5s cubic-bezier(.2,1.4,.4,1)}
-@keyframes dealPop{0%{transform:scale(1)}35%{transform:scale(1.07)}100%{transform:scale(1)}}
-
-/* the keyboard legend — never the only route, always spelled out */
 .kbhint{font:700 8.5px/1.3 var(--ff);letter-spacing:.06em;text-transform:uppercase;
   color:#8a6a44}
-.kbhint i{font-style:normal;display:inline-block;margin:0 2px 0 0;padding:1px 5px 2px;
+.kbhint i{font-style:normal;display:inline-block;margin:0 3px 0 0;padding:1px 5px 2px;
   border-radius:5px;color:#fff6e4;background:linear-gradient(180deg,#6b4826,#43290f);
   box-shadow:0 1px 0 rgba(90,58,30,.5)}
-
-.pickrow{display:flex;gap:5px}
-.pick{
-  position:relative;flex:1 1 48px;min-width:48px;min-height:62px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  padding:5px 2px;border-radius:11px;
-  background:linear-gradient(180deg,#fffaee,#efdfba);
-  border:2px solid rgba(90,58,30,.55);
-  box-shadow:0 3px 0 rgba(90,58,30,.35),inset 0 2px 0 rgba(255,255,255,.85);
-  cursor:pointer;touch-action:manipulation;
-  transition:transform .1s ease,box-shadow .1s ease,filter .16s ease;
-}
-.pick:active{transform:translateY(3px);box-shadow:0 0 0 rgba(90,58,30,.35)}
-.pick.on{border-color:var(--gold-d);
-  background:linear-gradient(180deg,#ffeeb8,#ffc93c);
-  box-shadow:0 3px 0 #a8741a,0 0 15px rgba(255,201,60,.55),inset 0 2px 0 rgba(255,255,255,.8)}
-.pick.off{filter:grayscale(1) brightness(.9);opacity:.55}
-.pick.off:active{transform:none}
-/* `.on` is the chosen resource for that row; `.cur` says which row the arrow
-   keys are steering right now.
-   These two used to be told apart by a GOLD ring drawn on a GOLD cell, which
-   meant that with both rows lit the player could not see which one the arrows
-   were about to move. The cursor now reads at a glance from across the room:
-   it lifts off the row, takes a cobalt collar against the cream panel, pulses,
-   and flies a caret. There is no mouse pointer to fall back on. */
-.pick.cur{
-  transform:translateY(-3px);
-  border-color:#123a66;
-  box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 6px #2f6bb0,
-             0 0 22px rgba(255,201,60,.85),inset 0 2px 0 rgba(255,255,255,.85);
-  animation:curPulse 1.5s ease-in-out infinite;
-  z-index:2;
-}
-.pick.cur:active{transform:translateY(0)}
-.pick.cur .pk-name{color:#6b3d05}
-/* the caret sits inside the cell's own top edge, so it never fouls the heading */
-.pick.cur::after{
-  content:'';position:absolute;top:3px;left:50%;margin-left:-5px;
-  width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;
-  border-top:6px solid #123a66;opacity:.9;
-}
-@keyframes curPulse{
-  0%,100%{box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 6px #2f6bb0,
-                     0 0 22px rgba(255,201,60,.85),inset 0 2px 0 rgba(255,255,255,.85)}
-  50%    {box-shadow:0 6px 0 #a8741a,0 0 0 3px #fff9e6,0 0 0 7px #4b9bea,
-                     0 0 30px rgba(120,190,255,.75),inset 0 2px 0 rgba(255,255,255,.85)}
-}
-@media (prefers-reduced-motion:reduce){.pick.cur{animation:none}}
-
-/* which row the arrows are steering, said in words as well as in light */
-.tcol>h4{transition:color .14s ease}
-.tcol.act>h4{
-  color:#f4ecdc;background:linear-gradient(180deg,#2f6bb0,#123a66);
-  border-radius:7px;padding:3px 4px 4px;margin-bottom:4px;
-  box-shadow:0 2px 0 rgba(9,30,56,.5),inset 0 1px 0 rgba(255,255,255,.25);
-}
-.tcol.act>h4::after{content:' \25C0 \25B6';letter-spacing:0;opacity:.75}
-.pk-lots{color:#1d5c26 !important}
-.pk-ico{line-height:0}
-.pk-name{font:800 8px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:var(--brown)}
-.pick em{position:absolute;top:2px;right:4px;font:800 11px/1 var(--ff);font-style:normal;
-  color:#7a5228}
 
 /* --- cards --------------------------------------------------------------- */
 /* The buy button carries its own cost row: it must not inherit the build
@@ -563,23 +568,18 @@
   .rs-title{font-size:27px}
   .dcard{flex-basis:108px;width:108px;min-height:140px}
   .hand{min-height:140px}
-  .tmid{flex-basis:76px}
-  .ratio b{font-size:25px}
-  .ratio i{font-size:18px}
-  /* The stepper plate shrinks; its 46x44 hit area (the ::after) does not. */
   /* Every pixel the trade sheet gives back here is a pixel the key legend in
-     the foot keeps: at 375px tall it was the line being clipped off. */
+     the foot keeps: at 375px tall it was the line being clipped off. The
+     arrow plates shrink; their 44px hit areas (the ::after) do not, and no
+     resource icon goes under 26. */
   .sheet{gap:6px;padding:9px 12px 10px}
-  .inv-strip{padding:4px 10px}
-  .inv b{font-size:16px}
-  .pick{min-height:58px}
-  .amt{margin-top:1px}
-  .amt-b{width:44px;height:29px}
-  .amt-b::after{top:-8px;bottom:-8px}
-  .amt-n{font-size:23px}
-  .amt-lab{display:none}
-  .td-side b{font-size:15px}
-  .td-side{padding:1px 6px 2px}
+  .tr-row{gap:6px}
+  .tr-card{min-height:66px;padding:5px 3px 4px;gap:1px}
+  .tr-ico svg{width:28px;height:28px}
+  .tr-have{font-size:22px}
+  .tr-arr{height:25px}
+  .tr-arr.up::after{top:-19px}
+  .tr-arr.dn::after{bottom:-19px}
   .kbhint{font-size:8px;letter-spacing:.03em}
   .kbhint i{padding:1px 4px 2px}
   .rs-foot{gap:8px}

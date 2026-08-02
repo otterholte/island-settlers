@@ -11,17 +11,10 @@
  * ---------------------------------------------------------------------------
  * THE KEYBOARD (and why it never fights the settler)
  * ---------------------------------------------------------------------------
- * Standing at a trading post, Enter opens this sheet — no hunting for a button
- * with a thumb that is busy steering. Inside it:
- *
- *   left / right   move the cursor around a ring of ten cells: the five things
- *                  you can give, then the five you can get. Wherever the cursor
- *                  lands IS the selection for that row, so the deal is always
- *                  live and always legal.
- *   up / down      how many you are trading for.
- *   Tab            jump between the give row and the get row.
- *   Enter          do the deal — or, when there is no deal to do, close.
- *   Escape         close. So do the X, the scrim, and tapping outside.
+ * Standing on a trading post, Enter opens the trade sheet — no hunting for a
+ * button with a thumb that is busy steering. The sheet itself lives in
+ * `src/ui/trade.js` and owns its own arrow-key handling; this file only routes
+ * keys to it and takes the keyboard off the settler while it is up.
  *
  * Those are the same arrow keys that drive the settler, so while any panel is
  * open we take the keyboard off input.js with `setKeyboardCapture(true)` and
@@ -34,24 +27,20 @@
  */
 
 import {
-  RES, RES_LABEL, COST, CARD_LABEL, CARD_BLURB, TRADE_BASE,
+  RES, COST, CARD_LABEL, CARD_BLURB,
   LONGEST_ROAD_VP, LARGEST_ARMY_VP, canAfford
 } from '../core/constants.js';
 
 import {
-  tradeRatio, activeTradeRatio, doTrade,
   playRoadBuilding, placeRoad, scoreOf, rankings
 } from '../core/rules.js';
 
-import { ports } from '../board/layout.js';
 import { el, button, clear, toggle, setText, fmtTime } from './dom.js';
 import { icon, resIcon, avatar } from './icons.js';
 import { createEndgame } from './hud-end.js';
+import { createTradeSheet } from './trade.js';
 
 const CARD_ART = { knight: 'knight', roadBuilding: 'road', victoryPoint: 'trophy' };
-
-/** Most you can ask for in one confirm — nine is more than any board affords. */
-const MAX_LOTS = 9;
 
 export function createPanels(root, state, game) {
   const me = state.players[0];
@@ -64,318 +53,14 @@ export function createPanels(root, state, game) {
   let refreshT = 0;
 
   /* ================================================================ trade */
-  // The cursor is the selection: `giveI` / `getI` index RES, `side` says which
-  // of the two rows the arrow keys are steering.
-  let portId = null;
-  let giveI = 0, getI = 1;
-  let side = 'get';
-  let lots = 1;
-  let tradeReady = false;
-
-  const giveRes = () => RES[giveI];
-  const getRes = () => RES[getI];
-
-  const tInv = el('div', { class: 'inv-strip' });
-  const tInvNums = {};
-  for (const r of RES) {
-    const n = el('b', { text: '0' });
-    tInvNums[r] = n;
-    tInv.appendChild(el('div', { class: 'inv', html: icon(resIcon(r), 24) }, n));
-  }
-
-  const giveRow = el('div', { class: 'pickrow' });
-  const getRow = el('div', { class: 'pickrow' });
-  const givePick = {}, getPick = {};
-  RES.forEach((r, i) => {
-    const gn = el('em', { text: '0' });
-    const g = el('button', {
-      class: 'pick', type: 'button', 'data-ui': '', 'data-res': r,
-      'aria-label': `Give ${RES_LABEL[r]}`,
-      on: { click: () => pickAt('give', i) }
-    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 30) }),
-       el('span', { class: 'pk-name', text: RES_LABEL[r] }), gn);
-    givePick[r] = { node: g, num: gn };
-    giveRow.appendChild(g);
-
-    const tn = el('em', { class: 'pk-lots', text: '' });
-    const t = el('button', {
-      class: 'pick', type: 'button', 'data-ui': '', 'data-res': r,
-      'aria-label': `Get ${RES_LABEL[r]}`,
-      on: { click: () => pickAt('get', i) }
-    }, el('span', { class: 'pk-ico', html: icon(resIcon(r), 30) }),
-       el('span', { class: 'pk-name', text: RES_LABEL[r] }), tn);
-    getPick[r] = { node: t, num: tn };
-    getRow.appendChild(t);
-  });
-
-  const ratioBig = el('div', { class: 'ratio' }, el('b', { text: '4' }),
-    el('i', { text: ':' }), el('b', { text: '1' }));
-  const ratioWhere = el('span', { class: 'ratio-where', text: 'Great Market' });
-  const ratioNote = el('span', { class: 'ratio-note', text: '' });
-
-  const lotsNum = el('b', { class: 'amt-n', text: '1' });
-  const amtUp = el('button', {
-    class: 'amt-b up', type: 'button', 'data-ui': '', 'aria-label': 'Trade for more',
-    on: { click: () => bump(1) }
-  });
-  const amtDn = el('button', {
-    class: 'amt-b dn', type: 'button', 'data-ui': '', 'aria-label': 'Trade for fewer',
-    on: { click: () => bump(-1) }
-  });
-  const amtBox = el('div', { class: 'amt' }, amtUp, lotsNum, amtDn,
-    el('span', { class: 'amt-lab', text: 'How many' }));
-
-  const dealGive = el('span', { class: 'td-side give' });
-  const dealGet = el('span', { class: 'td-side get' });
-  const tradeDeal = el('span', { class: 'tdeal' }, dealGive,
-    el('span', { class: 'td-arrow', html: icon('swap', 16) }), dealGet);
-  const tradeWhy = el('span', { class: 'why', text: 'Pick what to give' });
-  const kbHint = el('span', { class: 'kbhint' });
-  const tradeBtn = button('big green off', { on: { click: () => doTheTrade() } },
-    el('span', { class: 'sb-ico', html: icon('swap', 22) }),
-    el('span', { class: 'sb-lab', text: 'Trade' }));
-
-  // Kept as references: the heading of whichever row the arrows are steering
-  // lights up, so the keyboard cursor is named as well as drawn.
-  const giveCol = el('div', { class: 'tcol' }, el('h4', { text: 'You give' }), giveRow);
-  const getCol = el('div', { class: 'tcol' }, el('h4', { text: 'You get' }), getRow);
-
-  const tradeSheet = el('div', { class: 'sheet trade hid' },
-    head('Trade', () => close()),
-    tInv,
-    el('div', { class: 'trade-body' },
-      giveCol,
-      el('div', { class: 'tmid' }, ratioBig, ratioWhere, amtBox, ratioNote),
-      getCol),
-    el('div', { class: 'sheet-foot' },
-      el('div', { class: 'tfoot' }, tradeDeal, tradeWhy, kbHint), tradeBtn));
+  /* One row of five cards, driven by the arrow keys. trade.js owns the whole
+     staging model and its own key handling; we only place it and route. */
+  const tradeUI = createTradeSheet(state, game, { onClose: () => close() });
+  const tradeSheet = tradeUI.node;
   wrap.appendChild(tradeSheet);
 
-  function currentRatio() {
-    return portId === null ? TRADE_BASE : activeTradeRatio(state, 0, giveRes(), portId);
-  }
-
-  /* ------------------------------------------------------ selection moves */
-
-  /** Never let the two rows point at the same resource: the deal stays legal. */
-  function separate(justMoved) {
-    if (giveI !== getI) return;
-    if (justMoved === 'give') getI = (getI + 1) % RES.length;
-    else giveI = (giveI + 1) % RES.length;
-  }
-
-  function pickAt(which, i) {
-    side = which;
-    if (which === 'give') giveI = i; else getI = i;
-    separate(which);
-    lots = 1;
-    syncTrade();
-  }
-
-  /** Left/right walk one ring: give[0..4] then get[0..4], wrapping both ways. */
-  function moveCursor(dir) {
-    let idx = side === 'give' ? giveI : getI + RES.length;
-    idx = (idx + dir + RES.length * 2) % (RES.length * 2);
-    if (idx < RES.length) pickAt('give', idx);
-    else pickAt('get', idx - RES.length);
-    ping('pick');
-  }
-
-  function swapSide() {
-    side = side === 'give' ? 'get' : 'give';
-    syncTrade();
-    ping('pick');
-  }
-
-  function bump(d) {
-    const next = Math.max(1, Math.min(maxLots(), lots + d));
-    if (next === lots) return;
-    lots = next;
-    syncTrade();
-    ping('pick');
-  }
-
-  function maxLots() {
-    const q = liveQuote();
-    const ratio = (q && q.ok ? q.ratio : currentRatio()) || TRADE_BASE;
-    const have = me.res[giveRes()] | 0;
-    return Math.max(1, Math.min(MAX_LOTS, Math.floor(have / ratio) || 0));
-  }
-
-  function ping(kind) {
-    try {
-      const a = game && game.audio;
-      if (a && a.sfx) a.sfx(kind === 'pick' ? 'blip' : 'trade', { gain: 0.35 });
-    } catch (e) { /* audio is optional */ }
-  }
-
-  /**
-   * The rate available *right now*. economy.js owns the proximity rule, so when
-   * it is attached we defer to it — otherwise the sheet would keep honouring
-   * the ratio it opened with after the settler has walked away from the post.
-   * Without economy (a bare UI harness) we fall back to the opening ratio.
-   */
-  function liveQuote() {
-    const eco = game && game.economy;
-    if (eco && typeof eco.quote === 'function') {
-      try {
-        const q = eco.quote(giveRes());
-        if (q) return q;
-      } catch (e) { /* fall through to the local rate */ }
-    }
-    return { ok: true, ratio: currentRatio(), label: null };
-  }
-
-  function dealSide(node, n, res) {
-    node.innerHTML = `<b>${n}</b>${icon(resIcon(res), 18)}` +
-      `<u>${RES_LABEL[res]}</u>`;
-  }
-
-  function syncTrade() {
-    const give = giveRes(), get = getRes();
-    const q = liveQuote();
-    const ratio = (q.ok ? q.ratio : currentRatio()) || TRADE_BASE;
-    const have = me.res[give] | 0;
-    const cap = maxLots();
-    if (lots > cap) lots = cap;
-    if (lots < 1) lots = 1;
-
-    toggle(giveCol, 'act', side === 'give');
-    toggle(getCol, 'act', side === 'get');
-
-    RES.forEach((r, i) => {
-      const held = me.res[r] | 0;
-      setText(tInvNums[r], held);
-      setText(givePick[r].num, held);
-      toggle(givePick[r].node, 'on', i === giveI);
-      toggle(givePick[r].node, 'cur', i === giveI && side === 'give');
-      toggle(givePick[r].node, 'off', held <= 0);
-      toggle(getPick[r].node, 'on', i === getI);
-      toggle(getPick[r].node, 'cur', i === getI && side === 'get');
-      toggle(getPick[r].node, 'off', i === giveI);
-      setText(getPick[r].num, i === getI && lots > 1 ? '+' + lots : '');
-    });
-
-    setText(ratioBig.childNodes[0], ratio);
-    const port = portId === null ? null : ports[portId];
-    setText(ratioWhere, q.label || (port
-      ? (port.resource ? `${RES_LABEL[port.resource]} Dock` : 'Trading Dock')
-      : 'Great Market'));
-
-    // Two different "there is a better rate than this" messages, and the one
-    // about the post you are standing on comes first: a specialised dock is
-    // worthless if the sheet never mentions the resource it specialises in.
-    let note = '';
-    const best = tradeRatio(state, 0, give);
-    const port2 = portId === null ? null : ports[portId];
-    if (port2 && port2.resource && port2.resource !== give) {
-      note = `${rateFor(port2.resource)}:1 on ${RES_LABEL[port2.resource]} here`;
-    } else if (best < ratio) {
-      note = `${best}:1 at your dock`;
-    }
-    setText(ratioNote, note);
-
-    setText(lotsNum, lots);
-    toggle(amtUp, 'off', lots >= cap);
-    toggle(amtDn, 'off', lots <= 1);
-
-    const cost = ratio * lots;
-    dealSide(dealGive, cost, give);
-    dealSide(dealGet, lots, get);
-
-    let why = '', ok = false;
-    if (!q.ok) why = q.reason || 'Head to a trading post';
-    else if (give === get) why = 'Pick two different resources';
-    else if (have < cost) why = `Need ${cost} ${RES_LABEL[give]} — you have ${have}`;
-    else { ok = true; why = `${cost} ${RES_LABEL[give]} for ${lots} ${RES_LABEL[get]}`; }
-    setText(tradeWhy, why);
-    kbHint.innerHTML =
-      '<i>Left / Right</i> pick <i>Up / Down</i> how many ' +
-      `<i>Enter</i> ${ok ? 'trade' : 'close'} <i>Esc</i> close`;
-    tradeReady = ok;
-    toggle(tradeBtn, 'off', !ok);
-    if (tradeBtn.disabled !== undefined) tradeBtn.disabled = !ok;
-  }
-
-  /**
-   * Do the deal `lots` times over. The sheet deliberately stays open: standing
-   * at a post you usually want two or three exchanges, and being thrown back
-   * out to the island after each one was the slowest part of trading.
-   */
-  function doTheTrade() {
-    const give = giveRes(), get = getRes();
-    if (!give || !get || give === get) return false;
-
-    // economy.js is the one path that enforces "you must be standing at the
-    // post". Route through it whenever it exists; it toasts on success and
-    // hands back a display-ready reason on refusal.
-    const eco = game && game.economy;
-    const want = Math.max(1, lots | 0);
-    let done = 0, ratio = currentRatio();
-
-    for (let i = 0; i < want; i++) {
-      let r;
-      if (eco && typeof eco.trade === 'function') r = eco.trade(give, get);
-      else r = doTrade(state, 0, give, get, ratio) ? { ok: true, ratio } : { ok: false };
-      if (!r || !r.ok) {
-        if (!done) {
-          syncTrade();
-          if (r && r.reason) setText(tradeWhy, r.reason);
-          return false;
-        }
-        break;
-      }
-      if (r.ratio) ratio = r.ratio;
-      done++;
-    }
-
-    if (!done) { syncTrade(); return false; }
-    if (!eco && game.toast) {
-      game.toast(`Traded ${ratio * done} ${RES_LABEL[give]} for ${done} ${RES_LABEL[get]}`, 'good');
-    }
-    lots = 1;
-    syncTrade();
-    tradeSheet.classList.remove('done');
-    void tradeSheet.offsetWidth;
-    tradeSheet.classList.add('done');
-    return true;
-  }
-
-  /** The rate this post charges for giving away `r`, whatever post it is. */
-  function rateFor(r) {
-    if (portId === null) return TRADE_BASE;
-    return activeTradeRatio(state, 0, r, portId) || TRADE_BASE;
-  }
-
   function openTrade(id) {
-    portId = (id === undefined || id === null) ? null : id;
-    if (portId !== null && !me.ports.has(portId)) portId = null;
-
-    /*
-     * Open on the deal the player walked here for.
-     *
-     * "Richest resource" was fine at the Great Market, where every rate is 4:1,
-     * but it made a specialised dock useless: you crossed the island to your
-     * Brick Dock for its 2:1, and the sheet opened on wood at 4:1 with the
-     * advertised rate nowhere on screen. Rank by (can I pay, rate, how much I
-     * hold) instead, so the post's best offer is the one you land on.
-     */
-    let best = 0, bestKey = null;
-    RES.forEach((r, i) => {
-      const held = me.res[r] | 0;
-      const ratio = rateFor(r);
-      const key = [held >= ratio ? 0 : 1, ratio, -held];
-      if (!bestKey || key[0] < bestKey[0]
-        || (key[0] === bestKey[0] && key[1] < bestKey[1])
-        || (key[0] === bestKey[0] && key[1] === bestKey[1] && key[2] < bestKey[2])) {
-        bestKey = key; best = i;
-      }
-    });
-    giveI = best;
-    getI = (best + 1) % RES.length;
-    side = 'get';
-    lots = 1;
-    syncTrade();
+    tradeUI.open(id);
     show('trade');
   }
 
@@ -652,21 +337,10 @@ export function createPanels(root, state, game) {
     const eat = () => { if (ev.preventDefault) ev.preventDefault(); };
 
     if (openKind === 'trade') {
-      switch (code) {
-        case 'ArrowLeft': moveCursor(-1); break;
-        case 'ArrowRight': moveCursor(1); break;
-        case 'ArrowUp': bump(1); break;
-        case 'ArrowDown': bump(-1); break;
-        case 'Tab': swapSide(); break;
-        case 'Escape': close(); break;
-        case 'Enter': case 'NumpadEnter':
-          // Enter is the one key that both finishes and leaves: it does the
-          // deal when there is a deal to do, and otherwise closes the sheet.
-          if (tradeReady) doTheTrade(); else close();
-          break;
-        default: return;
-      }
-      eat();
+      // trade.js answers true for every key it consumed. Nothing else may
+      // reach the settler while the sheet is up, so an unclaimed key is simply
+      // dropped rather than passed on.
+      if (tradeUI.key(code)) eat();
       return;
     }
 
@@ -709,11 +383,9 @@ export function createPanels(root, state, game) {
     refreshT += Number.isFinite(dt) ? dt : 1 / 60;
     if (refreshT < 0.2) return;
     refreshT = 0;
-    if (openKind === 'trade') syncTrade();
+    if (openKind === 'trade') tradeUI.sync();
     else if (openKind === 'cards') syncCards();
   }
-
-  syncTrade();
 
   return {
     openTrade, openCards, showResults, close, update,

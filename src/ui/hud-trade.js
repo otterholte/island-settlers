@@ -3,14 +3,19 @@
  *
  *   createTradeCue(root, state, game) -> { update(dt), destroy() }
  *
- * Walking up to the Great Market used to produce a 44px chip in the bottom-left
- * corner, behind the thumb, saying "Open Market · Trade 4 : 1". Nobody read it.
+ * A quiet hint, not a billboard.
  *
- * This puts the offer where the offer is: a banner that rises out of the
- * trading post itself, anchored to the landmark in world space and projected to
- * screen every frame, with the ratio spelled out in objects rather than words,
- * a shimmer as it lands and a sound cue. It fades out the moment you walk away
- * and it is never on screen otherwise.
+ * This used to be a full banner — heading, both sides of the exchange spelled
+ * out in icons, a sub-line, a shimmer burst — floating over the market from
+ * anywhere inside TRADE_RADIUS. It was the loudest thing on a screen the player
+ * had already called visually busy, and it followed them around a whole hex of
+ * grass before they had decided to trade at all.
+ *
+ * What is left is one small navy chip: the key to press, the word, and the
+ * rate. Roughly 26px tall. It appears only when the settler is standing ON the
+ * post's own hex — the desert tile that carries the Great Market, or the
+ * coastal tile that owns one of the player's docks — and it says nothing about
+ * the deal, because the sheet one keypress away says all of it properly.
  *
  * Pure DOM. The world-to-screen projection is done by hand off the camera's
  * two matrices so this file stays free of a three.js import.
@@ -18,15 +23,15 @@
  * Owner: UI agent.
  */
 
-import { RES, RES_LABEL, TRADE_RADIUS } from '../core/constants.js';
+import { TRADE_BASE, TRADE_RADIUS } from '../core/constants.js';
 import { nearestPortFor } from '../core/rules.js';
-import { MARKET } from '../board/layout.js';
+import { MARKET, DESERT, edges, tileAt } from '../board/layout.js';
 import { el, setText, toggle } from './dom.js';
-import { icon, resIcon } from './icons.js';
 
-/* How high above the landmark the banner floats, in world units. */
-const MARKET_LIFT = 4.6;
-const PORT_LIFT = 3.4;
+/* How high above the landmark the chip floats, in world units. Lower than the
+   old banner: it is a fifth of the size and does not need the clearance. */
+const MARKET_LIFT = 5.4;
+const PORT_LIFT = 4.2;
 
 /** Don't re-chime for the same place more often than this. */
 const CHIME_GAP = 8;
@@ -50,75 +55,48 @@ function project(cam, x, y, z) {
   return { x: (cx / cw) * 0.5 + 0.5, y: 0.5 - (cy / cw) * 0.5 };
 }
 
+/** The land hex a dock belongs to — the coastal edge it was built on. */
+function portTileId(port) {
+  const e = edges[port.edge];
+  return e && e.tiles && e.tiles.length ? e.tiles[0] : -1;
+}
+
 export function createTradeCue(root, state, game) {
   const me = state.players[0];
 
   /* ------------------------------------------------------------- scaffold */
-  const head = el('b', { class: 'tc-head', text: '' });
-
-  const giveN = el('b', { text: '4' });
-  const giveIco = el('span', { class: 'tc-row' });
-  const getN = el('b', { text: '1' });
-  const getIco = el('span', { class: 'tc-row' });
-
-  const deal = el('span', { class: 'tc-deal' },
-    el('span', { class: 'tc-side give' },
-      el('span', { class: 'tc-tag', text: 'GIVE' }),
-      el('span', { class: 'tc-num' }, giveN, giveIco)),
-    el('span', { class: 'tc-arrow', html: icon('swap', 22) }),
-    el('span', { class: 'tc-side get' },
-      el('span', { class: 'tc-tag', text: 'GET' }),
-      el('span', { class: 'tc-num' }, getN, getIco))
-  );
-
-  const sub = el('span', { class: 'tc-sub', text: '' });
-
   /*
-   * Two routes, both spelled out. The keyboard route is the fast one and it is
-   * invisible unless something says so, so the key cap leads; "or tap" keeps
-   * the touch route obvious on a phone that has no Enter key at all.
-   * panels.js listens for the key press — it already knows, via economy.js,
-   * whether the player is standing at a post.
+   * `.tc-cta` names the keyboard route, `.tc-rate` the price. Both routes are
+   * always live: the chip is a real button, so a thumb opens the same sheet the
+   * Enter key does.
    */
   const cta = el('span', { class: 'tc-cta' },
-    el('i', { text: 'Press' }),
     el('b', { class: 'tc-key', text: 'Enter' }),
-    el('i', { text: 'or tap' }));
+    el('i', { text: 'Trade' }));
+  const rate = el('span', { class: 'tc-rate', text: `${TRADE_BASE}:1` });
 
   const card = el('button', {
     class: 'tc-card', type: 'button', 'data-ui': '',
     'aria-label': 'Open trade',
     on: { click: () => open() }
-  }, head, deal, sub, cta);
-
-  const spark = el('span', { class: 'tc-spark' });
-  for (let i = 0; i < 10; i++) {
-    spark.appendChild(el('i', {
-      style: { '--a': (i * 36) + 'deg', '--d': (i * 34) + 'ms' }
-    }));
-  }
+  }, cta, rate);
 
   /*
    * The wrapper answers to `.prompt` while it is up.
    *
    * "Where can I trade?" is one question with one answer, and the harness (and
    * anything else that goes looking for the standing offer) should find that
-   * answer in one place. While this banner is on screen it IS the trade prompt,
+   * answer in one place. While this chip is on screen it IS the trade prompt,
    * so it takes the class and sits ahead of the bottom-left chip in document
    * order; the moment it fades the chip is the only `.prompt` again.
    */
   const wrap = el('div', {
     class: 'tradecue hid',
     on: { click: () => open() }
-  }, spark, card, el('span', { class: 'tc-stem' }), el('span', { class: 'tc-pin' }));
+  }, card, el('span', { class: 'tc-pin' }));
   root.insertBefore(wrap, root.firstChild);
 
   /* ------------------------------------------------------------- contents */
-  const ICO_PX = 19;
-
-  function fillRow(node, list) {
-    node.innerHTML = list.map(r => icon(resIcon(r), ICO_PX)).join('');
-  }
 
   let cur = null;         // { key, kind, ratio, portId, x, y, z }
   let vis = 0;            // 0 hidden, 1 shown
@@ -132,28 +110,18 @@ export function createTradeCue(root, state, game) {
 
   function dress(next) {
     const port = next.kind === 'port';
-    setText(head, port
-      ? (next.resource ? `${RES_LABEL[next.resource]} dock` : 'Your dock')
-      : 'Great Market');
-    setText(giveN, String(next.ratio));
-    setText(getN, '1');
-    // Give side: the resource the dock specialises in, or "anything".
-    fillRow(giveIco, port && next.resource ? [next.resource] : RES);
-    fillRow(getIco, RES);
-    setText(sub, port && next.resource
-      ? `${next.ratio} ${RES_LABEL[next.resource].toLowerCase()} for any one you need`
-      : `${next.ratio} of anything for the one you need`);
+    setText(rate, `${next.ratio}:1`);
     toggle(wrap, 'port', port);
     toggle(wrap, 'market', !port);
   }
 
-  function chime(kind) {
+  function chime() {
     const now = state.time || 0;
     if (now - lastChime < CHIME_GAP) return;
     lastChime = now;
     try {
       const a = game.audio;
-      if (a && a.sfx) a.sfx(kind === 'port' ? 'card' : 'award', { gain: kind === 'port' ? 0.5 : 0.42 });
+      if (a && a.sfx) a.sfx('blip', { gain: 0.26 });
     } catch (e) { /* audio is optional */ }
   }
 
@@ -176,16 +144,27 @@ export function createTradeCue(root, state, game) {
     return { x: a.x, y: a.y + PORT_LIFT, z: a.z };
   }
 
-  /** What, if anything, is within reach right now. */
+  /**
+   * What, if anything, the settler is STANDING ON right now.
+   *
+   * Not "within TRADE_RADIUS" — on the post's own hex. For the market that is
+   * the desert tile it was built on; for a dock it is the coastal tile the
+   * dock's edge belongs to, and the dock must also be close enough that
+   * economy.js will honour the trade, so the chip can never make an offer the
+   * rules would then refuse.
+   */
   function target() {
     if (state.phase !== 'play') return null;
-    const dm = Math.hypot(me.x - MARKET.x, me.z - MARKET.z);
-    if (dm < TRADE_RADIUS + (MARKET.radius || 0)) {
+    const here = tileAt(me.x, me.z);
+    if (!here) return null;
+
+    if (here.id === DESERT.id) {
       const a = marketAnchor();
-      return { key: 'market', kind: 'market', ratio: 4, ...a };
+      return { key: 'market', kind: 'market', ratio: TRADE_BASE, ...a };
     }
+
     const p = nearestPortFor(state, 0, me.x, me.z, TRADE_RADIUS + 3);
-    if (p) {
+    if (p && portTileId(p) === here.id) {
       const a = portAnchor(p.id);
       if (a) {
         return {
@@ -215,26 +194,18 @@ export function createTradeCue(root, state, game) {
     if (!s) { toggle(wrap, 'off', true); return; }
     const W = root.clientWidth || window.innerWidth || 960;
     const H = root.clientHeight || window.innerHeight || 444;
-    // Keep the banner on screen without ever letting it wander off its anchor:
-    // clamped to a generous margin, and hidden outright once the market is
-    // well behind the camera.
     if (s.x < -0.35 || s.x > 1.35 || s.y < -0.5 || s.y > 1.45) {
       toggle(wrap, 'off', true);
       return;
     }
     toggle(wrap, 'off', false);
-    // It tracks the building. The only limits are the two bands it must not
+    // It tracks the building, clamped clear of the two bands it must not
     // cover: the resource pill up top and the build cards along the bottom.
-    // The banner hangs upward from its anchor, so the top limit has to know how
-    // tall the card actually is.
-    const ch = card.offsetHeight || 92;
-    const top = Math.min(H * 0.72, 96 + ch);
-    let px = Math.max(W * 0.17, Math.min(W * 0.83, s.x * W));
-    const py = Math.max(top, Math.min(H * 0.68, s.y * H));
-    // Riding the top guard means the market is off past the horizon; pull the
-    // banner into the middle third so it never lands under the identity chip
-    // or the standings.
-    if (py - ch < 124) px = Math.min(Math.max(px, W * 0.34), W * 0.66);
+    // The chip hangs upward from its anchor, so the top limit knows its height.
+    const ch = card.offsetHeight || 28;
+    const top = Math.min(H * 0.72, 74 + ch);
+    const px = Math.max(W * 0.14, Math.min(W * 0.86, s.x * W));
+    const py = Math.max(top, Math.min(H * 0.7, s.y * H));
     wrap.style.transform = `translate(${px.toFixed(1)}px,${py.toFixed(1)}px)`;
   }
 
@@ -250,14 +221,14 @@ export function createTradeCue(root, state, game) {
       toggle(wrap, 'hid', false);
       toggle(wrap, 'out', false);
       toggle(wrap, 'prompt', true);
-      // restart the entrance + shimmer
       wrap.classList.remove('in');
       void wrap.offsetWidth;
       wrap.classList.add('in');
-      chime(next.kind);
+      chime();
       vis = 1; outT = 0;
     } else if (next && cur) {
       cur.x = next.x; cur.y = next.y; cur.z = next.z;
+      if (cur.ratio !== next.ratio) { cur.ratio = next.ratio; dress(cur); }
     } else if (!next && vis) {
       vis = 0; outT = 0;
       toggle(wrap, 'out', true);
@@ -267,7 +238,7 @@ export function createTradeCue(root, state, game) {
 
     if (!vis && !wrap.classList.contains('hid')) {
       outT += d;
-      if (outT > 0.42) { toggle(wrap, 'hid', true); cur = null; }
+      if (outT > 0.3) { toggle(wrap, 'hid', true); cur = null; }
     }
 
     if (vis && cur) place();

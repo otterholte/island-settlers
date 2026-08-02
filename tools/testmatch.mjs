@@ -643,16 +643,21 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     const farMoved = p.res.wood !== w1;
     // 3) the HUD only offers the market prompt when you are standing at it
     const promptFar = (document.querySelector('.prompt')||{}).className||'';
+    // The sheet is one row of five cards: an up arrow stages a give, a down
+    // arrow stages a receive, and both grey out when the deal is impossible.
+    const stage=(res,dir)=>{
+      const c=document.querySelector('.sheet.trade .tr-col[data-res="'+res+'"]');
+      const b=c&&c.querySelector(dir>0?'.tr-arr.up':'.tr-arr.dn');
+      if(!b||b.disabled) return false;
+      b.click(); return true;
+    };
+
     // 4) the trade SHEET itself, opened then carried away from the post
     g.openTrade(null);
     const sheetOpen = !!document.querySelector('.sheet.trade:not(.hid)');
     const w2=p.res.wood, o2=p.res.ore;
-    // click give=wood, get=ore, then Trade
-    const gv=[...document.querySelectorAll('.trade-body .tcol')][0]
-              .querySelectorAll('.pick')[C.RES.indexOf('wood')];
-    const gt=[...document.querySelectorAll('.trade-body .tcol')][1]
-              .querySelectorAll('.pick')[C.RES.indexOf('ore')];
-    if(gv)gv.click(); if(gt)gt.click();
+    // try to stage give=wood, get=ore, then Trade
+    const staged = [stage('wood',1), stage('ore',-1)];
     const btn=document.querySelector('.sheet.trade .sheet-foot .btn.green');
     const btnOff = btn ? btn.className.indexOf('off')>=0 : null;
     if(btn && !btn.disabled) btn.click();
@@ -669,10 +674,7 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     if (prompt) prompt.click();
     const uiOpen = !!document.querySelector('.sheet.trade:not(.hid)');
     const w3=p.res.wood, o3=p.res.ore;
-    const cols=[...document.querySelectorAll('.trade-body .tcol')];
-    const gv2=cols[0]&&cols[0].querySelectorAll('.pick')[C.RES.indexOf('wood')];
-    const gt2=cols[1]&&cols[1].querySelectorAll('.pick')[C.RES.indexOf('ore')];
-    if(gv2)gv2.click(); if(gt2)gt2.click();
+    const staged2 = [stage('wood',1), stage('ore',-1)];
     const btn2=document.querySelector('.sheet.trade .sheet-foot .btn.green');
     const btn2Off = btn2 ? btn2.className.indexOf('off')>=0 : null;
     const why = (document.querySelector('.sheet.trade .why')||{}).textContent;
@@ -682,7 +684,7 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     if (g.panels && g.panels.close) g.panels.close();
 
     return { spotNear, near, afterNear, spotFar, far, farMoved, promptFar,
-             sheetOpen, btnOff, sheetTraded, base:C.TRADE_BASE,
+             sheetOpen, btnOff, sheetTraded, base:C.TRADE_BASE, staged, staged2,
              promptTxt, uiOpen, btn2Off, why, uiTraded };})()`);
   const nearOk = out.near.ok && out.near.ratio === 4
     && out.afterNear.dWood === -4 && out.afterNear.dOre === 1;
@@ -698,6 +700,7 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
       `far from any post (spot=${out.spotFar ? out.spotFar.label : 'null'}): ` +
       `ok=${out.far.ok} reason="${out.far.reason}" resourcesMoved=${out.farMoved}\n` +
       `trade sheet forced open while far: opened=${out.sheetOpen} confirmGreyed=${out.btnOff} ` +
+      `arrowsLive=${JSON.stringify(out.staged)} ` +
       `wood${out.sheetTraded.dWood} ore+${out.sheetTraded.dOre}` +
       (sheetLeak ? '  <-- LEAK: panels.js traded without a proximity check' : '') +
       `\nfull human loop at the market: prompt="${out.promptTxt}" -> sheet opened=${out.uiOpen}, ` +
