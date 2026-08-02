@@ -18,6 +18,7 @@
 
 import { HEX_SIZE, pipsFor } from '../core/constants.js';
 import { tiles, intersections, edges, ports, BOUNDS, cornerOffset } from '../board/layout.js';
+import { raidersOn } from '../core/options.js';
 import { hash01 } from './dom.js';
 
 /** Five terrains plus desert, tuned for tonal separation at thumbnail size:
@@ -777,6 +778,9 @@ export function createPainter(ctx, proj) {
   }
 
   function drawRobber(state) {
+    // Switched off for this match: there is no Raider to draw, and a hooded
+    // figure sitting on the desert would be a promise the deck cannot keep.
+    if (!raidersOn()) return;
     const t = tiles[state.robberTile];
     if (!t) return;
     const s = proj.s;

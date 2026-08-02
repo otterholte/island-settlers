@@ -33,9 +33,10 @@
  *
  * This module is that payload, on screen, at the size the event deserves: the
  * card lands hard, names who did it, spells out the loss resource by resource,
- * gives the total, and says which hex the Raider has just shut down. It holds
- * for several seconds — long enough to read, count, and be annoyed about —
- * then goes.
+ * gives the total, and says which hex the Raider has just shut down. It is
+ * SHORT — a couple of seconds, see `HOLD_LOSS` — because it is five numbers and
+ * a total, not a paragraph, and the thing it is explaining (the counters at the
+ * top of the screen) stays changed long after the card has gone.
  *
  * The mirror case is here too, and is deliberately quieter: when the HUMAN
  * plays the Knight, the same card reports what the three rivals dropped. Same
@@ -54,12 +55,18 @@ import { regionName } from './hud-knight.js';
 const STYLE_ID = 'hud-raid-style';
 
 /* Seconds the card stays up before it starts to leave, and how long the fade
-   itself takes. The player asked for "a few seconds" — a resource loss this
-   large should still be on screen after the surprise has worn off, so the
-   losing side gets the longer hold. */
-const HOLD_LOSS = 4.6;
-const HOLD_GAIN = 3.0;
-const FADE = 0.55;
+   itself takes.
+
+   The first cut of this held the loss for 4.6s on the theory that a raid this
+   large deserved to be read twice. In play that is a long time to be looking at
+   a card instead of the island — "can you not show the knight popup screen when
+   you were raided for as long" — and the numbers are five chips and a total, not
+   a paragraph. Down to 2.4s, and the fade tightened with it. The information is
+   still there for anyone who wants it: the resource counters it explains are
+   permanent, and the toast it fires alongside outlives the card. */
+const HOLD_LOSS = 2.4;
+const HOLD_GAIN = 1.9;
+const FADE = 0.38;
 
 const CSS = `
 .raid{
@@ -70,7 +77,7 @@ const CSS = `
 .raid.hid{display:none}
 .raid.in .raid-card{animation:raidIn .62s cubic-bezier(.16,1.3,.36,1) both}
 .raid.in{opacity:1}
-.raid.out{opacity:0;transition:opacity .55s ease}
+.raid.out{opacity:0;transition:opacity .38s ease}
 
 .raid-card{
   position:relative;min-width:min(88vw,430px);max-width:min(92vw,520px);

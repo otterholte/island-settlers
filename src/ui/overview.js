@@ -58,12 +58,14 @@ import { createPainter, pipRadius } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
 
+/* Every placement hint names the double-tap, because a route nobody is told
+   about is a route nobody uses — see `onTap` below. */
 const MODE_INFO = {
   'view':              { title: 'Island Map', hint: 'Drag the board · pinch to zoom' },
-  'place-road':        { title: 'Place a Road', hint: 'Tap a glowing edge' },
-  'place-settlement':  { title: 'Place a Settlement', hint: 'Tap a glowing corner' },
-  'place-city':        { title: 'Upgrade to a City', hint: 'Tap one of your settlements' },
-  'place-robber':      { title: 'Send the Raider', hint: 'Tap a region to block' },
+  'place-road':        { title: 'Place a Road', hint: 'Tap a glowing edge · tap it again to place' },
+  'place-settlement':  { title: 'Place a Settlement', hint: 'Tap a glowing corner · tap it again to place' },
+  'place-city':        { title: 'Upgrade to a City', hint: 'Tap one of your settlements · tap it again to upgrade' },
+  'place-robber':      { title: 'Send the Raider', hint: 'Tap a region · tap it again to send' },
   'draft-watch':       { title: 'Opening Draft', hint: 'Watch the board' }
 };
 
@@ -88,7 +90,7 @@ const DRAFT_CSS = `
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 1px 2px rgba(0,0,0,.3);
   opacity:.55;transition:opacity .2s ease,box-shadow .2s ease,transform .2s ease}
 .ov .ov-dr::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;
-  background:linear-gradient(180deg,var(--cl,#7fb2f0),var(--c,#3b7fd4) 55%);
+  background:linear-gradient(180deg,var(--cl,#93cbff),var(--c,#2f8ffb) 55%);
   box-shadow:inset -1px 0 0 rgba(0,0,0,.45)}
 .ov .ov-dr.done{opacity:.8}
 .ov .ov-dr.you{opacity:.8;box-shadow:inset 0 0 0 1.5px rgba(255,201,60,.55),0 1px 2px rgba(0,0,0,.3)}
@@ -104,7 +106,7 @@ const DRAFT_CSS = `
   font:800 8.5px/1 var(--ff);color:rgba(226,238,250,.6);
   background:rgba(0,0,0,.34);box-shadow:inset 0 0 0 1px rgba(255,255,255,.13)}
 .ov .ov-dp b.done{color:#08182c;
-  background:linear-gradient(180deg,var(--cl,#7fb2f0),var(--c,#3b7fd4));
+  background:linear-gradient(180deg,var(--cl,#93cbff),var(--c,#2f8ffb));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.4)}
 .ov .ov-dp b.now{color:#3a2208;background:linear-gradient(180deg,#ffe79a,#ffc93c);
   box-shadow:0 0 0 2px rgba(255,201,60,.6);animation:ovNow 1.1s ease-in-out infinite}
@@ -492,6 +494,30 @@ export function createOverview(root, state, game) {
     return best;
   }
 
+  /**
+   * A tap picks a spot. A SECOND TAP ON THE SAME SPOT PLACES IT.
+   *
+   *   "When I'm placing settlements, roads and cities, make it so I can double
+   *    click if I want instead of needing to scroll and click Confirm."
+   *
+   * The board fills the panel and the confirm bar sits under it, so choosing a
+   * corner and then committing it meant a trip from wherever the finger already
+   * was, down to a button, on every single placement — and on a phone, often a
+   * scroll to get there. The bar is still the whole truth (it names the spot,
+   * and Cancel lives on it) and it still works exactly as before; this is the
+   * shortcut for when the player already knows where the piece is going.
+   *
+   * It is a RE-TAP, not a timed double-click: no window to hit, no difference
+   * between a fast mouse double-click and two deliberate taps a second apart,
+   * and it works the same under a finger as under a cursor. A tap on any OTHER
+   * legal spot just moves the selection, so the way out of a wrong choice is to
+   * pick a different one or press Cancel — the same as it always was, minus the
+   * old "tap it again to deselect", which nothing ever advertised and which
+   * this replaces.
+   *
+   * `commit()` is the same call the Confirm button makes, so every rule check,
+   * payment and `onConfirm` hook is identical down both routes.
+   */
   onTap(cv, e => {
     if (!openFlag || mode === 'view' || mode === 'draft-watch') return;
     // A drag that moved the board is not a choice of corner.
@@ -499,7 +525,8 @@ export function createOverview(root, state, game) {
     const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
     const hit = pick(e.clientX - r.left, e.clientY - r.top);
     if (hit === null || hit === undefined) return;
-    select(hit === sel ? null : hit);
+    if (hit === sel) { commit(); return; }
+    select(hit);
   });
 
   // Pointer hover is a desktop nicety; on touch the pointer never moves
@@ -517,9 +544,14 @@ export function createOverview(root, state, game) {
     sel = id;
     toggle(confirmBtn, 'off', sel === null);
     if (confirmBtn.disabled !== undefined) confirmBtn.disabled = sel === null;
+    // `armed` turns the label gold once a spot is chosen, which is the cue that
+    // the re-tap route is live: something is selected, so tapping it again
+    // places it. The text still names the spot — the Confirm button beside it
+    // is the other half of the same sentence.
     setText(selLabel, sel === null
       ? (opts.pickLabel || 'Pick a spot')
       : describe(sel));
+    toggle(selLabel, 'armed', sel !== null);
     ghost();
   }
 

@@ -27,8 +27,12 @@ import {
 } from '../core/constants.js';
 import { TERRAIN, f } from '../ui/ovmap.js';
 
-const BLUE = { css: '#3b7fd4', light: '#8dc0f7' };
-const RED = { css: '#d0472f', light: '#f08a75' };
+/* The tutorial plates paint their own miniature boards, so they carry their
+   own copies of the two player colours they use. Kept in step with
+   PLAYER_COLORS by hand — importing constants here would drag the whole rules
+   layer into an art module. */
+const BLUE = { css: '#2f8ffb', light: '#93cbff' };
+const RED = { css: '#ff4a35', light: '#ff9c88' };
 
 /** Deterministic 0..1 — the same trick ovmap.js uses for painterly jitter. */
 function h01(n) {

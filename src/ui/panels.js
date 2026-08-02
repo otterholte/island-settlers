@@ -35,6 +35,7 @@ import {
   playRoadBuilding, placeRoad, legalRoads, scoreOf, rankings
 } from '../core/rules.js';
 
+import { raidersOn } from '../core/options.js';
 import { el, button, clear, toggle, setText, fmtTime } from './dom.js';
 import { icon, resIcon, avatar } from './icons.js';
 import { createEndgame } from './hud-end.js';
@@ -97,7 +98,11 @@ export function createPanels(root, state, game) {
     if (!cs.length) {
       hand.appendChild(el('div', { class: 'hand-empty' },
         el('span', { html: icon('cards', 40) }),
-        el('p', { text: 'No cards in hand. Buy one to raise an army or lay free roads.' })));
+        el('p', {
+          text: raidersOn()
+            ? 'No cards in hand. Buy one to raise an army or lay free roads.'
+            : 'No cards in hand. Buy one for free roads or a straight victory point.'
+        })));
     }
     cs.forEach((c, i) => {
       const spread = cs.length > 1 ? (i - (cs.length - 1) / 2) : 0;
@@ -117,7 +122,11 @@ export function createPanels(root, state, game) {
     });
     setText(vpNote, me.vpCards
       ? `${me.vpCards} victory point card${me.vpCards > 1 ? 's' : ''} held`
-      : 'Knights also win you the Largest Army');
+      // With Raiders switched off the deck holds no Knights at all, so the
+      // standing hint would be advertising a card that cannot be drawn.
+      : (raidersOn()
+        ? 'Knights also win you the Largest Army'
+        : 'Raiders are off — no Knights in this deck'));
     const afford = canAfford(me.res, COST.card);
     toggle(buyBtn, 'off', !afford || state.phase !== 'play');
   }
@@ -152,7 +161,7 @@ export function createPanels(root, state, game) {
       close();
       game.openOverview('place-robber', {
         title: 'Send the Raider',
-        hint: 'Choose a region to block',
+        hint: 'Tap a region, tap it again to send',
         pickLabel: 'Choose a region'
       });
       return;
@@ -192,7 +201,7 @@ export function createPanels(root, state, game) {
     game.openOverview('place-road', {
       free: true,
       title: left > 1 ? 'Free Road · 1 of 2' : 'Free Road · Last One',
-      hint: 'Tap a glowing edge, then Confirm — this one is free',
+      hint: 'Tap a glowing edge, then tap it again — this one is free',
       pickLabel: 'Pick an edge',
       onConfirm(eid) {
         const ok = placeRoad(state, 0, eid, true);

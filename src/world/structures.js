@@ -37,6 +37,7 @@
 
 import * as THREE from 'three';
 import { HEX_SIZE, PLAYER_COLORS, PIECE_LIMIT } from '../core/constants.js';
+import { raidersOn } from '../core/options.js';
 import { tiles, intersections, edges } from '../board/layout.js';
 import { heightAt, topOf } from './terrain.js';
 import { instanced, setInstance, hideInstance, triCount } from './geo.js';
@@ -590,11 +591,19 @@ export function buildStructures(scene, state) {
     return rec;
   }
 
-  /* ---------------------------------------------------------------- raider */
+  /* ---------------------------------------------------------------- raider
+   *
+   * A match with Raiders switched off (`core/options.js`) has no Knight in the
+   * deck, so the figure would stand on the desert for the whole match doing
+   * nothing and telling the player something untrue. Both it and its ground
+   * vignette stay hidden — checked once here and once more inside `setRobber`,
+   * since that is the only thing that ever turns the vignette back on. */
+  const raidersLive = raidersOn();
 
   const raider = new THREE.Mesh(G.raider, solid);
   raider.castShadow = true;
   raider.frustumCulled = false;
+  raider.visible = raidersLive;
   group.add(raider);
 
   const vignetteMat = new THREE.MeshBasicMaterial({
@@ -633,7 +642,7 @@ export function buildStructures(scene, state) {
     const t = s.tile;
     // the vignette is a flat annulus on the tile's plateau, not on the peaks
     vignette.position.set(t.x, topOf(t) + 0.07, t.z);
-    vignette.visible = true;
+    vignette.visible = raidersLive;
   }
 
   function stepRobber(dt) {

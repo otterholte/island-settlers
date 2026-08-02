@@ -90,7 +90,7 @@ html,body{
 
 .chip{
   display:block;width:20px;height:20px;border-radius:7px;flex:0 0 auto;
-  background:linear-gradient(160deg,var(--cl,#7fb2f0),var(--c,#3b7fd4) 62%);
+  background:linear-gradient(160deg,var(--cl,#93cbff),var(--c,#2f8ffb) 62%);
   border:2px solid rgba(0,0,0,.55);
   box-shadow:inset 0 2px 0 rgba(255,255,255,.45),0 2px 4px rgba(0,0,0,.4);
 }

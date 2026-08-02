@@ -440,7 +440,7 @@ export function createDraft(state, game, deps) {
       ? {
           anchor,
           title: 'Lay Your First Road',
-          hint: 'Tap a glowing edge, then Confirm',
+          hint: 'Tap a glowing edge · tap it again to place',
           pickLabel: 'Pick an edge',
           onConfirm: eid => humanRoad(eid)
         }
@@ -525,7 +525,7 @@ export function createDraft(state, game, deps) {
         step.idle += dt;
         if (step.idle > T.idleNudge) {
           step.idle = 0;
-          toast('Tap a glowing spot, then Confirm', 'warn');
+          toast('Tap a glowing spot, then tap it again to place', 'warn');
         }
       }
       return false;

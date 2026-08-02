@@ -308,7 +308,7 @@ export function placeFreeRoads(game = G) {
     safe(() => g.openOverview('place-road', {
       free: true,
       title: left > 1 ? 'Free Road · 1 of 2' : 'Free Road · Last One',
-      hint: 'Tap a glowing edge, then Confirm — this one is free',
+      hint: 'Tap a glowing edge, then tap it again — this one is free',
       pickLabel: 'Pick an edge',
       onConfirm(eid) {
         const ok = placeRoad(state, 0, eid, true);   // free: nothing is paid

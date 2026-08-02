@@ -15,7 +15,7 @@
  *   icon('log', 28)              -> '<svg ...>...</svg>' markup string
  *   iconEl('trophy', 20, 'gold') -> a <span class="ico gold"> wrapping it
  *   resIcon('wood')              -> the icon name for a resource key
- *   avatar('#3b7fd4', '#7fb2f0', 32) -> circular player disc
+ *   avatar('#2f8ffb', '#93cbff', 32) -> circular player disc
  *
  * Owner: UI agent.
  */
@@ -32,9 +32,9 @@ const C = {
   cream:  '#f6e7c6', creamD: '#e0cba0', creamX: '#fffaec', brown: '#5a3a1e',
   steel:  '#aeb8c6', steelL: '#dde4ee', steelD: '#5c6878',
   stone:  '#c8c0ae', stoneL: '#e8e2d2', stoneD: '#8b8172',
-  blue:   '#3b7fd4', blueL: '#8dc0f7', blueD: '#1f4f8f',
+  blue:   '#2f8ffb', blueL: '#93cbff', blueD: '#1a5db0',
   wall:   '#eef3fa', wallD: '#c3cfdf', wallX: '#ffffff',
-  sea:    '#2f8fd0', night: '#24303e', red: '#d0472f'
+  sea:    '#2f8fd0', night: '#24303e', red: '#ff4a35'
 };
 
 /** Dark keyline, the outline every asset shares. */

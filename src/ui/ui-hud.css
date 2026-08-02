@@ -200,7 +200,7 @@
   will-change:transform;overflow:hidden;
 }
 .rk::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:2px;border-radius:2px;
-  background:var(--c,#3b7fd4);opacity:.8}
+  background:var(--c,#2f8ffb);opacity:.8}
 .rk.me{
   height:34px;opacity:1;
   background:linear-gradient(180deg,rgba(92,146,214,.34),rgba(44,88,150,.22));
@@ -208,8 +208,8 @@
 }
 /* Your row is banded in your own colour, not in gold: the standings and the
    board then agree about which player you are. */
-.rk.me::before{top:0;bottom:0;width:5px;border-radius:0;background:var(--c,#3b7fd4);opacity:1;
-  box-shadow:1px 0 0 rgba(4,12,24,.7),0 0 9px var(--c,#3b7fd4)}
+.rk.me::before{top:0;bottom:0;width:5px;border-radius:0;background:var(--c,#2f8ffb);opacity:1;
+  box-shadow:1px 0 0 rgba(4,12,24,.7),0 0 9px var(--c,#2f8ffb)}
 .rk-av{line-height:0;flex:0 0 auto;opacity:.9}
 .rk.me .rk-av{opacity:1}
 .rk-name{flex:1 1 auto;min-width:0;font:700 11px/1 var(--ff);letter-spacing:.04em;
@@ -282,12 +282,45 @@
 .bc-cost{
   flex:0 0 auto;display:flex;flex-wrap:wrap;gap:2px 5px;
   align-items:center;justify-content:center;
-  width:calc(100% + 8px);margin:auto -4px 0;padding:4px 0 6px;
+  /* 4px/6px before. The row wraps to two lines the moment any `have` reaches
+     two digits — 10 wood on a settlement card widens `.ccn` past its 11px
+     floor — and at 960x444 the second line then finishes three pixels below
+     the viewport. Three pixels of padding is a cheaper thing to give up than
+     the wrap, and nothing in the row looks any tighter for it. */
+  width:calc(100% + 8px);margin:auto -4px 0;padding:3px 0 4px;
   border-top:1.5px solid rgba(90,58,30,.38);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -14px 16px rgba(90,58,30,.10);
 }
+/* EVERY cost chip is boxed, and the colour is the whole message: GREEN means
+   you have enough of this one, RED means you do not.
+
+     "I only see one red box around the resource I need, for example when I
+      want a settlement, even if I have 0 resources of any kind. Instead of
+      seeing the red box around all of the resources I need. ... Can you make
+      there also be a green box around the resources I have enough."
+
+   Exactly one chip was ever boxed, because the only boxed class was `.block` —
+   "the one resource actually holding the purchase up", the single worst ratio
+   picked by `progressFor`. On a settlement with an empty pack that marked one
+   of four missing resources and left the other three looking as unremarkable as
+   a resource you had already banked. Reading a price should not require working
+   out which of the unboxed chips are also short.
+
+   So `.miss` boxes every unmet chip and `.met` boxes every satisfied one, and
+   the two are told apart by hue AND weight — a red chip carries a heavier ring
+   so the pair still separates without colour. `.block` no longer paints
+   anything: it is one red among reds now, and a second shade of red on one of
+   them was just noise. */
 .bc-cost .cc{display:inline-flex;align-items:center;gap:2px;font-style:normal;
-  padding:0 1px;border-radius:6px}
+  /* THE PADDING DOES NOT MOVE. The ring is an inset box-shadow, so it costs no
+     layout at all — and the cost row is the one part of this interface with no
+     slack anywhere: it sits hard against the bottom of a build card that is
+     already at the height budget, and on a 667px-wide screen it wraps to two
+     rows. Three pixels of breathing room per chip was enough to force a third
+     wrap and push the whole row off the bottom of the viewport at BOTH
+     shipping sizes. Measured, not guessed: acceptance check 18. */
+  padding:0 1px;border-radius:6px;
+  transition:background .2s ease,box-shadow .2s ease}
 .cc-ico{line-height:0;opacity:.66;filter:grayscale(.5);transition:opacity .25s,filter .25s}
 .cc.met .cc-ico{opacity:1;filter:none}
 /* have over need — a real fraction. It survives a 70px card, which "3 / 4"
@@ -295,12 +328,23 @@
 .ccn{display:flex;flex-direction:column;align-items:center;gap:0;min-width:11px}
 .ccn b{font:800 12px/1 var(--ff);color:#9c3a22;text-shadow:0 1px 0 rgba(255,255,255,.5)}
 .cc.met .ccn b{color:#2c6027}
+/* The `need` half of the fraction, and the two pixels it gives back.
+   SETTLEMENT and CARD carry four and three chips on an 84px row, so their cost
+   strips always wrap to two lines — by design — and two lines at the old
+   spacing finished four pixels below the viewport at 960x444 whenever a `have`
+   reached two digits and widened the column. One pixel off the rule's margin
+   and one off its padding is two pixels a line, four across the wrap, and the
+   fraction reads identically. (This overflow predates the red/green boxes; it
+   is fixed here because this is the pass that made anyone look.) */
 .ccn em{font:800 9px/1 var(--ff);font-style:normal;color:rgba(74,49,21,.72);
-  margin-top:2px;padding-top:2px;border-top:1.2px solid rgba(74,49,21,.5)}
-/* The one resource actually holding the purchase up. */
-.cc.block{background:rgba(208,71,47,.24);box-shadow:inset 0 0 0 1.4px rgba(176,52,30,.75)}
-.cc.block .ccn b{color:#a3301a}
-.cc.short{background:rgba(208,71,47,.40);box-shadow:inset 0 0 0 1.6px rgba(208,71,47,.9)}
+  margin-top:1px;padding-top:1px;border-top:1.2px solid rgba(74,49,21,.5)}
+/* PAID FOR. */
+.cc.met{background:rgba(58,142,52,.20);box-shadow:inset 0 0 0 1.4px rgba(44,112,39,.72)}
+/* STILL SHORT — all of them, not just the worst one. */
+.cc.miss{background:rgba(208,71,47,.22);box-shadow:inset 0 0 0 1.6px rgba(176,52,30,.82)}
+.cc.miss .ccn b{color:#a3301a}
+/* The refusal flash on a build you cannot afford: the same red, turned up. */
+.cc.short{background:rgba(208,71,47,.44);box-shadow:inset 0 0 0 2px rgba(208,71,47,.95)}
 
 /* affordable now: gold rim, gold halo, a slow breath. The rim lives on an
    inset pseudo-element (the card clips its own overflow, so an outset ring

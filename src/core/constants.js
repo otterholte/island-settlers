@@ -149,11 +149,45 @@ export const PORT_SPECIAL = 2;           // 2:1 on the port's resource
 export const START_RESOURCES = { wood: 3, brick: 3, wool: 2, wheat: 2, ore: 2 };
 
 // ---------------------------------------------------------------- players
+/*
+ * THE FOUR PLAYERS.
+ *
+ *   "Can you also make the colors stand out a bit more for the players. I'm
+ *    thinking the green could be brighter and a bit neon, and the red can be
+ *    brighter as well. Just make all of the other colors for the other players
+ *    a bit more subtly neon versions to match."
+ *
+ * The old set was mixed off a muted, earthy palette to sit politely on the
+ * island — and that was the problem. A road, a settlement roof and an owned-hex
+ * rim are small, they are seen at play-camera distance, and they are seen
+ * AGAINST terrain in the same family: the green player's pieces on a forest
+ * hex, the red player's on a clay hill. `#3f9a52` against a `#3f8a2c` forest
+ * floor is a couple of per cent apart in both hue and value, which is not a
+ * player colour, it is camouflage.
+ *
+ * So every one of the four is pushed up in saturation and value until it reads
+ * as EMITTED rather than lit — the green and the red hardest, since those are
+ * the two the player named, and the blue and purple a shade more gently so the
+ * set still looks like one family rather than a rainbow of highlighter pens.
+ * Roughly: saturation up by a third across the board, value up 20-30%, hues
+ * nudged apart at the top end (the red warmer, the green cooler) so no two are
+ * confusable at twenty pixels.
+ *
+ * `light` is the paler partner used for rims, glows, name text on dark plates
+ * and the lit face of every 3D piece, so it is pulled up with its parent and
+ * kept legible as TEXT on the navy panels — which is the one thing that stops
+ * these going fully fluorescent.
+ *
+ * One source of truth: the 3D pieces (`hex`), the interface (`css` / `light`),
+ * the owned-hex rim in `world/regions.js`, the recovery badge in
+ * `world/regionmark.js` and the victory flood in `world/mood.js` all read from
+ * here, so a colour never has to be changed twice.
+ */
 export const PLAYER_COLORS = [
-  { key: 'blue',   hex: 0x3b7fd4, css: '#3b7fd4', light: '#7fb2f0', name: 'You' },
-  { key: 'red',    hex: 0xd0472f, css: '#d0472f', light: '#f08a75', name: 'Alex' },
-  { key: 'green',  hex: 0x3f9a52, css: '#3f9a52', light: '#84d193', name: 'Maya' },
-  { key: 'purple', hex: 0x8552c4, css: '#8552c4', light: '#bb96ea', name: 'Finn' }
+  { key: 'blue',   hex: 0x2f8ffb, css: '#2f8ffb', light: '#93cbff', name: 'You' },
+  { key: 'red',    hex: 0xff4a35, css: '#ff4a35', light: '#ff9c88', name: 'Alex' },
+  { key: 'green',  hex: 0x2fd45f, css: '#2fd45f', light: '#8bf5a8', name: 'Maya' },
+  { key: 'purple', hex: 0xa45bff, css: '#a45bff', light: '#d2a8ff', name: 'Finn' }
 ];
 
 export const BOT_PROFILES = [

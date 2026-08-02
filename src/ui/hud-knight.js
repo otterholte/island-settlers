@@ -293,7 +293,7 @@ export function createKnightCue(root, state, game) {
       title: 'Send the Raider',
       // The match is genuinely held still while this is up (main.js stops the
       // clock, the bots, the gathering and the settler), so say so.
-      hint: 'Match paused · choose a region to block',
+      hint: 'Match paused · tap a region, tap it again to send',
       pickLabel: 'Choose a region',
       cancellable: true,
       keepOpen: true,          // stay up long enough to watch the Raider land

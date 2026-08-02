@@ -246,7 +246,7 @@ export function createGuide(state, game) {
       return {
         key: 'freeroad', ico: 'road',
         lead: `${me.freeRoads} free road${me.freeRoads > 1 ? 's' : ''}`,
-        tail: 'the map opens itself — tap an edge, then Confirm', tone: 'go'
+        tail: 'the map opens itself — tap an edge, then tap it again', tone: 'go'
       };
     }
 

@@ -29,6 +29,7 @@ import {
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
+import { raidersOn } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
@@ -44,7 +45,10 @@ import {
 
 const RES_ICON_PX = 28;
 
-const HOW_TO = [
+/* Built per match: the two Raider lines are removed outright when the option is
+   switched off before the draft, because a How to Play that explains a mechanic
+   the match does not have is worse than one that says nothing about it. */
+const HOW_TO_ALL = [
   ['Move', 'Drag anywhere on the left half of the screen to run.'],
   ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
   ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.'],
@@ -57,6 +61,14 @@ const HOW_TO = [
   ['The Raider', 'Playing a Knight takes HALF of every resource off every rival at once — and it is gone, not stolen. The hex the Raider then sits on gives nothing to anybody but the player who sent it.'],
   ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
 ];
+
+const RAIDER_TOPICS = new Set(['Cards', 'The Raider']);
+const HOW_TO = raidersOn() ? HOW_TO_ALL : HOW_TO_ALL
+  .filter(([t]) => !RAIDER_TOPICS.has(t))
+  .concat([
+    ['Cards', 'Road Building opens the map and lays two roads for nothing. Victory Point scores the moment you draw it.'],
+    ['No Raiders', 'You switched Raiders off before the draft, so there are no Knight cards, nothing ever blocks a region, and Largest Army is out of play for everyone.']
+  ]);
 
 export function createHUD(root, state, game) {
   const me = state.players[0];
@@ -607,6 +619,24 @@ export function createHUD(root, state, game) {
   function refreshAwards() {
     awardLine(awRoad, LONGEST_ROAD_MIN, state.longestRoadHolder,
       state.players.map(p => p.longestRoadLen), 'road');
+    // With Raiders switched off before the draft there are no Knights in the
+    // deck, so Largest Army cannot be won by anybody. The line says so rather
+    // than sitting at "Open · you 0 · +2 knights" for a whole match, inviting
+    // the player to chase two points that are not on the table.
+    if (!raidersOn()) {
+      if (awArmy.last !== 'off') {
+        awArmy.last = 'off';
+        toggle(awArmy.row, 'unheld', true);
+        toggle(awArmy.row, 'ours', false);
+        setText(awArmy.size, '—');
+        setText(awArmy.holder, 'Raiders off');
+        awArmy.holder.style.setProperty('--c', 'rgba(233,243,255,.5)');
+        setText(awArmy.mine, 'not in play');
+        setText(awArmy.need, '');
+        toggle(awArmy.need, 'hid', true);
+      }
+      return;
+    }
     awardLine(awArmy, LARGEST_ARMY_MIN, state.largestArmyHolder,
       state.players.map(p => p.knightsPlayed), 'knight');
   }

@@ -38,6 +38,7 @@ import { icon, avatar } from '../ui/icons.js';
 import {
   DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
 } from './difficulty.js';
+import { raidersOn, setRaiders } from '../core/options.js';
 
 export const INTRO_CSS = `
 /* --------------------------------------------------------- opening screen */
@@ -114,7 +115,7 @@ export const INTRO_CSS = `
 .mf-cmp.in{opacity:1;transform:none}
 .mf-c-band{
   position:absolute;left:0;top:0;bottom:0;width:7px;
-  background:linear-gradient(180deg,var(--cl,#7fb2f0),var(--c,#3b7fd4));
+  background:linear-gradient(180deg,var(--cl,#93cbff),var(--c,#2f8ffb));
   box-shadow:inset -1px 0 0 rgba(0,0,0,.35);
 }
 .mf-c-av{line-height:0;flex:0 0 auto;margin-left:3px}
@@ -128,6 +129,21 @@ export const INTRO_CSS = `
   box-shadow:0 5px 0 #9a6d08,0 12px 22px rgba(0,0,0,.5),
              0 0 22px rgba(255,201,60,.45),inset 0 2px 0 rgba(255,255,255,.9);
 }
+
+/* ------------------------------------------------------------- the Raider
+   A second labelled group under Rival Skill, built out of the difficulty
+   picker's own parts so the two read as one settings block rather than as two
+   unrelated controls. Two buttons instead of four, so they are narrower, and a
+   live caption under them spells out what OFF actually costs — Largest Army
+   goes with the Knights, and a player should know that before they press it
+   rather than forty minutes later. */
+.btn.mf-raid{width:clamp(84px,13vw,110px)}
+.mf-i-dnote{
+  min-height:1.1em;margin-top:2px;
+  font:700 clamp(7px,1.05vw,9px)/1.25 var(--ff);letter-spacing:.07em;
+  text-transform:uppercase;color:rgba(226,240,255,.62);text-align:center;
+}
+.mf-i-dnote.off{color:var(--gold-l,#ffe79a)}
 
 /* -------------------------------------------------------------- difficulty */
 .mf-i-diff{
@@ -255,6 +271,8 @@ export const INTRO_CSS = `
      under it. The blurb is what gives, not the button. Four of these at 667
      wide come to 4x116.7 + 3x8 of gap = 491px inside a 647px content box. */
   .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
+  .btn.mf-raid{min-height:44px;width:clamp(78px,12vw,96px)}
+  .mf-i-dnote{font-size:7px;margin-top:1px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
   .mf-i-foot{gap:14px;margin-top:4px}
@@ -323,6 +341,63 @@ export function buildIntro(state, onBegin) {
     el('div', { class: 'mf-i-dlab', text: 'Rival Skill' }),
     el('div', { class: 'mf-i-drow' }, diffButtons));
 
+  /* --------------------------------------------------------------- raiders
+   *
+   *   "Add a feature to turn off the robber/knight if you want, for that
+   *    specific game, before the game started."
+   *
+   * A Knight takes half of every resource off every rival at once and then
+   * shuts a hex down, and it is half the card deck — so a match with them and a
+   * match without them are genuinely two different games, and which one you
+   * want is a thing to decide before the draft rather than to endure.
+   *
+   * Switching it off pulls the Knight out of the deck (`rules.drawCard`
+   * re-normalises what is left), stops anything blocking a hex, hides the
+   * Raider in the world and on the map, and takes LARGEST ARMY out of reach —
+   * which is stated on the caption under the buttons, because a silent two
+   * victory points going missing is exactly the kind of thing that gets found
+   * out at the wrong moment.
+   *
+   * Same shape as Rival Skill above and same storage model (see
+   * `core/options.js`): the choice sticks between matches, and the row is right
+   * here on every opening screen so it is still a per-match decision.
+   */
+  const RAID_OPTS = [
+    { on: true,  name: 'On',  aria: 'Raiders on — Knight cards, the Raider and Largest Army all in play' },
+    { on: false, name: 'Off', aria: 'Raiders off — no Knight cards, nothing blocks a region, and Largest Army cannot be won' }
+  ];
+  const raidNote = el('div', { class: 'mf-i-dnote' });
+  const raidButtons = RAID_OPTS.map(o => button('cream mf-diff mf-raid', {
+    'data-on': o.on ? '1' : '0',
+    'aria-label': o.aria,
+    on: { click: () => pickRaid(o.on) }
+  }, el('b', { class: 'mf-d-name', text: o.name })));
+
+  function paintRaid() {
+    const cur = raidersOn();
+    raidButtons.forEach(b => {
+      const on = (b.getAttribute('data-on') === '1') === cur;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    raidNote.textContent = cur
+      ? 'Knights take half of every rival\u2019s goods and block a region'
+      : 'No Knight cards \u00b7 nothing blocks a region \u00b7 no Largest Army';
+    raidNote.classList.toggle('off', !cur);
+  }
+
+  function pickRaid(on) {
+    setRaiders(on);
+    paintRaid();
+  }
+
+  paintRaid();
+
+  const raiders = el('div', { class: 'mf-i-diff' },
+    el('div', { class: 'mf-i-dlab', text: 'Raiders' }),
+    el('div', { class: 'mf-i-drow' }, raidButtons),
+    raidNote);
+
   const playBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
@@ -340,13 +415,18 @@ export function buildIntro(state, onBegin) {
       el('span', { text: `First to ${VICTORY_POINTS} Points` })),
     el('div', { class: 'mf-i-row' }, cards),
     difficulty,
+    raiders,
     el('div', { class: 'mf-i-foot' },
       el('div', { class: 'mf-i-cta' }, playBtn, tutBtn),
       el('div', { class: 'mf-i-hint' },
         el('b', { text: 'Claim two corners' }),
         ' · gather from the land you touch · build roads, settlements and cities')));
 
-  return { node, cards, playBtn, tutBtn, diffButtons, refreshDifficulty: paint };
+  return {
+    node, cards, playBtn, tutBtn, diffButtons, raidButtons,
+    refreshDifficulty: paint,
+    refreshRaiders: paintRaid
+  };
 }
 
 export default buildIntro;

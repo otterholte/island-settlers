@@ -6,9 +6,9 @@
  *
  * Each card is a live progress meter, not a price tag. It fills from the
  * bottom as `min(have/need)` climbs, shows every required resource as
- * have / need, marks the one resource still holding the purchase up, and
- * snaps to an unmistakable gold "affordable now" state the moment it is
- * buyable.
+ * have / need — GREEN-boxed where the pack already covers it, RED-boxed where
+ * it does not, every one of them — and snaps to an unmistakable gold
+ * "affordable now" state the moment it is buyable.
  *
  * Owner: UI agent.
  */
@@ -88,12 +88,26 @@ export function createBuildBar(state, game, hooks = {}) {
       }
       toggle(c.node, 'cap', capped || (pr.afford && !where));
 
+      /*
+       * EVERY chip reports its own state, not just the worst one.
+       *
+       *   "I only see one red box around the resource I need ... instead of
+       *    seeing the red box around all of the resources I need. ... Can you
+       *    make there also be a green box around the resources I have enough."
+       *
+       * This used to paint `.block` on `pr.blocking` alone — the single
+       * resource with the worst ratio — so a settlement with an empty pack put
+       * a red box on one of four missing goods and left the other three
+       * indistinguishable from goods already banked. Two classes now, applied
+       * per chip: `miss` on anything short, `met` on anything covered. Reading
+       * the price is reading the colours, with nothing left to infer.
+       */
       for (const part of pr.parts) {
         const chip = c.chips[part.res];
         if (!chip) continue;
         setText(chip.have, part.have > 99 ? '99' : part.have);
         toggle(chip.node, 'met', part.met);
-        toggle(chip.node, 'block', part.res === pr.blocking);
+        toggle(chip.node, 'miss', !part.met);
       }
     }
 

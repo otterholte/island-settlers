@@ -234,15 +234,19 @@ function buildOverlay(list) {
       // The shared ownership heartbeat, straight off mood.js — the same object
       // the trees and the terrain breathe on, so nothing can drift out of step.
       uPulse: uMoodTime,
-      uRim:  { value: new THREE.Color(0x7fb2f0) },
+      uRim:  { value: new THREE.Color(0x93cbff) },
+      // Overwritten from PLAYER_COLORS[0].light the moment the mesh is built
+      // (see `MINE` below); the literal is only the value the shader compiles
+      // with, kept in step by hand so a glance at this file is not misleading.
+      //
       // The ADDITIVE blue is a different, far more saturated colour than the
-      // decal blue above, and it has to be. Adding the pale #7fb2f0 on top of
+      // decal blue above, and it has to be. Adding the pale rim colour on top of
       // sunlit sand clips red and green long before blue and the whole rim goes
       // white — which is what "make it glow" must not turn into. This one is
       // nearly pure blue, so it stays unmistakably the PLAYER'S colour all the
       // way up to the few pixels at the base of the wall where it does blow out
       // to white, and that hot core is the part that carries across the island.
-      uGlow: { value: new THREE.Color(0x1f6ff2) },
+      uGlow: { value: new THREE.Color(0x1878ff) },
       uWarm: { value: new THREE.Color(WARM) },
       uMute: { value: new THREE.Color(MUTE) }
     },
@@ -455,9 +459,11 @@ export function buildRegions(group, dressing, stumps) {
   group.add(marker.mesh);
 
   /* The human's LIGHT variant, not the base hex: a mid blue laid over grass and
-     clay at 70% alpha reads as a smudge. #7fb2f0 holds against every terrain. */
+     clay at 70% alpha reads as a smudge. The pale variant holds against every
+     terrain, and it follows PLAYER_COLORS so the brighter palette carries here
+     without a second edit. */
   const _c = new THREE.Color();
-  const MINE = (PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#7fb2f0';
+  const MINE = (PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#93cbff';
   ground.mat.uniforms.uRim.value.set(MINE).convertSRGBToLinear();
   marker.mat.uniforms.uOwn.value.copy(ground.mat.uniforms.uRim.value);
 

@@ -30,6 +30,7 @@ import {
   legalSettlements, legalRoads, legalCities,
   longestRoadFor, scoreOf, canGatherTile, ownedTiles
 } from '../core/rules.js';
+import { raidersOn } from '../core/options.js';
 
 import { difficultyParams } from './difficulty.js';
 
@@ -651,6 +652,9 @@ export function knightTarget(state, pid, opts = {}) {
  * flattens everyone's economy and drags matches out, so it is rate limited.
  */
 export function wantsKnight(state, pid, sinceLast = Infinity, opts = {}) {
+  // Raiders switched off for this match: no Knight is ever dealt, so this is
+  // only ever reached by a card left over from a restored match. Refuse it.
+  if (!raidersOn()) return false;
   const p = state.players[pid];
   if (!p.cards.some(c => c.type === 'knight')) return false;
   const d = dOf(opts);

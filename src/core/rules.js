@@ -14,6 +14,7 @@ import {
   CARD_WEIGHTS, PLAYER_COLORS, BOT_PROFILES, PICKUP_RADIUS,
   TRADE_BASE, canAfford, pay, totalRes
 } from './constants.js';
+import { raidersOn } from './options.js';
 
 import {
   tiles, intersections, edges, ports, SPAWNS, DESERT, edgeBetween
@@ -355,6 +356,11 @@ export function ownedTiles(state, pid) {
 }
 
 export function raiderBlocks(state, pid, tileId) {
+  // Switched off for this match: nothing blocks anything, whatever the board
+  // happens to say. Belt and braces — with no Knights in the deck the Raider
+  // never leaves the desert, and the desert yields nothing to anybody anyway —
+  // but a restored or replayed match must not be able to strand a live block.
+  if (!raidersOn()) return false;
   // The player who last moved the Raider may still work the blocked region.
   return state.robberTile === tileId && state.robberOwner !== pid;
 }
@@ -482,11 +488,33 @@ export function drawCard(state, pid, free = false) {
     if (!canAfford(p.res, COST.card)) return null;
     pay(p.res, COST.card);
   }
-  const roll = state.rng();
-  let acc = 0, type = 'knight';
+  /*
+   * Pick a type from the weight table, over only the types this match is
+   * actually playing.
+   *
+   * With Raiders switched off (`core/options.js`) the Knight leaves the deck
+   * entirely, and what is left is re-normalised — otherwise the 0.5 the Knight
+   * held would be a hole in the distribution and every roll landing in it would
+   * fall through to the loop's default. That default used to be the string
+   * 'knight', which was already a latent bug: any float drift that left `acc`
+   * short of 1 handed out a Knight for free. It is now the last surviving type,
+   * and the roll is scaled to the real total, so neither can happen.
+   */
+  const table = [];
+  let total = 0;
   for (const k in CARD_WEIGHTS) {
-    acc += CARD_WEIGHTS[k];
-    if (roll <= acc) { type = k; break; }
+    if (k === 'knight' && !raidersOn()) continue;
+    const w = CARD_WEIGHTS[k];
+    if (!(w > 0)) continue;
+    table.push([k, w]);
+    total += w;
+  }
+  if (!table.length) return null;
+  let roll = state.rng() * total;
+  let type = table[table.length - 1][0];
+  for (const [k, w] of table) {
+    roll -= w;
+    if (roll <= 0) { type = k; break; }
   }
   const card = { type, id: `${pid}-${state.time.toFixed(2)}-${Math.floor(state.rng() * 1e6)}` };
   if (type === 'victoryPoint') {

@@ -31,6 +31,7 @@
  */
 
 import * as THREE from 'three';
+import { PLAYER_COLORS } from '../core/constants.js';
 
 function canvas2d(w, h) {
   if (typeof document === 'undefined' || !document.createElement) return null;
@@ -140,7 +141,9 @@ export function buildMarkers(list, atlas) {
       uAtlas: { value: atlas },
       uHasAtlas: { value: atlas ? 1 : 0 },
       uGrid: { value: GRID },
-      uOwn: { value: new THREE.Color(0x7fb2f0) },
+      // The human's own pale variant, read from PLAYER_COLORS so the badge's
+      // halo tracks the player palette instead of drifting off it.
+      uOwn: { value: new THREE.Color((PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#93cbff') },
       uTime: { value: 0 }
     },
     vertexShader: /* glsl */`

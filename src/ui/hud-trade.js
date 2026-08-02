@@ -206,8 +206,14 @@ export function createTradeCue(root, state, game) {
     if (!cur || !cam) { toggle(wrap, 'off', true); return; }
     const s = project(cam, cur.x, cur.y, cur.z);
     if (!s) { toggle(wrap, 'off', true); return; }
-    const W = root.clientWidth || window.innerWidth || 960;
-    const H = root.clientHeight || window.innerHeight || 444;
+    // Take the SMALLER of the layer box and the window on each axis. The two
+    // disagree for a frame either side of a resize — the viewport changes
+    // before the absolutely-positioned HUD layer has been laid out again — and
+    // a stale, larger `W` parks the chip outside the new viewport until the
+    // next frame corrects it. Which is exactly long enough for acceptance
+    // check 18 to photograph it hanging off the right-hand edge.
+    const W = Math.min(root.clientWidth || Infinity, window.innerWidth || Infinity) || 960;
+    const H = Math.min(root.clientHeight || Infinity, window.innerHeight || Infinity) || 444;
     if (s.x < -0.35 || s.x > 1.35 || s.y < -0.5 || s.y > 1.45) {
       toggle(wrap, 'off', true);
       return;
@@ -216,9 +222,16 @@ export function createTradeCue(root, state, game) {
     // It tracks the building, clamped clear of the two bands it must not
     // cover: the resource pill up top and the build cards along the bottom.
     // The chip hangs upward from its anchor, so the top limit knows its height.
+    // Clamped by the card's OWN box rather than by a fraction of the screen:
+    // the chip grew by half when the type went up, and a 0.14/0.86 band that
+    // comfortably held a 120px card lets a 200px one hang over the edge.
     const ch = card.offsetHeight || 28;
+    const cw = card.offsetWidth || 160;
+    const half = cw / 2 + 6;
     const top = Math.min(H * 0.72, 74 + ch);
-    const px = Math.max(W * 0.14, Math.min(W * 0.86, s.x * W));
+    const lo = Math.min(half, W * 0.5);
+    const hi = Math.max(W - half, W * 0.5);
+    const px = Math.max(lo, Math.min(hi, s.x * W));
     const py = Math.max(top, Math.min(H * 0.7, s.y * H));
     wrap.style.transform = `translate(${px.toFixed(1)}px,${py.toFixed(1)}px)`;
   }
