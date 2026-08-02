@@ -509,9 +509,9 @@
 .eb-hint i{font-style:normal}
 .endbar .btn{min-height:46px}
 
-/* With the bar up, the build cards and the ground prompt have nothing left to
-   say — the match is over. Their space becomes board. */
-#ui.endgame .hud-bc,#ui.endgame .hud-bl,#ui.endgame .hud-br{
+/* With the bar up, the build cards have nothing left to say — the match is
+   over. Their space becomes board. */
+#ui.endgame .hud-bc,#ui.endgame .hud-br{
   opacity:0;pointer-events:none;transition:opacity .2s ease}
 
 /* The boot splash lives in ui-boot.css. */
@@ -582,13 +582,6 @@
   .cbtn.small{width:48px;height:48px}
   .hud-br{gap:6px}
 
-  .hud-bl{max-width:156px}
-  .prompt{min-height:44px;padding:5px 10px 5px 7px;gap:7px}
-  .pr-txt{font-size:11px;letter-spacing:.07em}
-  .pr-sub{font-size:9px}
-
-  .hud-toasts{bottom:calc(var(--gB) + 54px);max-width:44vw}
-  .toast{max-width:56vw;font-size:11px;padding:5px 11px 6px 8px}
 
   .ann-txt{font-size:22px}
   /* Every pixel the title plate and the confirm bar give back is board: the
@@ -646,7 +639,6 @@
   .bcard{height:92px}
   .bc-ico{margin:0}
   .bc-ico svg{width:24px;height:24px}
-  .hud-toasts{bottom:calc(var(--gB) + 104px)}
 }
 
 @media (prefers-reduced-motion:reduce){

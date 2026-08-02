@@ -1,27 +1,24 @@
 /**
  * Island Settlers — HUD guidance model.
  *
- * Pure logic, no DOM. Answers three questions the player kept asking:
+ * Pure logic, no DOM. Answers two questions the player kept asking:
  *
  *   "How close am I to a road / settlement / city / card?"  -> progressFor()
  *   "Where can I still pick resources up, and when do they
  *    come back?"                                            -> regionReport()
- *   "What should I be doing right now?"                     -> createGuide()
  *
  * Everything here reads state; nothing here mutates it.
  *
  * Owner: UI agent.
  */
 
-import {
-  RES, RES_LABEL, COST, VICTORY_POINTS, PIECE_LIMIT, TRADE_RADIUS
-} from '../core/constants.js';
+import { RES, PIECE_LIMIT } from '../core/constants.js';
 
 import {
-  legalRoads, legalSettlements, legalCities, scoreOf,
+  legalRoads, legalSettlements, legalCities,
   playerOwnsTile, canGatherTile
 } from '../core/rules.js';
-import { tiles, tileAt, MARKET } from '../board/layout.js';
+import { tiles, tileAt } from '../board/layout.js';
 import {
   tileItemsRemaining, tileItemCount, tileRecovery, nearestItem
 } from '../board/nodes.js';
@@ -45,8 +42,6 @@ export const REGION_ONE = {
   wood: 'forest', brick: 'clay hill', wool: 'pasture',
   wheat: 'wheat field', ore: 'mountain'
 };
-
-const KIND_LABEL = { road: 'Road', settlement: 'Settlement', city: 'City', card: 'Card' };
 
 /* ------------------------------------------------------------- purchases */
 
@@ -184,159 +179,17 @@ export function bearingWord(p, target) {
 
 const lower = s => String(s).toLowerCase();
 
-/**
- * createGuide(state, game) -> { read(opts) }
+/*
+ * `createGuide` used to live here — the running "what should I be doing right
+ * now" line under the resource pill. It is gone with the line it fed:
  *
- * `read()` returns { key, ico, lead, tail, tone } where `lead` is the bold
- * clause and `tail` the quiet one. `key` changes only when the meaning
- * changes, so the HUD can animate on real transitions and not on a ticking
- * countdown.
+ *   "During the game I don't need the little popups telling me what to do
+ *    below my resource counter at the top middle of the page."
+ *
+ * `nearestLive` and `bearingWord` above were its two helpers and are kept: they
+ * are small, general and the only place in the codebase that turns a bearing
+ * into a word, which is the sort of thing that gets rewritten badly when it is
+ * needed again and cannot be found.
  */
-export function createGuide(state, game) {
-  const me = state.players[0];
 
-  function goal() {
-    let best = null;
-    for (const b of BUILD_KINDS) {
-      if (pieceCapped(state, 0, b.kind)) continue;
-      const pr = progressFor(me.res, COST[b.kind]);
-      const where = hasSomewhere(state, b.kind);
-      // Points-earning purchases win ties: the player asked how they *grow*.
-      const score = pr.p + (b.vp ? 0.07 : 0) + (where ? 0 : -0.5);
-      const cand = { ...b, ...pr, where, score };
-      if (!best || score > best.score) best = cand;
-    }
-    return best;
-  }
-
-  function buyable() {
-    // The most useful thing on the shelf right now. A road outranks a card
-    // because a road is what unblocks the next settlement.
-    for (const k of ['city', 'settlement', 'road', 'card']) {
-      if (pieceCapped(state, 0, k)) continue;
-      if (!progressFor(me.res, COST[k]).afford) continue;
-      if (!hasSomewhere(state, k)) continue;
-      return k;
-    }
-    return null;
-  }
-
-  function tradeReach() {
-    if (me.nearTrade === 'market') return 'the market';
-    if (typeof me.nearTrade === 'number') return 'this dock';
-    const d = Math.hypot(me.x - MARKET.x, me.z - MARKET.z);
-    return d < TRADE_RADIUS + MARKET.radius ? 'the market' : null;
-  }
-
-  function read(opts = {}) {
-    const regions = opts.regions || regionReport(state);
-
-    if (state.phase === 'setup') {
-      return state.setupNeed === 'road'
-        ? { key: 'setup-road', ico: 'road', lead: 'Place a road', tail: 'next to your new settlement', tone: 'go' }
-        : { key: 'setup-set', ico: 'house', lead: 'Claim a corner', tail: 'pick a spot on the map', tone: 'go' };
-    }
-    if (state.phase === 'over') {
-      return state.winner === 0
-        ? { key: 'won', ico: 'trophy', lead: 'You settled the island', tail: '', tone: 'go' }
-        : { key: 'lost', ico: 'trophy', lead: 'Match over', tail: '', tone: '' };
-    }
-
-    if ((me.freeRoads | 0) > 0) {
-      return {
-        key: 'freeroad', ico: 'road',
-        lead: `${me.freeRoads} free road${me.freeRoads > 1 ? 's' : ''}`,
-        tail: 'the map opens itself — tap an edge, then tap it again', tone: 'go'
-      };
-    }
-
-    const ready = buyable();
-    if (ready) {
-      const b = BUILD_KINDS.find(x => x.kind === ready);
-      const left = VICTORY_POINTS - scoreOf(state, me);
-      const tail = b.vp && left <= 3 ? `${left} point${left === 1 ? '' : 's'} from winning`
-        : opts.buildHidden ? 'tap BUILD to place it'
-        : 'you can afford it now';
-      const verb = ready === 'card' ? 'Buy a' : ready === 'city' ? 'Upgrade to a' : 'Build a';
-      return { key: 'buy-' + ready, ico: b.ico, lead: `${verb} ${lower(b.label)}`, tail, tone: 'go' };
-    }
-
-    const g = goal();
-
-    // A settlement you can pay for but cannot legally site is the single most
-    // confusing state in the game. Name the fix.
-    if (g && g.afford && !g.where) {
-      if (g.kind === 'city') {
-        return { key: 'need-set', ico: 'house', lead: 'Build a settlement first', tail: 'cities upgrade one you own', tone: '' };
-      }
-      return { key: 'need-road', ico: 'road', lead: 'Extend a road first', tail: 'settlements sit on your network', tone: '' };
-    }
-
-    const here = standingRegion(state, me);
-    if (here && here.mine && here.exhausted) {
-      return {
-        key: 'spent-' + here.tile.id, ico: here.resource,
-        lead: 'Region worked out',
-        tail: `back in ${Math.ceil(here.secondsLeft)}s — move on`, tone: 'wait'
-      };
-    }
-    if (here && here.blocked) {
-      return {
-        key: 'raider-' + here.tile.id, ico: 'knight',
-        lead: 'The raider holds this hex',
-        tail: 'nothing comes off it while it sits there', tone: 'wait'
-      };
-    }
-
-    if (!g || !g.blocking) {
-      return { key: 'idle', ico: 'flag', lead: 'Gather and build', tail: '', tone: '' };
-    }
-
-    const short = g.blocking;
-    const need = (COST[g.kind][short] | 0) - Math.max(0, me.res[short] | 0);
-    const rr = regions[short];
-    const lead = `${need} more ${lower(RES_LABEL[short])}`;
-    const goalName = lower(KIND_LABEL[g.kind]);
-
-    // Already standing on a hex of theirs that grows it: say so, and say what
-    // it buys. Pickup is contact, so the instruction is "keep running".
-    if (here && here.workable && here.resource === short) {
-      return {
-        key: 'keep-' + short + '-' + g.kind, ico: short, lead,
-        tail: `run over them — then a ${goalName}`, tone: 'go'
-      };
-    }
-
-    if (rr && rr.live === 0) {
-      return {
-        key: 'dry-' + short, ico: short, lead,
-        tail: `${REGION_OF[short]} back in ${Math.ceil(rr.soonest)}s`, tone: 'wait'
-      };
-    }
-
-    const spot = tradeReach();
-    if (spot) {
-      const spare = RES.filter(r => r !== short && (me.res[r] | 0) >= 4)
-        .sort((a, b) => (me.res[b] | 0) - (me.res[a] | 0))[0];
-      if (spare) {
-        return {
-          key: 'trade-' + short, ico: 'swap',
-          lead: `Trade at ${spot}`,
-          tail: `swap spare ${lower(RES_LABEL[spare])} for ${lower(RES_LABEL[short])}`, tone: 'go'
-        };
-      }
-    }
-
-    const target = nearestLive(me, short);
-    const dir = bearingWord(me, target);
-    return {
-      key: 'need-' + g.kind + '-' + short, ico: short, lead,
-      tail: `for a ${goalName} · ${REGION_OF[short]} ${dir}`,
-      tone: ''
-    };
-  }
-
-  return { read, goal, buyable, regionReport: () => regionReport(state) };
-}
-
-export default createGuide;
+export default { regionReport, standingRegion, progressFor };

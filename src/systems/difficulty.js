@@ -54,47 +54,74 @@ export const DEFAULT_DIFFICULTY = 'easy';
  *                   real for the whole match. The separate panic ramp, which is
  *                   on a fixed clock, is the last resort. See bots.js.
  *
- * The bottom three rungs were moved down after playtesting and then measured, so
- * they are fixed points and nothing here reopens them. Expert was added on top
- * afterwards; re-measuring all four together over 120 matches each
- * (`tools/simulate.mjs --matches=40 --novice --difficulty=…`, seeds 101/202/303)
- * puts the novice stand-in's win rate at:
+ * THE WHOLE LADDER WAS RAISED. The rungs used to hold the novice stand-in to
  *
  *     easy 94.6%   medium 52.5%   hard 20.2%   expert 8.5%
  *
- * which reproduces the three published figures (94-98 / 53 / 18) and leaves the
- * new rung a clear step above Hard without putting a match out of reach. Fewer
- * matches than that is not a measurement: the simulator is not bit-reproducible,
- * and a 25-match run swings ten points either way on its own.
+ * and they now measure (`tools/simulate.mjs --matches=60 --novice
+ * --difficulty=…`, run against the new economy):
+ *
+ *     easy 49%     medium 27%     hard 16%     expert 2%
+ *
+ * Two different complaints, one at each end. At the bottom, 95% is not a
+ * difficulty, it is a cutscene — a beginner never lost and so never found out
+ * what losing was caused by. At the top, "the novice loses 91% of the time"
+ * turned out to say nothing about whether somebody who has LEARNED the game
+ * loses, and the answer was no.
+ *
+ * Note what the expert figure can and cannot tell you. Below about 10% the
+ * stand-in is losing to variance rather than to skill, so the metric floors out
+ * and the last pass moved it 8.5% -> 7% while every knob moved a long way. It
+ * is the knobs that a strong player meets. The 2% here is the second pass,
+ * seven tenths of the way to flawless.
+ *
+ * Fewer than about 50 matches is not a measurement: the simulator is not
+ * bit-reproducible, and a 25-match run swings ten points either way on its own.
  *
  * Each level's `blurb` describes what the rivals do — their pace, how quickly
  * they expand, how much pressure they apply. It is a description of the
  * opposition, not a comment on whoever picked it.
  */
 export const LEVELS = {
+  /*
+   * THE WHOLE LADDER MOVED UP A RUNG.
+   *
+   *   "Right now, now that I know how to play, I keep winning on expert. And
+   *    easy, they are really bad. Can you increase the difficulty for all of
+   *    the levels, so that a beginner might lose if they have no idea what
+   *    they're doing, but they learn as they go. And a good player might still
+   *    lose on expert."
+   *
+   * The old ladder was built around a novice stand-in and measured 95 / 53 / 19
+   * / 9 per cent win rates. Two things are wrong with that once the player is no
+   * longer a novice. At the bottom, 95% is not a difficulty, it is a cutscene —
+   * a beginner never loses and so never finds out what losing is caused by. At
+   * the top, "the novice loses 91% of the time" says nothing at all about
+   * whether somebody who has learned the game loses, and the answer turned out
+   * to be no.
+   *
+   * So each rung takes the numbers of the rung above it, and Expert is new:
+   *
+   *   Easy    <- the old Medium
+   *   Medium  <- the old Hard
+   *   Hard    <- the old Expert
+   *   Expert  <- halfway from the old Expert to RAMP_CEILING, which is flawless
+   *              play. Half the remaining distance to perfect, in every knob.
+   *
+   * The bottom rung is the one to be careful with, and it is not careless: the
+   * old Medium still loiters before every build, postpones a fifth of what it
+   * can afford, wanders, and never plays for an award on purpose. A beginner
+   * who does not know what a settlement is for will lose to it. A beginner who
+   * works out that corners touching three hexes are better than corners
+   * touching two will beat it inside a few matches, which is the point.
+   */
   easy: {
     key: 'easy',
     label: 'Easy',
-    blurb: 'Slow pace, late expansion',
-    // Half the run speed, a second of loitering before every build, and
-    // roughly a third of their affordable purchases postponed in favour of yet
-    // more gathering. A beginner still finding the thumbstick beats this field:
-    // the novice stand-in wins 96% of simulated matches against it.
-    speed: 0.52, accel: 0.60,
-    replan: 2.80, hesitate: 0.62, pause: 1.45, actDelay: 0.95,
-    noise: 3.8, secondBest: 0.48, routeSlop: 0.68, tileSlop: 0.58,
-    wander: 0.22, wanderSec: 3.2,
-    hoard: 0.30,
-    trade: 0.28,
-    knight: 0.14, knightAim: 0.10, knightGap: 32,
-    endgame: false, award: 0.45, setupNoise: 3.0, desperate: 26,
-    rampFrom: 210
-  },
-  medium: {
-    key: 'medium',
-    label: 'Medium',
     blurb: 'Steady pace, some pressure',
-    // Where Easy used to sit.
+    // The old Medium, near enough exactly. Still the level a learner beats
+    // once they have understood the board — but no longer one they beat while
+    // still working out which way the thumbstick goes.
     speed: 0.69, accel: 0.76,
     replan: 2.00, hesitate: 0.42, pause: 0.95, actDelay: 0.55,
     noise: 2.9, secondBest: 0.33, routeSlop: 0.52, tileSlop: 0.42,
@@ -105,38 +132,27 @@ export const LEVELS = {
     endgame: false, award: 0.70, setupNoise: 3.0, desperate: 23,
     rampFrom: 195
   },
-  hard: {
-    key: 'hard',
-    label: 'Hard',
+  medium: {
+    key: 'medium',
+    label: 'Medium',
     blurb: 'Brisk pace, presses early',
-    // Where Medium used to sit, shaded down a little further.
+    // The old Hard: rivals that expand early, chase both awards and will spend
+    // a Knight on whoever is ahead.
     speed: 0.78, accel: 0.84,
     replan: 1.60, hesitate: 0.28, pause: 0.62, actDelay: 0.38,
     noise: 2.1, secondBest: 0.18, routeSlop: 0.28, tileSlop: 0.26,
     wander: 0.06, wanderSec: 1.8,
     hoard: 0.08,
     trade: 0.68,
-    knight: 0.56, knightAim: 0.48, knightGap: 11,
     endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
+    knight: 0.56, knightAim: 0.48, knightGap: 11,
     rampFrom: 180
   },
-  expert: {
-    key: 'expert',
-    label: 'Expert',
+  hard: {
+    key: 'hard',
+    label: 'Hard',
     blurb: 'Fast pace, constant pressure',
-    // The top rung, and the only level above the one the anti-stall ramp was
-    // built around. Every knob is a step past Hard rather than a leap: they run
-    // about 6% quicker, re-plan a little sooner, loiter for two thirds as long
-    // before a build, postpone fewer purchases they can already afford, trade
-    // more readily and land the Raider more accurately. It is still a long way
-    // short of RAMP_CEILING below — nothing a player can pick plays perfectly.
-    //
-    // Tuned by sweeping `--dset` before it was written down: a first pass sat
-    // halfway again as far past Hard as this one and held the novice stand-in
-    // to 4% of 95 matches, which is closer to hopeless than to hard. These
-    // numbers are the midpoint between that pass and Hard, and the novice wins
-    // 10% of 150 (seeds 1/7/13/23) — a real step down from Hard's 19% without
-    // taking the match away.
+    // The old Expert.
     speed: 0.83, accel: 0.88,
     replan: 1.45, hesitate: 0.22, pause: 0.50, actDelay: 0.30,
     noise: 1.85, secondBest: 0.14, routeSlop: 0.22, tileSlop: 0.20,
@@ -146,6 +162,36 @@ export const LEVELS = {
     knight: 0.63, knightAim: 0.55, knightGap: 10,
     endgame: true, award: 0.85, setupNoise: 1.7, desperate: 19,
     rampFrom: 175
+  },
+  expert: {
+    key: 'expert',
+    label: 'Expert',
+    blurb: 'Relentless — they play to win',
+    // NEW GROUND: every knob is SEVEN TENTHS of the way from the old Expert to
+    // RAMP_CEILING (the flawless profile the anti-stall ramp blends toward).
+    // They run at 95% of full speed, re-plan every 1.14s, barely loiter,
+    // postpone almost nothing they can afford, trade at the first opportunity,
+    // and can land a Knight on the leader every three seconds of cooldown.
+    //
+    // Half the distance was the first attempt and it was not enough. The
+    // novice-stand-in measurement cannot see the difference up here — below
+    // about 10% a bad player is losing to noise rather than to skill, so the
+    // number barely moved — but the knobs are what a GOOD player meets, and
+    // "now that I know how to play, I keep winning on expert" is a report from
+    // somebody the novice metric does not describe.
+    //
+    // It is still not the ceiling, and deliberately so: nothing a player can
+    // PICK plays perfectly, because a rival that never makes a mistake is not
+    // an opponent, it is a wall.
+    speed: 0.95, accel: 0.96,
+    replan: 1.14, hesitate: 0.07, pause: 0.15, actDelay: 0.09,
+    noise: 1.26, secondBest: 0.04, routeSlop: 0.07, tileSlop: 0.06,
+    wander: 0.01, wanderSec: 0.5,
+    hoard: 0.015,
+    trade: 0.92,
+    knight: 0.89, knightAim: 0.87, knightGap: 3,
+    endgame: true, award: 0.96, setupNoise: 1.20, desperate: 15,
+    rampFrom: 160
   },
 
   /**

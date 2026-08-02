@@ -34,7 +34,7 @@ const C = {
   stone:  '#c8c0ae', stoneL: '#e8e2d2', stoneD: '#8b8172',
   blue:   '#2f8ffb', blueL: '#93cbff', blueD: '#1a5db0',
   wall:   '#eef3fa', wallD: '#c3cfdf', wallX: '#ffffff',
-  sea:    '#2f8fd0', night: '#24303e', red: '#ff4a35'
+  sea:    '#2f8fd0', night: '#24303e', red: '#f5342a'
 };
 
 /** Dark keyline, the outline every asset shares. */

@@ -39,8 +39,7 @@ import { createKnightCue } from './hud-knight.js';
 import { createRoadCue } from './hud-road.js';
 import { createRaidCue } from './hud-raid.js';
 import {
-  createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere,
-  REGION_ONE
+  regionReport, pieceCapped, hasSomewhere
 } from './hud-guide.js';
 
 const RES_ICON_PX = 28;
@@ -72,7 +71,6 @@ const HOW_TO = raidersOn() ? HOW_TO_ALL : HOW_TO_ALL
 
 export function createHUD(root, state, game) {
   const me = state.players[0];
-  const guide = createGuide(state, game);
   const rivalNames = state.players.filter(p => p.id !== 0).map(p => p.name);
 
   /* ------------------------------------------------------------- scaffold */
@@ -138,11 +136,22 @@ export function createHUD(root, state, game) {
   const tl = el('div', { class: 'hud-tl' },
     el('div', { class: 'tl-row' }, gearBtn, timeChip), scoreCard);
 
-  /* --- top-centre: resources, region availability, next step -------------
+  /* --- top-centre: resources and region availability ----------------------
      One beveled pill in the prime slot: five 28px objects, 20px stroked
      numerals, and a hairline bar under each showing how much of that
-     resource is still standing on the island. Below it, one quiet line
-     that always says what to do next. */
+     resource is still standing on the island.
+
+     THE COACHING LINE THAT USED TO SIT UNDER IT IS GONE.
+
+       "During the game I don't need the little popups telling me what to do
+        below my resource counter at the top middle of the page."
+
+     It was a running instruction — BUILD A ROAD, you can afford it now — under
+     the one readout the player checks most often, changing every couple of
+     seconds as the numbers next to it moved. Everything it said is already on
+     screen and said better: the build cards go gold when they are affordable,
+     their cost chips are boxed green and red, and the scoreboard names both
+     awards and what it takes to win them. */
   const resSlots = {};
   const resBar = el('div', { class: 'resbar' });
   for (const r of RES) {
@@ -154,16 +163,7 @@ export function createHUD(root, state, game) {
     resBar.appendChild(slot);
   }
 
-  const obIco = el('span', { class: 'ob-ico' });
-  const obLead = el('b', { class: 'ob-lead' });
-  const obTail = el('span', { class: 'ob-tail' });
-  const objective = el('div', { class: 'objective plate' }, obIco,
-    el('span', { class: 'ob-body' }, obLead, obTail));
-
-  const tc = el('div', { class: 'hud-tc' }, resBar, objective);
-
-  /* --- toasts ------------------------------------------------------------ */
-  const toastWrap = el('div', { class: 'hud-toasts' });
+  const tc = el('div', { class: 'hud-tc' }, resBar);
 
   /* --- top-right: standings, deliberately quiet -------------------------- */
   const rankRows = state.players.map(p => {
@@ -229,19 +229,32 @@ export function createHUD(root, state, game) {
   const br = el('div', { class: 'hud-br' },
     btnPause.node, btnMap.node, btnCards.node, btnBuild.node);
 
-  /* --- bottom-left: what the ground here is offering ---------------------- */
-  let promptAction = null;
-  const promptIco = el('span', { class: 'pr-ico', html: icon('hammer', 26) });
-  const promptTxt = el('span', { class: 'pr-txt', text: '' });
-  const promptSub = el('span', { class: 'pr-sub', text: '' });
-  const promptBar = el('span', { class: 'pr-bar' }, el('i'));
-  // No `data-ui` until it is actually tappable: this sits in the joystick's
-  // corner and must not swallow a thumb that only wants to run.
-  const promptBtn = el('button', {
-    class: 'prompt plate hid', type: 'button',
-    on: { click: () => { if (promptAction) promptAction(); } }
-  }, promptIco, el('span', { class: 'pr-body' }, promptTxt, promptSub, promptBar));
-  const bl = el('div', { class: 'hud-bl' }, promptBtn);
+  /* --- bottom-left: NOTHING, deliberately ---------------------------------
+   *
+   *   "I also don't need any of the text popups in the bottom left corner, I'm
+   *    too busy playing, I'm never going to look that way."
+   *
+   * That corner held two things and both are gone: the ground-report chip
+   * ("Not your land · settle a corner", "Worked out · back in 26s") and the
+   * toast stack above it. Both were correct and neither was ever read, because
+   * the bottom-left is where the joystick thumb lives on a phone and where
+   * nothing else on this screen asks the eye to go.
+   *
+   * Nothing they carried is lost, because none of it was only there:
+   *   whose land is this   the hex tint and the owned-hex rim say it in the
+   *                        world, where the player is already looking
+   *   what is left on it   the five bars under the resource pill
+   *   worked out, back in  the recovery clock floating over the hex itself
+   *   the Raider is here   the Raider is standing on the hex, and the recovery
+   *                        badge wears the barred glyph
+   *
+   * `toast()` is kept as a no-op rather than deleted: it is called from about
+   * thirty places across six modules, and a function that quietly does nothing
+   * is a much smaller thing to maintain than thirty deletions and the imports
+   * that go with them. Anything that genuinely must be seen already goes to the
+   * centre of the screen — `announce`, the Knight and Road Building cues, and
+   * the raid card.
+   */
 
   /* --- announcements ----------------------------------------------------- */
   const annTxt = el('div', { class: 'ann-txt' });
@@ -272,8 +285,8 @@ export function createHUD(root, state, game) {
   );
 
   hud.appendChild(tl); hud.appendChild(tc); hud.appendChild(tr);
-  hud.appendChild(bl); hud.appendChild(bc); hud.appendChild(br);
-  hud.appendChild(toastWrap); hud.appendChild(annWrap); hud.appendChild(settings);
+  hud.appendChild(bc); hud.appendChild(br);
+  hud.appendChild(annWrap); hud.appendChild(settings);
   root.appendChild(hud);
 
   /* The world-anchored trade banner. It lives inside the HUD layer so it can
@@ -299,21 +312,10 @@ export function createHUD(root, state, game) {
      breakdown that nothing read. hud-raid.js is that payload on screen. */
   const raidCue = createRaidCue(hud, state, game);
 
-  /* ---------------------------------------------------------------- toast */
-  const liveToasts = [];
-
-  function toast(msg, kind = 'info') {
-    if (!msg) return;
-    const t = el('div', { class: 'toast plate t-' + kind },
-      el('span', { class: 'tk' }), el('span', { text: String(msg) }));
-    toastWrap.appendChild(t);
-    liveToasts.push({ node: t, t: 0 });
-    while (liveToasts.length > 2) {
-      const old = liveToasts.shift();
-      if (old.node.parentNode) old.node.parentNode.removeChild(old.node);
-    }
-    return t;
-  }
+  /* ---------------------------------------------------------------- toast
+   * Retired with the corner it lived in (see the bottom-left note above). The
+   * function stays so its thirty-odd callers keep working untouched. */
+  function toast() { return null; }
 
   /* A rival's news is news, not an event. It gets a toast, at most one every
      ten seconds; the centre banner is reserved for things the player did. */
@@ -401,87 +403,7 @@ export function createHUD(root, state, game) {
     toggle(gearBtn, 'on', settingsOpen);
   }
 
-  /* --------------------------------------------------------------- prompt
-     The ground report. Gathering is contact-based now — you run over a thing
-     and it is yours — so there is nothing here to hold, nothing to fill and no
-     `action === 'gather'` to branch on. What is left are the three facts the
-     player actually needs about the hex under their feet:
-
-        is it mine        you may only collect where you own a corner
-        what is left      items still standing, out of a full field
-        why nothing       not yours / raider sitting on it / swept clean
-
-     `statusHere` (src/systems/gathering.js) answers the first and third;
-     `standingRegion` (hud-guide.js) answers the second and carries the
-     recovery clock. Off a resource hex entirely, the chip stands down — the
-     joystick lives in this corner and an empty plate is just an obstacle. */
-  let promptKey = '';
-
-  function refreshPrompt() {
-    if (state.phase !== 'play') { setPrompt(null); return; }
-
-    const here = standingRegion(state, me);
-    if (!here) { setPrompt(null); return; }        // desert, market lawn, shore
-
-    const g = game.gathering;
-    const status = g && g.statusHere
-      ? g.statusHere(0)
-      : (!here.mine ? 'unowned' : here.blocked ? 'raider' : here.exhausted ? 'empty' : 'ok');
-
-    const label = RES_LABEL[here.resource];
-    const ico = resIcon(here.resource);
-
-    // Standing on land nobody has settled for you. This is the single most
-    // common reason a new player collects nothing, so it is named outright.
-    // Both lines are kept short on purpose: this plate is 158px wide on a
-    // 667px phone, and a sentence that ellipsises is a sentence nobody reads.
-    if (status === 'unowned') {
-      setPrompt('un' + here.tile.id, ico, 'Not your land',
-        'Settle a corner', null, -1);
-      return;
-    }
-    if (status === 'raider') {
-      setPrompt('raid' + here.tile.id, 'knight', 'Raider is here',
-        'It gives nothing', null, -1);
-      return;
-    }
-    if (status === 'empty' || here.exhausted || here.units <= 0) {
-      setPrompt('spent' + here.tile.id, ico, 'Worked out',
-        `Back in ${Math.ceil(here.secondsLeft)}s`, null, here.recovery);
-      return;
-    }
-
-    // Yours, standing, and there is something on it. Say what and how much.
-    setPrompt('ok' + here.tile.id, ico, 'Your ' + REGION_ONE[here.resource],
-      `${here.units} ${label} left`, null, -1);
-  }
-
-  /** `bar` < 0 hides the recovery meter; 0..1 shows it filling. */
-  function setPrompt(key, ico, txt, sub, action, bar) {
-    if (key === null) {
-      if (promptKey !== '') { promptKey = ''; toggle(promptBtn, 'hid', true); promptAction = null; }
-      return;
-    }
-    promptAction = action || null;
-    toggle(promptBtn, 'tappable', !!action);
-    if (action) promptBtn.setAttribute('data-ui', '');
-    else if (promptBtn.removeAttribute) promptBtn.removeAttribute('data-ui');
-
-    setText(promptSub, sub || '');           // sub carries a live countdown
-    const showBar = bar >= 0;
-    toggle(promptBar, 'on', showBar);
-    if (showBar) setVar(promptBar.firstChild, 'width', (bar * 100).toFixed(1) + '%');
-    toggle(promptBtn, 'spent', showBar);
-
-    if (key === promptKey) return;
-    promptKey = key;
-    promptIco.innerHTML = icon(ico, 20);
-    setText(promptTxt, txt);
-    toggle(promptBtn, 'hid', false);
-    replay(promptBtn, 'in', 400);
-  }
-
-  /* ------------------------------------------------------------ standings */
+    /* ------------------------------------------------------------ standings */
   let order = rankRows.map(r => r.p.id);
 
   function refreshRanks() {
@@ -520,7 +442,6 @@ export function createHUD(root, state, game) {
 
   /* -------------------------------------------------------------- refresh */
   let regions = regionReport(state);
-  let obKey = '';
 
   function refreshRegions() {
     regions = regionReport(state);
@@ -534,20 +455,6 @@ export function createHUD(root, state, game) {
         setVar(s.live.firstChild, 'width', (f * 100).toFixed(1) + '%');
       }
       toggle(s.node, 'dry', dry);
-    }
-  }
-
-  function refreshObjective() {
-    const g = guide.read({ regions, buildHidden: buildRow.classList.contains('hid') });
-    const ico = RES.indexOf(g.ico) >= 0 ? resIcon(g.ico) : g.ico;
-    setText(obLead, g.lead);
-    setText(obTail, g.tail || '');
-    if (g.key !== obKey) {
-      obKey = g.key;
-      obIco.innerHTML = icon(ico, 20);
-      toggle(objective, 'go', g.tone === 'go');
-      toggle(objective, 'wait', g.tone === 'wait');
-      replay(objective, 'turn', 420);
     }
   }
 
@@ -573,7 +480,7 @@ export function createHUD(root, state, game) {
     refreshRanks();
     setBadge(btnBuild, buildBar.refresh());
     setBadge(btnCards, me.cards.length);
-    if (force) { refreshRegions(); refreshPrompt(); refreshObjective(); }
+    if (force) refreshRegions();
   }
 
   /**
@@ -718,24 +625,13 @@ export function createHUD(root, state, game) {
     slow += d;
     if (slow >= 0.1) { slow = 0; refreshAll(false); }
 
+    // The five availability bars under the resource pill are all that is left
+    // on this beat now that the ground report and the coaching line have gone.
     promptT += d;
-    if (promptT >= 0.2) {
-      promptT = 0;
-      refreshRegions(); refreshPrompt(); refreshObjective();
-    }
+    if (promptT >= 0.2) { promptT = 0; refreshRegions(); }
 
     timeT += d;
     if (timeT >= 0.25) { timeT = 0; setText(timerTxt, fmtTime(state.time)); }
-
-    for (let i = liveToasts.length - 1; i >= 0; i--) {
-      const t = liveToasts[i];
-      t.t += d;
-      if (t.t > 2.5 && !t.out) { t.out = true; toggle(t.node, 'out', true); }
-      if (t.t > 3.1) {
-        if (t.node.parentNode) t.node.parentNode.removeChild(t.node);
-        liveToasts.splice(i, 1);
-      }
-    }
 
     if (annT > 0) { annT -= d; if (annT <= 0) toggle(annWrap, 'show', false); }
 

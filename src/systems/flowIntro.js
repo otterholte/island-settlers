@@ -131,19 +131,56 @@ export const INTRO_CSS = `
 }
 
 /* ------------------------------------------------------------- the Raider
-   A second labelled group under Rival Skill, built out of the difficulty
-   picker's own parts so the two read as one settings block rather than as two
-   unrelated controls. Two buttons instead of four, so they are narrower, and a
-   live caption under them spells out what OFF actually costs — Largest Army
-   goes with the Knights, and a player should know that before they press it
-   rather than forty minutes later. */
-.btn.mf-raid{width:clamp(84px,13vw,110px)}
-.mf-i-dnote{
-  min-height:1.1em;margin-top:2px;
-  font:700 clamp(7px,1.05vw,9px)/1.25 var(--ff);letter-spacing:.07em;
-  text-transform:uppercase;color:rgba(226,240,255,.62);text-align:center;
+   A SWITCH, not two buttons.
+
+     "Can you make the raiders be a toggle instead of two large buttons."
+
+   ON and OFF as a pair of 110px plates was the difficulty picker's shape used
+   for a question that does not have four answers — two chunky mutually
+   exclusive buttons carry all the visual weight of a real choice for something
+   that is just a setting. This is one track with one knob, which says the same
+   thing in a third of the width and reads as on-or-off without being labelled
+   on-or-off. Its state is carried by position AND colour AND the word beside
+   it, so it does not rely on any one of the three.
+
+   The knob is a pseudo-element so the whole control is one focusable button
+   with one hit area; 46px tall, comfortably over the tap-target floor. */
+.mf-i-raid{display:flex;align-items:center;justify-content:center;
+  gap:clamp(8px,1.6vw,13px)}
+.btn.mf-switch{
+  position:relative;flex:0 0 auto;
+  width:clamp(62px,11vw,76px);min-height:34px;height:34px;padding:0;
+  border-radius:999px;border-width:2px;
+  --f1:#5b6b7e;--f2:#3d4a5a;--f3:#2b3644;--lip:#1a2330;
+  box-shadow:0 3px 0 var(--lip),0 6px 12px rgba(0,0,0,.45),
+             inset 0 2px 6px rgba(0,0,0,.45);
+  transition:background .22s ease,box-shadow .22s ease;
 }
-.mf-i-dnote.off{color:var(--gold-l,#ffe79a)}
+.btn.mf-switch::after{
+  content:'';position:absolute;top:3px;left:3px;
+  width:24px;height:24px;border-radius:50%;
+  background:linear-gradient(180deg,#fdf5e2,#dcc496);
+  box-shadow:0 2px 0 rgba(0,0,0,.42),inset 0 2px 0 rgba(255,255,255,.75);
+  transition:transform .22s cubic-bezier(.2,1.3,.35,1),background .22s ease;
+}
+.btn.mf-switch.on{
+  --f1:#a6e58c;--f2:#4bab53;--f3:#2f8a3d;--lip:#1a5526;
+  box-shadow:0 3px 0 var(--lip),0 6px 12px rgba(0,0,0,.45),
+             0 0 18px rgba(75,171,83,.5),inset 0 2px 6px rgba(0,0,0,.28);
+}
+.btn.mf-switch.on::after{
+  transform:translateX(calc(clamp(62px,11vw,76px) - 34px));
+  background:linear-gradient(180deg,#ffffff,#e9f7e2);
+}
+/* The word is the third channel, and it is the one a colour-blind player
+   reads: it changes with the knob rather than labelling the track. */
+.mf-raid-state{
+  min-width:3.4em;text-align:left;
+  font:800 clamp(11px,1.85vw,14px)/1 var(--ff);letter-spacing:.16em;
+  text-transform:uppercase;color:#8f9dad;
+  text-shadow:0 1px 3px rgba(0,0,0,.8);transition:color .22s ease;
+}
+.mf-raid-state.on{color:#a6e58c}
 
 /* -------------------------------------------------------------- difficulty */
 .mf-i-diff{
@@ -237,8 +274,20 @@ export const INTRO_CSS = `
 /* The second route in. Same bevel, same outline, same press — cream instead of
    green and a size down, so it is unmistakably an option rather than the
    option. 48px tall at every size we ship. */
+/* Bottom-right corner, out of the title's column entirely, so BEGIN THE DRAFT
+   is centred on the SCREEN rather than centred in a pair of buttons. The
+   .mf-intro layer is the positioning context (absolute, inset 0), and the
+   right/bottom insets match the crest's own margins so it reads as a deliberate
+   corner rather than as something that fell off the stack.
+
+   TOP right, not bottom: the help line along the foot runs most of the width of
+   the screen at both shipping sizes, and a corner button down there sat on the
+   end of it. The top corners are the only genuinely empty ones — the crest and
+   the title are a centred column — so that is where it goes.
+   (No backticks anywhere in this block: it is a JS template literal.) */
 .mf-tut{
-  min-height:clamp(48px,10.5vh,54px);padding:0 clamp(15px,3vw,26px);
+  position:absolute;right:clamp(10px,2.4vw,22px);top:clamp(10px,2.4vh,20px);
+  min-height:clamp(44px,9.5vh,50px);padding:0 clamp(13px,2.6vw,22px);
   border-radius:16px;border-width:2.5px;
   flex-direction:column;gap:1px;
   --f1:#fbf3de;--f2:#f0dfb6;--f3:#dcc493;--lip:#8f7444;--fg:#3f2a12;
@@ -266,12 +315,15 @@ export const INTRO_CSS = `
   .mf-intro .mf-c-desc{font-size:8px}
   .mf-c-av svg{width:28px;height:28px}
   .mf-play{min-height:48px}
-  .mf-tut{min-height:48px}
+  .mf-tut{min-height:44px;padding:0 12px}
   /* Still a 46px tap target at 667x375 — the guideline floor, not a whisker
      under it. The blurb is what gives, not the button. Four of these at 667
      wide come to 4x116.7 + 3x8 of gap = 491px inside a 647px content box. */
   .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
-  .btn.mf-raid{min-height:44px;width:clamp(78px,12vw,96px)}
+  .btn.mf-switch{width:clamp(56px,10vw,64px);height:30px;min-height:30px}
+  .btn.mf-switch::after{width:20px;height:20px;top:3px;left:3px}
+  .btn.mf-switch.on::after{transform:translateX(calc(clamp(56px,10vw,64px) - 30px))}
+  .mf-raid-state{font-size:11px;letter-spacing:.12em}
   .mf-i-dnote{font-size:7px;margin-top:1px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
@@ -345,6 +397,7 @@ export function buildIntro(state, onBegin) {
    *
    *   "Add a feature to turn off the robber/knight if you want, for that
    *    specific game, before the game started."
+   *   "Can you make the raiders be a toggle instead of two large buttons."
    *
    * A Knight takes half of every resource off every rival at once and then
    * shuts a hex down, and it is half the card deck — so a match with them and a
@@ -354,32 +407,28 @@ export function buildIntro(state, onBegin) {
    * Switching it off pulls the Knight out of the deck (`rules.drawCard`
    * re-normalises what is left), stops anything blocking a hex, hides the
    * Raider in the world and on the map, and takes LARGEST ARMY out of reach —
-   * which is stated on the caption under the buttons, because a silent two
+   * which is stated on the caption under the switch, because a silent two
    * victory points going missing is exactly the kind of thing that gets found
    * out at the wrong moment.
    *
-   * Same shape as Rival Skill above and same storage model (see
-   * `core/options.js`): the choice sticks between matches, and the row is right
-   * here on every opening screen so it is still a per-match decision.
+   * Storage is the same model as Rival Skill above (see `core/options.js`): the
+   * choice sticks between matches, and the switch is right here on every
+   * opening screen so it is still a per-match decision.
    */
-  const RAID_OPTS = [
-    { on: true,  name: 'On',  aria: 'Raiders on — Knight cards, the Raider and Largest Army all in play' },
-    { on: false, name: 'Off', aria: 'Raiders off — no Knight cards, nothing blocks a region, and Largest Army cannot be won' }
-  ];
   const raidNote = el('div', { class: 'mf-i-dnote' });
-  const raidButtons = RAID_OPTS.map(o => button('cream mf-diff mf-raid', {
-    'data-on': o.on ? '1' : '0',
-    'aria-label': o.aria,
-    on: { click: () => pickRaid(o.on) }
-  }, el('b', { class: 'mf-d-name', text: o.name })));
+  const raidState = el('b', { class: 'mf-raid-state', text: 'On' });
+  const raidSwitch = button('mf-switch', {
+    role: 'switch',
+    'aria-label': 'Raiders — Knight cards, the Raider and Largest Army',
+    on: { click: () => pickRaid(!raidersOn()) }
+  });
 
   function paintRaid() {
     const cur = raidersOn();
-    raidButtons.forEach(b => {
-      const on = (b.getAttribute('data-on') === '1') === cur;
-      b.classList.toggle('on', on);
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
-    });
+    raidSwitch.classList.toggle('on', cur);
+    raidSwitch.setAttribute('aria-checked', cur ? 'true' : 'false');
+    raidState.classList.toggle('on', cur);
+    raidState.textContent = cur ? 'On' : 'Off';
     raidNote.textContent = cur
       ? 'Knights take half of every rival\u2019s goods and block a region'
       : 'No Knight cards \u00b7 nothing blocks a region \u00b7 no Largest Army';
@@ -395,12 +444,28 @@ export function buildIntro(state, onBegin) {
 
   const raiders = el('div', { class: 'mf-i-diff' },
     el('div', { class: 'mf-i-dlab', text: 'Raiders' }),
-    el('div', { class: 'mf-i-drow' }, raidButtons),
+    el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
     raidNote);
 
   const playBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
+  /*
+   * TUTORIAL, IN THE CORNER.
+   *
+   *   "Put the tutorial in the corner of the screen somewhere so the Start Game
+   *    button can be centered."
+   *
+   * It used to sit beside BEGIN THE DRAFT in a two-button row, which meant the
+   * one button everybody presses was never actually in the middle of the screen
+   * — it was in the middle of a pair, pushed left by the width of a control
+   * most players use once and never again. Bottom-right corner now, out of the
+   * title's column entirely, and the green button is centred on the screen the
+   * way it always looked like it was supposed to be.
+   *
+   * It keeps its full size and its own hit area, so "somewhere out of the way"
+   * has not turned into "somewhere hard to press".
+   */
   const tutBtn = button('cream mf-tut', {
     'aria-label': 'Tutorial — read the rules or take a guided practice run',
     on: { click: () => askForTutorial() }
@@ -417,13 +482,14 @@ export function buildIntro(state, onBegin) {
     difficulty,
     raiders,
     el('div', { class: 'mf-i-foot' },
-      el('div', { class: 'mf-i-cta' }, playBtn, tutBtn),
+      el('div', { class: 'mf-i-cta' }, playBtn),
       el('div', { class: 'mf-i-hint' },
         el('b', { text: 'Claim two corners' }),
-        ' · gather from the land you touch · build roads, settlements and cities')));
+        ' · gather from the land you touch · build roads, settlements and cities')),
+    tutBtn);
 
   return {
-    node, cards, playBtn, tutBtn, diffButtons, raidButtons,
+    node, cards, playBtn, tutBtn, diffButtons, raidSwitch,
     refreshDifficulty: paint,
     refreshRaiders: paintRaid
   };

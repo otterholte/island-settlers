@@ -32,7 +32,7 @@ import { TERRAIN, f } from '../ui/ovmap.js';
    PLAYER_COLORS by hand — importing constants here would drag the whole rules
    layer into an art module. */
 const BLUE = { css: '#2f8ffb', light: '#93cbff' };
-const RED = { css: '#ff4a35', light: '#ff9c88' };
+const RED = { css: '#f5342a', light: '#ff8f80' };
 
 /** Deterministic 0..1 — the same trick ovmap.js uses for painterly jitter. */
 function h01(n) {

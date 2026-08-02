@@ -295,13 +295,13 @@
    Set on the interface root for the length of the run. The rivals are frozen,
    so their scoreboard is noise and it is exactly where the marker needs to
    point; the running commentary is replaced by the coach card, so the toast
-   stack would only argue with it. Neither element is edited — this is a mode,
+   stack would only argue with it. The element is not edited — this is a mode,
    and it is undone the moment the run ends. Nothing that teaches is hidden:
-   the resource bar, the build cards, the ground report and every button stay
-   exactly where a real match puts them. */
-#ui.tut-practice .hud-tr,
-#ui.tut-practice .hud-toasts,
-#ui.tut-practice .objective{
+   the resource bar, the build cards and every button stay exactly where a real
+   match puts them. */
+/* The toast stack and the next-step line this used to dim as well are gone
+   from the game entirely, so only the standings are left to turn down. */
+#ui.tut-practice .hud-tr{
   opacity:0 !important;pointer-events:none !important;
   transition:opacity .3s ease;
 }

@@ -66,19 +66,59 @@ export function pipsFor(number) {
 // this is a phone game played with a thumbstick.
 export const PICKUP_RADIUS = 2.4;
 
-// Items on a full hex, indexed by pips (1..5). ~16 on an average hex, which a
-// settler sweeps clean in about three and a half seconds.
-export const TILE_ITEMS = { 1: 10, 2: 13, 3: 16, 4: 19, 5: 22 };
+/*
+ * THE PRODUCTIVITY CURVE, AND WHY IT IS STEEP NOW.
+ *
+ *   "Can you make the worse point hexes have less resources per hex, so like
+ *    8's have the most, and the 3's and 12's have like 50% of what they do
+ *    right now as far as the total number of resources you can pick up on any
+ *    given tile. Also make the times you have to wait a little longer for those
+ *    worse hexes."
+ *
+ * The old curve was almost flat: a 2/12 held 10 items and a 6/8 held 22, and
+ * their regen differed by twelve seconds. In sustained items-per-second that is
+ * 0.385 against 1.571 — four times, which sounds like a lot until you notice
+ * that a corner touches three hexes, so a bad corner ran at maybe half a good
+ * one and a settlement on a 12 was still a perfectly reasonable thing to build.
+ * The number printed on a hex is supposed to be the whole of the draft
+ * decision, and it was not carrying that weight.
+ *
+ * Both halves move together, because the wait is half the productivity:
+ *
+ *   pips  number   items          regen        items/sec    was
+ *     1    2 / 12   10 ->  5      26 -> 34 s     0.147      0.385   (-62%)
+ *     2    3 / 11   13 ->  8      23 -> 28 s     0.286      0.565   (-49%)
+ *     3    4 / 10   16 -> 17      20 -> 16 s     1.063      0.800   (+33%)
+ *     4    5 /  9   19 -> 23      17 -> 10 s     2.300      1.118  (+106%)
+ *     5    6 /  8   22 -> 28      14 ->  6 s     4.667      1.571  (+197%)
+ *
+ * The 1- and 2-pip halving is the request, taken literally. The top of the
+ * curve going UP is the part that was not asked for, and it is the reason the
+ * rest works. Nerfing the bottom third of the board on its own would simply
+ * have made every match longer and every economy poorer — measured, not
+ * guessed: with the new costs and a flat top, `tools/simulate.mjs` had 24 of 30
+ * matches running into the 420-second stalemate cap. Lifting the top brings the
+ * island's total output back to roughly where the new prices need it while the
+ * gap between a good corner and a bad one goes from about four to one to
+ * twenty-two to one. That gap is the whole point: the number printed on a hex
+ * is supposed to BE the draft decision.
+ *
+ * `TILE_ITEM_POOL` moved 24 -> 28 with the top of the curve, since it is the
+ * hard ceiling on any single hex. Item positions are best-candidate blue noise
+ * with no minimum spacing, so a fuller hex packs tighter rather than failing to
+ * place, and the island's total item count barely moves (300 -> 306).
+ */
+export const TILE_ITEMS = { 1: 5, 2: 8, 3: 17, 4: 23, 5: 28 };
 
 // Seconds a cleared hex stays bare before EVERY item returns at once.
 // A player working five or six of their own hexes in a loop spends roughly
 // this long getting round them all, so a good rotation barely ever waits and a
 // one-hex player waits a lot. Measured over 40-match simulations.
-export const TILE_REGEN = { 1: 26, 2: 23, 3: 20, 4: 17, 5: 14 };
+export const TILE_REGEN = { 1: 34, 2: 28, 3: 16, 4: 10, 5: 6 };
 
 // Items generated per hex in the position pool. TILE_ITEMS never exceeds this;
 // the pool is fixed so positions stay stable while counts can be retuned.
-export const TILE_ITEM_POOL = 24;
+export const TILE_ITEM_POOL = 28;
 
 /** Sustained items-per-second a full hex of this productivity can supply. */
 export function tileRateFor(pips) {
@@ -96,11 +136,26 @@ export const NODE_REGROW_SEC = 20.0;
 // because it is the only thing that opens new land; a city is now a pure
 // victory point (ownership gates, it does not multiply) so it has to be cheap
 // enough to stay worth taking once your corners are claimed.
+/*
+ * The prices, set by the player:
+ *
+ *   "Make it so that for a settlement you need 4 of each of those 4 resources,
+ *    instead of 3 of the wheat and sheep. Make the city be 8 wheat and 12 ore.
+ *    Make the card be 4 of each of the 3 resources."
+ *
+ * Settlement 14 -> 16, card 9 -> 12, and the city 10 -> 20, which is the one
+ * that changes the shape of a match rather than its length: a city is two
+ * victory points and there are five of them, so doubling the price turns
+ * "upgrade everything on the way past" into a decision you have to build an
+ * economy for. It is also why the top of the productivity curve above went up —
+ * twenty goods for a city on the old flat curve was most of a minute of
+ * gathering, and a match is supposed to be three to five minutes total.
+ */
 export const COST = {
   road:       { wood: 4, brick: 4 },
-  settlement: { wood: 4, brick: 4, wheat: 3, wool: 3 },
-  city:       { wheat: 4, ore: 6 },
-  card:       { wool: 3, wheat: 3, ore: 3 }
+  settlement: { wood: 4, brick: 4, wheat: 4, wool: 4 },
+  city:       { wheat: 8, ore: 12 },
+  card:       { wool: 4, wheat: 4, ore: 4 }
 };
 
 export const PIECE_LIMIT = { road: 18, settlement: 7, city: 5 };
@@ -185,14 +240,21 @@ export const START_RESOURCES = { wood: 3, brick: 3, wool: 2, wheat: 2, ore: 2 };
  */
 export const PLAYER_COLORS = [
   { key: 'blue',   hex: 0x2f8ffb, css: '#2f8ffb', light: '#93cbff', name: 'You' },
-  { key: 'red',    hex: 0xff4a35, css: '#ff4a35', light: '#ff9c88', name: 'Alex' },
-  // "Can you also switch the green player to a hot neon pink so it stands out a
-  // bit better." Green was the one colour with nowhere to stand: half the
-  // island is forest and pasture, so a green road on green ground had to win an
-  // argument against the terrain before it could be seen at all — brightening
-  // it only ever bought a stop or two. Magenta has no competition anywhere on
-  // the board, which is worth more than any amount of saturation.
-  { key: 'pink',   hex: 0xff2fa0, css: '#ff2fa0', light: '#ff93d2', name: 'Maya' },
+  // Pulled a shade redder (hue 8 -> 3 degrees, and deeper) to open the gap to
+  // the orange below. On its own #ff4a35 is already an orange-red, and putting
+  // a real orange next to it without moving it would have been two neighbours
+  // on the wheel wearing the same warmth.
+  { key: 'red',    hex: 0xf5342a, css: '#f5342a', light: '#ff8f80', name: 'Alex' },
+  // Green -> hot pink -> ORANGE. Green was the one colour with nowhere to stand:
+  // half the island is forest and pasture, so a green road on green ground had
+  // to win an argument with the terrain before it could be seen at all. Pink
+  // fixed that and lost on a different axis — "make the pink player an orange
+  // instead that totally stands out from the red" — so this is a bright amber
+  // at hue 36 degrees against the red's 3, separated by warmth AND by value:
+  // the orange is a full stop lighter and reads as lit, the red as saturated.
+  // Nothing on the island is this colour either; the sand is a desaturated tan
+  // and the clay hills are brick, both a long way under it.
+  { key: 'orange', hex: 0xff9412, css: '#ff9412', light: '#ffc873', name: 'Maya' },
   { key: 'purple', hex: 0xa45bff, css: '#a45bff', light: '#d2a8ff', name: 'Finn' }
 ];
 

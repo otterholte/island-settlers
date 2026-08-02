@@ -45,7 +45,8 @@ ok(tiles.length === 19, 'tiles = 19', String(tiles.length));
 ok(intersections.length === 54, 'intersections = 54', String(intersections.length));
 ok(edges.length === 72, 'edges = 72', String(edges.length));
 ok(ports.length === 9, 'ports = 9', String(ports.length));
-ok(items.length >= 280 && items.length <= 460, 'harvestable field items', String(items.length));
+// The POSITION POOL, not the live count: TILE_ITEM_POOL per resource hex.
+ok(items.length >= 280 && items.length <= 620, 'harvestable field items', String(items.length));
 
 // The number on a hex means two things and only two: how much it holds, and
 // how fast it comes back. Both must move monotonically with the pips.
