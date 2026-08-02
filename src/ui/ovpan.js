@@ -288,12 +288,22 @@ export function createOvPan(cv, proj, opts = {}) {
     if (!live.size) gesturing = false;
   }
 
+  /*
+   * Wheel and two-finger scroll, about the cursor.
+   *
+   * Gain 0.0016 -> 0.0034 to match the free camera's pass ("can you make the
+   * finger zooms zoom in and out a bit quicker"). The board map only spans 0.90
+   * to 3.20 — a range of about 3.5x — so a notch that moved it by a fraction of
+   * a per cent meant a long scroll to get anywhere inside it. Doubling the gain
+   * crosses the whole range in a normal flick and still cannot overshoot: the
+   * clamp on the exponent is unchanged and `zoomAt` clamps to the range itself.
+   */
   function onWheel(ev) {
     const d = Number.isFinite(ev.deltaY) ? ev.deltaY : 0;
     if (!d) return;
     const p = local(ev);
     markTouched();
-    zoomAt(Math.exp(clamp(-d * 0.0016, -1.0, 1.0)), p.x, p.y);
+    zoomAt(Math.exp(clamp(-d * 0.0034, -1.0, 1.0)), p.x, p.y);
     if (ev.cancelable) ev.preventDefault();
   }
 

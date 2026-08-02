@@ -249,14 +249,67 @@ export function createPanels(root, state, game) {
   });
   let lastWinner = -1;
 
+  /** "+4" is a number. "+4 Victory Points" is an answer. */
+  const points = n => `+${n} Victory Point${n === 1 ? '' : 's'}`;
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+  /**
+   * Where a player's score actually came from.
+   *
+   *   "Don't just have the points they won for things like victory points,
+   *    settlements, longest road etc be saying +1 +4 etc — have it actually say
+   *    +4 Victory Points."
+   *
+   * Each chip is now the source and the payment in words: a castle icon,
+   * "2 CITIES", "+4 Victory Points". The bare "+4" was the one number on the
+   * results screen with no unit attached to it, sitting next to a settlement
+   * count, a city count and a card count that were all also bare numbers — so
+   * the four of them looked like the same kind of figure and only one of them
+   * was.
+   */
   function breakdown(p) {
     const bits = [];
-    if (p.settlements.size) bits.push([`${p.settlements.size} Settlement`, p.settlements.size, 'house']);
-    if (p.cities.size) bits.push([`${p.cities.size} City`, p.cities.size * 2, 'castle']);
-    if (p.vpCards) bits.push([`${p.vpCards} VP Card`, p.vpCards, 'cards']);
+    if (p.settlements.size) {
+      bits.push([plural(p.settlements.size, 'Settlement'), p.settlements.size, 'house']);
+    }
+    if (p.cities.size) bits.push([plural(p.cities.size, 'City').replace('Citys', 'Cities'),
+      p.cities.size * 2, 'castle']);
+    if (p.vpCards) bits.push([plural(p.vpCards, 'Victory Card'), p.vpCards, 'cards']);
     if (p.hasLongestRoad) bits.push(['Longest Road', LONGEST_ROAD_VP, 'road']);
     if (p.hasLargestArmy) bits.push(['Largest Army', LARGEST_ARMY_VP, 'knight']);
     return bits;
+  }
+
+  /**
+   * The two things every player has a number for, whether or not they won the
+   * award attached to it.
+   *
+   *   "On the results page can you also show things like how many knights they
+   *    played for all players, and how long their longest roads were — just
+   *    have the person who [has] the longest road have the badge for it."
+   *
+   * The breakdown above only ever mentions Longest Road and Largest Army on the
+   * ONE player holding each, because that is the only player they scored for.
+   * That left the most interesting number on the screen — how close everybody
+   * else came — nowhere at all. This strip carries it for all four, and the
+   * holder's chip goes gold and names the award. Knights are dropped entirely
+   * when Raiders were switched off before the draft, since a column of zeroes
+   * that could never have been anything else is not a statistic.
+   */
+  function tally(p) {
+    const chip = (won, ico, n, label) =>
+      `<i class="${won ? 'won' : ''}">${icon(ico, 18)}<em>${n}</em><u>${label}</u></i>`;
+    // The holder's chip is the BADGE and says the award's name; everybody
+    // else's is the plain measurement. Same words on both would make the gold
+    // the only difference, and gold alone is a thin thing to hang a badge on.
+    let h = chip(p.hasLongestRoad, 'road', p.longestRoadLen,
+      p.hasLongestRoad ? 'Longest Road' : 'Road');
+    if (raidersOn()) {
+      h += chip(p.hasLargestArmy, 'knight', p.knightsPlayed,
+        p.hasLargestArmy ? 'Largest Army' : (p.knightsPlayed === 1 ? 'Knight' : 'Knights'));
+    }
+    return h;
   }
 
   function showResults(winnerId) {
@@ -294,9 +347,11 @@ export function createPanels(root, state, game) {
           el('span', {
             class: 'rs-bd',
             html: bits.length
-              ? bits.map(b => `<i>${icon(b[2], 20)}<em>+${b[1]}</em><u>${b[0]}</u></i>`).join('')
+              ? bits.map(b =>
+                `<i>${icon(b[2], 20)}<u>${b[0]}</u><em>${points(b[1])}</em></i>`).join('')
               : '<i><u>No points scored</u></i>'
-          })),
+          }),
+          el('span', { class: 'rs-tally', html: tally(p) })),
         el('span', { class: 'rs-vp' }, el('b', { text: String(entry.vp) }),
           el('i', { html: icon('trophy', 20) })));
       resList.appendChild(row);

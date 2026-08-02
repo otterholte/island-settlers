@@ -280,14 +280,20 @@
 /* The cost band is a window on the fill, not a plate over it: a hairline and
    a whisper of shadow, so the gold rising underneath stays readable. */
 .bc-cost{
-  flex:0 0 auto;display:flex;flex-wrap:wrap;gap:2px 5px;
+  flex:0 0 auto;display:flex;flex-wrap:wrap;gap:0 5px;
   align-items:center;justify-content:center;
   /* 4px/6px before. The row wraps to two lines the moment any `have` reaches
      two digits — 10 wood on a settlement card widens `.ccn` past its 11px
      floor — and at 960x444 the second line then finishes three pixels below
      the viewport. Three pixels of padding is a cheaper thing to give up than
-     the wrap, and nothing in the row looks any tighter for it. */
-  width:calc(100% + 8px);margin:auto -4px 0;padding:3px 0 4px;
+     the wrap, and nothing in the row looks any tighter for it.
+
+     Four more pixels since (2px/3px of padding and the 2px row gap): with the
+     `have` figure capped at the need, SETTLEMENT's four chips and CARD's three
+     wrap to two lines EVERY time rather than only when somebody was holding ten
+     of something, so the few pixels the second line was overflowing the card by
+     were overflowing it permanently and being clipped. */
+  width:calc(100% + 8px);margin:auto -4px 0;padding:2px 0 3px;
   border-top:1.5px solid rgba(90,58,30,.38);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -14px 16px rgba(90,58,30,.10);
 }

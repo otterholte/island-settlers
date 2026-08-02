@@ -91,14 +91,45 @@ const T = {
  *   3.10  THE CELEBRATION, once every hex is their colour: the win/lose plate
  *         and the shower of paper (panels.endBanner) and the camera's orbit of
  *         the winner's holdings, together.
- *   5.05  the orbit stops and the board framing comes back.
- *   5.85  the results panel — dismissible, so the flooded island is still
+ *   6.55  the orbit stops and the board framing comes back.
+ *   8.60  the last of the paper clears and the plate is pulled (hud-end.js).
+ *   8.85  the results panel — dismissible, so the flooded island is still
  *         there to go back to. The camera is released here and stays released:
  *         free navigation after the match belongs to camera.js/overview.js.
  *
- * The whole thing lands inside six seconds, which is where the old sequence
- * finished too — the flood replaces the tile-by-tile lighting, it is not
- * stacked on top of it.
+ * The last 2.3 seconds of that are the whole island sitting in the winner's
+ * colour with nothing moving on it — the part that was asked for, and the part
+ * that used to be over in eight tenths of a second. See the note on WIN below.
+ */
+/*
+ * AND THEN IT WANTED LONGER.
+ *
+ *   "Can you show the full board the colour of my character when I win a little
+ *    longer, maybe like 2 extra seconds, before I see the scores. Then let the
+ *    confetti flow an additional like 3 seconds as well."
+ *
+ * Both are honoured exactly, and they are two different measurements:
+ *
+ *   THE ORBIT is the gap between the celebration firing and the orbit stopping
+ *   — the rotating shot around the winner's holdings. 1.95s, now 3.45s.
+ *
+ *   THE BOARD is the gap between the orbit stopping (which is what puts the
+ *   whole flooded island back in frame) and the scoreboard landing on top of
+ *   it. 0.80s — long enough to register, nowhere near long enough to look at —
+ *   now 2.30s. "Specifically I like seeing both the rotating view, and the full
+ *   map view, maybe 1.5 seconds longer each": `endOrbit` 5.05 -> 6.55 and
+ *   `reveal` 5.85 -> 8.85 is exactly +1.5 to each of them.
+ *
+ *   THE PAPER is the gap between the celebration firing and hud-end.js pulling
+ *   the plate. That was 2.50s; it is 5.50s now (the stagger range and the hide
+ *   timer in `hud-end.js` both moved, and the piece count went up with them so
+ *   the shower keeps its density over the longer window rather than thinning
+ *   into a drizzle).
+ *
+ * The sequence therefore runs to 8.85s rather than 5.85s. That is a long time
+ * to hold a player who has just watched their own match end, which is why the
+ * whole of it is skippable: the results panel is dismissible, the board stays
+ * behind it, and nothing here blocks input.
  */
 const WIN = {
   overview: 0.25,
@@ -106,8 +137,8 @@ const WIN = {
   floodDur: 1.90,      // seconds for the wave to cross the island
   floodHold: 0.45,     // fully flooded, held, before anything else moves
   celebrate: 3.10,     // = flood + floodDur + floodHold
-  endOrbit: 5.05,
-  reveal: 5.85
+  endOrbit: 6.55,
+  reveal: 8.85
 };
 
 /*

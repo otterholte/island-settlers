@@ -186,7 +186,13 @@ export const START_RESOURCES = { wood: 3, brick: 3, wool: 2, wheat: 2, ore: 2 };
 export const PLAYER_COLORS = [
   { key: 'blue',   hex: 0x2f8ffb, css: '#2f8ffb', light: '#93cbff', name: 'You' },
   { key: 'red',    hex: 0xff4a35, css: '#ff4a35', light: '#ff9c88', name: 'Alex' },
-  { key: 'green',  hex: 0x2fd45f, css: '#2fd45f', light: '#8bf5a8', name: 'Maya' },
+  // "Can you also switch the green player to a hot neon pink so it stands out a
+  // bit better." Green was the one colour with nowhere to stand: half the
+  // island is forest and pasture, so a green road on green ground had to win an
+  // argument against the terrain before it could be seen at all — brightening
+  // it only ever bought a stop or two. Magenta has no competition anywhere on
+  // the board, which is worth more than any amount of saturation.
+  { key: 'pink',   hex: 0xff2fa0, css: '#ff2fa0', light: '#ff93d2', name: 'Maya' },
   { key: 'purple', hex: 0xa45bff, css: '#a45bff', light: '#d2a8ff', name: 'Finn' }
 ];
 

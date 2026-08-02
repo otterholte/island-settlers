@@ -5,7 +5,7 @@
  *     { arm(mode), disarm(), setMode(mode), armed, mode, debug, destroy() }
  *
  * `systems/camera.js` holds and clamps the free pose; this file is everything
- * that PUSHES it — pointers, wheel, keys and a small touch pad — plus the hint
+ * that PUSHES it — pointers, wheel and keys — plus the hint
  * that tells the player the view is theirs now.
  *
  * It exists at all because the end of a match leaves the player with an island
@@ -53,8 +53,6 @@ const STYLE_ID = 'freecam-style';
  *   orbit drag, yaw          0.0060 rad/px 0.0026 rad/px   (0.34 -> 0.15 deg/px)
  *   orbit drag, pitch        0.0042 rad/px 0.0018 rad/px   (0.24 -> 0.10 deg/px)
  *   pan drag                 1.00x ground  0.45x ground    (see camera.js)
- *   pad turn, one press      0.30 rad      0.13 rad        (17.2 -> 7.4 deg)
- *   pad tilt, one press      0.13 rad      0.055 rad       (7.4 -> 3.2 deg)
  *   zoom, one press          x1.18         x1.07
  *   wheel                    0.0016/unit   0.00060/unit, capped e^0.5 not e^1.2
  *   pinch zoom               raw ratio     ratio^0.45
@@ -64,7 +62,7 @@ const STYLE_ID = 'freecam-style';
  *   W A S D hold             see camera.js freeStep (0.65 -> 0.28 of distance)
  */
 
-/* Radians per pixel for an orbit drag, and per press of a pad button. */
+/* Radians per pixel for an orbit drag, and per press of a turn / tilt key. */
 const YAW_PER_PX = 0.0026;
 const PITCH_PER_PX = 0.0018;
 const YAW_STEP = 0.13;
@@ -73,11 +71,28 @@ const ZOOM_STEP = 1.07;
 /** Radians per second while a turn / tilt key is held. */
 const KEY_YAW_RATE = 0.65;
 const KEY_PITCH_RATE = 0.34;
-/** Wheel: radians-free, a multiplier per notch. Gain, then the hard cap. */
-const WHEEL_GAIN = 0.00060;
-const WHEEL_CAP = 0.5;
-/** Pinch: the raw finger ratio raised to this power, and the twist scaled. */
-const PINCH_POWER = 0.45;
+/*
+ * Wheel: a multiplier per notch — gain, then a hard cap. Pinch: the raw finger
+ * ratio raised to a power, and the twist scaled.
+ *
+ *   "Can you make the finger zooms zoom in and out a bit quicker though."
+ *
+ * All of these were cut hard at once, back when the free camera was shooting
+ * off the moment it was touched. But the thing that ran away was the TURN,
+ * which is driven by pixels of drag; the zoom was damped in the same pass for
+ * company and never needed it. At 0.00060 a unit a two-finger scroll took a
+ * long deliberate sweep to cross the useful range, and `ratio^0.45` meant
+ * closing the fingers halfway barely moved the camera at all.
+ *
+ * Roughly doubled: wheel gain 0.00060 -> 0.00135 with the cap opened from
+ * e^0.5 to e^0.85, and the pinch exponent 0.45 -> 0.78, which is most of the
+ * way back to the raw finger ratio while keeping enough easing that a pinch
+ * still reads as accelerating rather than snapping. The TWIST stays at 0.45x:
+ * accidental rotation while pinching is what that damping was really for.
+ */
+const WHEEL_GAIN = 0.00135;
+const WHEEL_CAP = 0.85;
+const PINCH_POWER = 0.78;
 const PINCH_TWIST = 0.45;
 /** Below this much travel a pointer is a tap, not a drag. */
 const DRAG_SLOP = 3;
@@ -85,28 +100,21 @@ const DRAG_SLOP = 3;
 const IGNORE_SEL = '#ui,[data-ui],#boot,#rotate-gate';
 
 const CSS = `
-/* Bottom right: clear of the player rail above it and of the review bar, which
-   is centred. The three rows are 137px tall at 42px keys, so at the 352px-tall
-   end of landscape the top of the pad still lands under the rail. */
-.fcam{position:absolute;right:10px;bottom:74px;
-  display:flex;flex-direction:column;gap:5px;z-index:8;pointer-events:auto;
-  -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
-.fcam.hid{display:none}
-.fcam-row{display:flex;gap:5px;justify-content:center}
-.fcam b.fcam-k{display:flex;align-items:center;justify-content:center;
-  width:42px;height:36px;border-radius:11px;cursor:pointer;
-  background:linear-gradient(180deg,rgba(22,52,88,.92),rgba(8,24,46,.92));
-  border:2px solid rgba(255,201,60,.42);
-  box-shadow:0 4px 12px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.18);
-  transition:transform .1s ease,border-color .15s ease,background .15s ease}
-.fcam b.fcam-k:active{transform:translateY(2px) scale(.96);
-  border-color:rgba(255,201,60,.9);background:linear-gradient(180deg,#1d4478,#0b2748)}
-.fcam b.fcam-k svg{display:block}
-.fcam .fcam-tag{font:800 8px/1.1 var(--ff,system-ui);letter-spacing:.16em;
-  text-transform:uppercase;color:rgba(255,231,154,.72);text-align:center;
-  text-shadow:0 1px 3px rgba(0,0,0,.8)}
 /* Directly over the review bar, where the eye already is — never over the
-   win plate at the top of the screen, which is still fading when this lands. */
+   win plate at the top of the screen, which is still fading when this lands.
+
+   THE LOOK PAD IS GONE.
+
+     "Remove these buttons, I don't need them. I can just click and drag around,
+      or do a two finger scroll up and down for the zoom."
+
+   Seven 42px keys — turn, tilt, zoom, recentre — parked in the bottom-right
+   corner of the one screen in the game whose entire purpose is looking at the
+   island. Every one of them duplicated a gesture the player already had and
+   preferred, and together they covered the corner of the board they were there
+   to help inspect. Drag, wheel / two-finger scroll, pinch, twist and the whole
+   keyboard set all still do exactly what they did; this only takes away the
+   buttons. The hint below is what is left, and it names the gestures. */
 .fcam-hint{position:absolute;left:50%;bottom:80px;transform:translateX(-50%);
   display:flex;align-items:center;gap:7px;z-index:8;pointer-events:none;
   padding:5px 11px 6px;border-radius:13px;
@@ -122,33 +130,9 @@ const CSS = `
   padding:3px 6px 4px;border-radius:6px;letter-spacing:.1em}
 .fcam-hint i{font-style:normal}
 @media (max-height:400px){
-  .fcam{bottom:66px;gap:4px}
-  .fcam b.fcam-k{width:38px;height:32px}
-  .fcam b.fcam-k svg{width:18px;height:18px}
   .fcam-hint{font-size:8px;padding:4px 9px 5px;bottom:70px}
 }
 `;
-
-const SV = body =>
-  `<svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" focusable="false">${body}</svg>`;
-const STROKE = (d, w = 2.2) =>
-  `<path d="${d}" fill="none" stroke="#ffe0a0" stroke-width="${w}" ` +
-  `stroke-linecap="round" stroke-linejoin="round"/>`;
-
-const GLYPH = {
-  // a curved arrow bending anticlockwise / clockwise: "turn the island"
-  turnL: SV(STROKE('M18.4 14.6A7 7 0 1 1 16.3 6.6') + STROKE('M16.6 3.2v4.2h-4.2')),
-  turnR: SV(STROKE('M5.6 14.6A7 7 0 1 0 7.7 6.6') + STROKE('M7.4 3.2v4.2h4.2')),
-  tiltU: SV(STROKE('M12 4.4v11') + STROKE('M7.4 9L12 4.4 16.6 9')
-    + STROKE('M4.6 19.6h14.8', 2)),
-  tiltD: SV(STROKE('M12 19.6v-11') + STROKE('M7.4 15L12 19.6 16.6 15')
-    + STROKE('M4.6 4.4h14.8', 2)),
-  zoomIn: SV(`<circle cx="10.6" cy="10.6" r="6.2" fill="none" stroke="#ffe0a0" stroke-width="2.2"/>`
-    + STROKE('M15.4 15.4l4.4 4.4') + STROKE('M10.6 7.8v5.6M7.8 10.6h5.6', 2)),
-  zoomOut: SV(`<circle cx="10.6" cy="10.6" r="6.2" fill="none" stroke="#ffe0a0" stroke-width="2.2"/>`
-    + STROKE('M15.4 15.4l4.4 4.4') + STROKE('M7.8 10.6h5.6', 2)),
-  home: SV(STROKE('M4.4 11.4L12 4.6l7.6 6.8') + STROKE('M6.8 10v9.4h10.4V10'))
-};
 
 function injectStyle(doc) {
   if (!doc || !doc.head || !doc.createElement) return;
@@ -183,55 +167,15 @@ export function createFreeCam(game, opts = {}) {
   const stats = { drags: 0, keys: 0, zooms: 0, turns: 0 };
 
   /* ------------------------------------------------------------------ DOM */
-  let pad = null, hint = null;
+  /* One hint, and nothing else. The pad that used to live here is described in
+     the CSS block above; every gesture it duplicated is still wired up below. */
+  let hint = null;
   if (doc && root && doc.createElement) {
     injectStyle(doc);
-
-    const key = (glyph, label, fn) => {
-      const b = doc.createElement('b');
-      b.className = 'fcam-k';
-      b.innerHTML = glyph;
-      b.setAttribute('role', 'button');
-      b.setAttribute('aria-label', label);
-      // pointerdown, not click: on a phone a 300ms click delay on a camera
-      // control feels broken, and repeat-holding wants the down edge anyway.
-      b.addEventListener('pointerdown', e => {
-        if (e.preventDefault) e.preventDefault();
-        if (e.stopPropagation) e.stopPropagation();
-        markTouched();
-        fn();
-      });
-      return b;
-    };
-
-    const row = (...kids) => {
-      const r = doc.createElement('div');
-      r.className = 'fcam-row';
-      for (const k of kids) r.appendChild(k);
-      return r;
-    };
-
-    pad = doc.createElement('div');
-    pad.className = 'fcam hid';
-    pad.setAttribute('data-ui', '');
-    const tag = doc.createElement('span');
-    tag.className = 'fcam-tag';
-    tag.textContent = 'Look';
-    pad.appendChild(tag);
-    pad.appendChild(row(
-      key(GLYPH.turnL, 'Turn left', () => turn(-YAW_STEP, 0)),
-      key(GLYPH.tiltU, 'Tilt down', () => turn(0, PITCH_STEP)),
-      key(GLYPH.turnR, 'Turn right', () => turn(YAW_STEP, 0))));
-    pad.appendChild(row(
-      key(GLYPH.zoomOut, 'Zoom out', () => zoom(ZOOM_STEP)),
-      key(GLYPH.home, 'Recentre', () => recentre()),
-      key(GLYPH.zoomIn, 'Zoom in', () => zoom(1 / ZOOM_STEP))));
-    pad.appendChild(row(key(GLYPH.tiltD, 'Tilt up', () => turn(0, -PITCH_STEP))));
-    root.appendChild(pad);
-
     hint = doc.createElement('div');
     hint.className = 'fcam-hint hid';
-    hint.innerHTML = '<b>Drag</b><i>to look around</i><b>WASD</b><i>to move</i>';
+    hint.innerHTML = '<b>Drag</b><i>to look around</i>'
+      + '<b>Scroll</b><i>to zoom</i><b>WASD</b><i>to move</i>';
     root.appendChild(hint);
   }
 
@@ -444,7 +388,6 @@ export function createFreeCam(game, opts = {}) {
     c.setFreeLook(true, mode);
     armed = true;
     keys.clear(); live.clear();
-    if (pad) pad.classList.remove('hid');
     if (hint) {
       hint.classList.remove('hid');
       if (!touched) {
@@ -461,7 +404,6 @@ export function createFreeCam(game, opts = {}) {
     keys.clear(); live.clear();
     const c = cam();
     if (c && c.setFreeLook) c.setFreeLook(false);
-    if (pad) pad.classList.add('hid');
     if (hint) { hint.classList.remove('on'); hint.classList.add('hid'); }
     if (raf && win) { win.cancelAnimationFrame(raf); raf = 0; }
   }
@@ -489,7 +431,6 @@ export function createFreeCam(game, opts = {}) {
       disarm();
       for (const [t, type, fn, o] of bound) t.removeEventListener(type, fn, o);
       bound.length = 0;
-      if (pad && pad.parentNode) pad.parentNode.removeChild(pad);
       if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
     }
   };

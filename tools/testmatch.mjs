@@ -1354,7 +1354,8 @@ await test(15, 'A player can win; the results screen appears with correct rankin
       if (rd.length){ R.placeRoad(st,0,rd[0],true); continue; }
       break;
     }
-    __tick(6,{flow:true});
+    __tick(10,{flow:true});   // WIN.reveal is 8.85s — see matchflow.js
+
     return { vp:R.scoreOf(st,p), phase:st.phase, winner:st.winner };})()`);
   await sleep(400);
   const uiA = await pev(`(()=>({
@@ -1395,7 +1396,7 @@ await test(15, 'A player can win; the results screen appears with correct rankin
     const g=window.__ISLAND__.game, st=window.__ISLAND__.state;
     // run the flow's win sequence at production cadence
     const before = { phase:st.phase, isWin:g.flow.isWinSequence };
-    __tick(6, { flow:true, bots:true, gather:true });
+    __tick(10, { flow:true, bots:true, gather:true });   // past WIN.reveal (8.85s)
     return { before, after:{ phase:st.phase, isWin:g.flow.isWinSequence,
       stage:g.flow.stage, winner:g.flow.winner,
       overview: !!(g.camera && g.camera.isOverview) } };})()`);
@@ -1579,12 +1580,23 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
     // The HUD slides its bottom clusters in with a CSS transition; measuring
     // mid-flight reports them below the fold. Poll until the layout stops
     // moving rather than guessing at a sleep.
-    let stable = '', settled = false;
-    for (let k = 0; k < 16; k++) {
-      const now = await pev(`(()=>[...document.querySelectorAll('.hud-bc,.hud-bl,.hud-br,.hud-tc')]
+    // TWO consecutive matching samples, not one, and the reveal class has to be
+    // gone as well. Under SwiftShader a CSS transition can hand back the same
+    // rect twice 90ms apart simply because the frame never repainted between
+    // them, and a single match then declared a still-sliding HUD "settled" —
+    // which is what put the whole bottom band five pixels below the fold in
+    // roughly one run in three.
+    let stable = '', matches = 0, settled = false;
+    for (let k = 0; k < 24; k++) {
+      const now = await pev(`(()=>(document.querySelector('.hud.pre') ? 'pre|' : '') +
+        [...document.querySelectorAll('.hud-bc,.hud-bl,.hud-br,.hud-tc')]
         .map(n=>{const b=n.getBoundingClientRect();
           return [Math.round(b.top),Math.round(b.bottom),Math.round(b.left)].join(',');}).join('|'))()`);
-      if (now && now === stable) { settled = true; break; }
+      if (now && now === stable && now.indexOf('pre|') !== 0) {
+        if (++matches >= 2) { settled = true; break; }
+      } else {
+        matches = 0;
+      }
       stable = now;
       await sleep(90);
     }
@@ -1598,10 +1610,17 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
         ? n.checkVisibility({ opacityProperty:true, visibilityProperty:true, contentVisibilityAuto:true })
         : !!n.offsetParent;
       const off=[];
+      // Decorative particles are exempt. The victory confetti falls INTO frame
+      // from above and is clipped by its own overflow:hidden container, so a
+      // piece measured mid-fall is legitimately outside the viewport and
+      // legitimately invisible. This check is about controls and layout being
+      // reachable; a scrap of paper on its way down is neither.
+      const decorative = n => !!(n.closest && n.closest('.ew-paper'));
       for (const n of document.querySelectorAll('#ui *')){
         const b=n.getBoundingClientRect();
         if (b.width<2||b.height<2) continue;
         if (!shown(n)) continue;
+        if (decorative(n)) continue;
         if (b.right>innerWidth+2||b.bottom>innerHeight+2||b.left<-2||b.top<-2)
           off.push({cls:String(n.className).slice(0,40),
             r:[Math.round(b.left),Math.round(b.top),Math.round(b.right),Math.round(b.bottom)]});

@@ -35,8 +35,26 @@ import { icon } from './icons.js';
 import { createFreeCam } from '../systems/freecam.js';
 
 /* Enough paper that it reads as a shower rather than as a few stray pixels on
-   a bright island. Three shapes, staggered starts, each with its own sway. */
-const CONFETTI = 44;
+   a bright island. Three shapes, staggered starts, each with its own sway.
+   Up from 44 because the shower now runs three seconds longer (see `FALL_MS`):
+   spreading the old count over the longer window turned it into a drizzle, and
+   a celebration that thins out is worse than a short one. */
+const CONFETTI = 72;
+
+/*
+ * THE SHOWER, AND HOW LONG IT LASTS.
+ *
+ *   "Then let the confetti flow an additional like 3 seconds as well."
+ *
+ * `FALL_MS` is the window new pieces keep STARTING in — each one picks its own
+ * delay inside it — and `HOLD_MS` is when the plate and whatever paper is still
+ * in the air are pulled. Both moved by three seconds together; move one without
+ * the other and either the shower is cut off mid-fall or the last pieces never
+ * get released. `HOLD_MS` is kept a quarter-second short of `WIN.reveal` in
+ * matchflow.js (8.85s), so the frame is clear before the score lands on it.
+ */
+const FALL_MS = 4900;
+const HOLD_MS = 8600;
 
 export function createEndgame(root, state, game, hooks = {}) {
   /* ------------------------------------------------------------ the moment */
@@ -49,7 +67,7 @@ export function createEndgame(root, state, game, hooks = {}) {
         '--x': (2 + (i * 61) % 96) + '%',
         // Staggered so the shower lasts the whole hold on the board (see WIN
         // in matchflow.js) rather than being over before the camera moves.
-        '--d': ((i * 137) % 1900) + 'ms',
+        '--d': ((i * 137) % FALL_MS) + 'ms',
         '--s': (0.7 + ((i * 53) % 60) / 100).toFixed(2),
         '--r': ((i * 71) % 360) + 'deg',
         '--sw': (((i * 43) % 66) - 33) + 'px',
@@ -87,12 +105,12 @@ export function createEndgame(root, state, game, hooks = {}) {
     void bWrap.offsetWidth;
     bWrap.classList.add('in');
     if (hideT) clearTimeout(hideT);
-    // Held until just short of the scoreboard (WIN.reveal, 6.0s) so the plate
+    // Held until just short of the scoreboard (WIN.reveal, 8.85s) so the plate
     // and the last of the paper clear the frame a beat before the score lands.
     hideT = setTimeout(() => {
       bWrap.classList.remove('in');
       toggle(bWrap, 'hid', true);
-    }, 5600);
+    }, HOLD_MS);
   }
 
   /* -------------------------------------------------------------- the dock */
