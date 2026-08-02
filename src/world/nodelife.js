@@ -62,16 +62,21 @@ const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeOut = t => 1 - (1 - t) * (1 - t) * (1 - t);
 
-/* Wheat is a STANDING PLANT again — a stalk with flat leaf cards paired up it —
-   so it needs a double-sided material or every leaf pointing away from the
-   camera vanishes. It rides `grass` (0.105 sway) rather than `wheat` (0.145):
-   growing wheat should lean in the wind, which is exactly what this buys, but
-   0.145 on a plant this tall shears the top of it a quarter of a unit sideways
-   and the crop starts to slosh. The old bound sheaf sat on `tree` for the
-   opposite reason — a closed, tied bundle should barely move at all. */
+/* Wheat is a BOUND SHEAF: a closed, solid, tied bundle with no flat cards left
+   in it. That changes two things about how it is drawn, and both of them are
+   the reason the player could not find them.
+
+     * It CASTS A SHADOW now. The standing plant rode the double-sided `grass`
+       material with casting off, which is right for a leaf card and wrong for a
+       volume: an object with no shadow does not sit on the ground, it hovers in
+       front of it, and on sand-coloured ground that was the whole difference
+       between seeing one and not.
+     * It barely MOVES. `tree` sways 0.026 against `grass`'s 0.105 — a tied
+       bundle should shift in the wind, not wave. Standing crop waves; this is
+       cut, bound and stacked. */
 const KIT = {
   tree:    { make: K.fieldTree,  mat: 'tree',  cast: true },
-  wheat:   { make: K.fieldWheat, mat: 'grass', cast: false },
+  wheat:   { make: K.fieldWheat, mat: 'tree',  cast: true },
   sheep:   { make: K.fieldSheep, mat: 'solid', cast: true },
   claypit: { make: K.fieldClay,  mat: 'solid', cast: true },
   orerock: { make: K.fieldOre,   mat: 'solid', cast: true }
@@ -94,33 +99,34 @@ const TINTS = {
    The tree is untouched — the player likes the tree, it is the benchmark — and
    the other four have been walked up toward it until each one is a real
    two-unit object rather than a trinket in tall grass. */
-/* The ore is the odd one out: its GEOMETRY is a 3.5-unit-long jagged oval in
-   place of a 2.3-unit-wide dome, so its instance scale comes down to keep the
-   longest of them from growing into the blue-noise gaps a settler has to run
-   down. The world footprint lands in the same 2.6..3.8 band the old boulder
-   occupied. Sunk deeper too — a lump of ore sits IN the ground. */
-/* WHEAT IS THE ONE THAT MOVED. "Make the wheat resources much larger, they're
-   too small."
-   The plant's own geometry grew from 2.12 to 2.72 units and got a good deal
-   fatter in leaf and ear (see `fieldWheat`), and the instance scale is walked UP
-   on top of that rather than down: 0.92..1.10 -> 1.12..1.26, which after the
-   per-item jitter below lands a takeable plant between 2.8 and 3.9 world units
-   tall against the 2.0..2.4 it used to stand at. That is a clear step over the
-   sheep (1.5), the brick stack (1.8) and the ore lump (1.5), a clear step under
-   the harvestable tree (3.1..4.2), and — the point of the exercise — big enough
-   that twenty-two of them on a 5-pip hex read as a crop from the play camera
-   instead of as wire stuck in sand. The plants brush each other at the leaves
-   and stay clear at the stalk, so the blue-noise lanes a settler sweeps down are
-   untouched: nothing about the item POSITIONS changed, only how much of the sky
-   each one fills. */
+/* BOTH ORE AND WHEAT WERE RESHAPED, so both instance scales are re-derived.
+
+   ORE is now a 1.5-unit stack of cut grey blocks on a spoil apron rather than a
+   3.5-unit jagged oval, so the scale goes back UP to put its world footprint in
+   the same band as the brick stack it is modelled on. Still sunk deepest of the
+   five — a stack of cut stone settles INTO the scree it was dug out of.
+
+   WHEAT is now a bound sheaf: a 2.5-unit closed drum roughly 1.6 across, in
+   place of a 2.7-unit feathery plant that was mostly air. The measured height
+   barely changes — 2.4 to 3.1 world units against 2.8 to 3.9 — but the MASS at
+   that height is several times what it was, which is the whole point:
+
+     "The wheats are still way too small and pointy and thin ... I'm having a
+      hard time quickly identifying where they are even as I'm running around
+      the hex."
+
+   Thin was the complaint, not short. A sheaf reads at a glance from any bearing,
+   drops a hard shadow on the sand, and — because they now stand clear of each
+   other rather than brushing at the leaves — can be COUNTED, which is the other
+   half of what was asked for. Nothing about the item POSITIONS changed. */
 const SCALE = {
   tree:    [1.10, 1.50],
-  wheat:   [1.12, 1.26],
+  wheat:   [1.02, 1.16],
   sheep:   [1.12, 1.34],
   claypit: [1.14, 1.40],
-  orerock: [0.80, 0.92]
+  orerock: [1.18, 1.40]
 };
-const SINK = { tree: 0.10, wheat: 0.05, sheep: 0.02, claypit: 0.10, orerock: 0.14 };
+const SINK = { tree: 0.10, wheat: 0.05, sheep: 0.02, claypit: 0.10, orerock: 0.09 };
 
 /* Per-item size jitter, folded on top of SCALE. The board hands out
    `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a

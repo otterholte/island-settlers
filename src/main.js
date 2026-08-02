@@ -122,7 +122,12 @@ async function boot() {
     state, world, audio, effects, camera: gameCamera, input, avatars,
     economy: ecoM,
     requestBuild(kind) { return hud.requestBuild ? hud.requestBuild(kind) : null; },
-    openOverview(mode, opts) { overview.open(mode, opts); },
+    // Returns overview.open's own verdict: FALSE when there was nothing legal
+    // to offer and the panel was deliberately left alone. Swallowing it meant
+    // every caller that checks (`economy.openPlacement`, `placeFreeRoads`, the
+    // Road Building cue) believed the map had come up when it had not — which
+    // is one of the two ways a Road Building card used to be spent on nothing.
+    openOverview(mode, opts) { return overview.open(mode, opts); },
     closeOverview() { overview.close(); },
     openTrade(portId) { panels.openTrade(portId ?? null); },
     openCards() { panels.openCards(); },

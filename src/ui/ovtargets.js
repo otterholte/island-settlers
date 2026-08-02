@@ -29,17 +29,26 @@
  *    that is not the size of the thing you are previewing is a lie — only the
  *    gold ring hugging it came in, from 1.40x to 1.24x.
  *
- * 2. "Make the places where I can choose to place my road more clear — that's
- *    the map view where I currently see the blinking yellow road options."
+ * 2. "The thick yellow sections showing where I can place a road actually are
+ *    too distracting, I'd rather them have glow slowly flashing pulsing white
+ *    borders." And: "Don't let the highlight or border of where I can place a
+ *    road ever cover the settlement or city on the map view of myself or
+ *    another player."
  *
- *    They were a 7px line at a wandering alpha, on a board that already carries
- *    four colours of real road. They are now ROADS: a dark-cased gold slab with
- *    sleepers across it, laid along the edge and trimmed at both ends so two
- *    available edges meeting at a corner stay two separate slabs. Nothing
- *    blinks out any more — the dimmest an available edge ever gets is 82%, so
- *    the pulse is a shimmer rather than a disappearance. The chosen one is
- *    painted last, in the player's own colour, inside a cream outline, with a
- *    disc at each end and a chevron bobbing over the middle of it.
+ *    An available edge started as a 7px line at a wandering alpha, then became a
+ *    solid dark-cased GOLD SLAB with sleepers on it — legible, and on a board
+ *    that already carries four colours of real road, far too loud: thirty of
+ *    them at once read as thirty new roads rather than as thirty invitations.
+ *    It is now an EMPTY SLOT with a slowly pulsing white glow round its border,
+ *    so the terrain, the tokens and the real roads all stay visible through
+ *    every target. Any end of a slot that lands on a BUILT corner is trimmed
+ *    back clear of the piece standing there, because settlements and cities are
+ *    baked BEHIND this layer and anything painted over one hides it — and "is
+ *    that junction already taken" is exactly the question being asked when a
+ *    player is working out whether a road dead-ends.
+ *
+ *    The chosen edge stays solid and stays in the player's own colour: there is
+ *    only ever one of it, and it should look like the road about to exist.
  *
  * 3. The Raider used to tint EIGHTEEN of the nineteen hexes gold — every legal
  *    one — so the board read as uniformly gold and the terrain washed out. It
@@ -99,8 +108,45 @@ export function createTargets(ctx, proj, paint, state) {
 
   /* ------------------------------------------------------------ road slabs */
 
-  /** The two ends of an edge in canvas px, trimmed back off both corners. */
-  function edgeRun(id, w) {
+  /** Does a settlement or a city already stand on this corner? */
+  function built(iid) {
+    const b = state && state.buildings;
+    if (!b) return false;
+    return typeof b.has === 'function' ? b.has(iid) : !!b[iid];
+  }
+
+  /**
+   * How far a road highlight must stand off a corner, in css px.
+   *
+   *   "Don't let the highlight or border of where I can place a road ever cover
+   *    the settlement or city on the map view of myself or another player,
+   *    otherwise I can't really see where I might get stuck if I play a road
+   *    there and it's a dead end after that since there's a settlement that
+   *    wasn't clear enough."
+   *
+   * Settlements and cities are baked into the board BEHIND the target layer
+   * (see `overview.draw`), so there is no z-order fix available — anything
+   * painted on an occupied corner covers the piece standing on it, full stop.
+   * The only fix is to not paint there, so an end that lands on a built corner
+   * is trimmed back past the pip AND past the round cap the widest layer of the
+   * highlight bulges out with. `pad` is that cap allowance, supplied by the
+   * caller because the chosen edge is drawn fatter than an available one.
+   *
+   * The cost is a slightly shorter highlight against an occupied junction, and
+   * the gain is that you can always see whose piece is sitting on the end of the
+   * road you are about to build — which is exactly the dead-end read asked for.
+   */
+  function cornerClear(iid, pad) {
+    return built(iid) ? pipRadius(proj) * 1.30 + pad : 0;
+  }
+
+  /**
+   * The two ends of an edge in canvas px, trimmed back off both corners.
+   *
+   * `pad` is half the width of the widest stroke the caller will lay down, so
+   * an occupied corner can be cleared by the ink rather than by the centreline.
+   */
+  function edgeRun(id, w, pad = 0) {
     const e = edges[id];
     if (!e) return null;
     const A = intersections[e.a], B = intersections[e.b];
@@ -112,10 +158,16 @@ export function createTargets(ctx, proj, paint, state) {
     // Trimmed at both ends so two available edges sharing a corner read as two
     // slabs with a gap, not as one long snake through the junction.
     const trim = Math.min(L * 0.13, w * 0.7);
+    // ...and trimmed a great deal harder at an end that already holds a piece.
+    // Capped at 42% each so an edge with a settlement on BOTH ends still keeps a
+    // stub of highlight in the middle rather than vanishing.
+    const ta = Math.min(L * 0.42, Math.max(trim, cornerClear(e.a, pad)));
+    const tb = Math.min(L * 0.42, Math.max(trim, cornerClear(e.b, pad)));
     return {
       ax, ay, bx, by, ux, uy, nx: -uy, ny: ux, len: L,
-      x0: ax + ux * trim, y0: ay + uy * trim,
-      x1: bx - ux * trim, y1: by - uy * trim,
+      builtA: built(e.a), builtB: built(e.b),
+      x0: ax + ux * ta, y0: ay + uy * ta,
+      x1: bx - ux * tb, y1: by - uy * tb,
       mx: (ax + bx) / 2, my: (ay + by) / 2
     };
   }
@@ -146,49 +198,120 @@ export function createTargets(ctx, proj, paint, state) {
     }
   }
 
-  /** An AVAILABLE edge: gold slab, dark casing, planking. Never invisible. */
-  function drawRoadTarget(id, warm, beat) {
+  /**
+   * The OUTLINE of a road slot as a path: a stadium — two parallel sides and a
+   * round cap at each end — traced round the run at width `w`.
+   *
+   * Both caps sweep anticlockwise in canvas terms, which is what keeps the path
+   * a single closed loop rather than a bow tie.
+   */
+  function runOutline(r, w) {
+    const h = w / 2;
+    const nx = r.nx * h, ny = r.ny * h;
+    const a0 = Math.atan2(r.ny, r.nx);
+    ctx.beginPath();
+    ctx.moveTo(r.x0 + nx, r.y0 + ny);
+    ctx.lineTo(r.x1 + nx, r.y1 + ny);
+    ctx.arc(r.x1, r.y1, h, a0, a0 - Math.PI, true);
+    ctx.lineTo(r.x0 - nx, r.y0 - ny);
+    ctx.arc(r.x0, r.y0, h, a0 + Math.PI, a0, true);
+    ctx.closePath();
+  }
+
+  /** Stroke the current path at a width and alpha, in white. */
+  function ghost(lw, alpha) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+    ctx.stroke();
+  }
+
+  /**
+   * An AVAILABLE edge: a HOLLOW slot with a slow pulsing white glow round it.
+   *
+   *   "The thick yellow sections showing where I can place a road actually are
+   *    too distracting, I'd rather them have glow slowly flashing pulsing white
+   *    borders."
+   *
+   * What this replaces was a solid object: a 15px gold slab with a dark casing
+   * and cross-planks on it, laid over every legal edge at once. Thirty of them
+   * on screen together was thirty new ROADS painted on a board that already
+   * carries four colours of real road, and the eye had to work out which of them
+   * were real before it could think about where to build. That is the whole
+   * complaint — the highlight was competing with the board instead of annotating
+   * it.
+   *
+   * So the slot is empty now. Four concentric strokes of one stadium outline —
+   * a wide faint halo, a soft mid, a bright edge and a hairline — plus a whisper
+   * of dark wash inside to seat it on pale sand. The terrain, the tokens and the
+   * real roads all stay visible THROUGH every target, and what marks the spot is
+   * light rather than paint.
+   *
+   * The pulse is deliberately slow: `slow` runs at 1.9 rad/s against the 4.2 the
+   * corner rings beat at, so it reads as breathing rather than blinking, and it
+   * never falls below half strength — an invitation that disappears is worse
+   * than a loud one.
+   *
+   * Concentric strokes rather than `shadowBlur`: a canvas shadow on thirty paths
+   * a frame is the one thing in this layer that could cost a phone its frame
+   * rate, and four cheap strokes look the same.
+   */
+  function drawRoadTarget(id, warm, beat, slow) {
     const w = roadBodyW();
-    const r = edgeRun(id, w);
+    const r = edgeRun(id, w, w * 0.5 + 7);
     if (!r) return;
+    const k = warm ? 1 : 0.52 + 0.48 * slow;      // never fully dark
     ctx.save();
-    ctx.globalAlpha = warm ? 1 : 0.82 + 0.18 * beat;
-    // A dark bed first: the map has gold wheat hexes and pale sand on it, and a
-    // gold road on gold ground is no road at all.
-    runStroke(r, w + 9, 'rgba(6,16,26,.40)');
-    runStroke(r, w + 4.5, 'rgba(26,17,4,.92)');
-    runStroke(r, w, warm ? '#ffe79a' : '#ffc93c');
-    // Top bevel down the middle of the slab — the same light every chunky
-    // button and plate in this interface wears.
-    runStroke(r, Math.max(1.6, w * 0.28), 'rgba(255,248,214,.78)');
-    sleepers(r, w, 'rgba(126,76,10,.52)');
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    runOutline(r, w);
+    // A whisper of shade inside the slot. Not a fill — a seat, so the white
+    // border has something to sit against on bright sand and gold wheat.
+    ctx.fillStyle = `rgba(9,20,34,${0.10 + 0.05 * k})`;
+    ctx.fill();
+    ghost(w * 0.62 + 9, 0.055 + 0.075 * k);       // the halo
+    ghost(6.5, 0.10 + 0.16 * k);                  // the bloom
+    ghost(3.0, 0.34 + 0.40 * k);                  // the edge
+    ghost(1.4, 0.55 + 0.45 * k);                  // the hairline
     ctx.restore();
   }
 
   /**
    * The CHOSEN edge, painted after every other target so nothing crosses it.
    *
-   * The unmistakable state: the player's own colour rather than gold, a cream
-   * outline around the whole slab, a disc at each corner it will connect, and a
-   * chevron bobbing over the middle. Nothing else on the board looks like this.
+   * This one stays SOLID and stays in the player's own colour. Exactly one of
+   * them is ever on screen, so it costs the board nothing, and the whole job of
+   * the chosen state is to look like the road that is about to exist. It wears
+   * the same white glow as the empty slots around it, so picking one reads as
+   * the outline filling in rather than as a change of language.
    */
-  function drawRoadChosen(id, beat) {
+  function drawRoadChosen(id, beat, slow) {
     const w = roadBodyW() * 1.16;
-    const r = edgeRun(id, w);
+    const r = edgeRun(id, w, w * 0.5 + 9);
     if (!r) return;
     const col = state.players[0].color;
     ctx.save();
     ctx.globalAlpha = 1;
-    runStroke(r, w + 16, `rgba(255,201,60,${0.20 + 0.10 * beat})`);
-    runStroke(r, w + 9, '#fff4cf');
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     runStroke(r, w + 4.5, 'rgba(16,10,2,.95)');
     runStroke(r, w, col.css);
     runStroke(r, Math.max(1.8, w * 0.30), col.light);
     sleepers(r, w, 'rgba(10,18,30,.45)');
+    runOutline(r, w + 4.5);
+    ghost(w * 0.62 + 11, 0.07 + 0.10 * slow);
+    ghost(7.0, 0.16 + 0.20 * slow);
+    ghost(3.2, 0.48 + 0.42 * slow);
+    ghost(1.5, 0.70 + 0.30 * slow);
 
-    // A stud on each corner the road will join: "this end and that end".
+    // A stud on each corner the road will join: "this end and that end". A
+    // corner that already carries a settlement or a city gets none — covering
+    // the piece is the exact thing the player asked us to stop doing, and the
+    // built piece says "this end joins here" better than a stud ever did.
     const knob = Math.max(3.4, w * 0.44);
-    for (const [kx, ky] of [[r.ax, r.ay], [r.bx, r.by]]) {
+    const ends = [];
+    if (!r.builtA) ends.push([r.ax, r.ay]);
+    if (!r.builtB) ends.push([r.bx, r.by]);
+    for (const [kx, ky] of ends) {
       ctx.beginPath(); ctx.arc(kx, ky, knob, 0, Math.PI * 2);
       ctx.fillStyle = '#fff4cf'; ctx.fill();
       ctx.lineWidth = Math.max(1.4, knob * 0.34);
@@ -397,6 +520,9 @@ export function createTargets(ctx, proj, paint, state) {
     if (!targets || !targets.length) return;
     const pulse = view.pulse || 0;
     const beat = 0.5 + 0.5 * Math.sin(pulse * 4.2);
+    // The road slots breathe at less than half that rate. "Slowly flashing
+    // pulsing" was the ask, and 4.2 rad/s on thirty edges at once is a strobe.
+    const slow = 0.5 + 0.5 * Math.sin(pulse * 1.9);
     const glow = 0.5 + 0.5 * beat;
     const halo = (pulse * 0.9) % 1;
 
@@ -405,13 +531,13 @@ export function createTargets(ctx, proj, paint, state) {
     for (const id of targets) {
       if (id === sel) continue;                 // the choice is painted last
       const warm = id === hover;
-      if (mode === 'place-road') drawRoadTarget(id, warm, beat);
+      if (mode === 'place-road') drawRoadTarget(id, warm, beat, slow);
       else if (mode === 'place-robber') drawRobberTarget(id, false, warm, beat);
       else drawCornerTarget(id, false, warm, beat, glow, halo);
     }
 
     if (sel === null || sel === undefined) return;
-    if (mode === 'place-road') drawRoadChosen(sel, beat);
+    if (mode === 'place-road') drawRoadChosen(sel, beat, slow);
     else if (mode === 'place-robber') drawRobberTarget(sel, true, false, beat);
     else {
       drawCornerTarget(sel, true, false, beat, glow, halo);

@@ -163,10 +163,30 @@ const STATIC_KITS = {
 const RECIPE = {
   forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
                undergrowth: 12, grass: 26, rockSmall: 3 },
-  fields:    { wheat: 84, hay: 3, fence: 6, crate: 2, grass: 3,
-               rockSmall: 2, undergrowth: 2 },
+  // A WHEAT FIELD IS THE CROP AND THE GROUND, AND NOTHING ELSE.
+  //
+  //   "Make the wheat/hay hexes more empty and yet look like non visually
+  //    overstimulating farm land when empty. Right now it's too many
+  //    contrasting dark lines and items even after the wheat is gone to know
+  //    what I'm looking at. It's just distracting."
+  //
+  // The dark lines were literal: six FENCES a hex, each one two near-black
+  // posts and a rail, plus two crates of the same dark plank, standing on pale
+  // sand at maximum contrast — and none of them ever moved, because baked kits
+  // cannot answer the harvest. Take the crop off a hex and what was left was a
+  // stockade. All of it is gone; fences belong to the pasture, which is the hex
+  // that has something to fence in.
+  //
+  // The decorative crop comes down hard with it, 84 -> 34, and each tuft is now
+  // four soft blades in a muted straw instead of three spiky plants with bright
+  // ear cones on them (see `wheatTuft`). Between the sheaves it is a warm mat
+  // under the crop; worked out, `stand.js` crops it to a tenth of its height and
+  // it becomes a flat wash on the ground with nothing standing up out of it.
+  // Two hay bales stay: they are the one prop that says FARM without saying
+  // anything else, and they read at any distance.
+  fields:    { wheat: 34, hay: 2, grass: 2, rockSmall: 1 },
   pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
-               broadleaf: 2, hay: 2 },
+               hay: 2 },
   hills:     { clayWorks: 3, rockSmall: 8, boulder: 3, grass: 22,
                undergrowth: 5, crate: 2, deadwood: 1 },
   // A MOUNTAIN IS A MINING HILL. NOTHING TREE-SHAPED STANDS ON IT.
@@ -182,15 +202,28 @@ const RECIPE = {
   // the timbered portal with its rails and carts (placed procedurally below),
   // stacked pit props, and a few tufts of scrub clinging on in the shale.
   //
-  // The counts that were cut back when the ore became a boulder now go the other
-  // way, because the trees they were competing with have left: spires 4 -> 6,
-  // rubble 6 -> 12, scree stones and pit props up with them. The harvestable ore
-  // keeps its silhouette all the same — it is a LONG JAGGED OVAL now, and every
-  // decorative stone on the hex is a smooth pale dome (`boulder()` is built with
-  // `facetStone` at a fifth of the ore's roughness), so the two can share a hex
-  // without ever being mistaken for each other.
-  mountains: { spire: 6, boulder: 5, rockSmall: 12, timber: 3, crate: 2,
-               grass: 7 },
+  // AND NOW IT IS A QUIET ONE.
+  //
+  //   "The ore hexes still look too busy even when they're empty. Make it less
+  //    visually distracting so I know what I'm looking at, but there's not
+  //    really extra 3d shapes on the hex when it's empty."
+  //
+  // Removing the trees fixed the wrong SILHOUETTE and left the wrong COUNT: six
+  // spires up to four units tall, five boulders, twelve loose stones, three pit
+  // props and two crates is thirty standing objects on a hex whose whole job is
+  // to hold ten to twenty-two takeable ones. Worked out, all thirty were still
+  // there and none of them meant anything.
+  //
+  // Every count is roughly halved — spires 6 -> 3, boulders 5 -> 3, rubble
+  // 12 -> 5, props 3 -> 1, crates gone — which leaves the portal, a short
+  // skyline and enough scree to say "diggings" with a great deal of bare rock
+  // floor between them. The loose rubble also SETTLES when the hex is worked out
+  // now (`stand.js` crops it) instead of standing there for ever, so an empty
+  // mountain genuinely loses shapes rather than just losing colour.
+  //
+  // The harvestable ore no longer has to fight any of this: it is a stack of
+  // hard-edged cut CUBES, and there is not another right angle on the tile.
+  mountains: { spire: 3, boulder: 3, rockSmall: 5, timber: 1, grass: 5 },
   desert:    { rockSmall: 8, boulder: 3, crate: 3, grass: 8, hay: 2,
                deadwood: 2, coniferShort: 1 }
 };
@@ -247,18 +280,27 @@ const FOOT = {
 };
 
 /*
- * ...except on a FIELD, where the rule is exactly wrong.
+ * ...and on a FIELD the right answer has now moved back the other way.
  *
- * A sheep with a fern growing out of it is a bug. A wheat plant with shorter
- * wheat growing between its leaves is a wheat field — the crop is supposed to be
- * continuous, and the tall plants are told apart from the short ones by HEIGHT,
- * not by a ring of bare sand around each one. With the harvestable plant now
- * three and a half units tall the 1.12 exclusion disc was reserving about 110 of
- * the hex's ~128 usable square units, so almost none of the decorative crop
- * could be placed at all and the hex came back as tall plants standing on open
- * beach. At 0.55 the ground closes up and the field reads as a field.
+ * When the crop item was a feathery STANDING PLANT the brief was continuity: the
+ * hex was supposed to read as one unbroken mass of gold, tall plants told apart
+ * from short ones by height alone, so the exclusion disc came down to 0.55 and
+ * the decorative crop was allowed to grow right in between the leaves.
+ *
+ * That is exactly what the player then could not read:
+ *
+ *   "I'm having a hard time quickly identifying where they are even as I'm
+ *    running around the hex ... so it's a lot easier to tell where they are and
+ *    how many there are left to pick up."
+ *
+ * You cannot count things that are touching. The takeable item is a chunky bound
+ * SHEAF now, and every one of them gets a clear collar of ground so it stands on
+ * its own with its own shadow — which is what turns "a field of wheat" into
+ * "seven bundles left". Not so wide that the hex goes bare: at 0.92, with the
+ * decorative crop down to 34 tufts, the ground between them still closes into a
+ * warm straw mat rather than open beach.
  */
-const ITEM_FOOT = { fields: 0.55 };
+const ITEM_FOOT = { fields: 0.92 };
 
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */
 const STYLE = {
@@ -269,13 +311,12 @@ const STYLE = {
   undergrowth:  { s: [0.75, 1.45], sink: 0.05, tilt: 0.35, yaw: true },
   grass:        { s: [0.70, 1.50], sink: 0.04, tilt: 0.35, yaw: true },
   flower:       { s: [0.75, 1.35], sink: 0.04, tilt: 0.35, yaw: true },
-  // Kept under the harvestable plant on purpose, and re-capped now that both
-  // grew: the tallest tuft tops out at about 1.8 units, the shortest takeable
-  // plant at 2.8. Height alone is what separates "run at this" from "scenery"
-  // on a full fields hex, so the gap between the two bands is never allowed to
-  // close — the tuft geometry went up by half and the scale range came down to
-  // pay for it.
-  wheat:        { s: [0.62, 1.02], sink: 0.04, tilt: 0.25, yaw: true },
+  // Ankle-high, and deliberately so. The takeable item is no longer a tall
+  // plant that a tall tuft could be confused with — it is a bound sheaf with a
+  // hard silhouette and its own shadow — so this kit's whole job is to be
+  // GROUND. At 0.55 to 1.25 world units it is a straw mat the sheaves stand on
+  // top of, and nothing in it ever competes for the eye.
+  wheat:        { s: [0.80, 1.25], sink: 0.04, tilt: 0.25, yaw: true },
   hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
   rockSmall:    { s: [0.55, 1.35], sink: 0.12, tilt: 0.85, yaw: true },
   // Capped well under the harvestable ore lump, which runs 0.86..1.00 on a
@@ -409,8 +450,11 @@ export function buildProps(scene) {
       const mz = tile.z + Math.sin(away) * HEX_SIZE * 0.40;
       placer.blocked.push({ x: mx, z: mz, r: FOOT.mine });
       drop('mine', mx, mz, rng, { ry: yaw, s: 1.1, sy: 1.1 });
-      // rails running out of the portal, and a couple of carts on them
-      for (let i = 0; i < 5; i++) {
+      // Rails running out of the portal, and one cart on them. Both thinned
+      // with the rest of the mountain dressing: five rail segments and two
+      // carts was a working railway on a hex that is supposed to read at a
+      // glance as "rock, a mine, and the ore you came for".
+      for (let i = 0; i < 3; i++) {
         const d = HEX_SIZE * 0.40 - (2.2 + i * 2.05);
         const rx2 = tile.x + Math.cos(away) * d;
         const rz2 = tile.z + Math.sin(away) * d;
@@ -418,7 +462,7 @@ export function buildProps(scene) {
         placer.blocked.push({ x: rx2, z: rz2, r: FOOT.rail });
         drop('rail', rx2, rz2, rng, { ry: yaw });
       }
-      for (let i = 0; i < 2; i++) {
+      for (let i = 0; i < 1; i++) {
         const d = HEX_SIZE * 0.40 - (3.6 + i * 4.1);
         const cx = tile.x + Math.cos(away) * d;
         const cz = tile.z + Math.sin(away) * d;

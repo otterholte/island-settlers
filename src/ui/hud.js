@@ -34,6 +34,7 @@ import { icon, iconEl, resIcon, avatar } from './icons.js';
 import { createBuildBar } from './hud-build.js';
 import { createTradeCue } from './hud-trade.js';
 import { createKnightCue } from './hud-knight.js';
+import { createRoadCue } from './hud-road.js';
 import {
   createGuide, regionReport, standingRegion, pieceCapped, hasSomewhere,
   REGION_ONE
@@ -220,6 +221,14 @@ export function createHUD(root, state, game) {
   const knightCue = createKnightCue(hud, state, game);
   game.knightCue = knightCue;
 
+  /* ...and Road Building is the other one. It used to arrive as a single fading
+     toast telling the player to go and find the CARDS button, which is how a
+     card that opens the whole board ended up being "wasted, and nothing
+     happens". hud-road.js is the Knight's twin: it announces the draw, raises a
+     standing chip, and brings the placement map up by itself. */
+  const roadCue = createRoadCue(hud, state, game);
+  game.roadCue = roadCue;
+
   /* ---------------------------------------------------------------- toast */
   const liveToasts = [];
 
@@ -284,9 +293,9 @@ export function createHUD(root, state, game) {
       // A Knight gets the centre banner from hud-knight.js, which also raises
       // the standing "play me" chip — so it deliberately says nothing here.
       if (card.type === 'victoryPoint') announce('+1 Victory Point!', '#ffc93c');
-      else if (card.type === 'roadBuilding') {
-        toast('Road Building — open CARDS to lay two roads free', 'good');
-      } else toast(`Drew ${CARD_LABEL[card.type]}`, 'good');
+      // Road Building says nothing here either, for the same reason: hud-road.js
+      // takes the centre banner, raises its own chip and opens the map.
+      else if (card.type !== 'roadBuilding') toast(`Drew ${CARD_LABEL[card.type]}`, 'good');
       refreshAll(true);
       return true;
     }
@@ -532,6 +541,7 @@ export function createHUD(root, state, game) {
 
     tradeCue.update(d);
     knightCue.update(d);
+    roadCue.update(d);
   }
 
   function onPlayBegan() {
@@ -550,9 +560,11 @@ export function createHUD(root, state, game) {
     get root() { return hud; },
     openSettings: () => toggleSettings(true),
     get knightCue() { return knightCue; },
+    get roadCue() { return roadCue; },
     destroy() {
       tradeCue.destroy();
       knightCue.destroy();
+      roadCue.destroy();
       if (hud.parentNode) hud.parentNode.removeChild(hud);
     }
   };

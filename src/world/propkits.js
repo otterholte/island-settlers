@@ -35,7 +35,7 @@ import {
  *     poly `rock` instead of the 20-face icosahedron. At their on-screen size
  *     the two are indistinguishable, and the flat shading is on-style.
  *
- * Silhouette-defining volumes (hero canopies, the sheep, the ore seam) keep
+ * Silhouette-defining volumes (hero canopies, the sheep, the ore stack) keep
  * their original resolution.
  */
 
@@ -121,8 +121,8 @@ export function broadleaf() {
  * its OUTLINE alone at the twenty-odd pixels it actually draws at:
  *
  *   brick  a stepped stack of five fat terracotta bricks on a spoil mound
- *   wheat  a tall standing plant: one stalk, six pairs of leaves, an ear on top
- *   ore    a long, low, dark JAGGED OVAL with bright seams of metal across it
+ *   wheat  a bound SHEAF: a flared golden drum with a dark twine band round it
+ *   ore    the same stack in cool cut GREY stone, on an apron of spoil
  *   sheep  a plump, lumpy fleece on a dark leg block with the head held clear
  *
  * Nothing is round-and-grey twice, nothing is a cone twice. The triangle budget
@@ -182,107 +182,96 @@ export function fieldSheep() {
 }
 
 /*
- * The crop's own ramp: deep honey at the root, saturated gold through the
- * leaves, and the bright end spent entirely on the ear.
+ * The crop's own ramp: deep honey at the butt, saturated gold up the bundle,
+ * and the bright end spent entirely on the ears.
  *
- * This has now been mixed three times and the lesson each time was the same
- * one. A fields hex stands on SAND — pale, warm, and lit by the same key light
- * as the crop on top of it — so any wheat colour with a lot of white in it
- * lands within a few per cent of the ground it is standing on and the whole hex
- * reads as one flat tan wash. That is what "the wheat is too small" partly
- * meant: it was not only short, it was invisible. The previous ramp topped out
- * at 0xfff6d2 and ran near-cream through the leaves; this one keeps the leaves
- * two full stops darker and more saturated than the sand and lets the ear alone
- * carry the highlight, which is what puts a lit top edge on the crop and a
- * readable silhouette under it.
+ * This has now been mixed four times and the lesson each time was the same one.
+ * A fields hex stands on SAND — pale, warm, and lit by the same key light as
+ * the crop on top of it — so any wheat colour with a lot of white in it lands
+ * within a few per cent of the ground it is standing on and the whole hex reads
+ * as one flat tan wash. The leaves are kept two full stops darker and more
+ * saturated than the sand and the ears alone carry the highlight, which is what
+ * puts a lit top edge on the crop and a readable silhouette under it.
  */
 const WH_LO = 0x6a4609;
 const WH_MID = 0xc08a14;
 const WH_HI = 0xefbe37;
 const WH_TOP = 0xffdc74;
 
+/* The STUBBLE ramp — deliberately not the crop's. See `wheatTuft`. */
+const WH_STUB_LO = 0x9c7a2e;
+const WH_STUB_HI = 0xcfa855;
+
 /**
- * One STANDING WHEAT PLANT.  (36 tris)
+ * One BOUND SHEAF — a bundle of hay standing on its butt end.  (~80 tris)
  *
- * The reference the player attached is a hex of tall, upright, densely packed
- * golden wheat: every plant a straight central stalk with symmetrical pairs of
- * leaves stepping up it and tapering toward the top — little golden ferns —
- * standing well clear of the ground, and the hex reading as one solid mass of
- * gold rather than as a scatter of objects on sand.
+ * "THE WHEATS ARE STILL WAY TOO SMALL AND POINTY AND THIN. GIVE THEM A
+ *  DIFFERENT APPEARANCE — MAKE IT LOOK MORE LIKE BUNDLES OF HAY SO IT'S A LOT
+ *  EASIER TO TELL WHERE THEY ARE AND HOW MANY THERE ARE LEFT TO PICK UP. I'M
+ *  HAVING A HARD TIME QUICKLY IDENTIFYING WHERE THEY ARE EVEN AS I'M RUNNING
+ *  AROUND THE HEX."
  *
- * "MAKE THE WHEAT RESOURCES MUCH LARGER, THEY'RE TOO SMALL."
- * ---------------------------------------------------------
- * The last pass got the SHAPE right and the SIZE wrong. At a 1.72-unit stalk
- * with 0.70-unit leaves the plant stood about two units tall and about one unit
- * wide, and from the play camera a full fields hex read as bare sand with wire
- * stuck in it — the leaves were slivers, the ear was a speck, and the gold never
- * covered enough ground to be gold. Size is not a tweak here, it is the whole
- * complaint, so this plant grew in both directions at once:
+ * The version this replaces was a STANDING PLANT: a wire stalk with sixteen
+ * flat leaf cards paired up it and a cone on top. Three things were wrong with
+ * it and all three were the same thing.
  *
- *   stalk    1.72 -> 2.10, and thicker at the root (0.062 -> 0.105) so it does
- *            not read as wire at the base of a much bigger plant
- *   leaves   0.70 -> 0.98 long and 0.20 -> 0.31 wide at the bottom pair, which
- *            is where the plant's whole footprint comes from
- *   ear      0.46 -> 0.76 tall and nearly twice as fat, because the ear is the
- *            single feature that says GRAIN at twenty pixels
+ *   * It had no VOLUME. Sixteen flat cards at a hundred different angles never
+ *     resolve into a mass — half of them are edge-on from any given camera, so
+ *     the plant is a different, thinner shape every step you take around it.
+ *   * It had no SHADOW worth the name, because it rode the double-sided grass
+ *     material with casting off. An object with no shadow does not sit on the
+ *     ground; it hovers in front of it, and on sand-coloured ground that is the
+ *     difference between seeing it and not.
+ *   * It could not be COUNTED. Twenty-two feathery plants brushing each other
+ *     merge into one continuous field, which was the old brief and is exactly
+ *     wrong for "how many are left to pick up".
  *
- * With `SCALE.wheat` in `nodelife.js` walked up to match, a takeable plant now
- * stands between 2.8 and 3.9 world units — a clear step over the sheep, the
- * brick stack and the ore lump, still a clear step under the harvestable tree
- * (3.1 to 4.2), and wide enough at the base that neighbouring plants brush each
- * other on a 22-item hex, which is exactly what turns twenty-two objects into
- * one field.
+ * So it is now a SOLID, CLOSED, SHADOW-CASTING BUNDLE: butt ends fanned on the
+ * ground, a pinched waist, a dark twine band round it, shoulders flaring up and
+ * out, and a crown of six fat ears splaying off the top. Every surface of it is
+ * a real volume — there is not one flat card left — so it reads as the same
+ * chunky object from every bearing, it drops a hard shadow that pins it to the
+ * sand, and at 1.6 units across with clear ground between neighbours you can
+ * count them at a glance from the far side of the hex.
  *
- * The leaf pairs still narrow as they rise and each pair still takes its own
- * bearing, so a hex of them is never a grid. Triangle count is unchanged: the
- * plant got bigger, not busier.
- *
- * Silhouette check: trees are conical and round, the ore is a long jagged lump,
- * the brick is a cuboid stack, the sheep is a white lump. Nothing else on the
- * island is a tall vertical spine with paired arms, and nothing else is this
- * colour. The dressing tuft below is a knee-high version of the same plant, so a
- * fields hex is one crop at two heights rather than two different species.
- *
- * Leaves are flat cards, so the field batch rides the double-sided `grass`
- * material (see `nodelife.js`) — which also gives the crop a real breeze.
+ * Silhouette check: trees are conical and green, the ore is a stack of grey
+ * cubes, the brick is a stack of red ones, the sheep is a white lump. Nothing
+ * else on the island is a flared golden drum with a dark band round its middle.
  */
 export function fieldWheat() {
   const parts = [];
-  const H = 2.10;                       // stalk height, before the ear
-  const PAIRS = 8;
+  const S = 7;                          // radial segments — nobody counts them
 
-  // The stalk. Still slim — the leaves carry the mass — but no longer wire:
-  // at three and a half units tall a 6cm root looked like the plant was
-  // floating. Open-ended; you never see either cap.
-  parts.push(gradient(place(cyl(0.040, 0.105, H, 4, WH_LO, true), 0, H / 2, 0),
+  // The butt: the cut ends of the stalks fanning out where they meet the
+  // ground. Wide at the floor so the bundle plants itself instead of balancing.
+  parts.push(gradient(place(cyl(0.44, 0.64, 0.46, S, WH_LO, true), 0, 0.23, 0),
     WH_LO, WH_MID));
 
-  for (let i = 0; i < PAIRS; i++) {
-    const t = i / (PAIRS - 1);          // 0 at the ground, 1 at the top
-    const y = 0.18 + t * (H - 0.44);
-    const len = 1.00 - t * 0.52;        // longest at the bottom
-    const wid = 0.40 - t * 0.21;
-    const a = i * 1.07 + 0.3;           // the pair's own bearing
-    for (const side of [1, -1]) {
-      // Honey at the root, gold at the tip. The ramp used to run all the way up
-      // to near-cream, and under this key light a whole hex of near-cream leaf
-      // cards came back as pale straw on pale sand — the exact "I can barely
-      // see it" the size complaint was really about. The bright end of the ramp
-      // is spent on the ear alone now, which is the one part that has to pop.
-      const leaf = blade(wid, len, WH_LO, WH_MID, 0.34, 1);
-      // Two steps, so the tilt happens in the leaf's own frame first and the
-      // bearing is applied to the finished pair: a clean, symmetrical V.
-      place(leaf, 0, 0, 0, 0, 0, side * (0.98 - t * 0.24));
-      place(leaf, 0, y, 0, 0, a, 0);
-      parts.push(leaf);
-    }
+  // The waist, pinched in under the tie.
+  parts.push(gradient(place(cyl(0.40, 0.46, 0.60, S, WH_MID, true), 0, 0.72, 0),
+    WH_MID, WH_HI));
+
+  // The twine. One dark band is the whole reason this reads as BOUND rather
+  // than as a pile, and it is the only dark thing on the object.
+  parts.push(place(cyl(0.45, 0.45, 0.17, S, 0x5c3f12, true), 0, 0.99, 0));
+
+  // The shoulders: flaring up and out, and CLOSED on top — an open tube reads
+  // as a hole in the object from the play camera's downward pitch.
+  parts.push(gradient(place(cyl(0.80, 0.42, 1.02, S, WH_HI), 0, 1.57, 0),
+    WH_MID, WH_HI));
+
+  // A crown of ears splaying off the top: the one feature that says GRAIN
+  // rather than BARREL, and the brightest thing on the object.
+  for (let i = 0; i < 6; i++) {
+    const a = i * 1.047 + 0.35;
+    const r = 0.34 + (i % 3) * 0.16;
+    const tilt = 0.30 + (i % 2) * 0.17;
+    const ear = cone(0.17, 0.58, 4, WH_HI, 0, true);
+    place(ear, Math.cos(a) * r, 2.18, Math.sin(a) * r,
+      Math.sin(a) * tilt, a, -Math.cos(a) * tilt);
+    parts.push(gradient(ear, WH_HI, WH_TOP));
   }
 
-  // The ear: upright, fat, and the brightest thing on the plant. This is the
-  // part that has to survive being twenty pixels tall on a phone.
-  const ear = cone(0.155, 0.76, 4, WH_HI, 0, true);
-  place(ear, 0, H + 0.26, 0, 0, 0.6, 0.05);
-  parts.push(gradient(ear, WH_MID, WH_TOP));
   return merge(parts);
 }
 
@@ -351,159 +340,49 @@ function facetStone(r, rough, seed, squash = 0.80, flatten = 0.34) {
 }
 
 /**
- * Paint a metallic SEAM across a rock's vertex colours.  (0 tris)
+ * One CUT STACK of ore stone.  (66 tris)
  *
- * The band is a plane slab in the geometry's own local space: every vertex
- * whose signed distance to the plane falls inside `width` is pulled toward the
- * seam colour, hardest at the centre of the band. `rock()` returns non-indexed
- * flat-shaded geometry, so a triangle whose three corners land in the slab goes
- * bright as a whole FACET — which is what an exposed vein of metal in a broken
- * stone actually looks like, and it costs not one extra triangle.
- */
-function seam(g, hex, nx, ny, nz, at, width, strength = 1) {
-  const pos = g.attributes.position.array;
-  const col = g.attributes.color.array;
-  const n = g.attributes.position.count;
-  const c = new THREE.Color(hex);
-  const inv = 1 / Math.max(width, 1e-4);
-  // Per FACE, not per vertex. A twenty-face stone has its corners a long way
-  // apart, so a per-vertex falloff smears the vein into a soft gradient that
-  // reads as nothing at all at forty pixels. Testing the face CENTROID and
-  // flooding all three of its corners instead gives whole bright PLANES of
-  // metal — which is both what exposed ore looks like and the only version of
-  // it that survives being twenty pixels across on a phone.
-  for (let f = 0; f + 2 < n; f += 3) {
-    const a = f * 3, b = (f + 1) * 3, e = (f + 2) * 3;
-    const cx = (pos[a] + pos[b] + pos[e]) / 3;
-    const cy = (pos[a + 1] + pos[b + 1] + pos[e + 1]) / 3;
-    const cz = (pos[a + 2] + pos[b + 2] + pos[e + 2]) / 3;
-    const d = cx * nx + cy * ny + cz * nz - at;
-    const k = 1 - Math.min(1, Math.abs(d) * inv);
-    if (k <= 0) continue;
-    const t = Math.min(1, k * 1.7) * strength;
-    for (const i of [a, b, e]) {
-      col[i] += (c.r - col[i]) * t;
-      col[i + 1] += (c.g - col[i + 1]) * t;
-      col[i + 2] += (c.b - col[i + 2]) * t;
-    }
-  }
-  g.attributes.color.needsUpdate = true;
-  return g;
-}
-
-/**
- * A JAGGED lump — welded, so it faces hard without shattering.  (20 tris)
+ * "PLEASE MAKE THE ORE SHAPED MORE LIKE LARGE CUBES. OR STACKS OF STONES LIKE
+ *  THE BRICK DOES, BUT GREY."
  *
- * `facetStone` above is the same idea tuned the other way: it jitters each
- * corner along its own radius only, at low roughness, which gives a smooth
- * convex boulder. This one displaces each corner in all three axes and does it
- * hard, so every one of the twenty faces ends up on its own plane and the
- * silhouette comes back angular and broken rather than domed. The offset is
- * still cached per CORNER, so the mesh stays welded — `geo.js`'s `rock()`
- * jitters the three copies of a shared corner independently and the result is a
- * spiky burst with cracks in it, which is right for rubble and wrong for a
- * solid lump of ore.
+ * What this replaces was a long jagged oval — four welded, hard-displaced lumps
+ * strung along one axis with glacial-blue seams broken across their facets. It
+ * was a handsome object and it had one fatal problem on the hex it lives on: a
+ * mountain is MADE of jagged grey lumps. Spires, scree, boulders, rubble — every
+ * one of them a broken angular stone, and the one thing on the tile the player
+ * is allowed to take was a broken angular stone too. Darkening it two stops and
+ * painting veins on it was an attempt to win an argument the SHAPE was losing.
  *
- *   squash   flattens on Y, so it is longer than it is tall
- *   flatten  shears the underside off against a plane, so it SITS on the ground
- */
-function jaggedLump(r, rough, seed, squash = 0.80, flatten = 0.32) {
-  // PolyhedronGeometry is already non-indexed: 20 faces, 60 vertices, flat
-  // shaded by construction, which is exactly the painted-stone look.
-  const g = new THREE.IcosahedronGeometry(r, 0);
-  const p = g.attributes.position;
-  const cache = new Map();
-  let s = (seed * 2654435761) >>> 0;
-  const rnd = () => {
-    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-  const floor = -r * flatten;
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const key = `${Math.round(x / r * 2000)},${Math.round(y / r * 2000)},${Math.round(z / r * 2000)}`;
-    let d = cache.get(key);
-    if (d === undefined) {
-      const k = 1 + (rnd() - 0.5) * rough * 2;
-      d = [
-        x * k + (rnd() - 0.5) * r * rough,
-        y * k * squash + (rnd() - 0.5) * r * rough * 0.62,
-        z * k + (rnd() - 0.5) * r * rough
-      ];
-      if (d[1] < floor) d[1] = floor;
-      cache.set(key, d);
-    }
-    p.setXYZ(i, d[0], d[1], d[2]);
-  }
-  g.computeVertexNormals();
-  return ensureAttrs(g);
-}
-
-/**
- * One lump of raw ORE.  (80 tris)
+ * So the ore stops trying to look like better rock and takes the brick's answer
+ * instead: a hard-edged STACK OF CUT BLOCKS on a low spoil apron, five of them,
+ * every course laid across the one under it. There is not a single right angle
+ * anywhere else on a mountain hex, so a cuboid mass on one is unmistakable from
+ * any distance and in any light — the same trick that made the clay legible,
+ * run in grey.
  *
- * The player's words: "make the ore resources that I pick up much more of a
- * jagged oval shape."
- *
- * What this replaced was a low round boulder with a couple of veins on it. It
- * was the right WEIGHT and the wrong SHAPE — a smooth dome reads as scenery,
- * and a mountain hex is full of scenery domes, so the one thing on it the
- * player is allowed to take looked like the eighteen things they are not.
- *
- * This is an elongated, angular mass: four welded lumps strung along a single
- * axis, each one displaced hard in all three directions (`jaggedLump` above at
- * roughness 0.46 to 0.60, against 0.16 for the decorative boulder) so its twenty
- * faces all sit on different planes. Squashed on Y and stretched on X, so the
- * outline is a lumpy OVAL about three and a half units long, two across and a
- * unit and a half tall — a shape nothing else on the island has, and the widest
- * footprint of any item in the game.
- *
- * Value does the rest. A mountain hex is bare PALE rock flour and the decorative
- * stones on it are paler still, so this thing is near-black at the bottom and
- * never gets past a dull gunmetal at the top: two full stops below anything else
- * on the hex, which is what makes it read as the heaviest object there from
- * directly above. Three seams of glacial blue break across the facets (see
- * `seam`), bright against the dark stone and in a colour nothing else on the
- * island wears, so "the metal is IN this rock" is said without a crystal
- * anywhere in the silhouette.
+ * The greys run COOL (0x6f7783 -> 0xa9b2be) against the warm pale stone of the
+ * scenery boulders (0x7d7768 -> 0xa39c8b), and each block carries its own dark
+ * foot so a stack of five never flattens into one silhouette. No seams, no
+ * glints, nothing extra: the whole point of this pass is that the mountain hex
+ * has less on it, not more.
  */
 export function fieldOre() {
   const parts = [];
 
-  // The lead mass. Stretched 1.40 on X after the jitter, so the elongation is
-  // in the SHAPE rather than in a scale that would just skew the facets.
-  //
-  // The value ramp stops at 0x2b333e — a good deal darker than it looks on
-  // paper — because this scene is lit by a 3.15-intensity key through ACES tone
-  // mapping, and anything whose top facets start above about 0x3a4450 comes out
-  // of that pipeline as pale slate: exactly the colour of the decorative rock
-  // it has to be told apart from.
-  const main = jaggedLump(0.82, 0.46, 41, 0.90, 0.34);
-  gradient(main, 0x05070a, 0x1b212a);
-  seam(main, 0x8fd6ee, 0.22, 0.90, 0.38, 0.30, 0.085, 0.52);
-  place(main, 0, 0.46, 0, 0, 0.28, 0.06, 1.40, 1.02, 0.94);
-  parts.push(main);
+  // A low apron of spoil, so the stack sits IN the ground rather than on it.
+  parts.push(gradient(place(cone(0.88, 0.36, 6, C.stoneDark, 0, true), 0, 0.17, 0),
+    0x3f444c, 0x6d737d));
 
-  // Two more masses welded onto the ends of the long axis, overlapping the lead
-  // lump rather than sitting beside it: one broken chunk, not three stones.
-  const head = jaggedLump(0.50, 0.52, 47, 0.92, 0.30);
-  gradient(head, 0x04060a, 0x181e26);
-  seam(head, 0x8fd6ee, -0.36, 0.84, 0.40, 0.14, 0.07, 0.46);
-  place(head, 0.72, 0.38, 0.09, 0.10, 1.10, -0.12, 1.25, 1.00, 0.96);
-  parts.push(head);
-
-  const tail = jaggedLump(0.44, 0.56, 53, 0.88, 0.30);
-  gradient(tail, 0x04060a, 0x151b22);
-  seam(tail, 0x8fd6ee, 0.40, 0.80, -0.44, 0.12, 0.06, 0.40);
-  place(tail, -0.74, 0.31, -0.11, -0.08, 2.20, 0.14, 1.24, 1.00, 0.94);
-  parts.push(tail);
-
-  // A chip split off at the foot, lying flat. Reads as weight, and keeps the
-  // footprint from closing into a clean ellipse.
-  const chip = jaggedLump(0.29, 0.60, 59, 0.52, 0.36);
-  gradient(chip, 0x04060a, 0x131820);
-  place(chip, 0.24, 0.10, 0.66, 0, 0.90, 0, 1.50, 1.00, 1.00);
-  parts.push(chip);
+  // Five cut blocks, each course laid across the one below. `gradient` gives
+  // every one of them its own dark foot and lit top, which is what keeps the
+  // courses reading as separate stones instead of as one grey box.
+  const blk = (w, h, d, x, y, z, ry, hi) => parts.push(
+    gradient(place(box(w, h, d, hi), x, y, z, 0, ry, 0), 0x363b43, hi));
+  blk(1.02, 0.46, 0.64, -0.02, 0.44, -0.26, 0.07, 0x8b939f);
+  blk(0.88, 0.46, 0.60, 0.10, 0.44, 0.34, -0.19, 0x6f7783);
+  blk(0.64, 0.44, 0.62, -0.29, 0.88, 0.02, 0.54, 0x99a2ae);
+  blk(0.60, 0.44, 0.56, 0.31, 0.88, 0.05, -0.35, 0x7b838f);
+  blk(0.62, 0.42, 0.58, 0.02, 1.29, -0.02, 0.26, 0xa9b2be);
 
   return merge(parts);
 }
@@ -597,46 +476,39 @@ export function flowerTuft() {
 /* --------------------------------------------------------------- wheat */
 
 /**
- * Three young wheat plants — the crop between the crop.  (27 tris)
+ * STANDING CROP between the sheaves — and, once the hex is worked, the stubble
+ * that is left on it.  (8 tris)
  *
- * The same plant as `fieldWheat` at knee height: a stalk, one low leaf pair and
- * an ear. It exists to close the blue-noise gaps the harvestable plants leave,
- * so a fields hex reads as a FIELD and not as twenty-two ornaments on sand —
- * and because it is the same silhouette at a smaller size, filling those gaps
- * costs the hex none of its legibility. Nothing here is takeable; the tall ones
- * are, and the height difference is what says so at a glance.
+ * "MAKE THE WHEAT/HAY HEXES MORE EMPTY AND YET LOOK LIKE NON VISUALLY
+ *  OVERSTIMULATING FARM LAND WHEN EMPTY. RIGHT NOW IT'S TOO MANY CONTRASTING
+ *  DARK LINES AND ITEMS EVEN AFTER THE WHEAT IS GONE TO KNOW WHAT I'M LOOKING
+ *  AT. IT'S JUST DISTRACTING."
  *
- * Grown by roughly half along with the harvestable plant it stands between:
- * this fills the ground, and ground-fill that only comes up to the takeable
- * plant's ankle fills nothing. It still tops out well under it — about 1.0 to
- * 2.3 world units against 2.8 to 3.9 — so the height difference that says
- * "run at the tall ones" is intact, and there are fewer of them (96 -> 84 a
- * hex) because each one now covers half as much ground again.
+ * This kit is what a fields hex is MADE of when everything takeable has been
+ * carried off, so it is the single thing that decides whether a worked field
+ * reads as calm farmland or as noise. It used to be a knee-high copy of the old
+ * standing plant: three stalks, six leaf cards and three bright ear cones each,
+ * eighty-four to a hex — two hundred and fifty little high-contrast spikes left
+ * standing on the ground after the crop was gone.
  *
- * This is the most-instanced kit in the game after grass, so the ear is an open
- * cone: its base points at the sky-facing stalk top and is covered by it.
+ * It is now four soft blades in a muted straw that sits CLOSE to the sand it
+ * grows out of. No ears, no dark honey at the root, no third of a shade of
+ * contrast anywhere in it. Full, it is a warm mat of colour under the sheaves;
+ * cropped (`stand.js` takes it down to a tenth of its height) it is a flat
+ * wash on the ground with nothing sticking up out of it at all — which is the
+ * "empty but still obviously a farm" the player asked for.
  */
 export function wheatTuft() {
   const parts = [];
-  for (let i = 0; i < 3; i++) {
-    const a = i * 2.11 + 0.3;
-    const r = 0.16 + (i % 2) * 0.11;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const h = 1.02 + (i % 3) * 0.20;
+  for (let i = 0; i < 4; i++) {
+    const a = i * 1.61 + 0.3;
+    const r = 0.13 + (i % 2) * 0.12;
+    const h = 0.70 + (i % 3) * 0.15;
     // single-segment blades: 2 triangles each, and at this size the bend was
     // never visible anyway
-    const st = blade(0.17, h, WH_LO, WH_MID, 0.12, 1);
-    place(st, x, 0, z, 0, a, 0.07);
+    const st = blade(0.30, h, WH_STUB_LO, WH_STUB_HI, 0.20, 1);
+    place(st, Math.cos(a) * r, 0, Math.sin(a) * r, 0, a, 0.10);
     parts.push(st);
-    for (const side of [1, -1]) {
-      const leaf = blade(0.28, 0.54, WH_LO, WH_MID, 0.32, 1);
-      place(leaf, 0, 0, 0, 0, 0, side * 1.12);
-      place(leaf, x, h * 0.30, z, 0, a, 0);
-      parts.push(leaf);
-    }
-    const ear = cone(0.115, 0.46, 3, WH_HI, 0, true);
-    place(ear, x, h + 0.15, z, 0, a, 0.06);
-    parts.push(gradient(ear, WH_MID, WH_TOP));
   }
   return merge(parts);
 }

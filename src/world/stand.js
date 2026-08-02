@@ -68,7 +68,17 @@ export const ROLE = {
     grass: 'crop', undergrowth: 'flatten', flower: 'crop', rockSmall: 'wilt'
   },
   mountains: {
-    grass: 'crop', rockSmall: 'wilt', boulder: 'wilt'
+    // The loose rubble SETTLES rather than merely greying out.
+    //
+    //   "The ore hexes still look too busy even when they're empty ... there's
+    //    not really extra 3d shapes on the hex when it's empty."
+    //
+    // `wilt` is colour only, so a worked-out mountain kept every stone it ever
+    // had and just went grey — the same count of shapes, saying nothing. The
+    // scree is cropped down into the floor now, which takes real silhouettes
+    // off an empty hex. The boulders stay standing: three of them are the
+    // hex's identity, and a boulder sinking into the ground reads as a bug.
+    grass: 'crop', rockSmall: 'crop', boulder: 'wilt'
   }
 };
 
@@ -83,10 +93,21 @@ export const ROLE = {
  * fifth of its standing height it is a flat mat of colour rather than a hex
  * full of half-height twigs competing with the countdown badge overhead. */
 const CROP = {
-  wheat:  [1.10, 0.17],
-  grass:  [1.00, 0.20],
+  // Cut again, and now essentially to the floor. A fields hex is 34 of these
+  // and nothing else, so they alone decide whether an emptied field reads as
+  // calm farmland or as noise — and at a sixth of standing height there was
+  // still a low forest of straw twigs left on it. At a twelfth it is a mat.
+  // Crushed straw SPREADS as it goes down. Cropping on the vertical alone left
+  // a worked field speckled with little dark dots, one per tuft, which is
+  // exactly the "distracting" read; widening them as they flatten merges the
+  // lot into one continuous mat of ground cover instead.
+  wheat:  [1.45, 0.09],
+  grass:  [1.22, 0.18],
   flower: [0.88, 0.14],
-  undergrowth: [0.98, 0.16]
+  undergrowth: [0.98, 0.16],
+  // Scree pressed into the mountain floor: flatter than it is wide, so a picked
+  // over hex loses the shape and keeps the ground cover.
+  rockSmall: [1.06, 0.30]
 };
 
 /* How big a stump a felled dressing tree leaves, relative to its own scale.
@@ -119,8 +140,13 @@ export function propHash01(x, z) {
 const WORN_MUL = {
   conifer: [0.52, 0.42, 0.30], coniferShort: [0.52, 0.42, 0.30],
   broadleaf: [0.56, 0.46, 0.32], undergrowth: [0.62, 0.54, 0.38],
-  grass: [0.80, 0.68, 0.40], flower: [0.74, 0.66, 0.46],
-  wheat: [0.80, 0.70, 0.48], rockSmall: [0.78, 0.76, 0.74],
+  grass: [0.84, 0.74, 0.50], flower: [0.74, 0.66, 0.46],
+  // Held HIGH on purpose. A worked field's stubble is the only thing left on
+  // the hex, and driving it to a dark olive put maximum contrast on the sand it
+  // lies on — which is the "contrasting dark lines" the player was reading as
+  // clutter. Two thirds of a stop under the standing crop is plenty to say
+  // "cut", and it keeps the emptied hex one quiet warm value.
+  wheat: [0.92, 0.86, 0.70], rockSmall: [0.82, 0.80, 0.78],
   boulder: [0.78, 0.76, 0.74]
 };
 

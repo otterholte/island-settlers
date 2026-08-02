@@ -159,12 +159,19 @@ export function createPanels(root, state, game) {
     }
 
     if (c.type === 'roadBuilding') {
+      const cue = game.roadCue;
+      if (cue && typeof cue.play === 'function') { cue.play(); return; }
       const eco = game.economy;
       if (eco && typeof eco.useRoadBuilding === 'function') {
-        // Only close the sheet once the card is actually spent — a refusal
-        // leaves the player looking at the card they still hold.
-        if (eco.useRoadBuilding()) close();
-        else syncCards();
+        // The sheet has to be OUT OF THE WAY before the placement map comes up,
+        // exactly as the Knight route does it. Closing afterwards left the cards
+        // sheet and its scrim sitting over a freshly opened map for the length
+        // of the fade, and the scrim's own click handler ate the first tap —
+        // which looked, from the player's chair, like the card doing nothing.
+        // `roadRoom` inside `useRoadBuilding` refuses BEFORE spending the card,
+        // so re-opening on a refusal costs the player nothing.
+        close();
+        if (!eco.useRoadBuilding()) openCards();
         return;
       }
       if (!legalRoads(state, 0).length) {

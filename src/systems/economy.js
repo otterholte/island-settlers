@@ -199,11 +199,12 @@ export function buy(kind, game = G) {
     if (!card) return deny(g, 'card', 'Cannot draw a card right now');
     if (card.type === 'victoryPoint') {
       safe(() => g.hud && g.hud.announce && g.hud.announce('+1 Victory Point!', '#ffc93c'));
-    } else if (card.type === 'roadBuilding') {
-      say(g, 'Road Building — open CARDS to lay two roads free', 'good');
     }
-    // A Knight says nothing here: hud-knight.js takes the centre banner and
-    // raises the standing "send the Raider" chip the moment it sees the card.
+    // Neither a Knight nor a Road Building card says anything here: hud-knight.js
+    // and hud-road.js take the centre banner, raise their own standing chip and
+    // open the board by themselves the moment they see the card. This used to
+    // emit a fading "open CARDS to lay two roads free" toast, which was the only
+    // thing a drawn Road Building card ever did.
     // A Knight goes to the hand; nothing auto-plays. `playKnightAt(tile)`
     // resolves it later, once the place-robber overview returns a tile.
     return true;
