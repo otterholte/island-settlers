@@ -25,106 +25,21 @@
  *              pointer and keyboard, with the travel it produces printed
  */
 
-import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(HERE, '..');
-
-const arg = (k, d) => {
-  const hit = process.argv.find(a => a.startsWith(`--${k}=`));
-  return hit ? hit.split('=').slice(1).join('=') : d;
-};
+/* The Chrome / DevTools plumbing lives in tools/cdp.mjs — this file was over
+   the 900-line budget with it inlined, and nothing in it is trace-specific. */
+import { openChrome, arg, sleep } from './cdp.mjs';
 
 const W = +arg('w', 960);
 const H = +arg('h', 444);
 const PORT = +arg('port', 5173);
 const TRACE = arg('t', 'countdown');
 const SHOT = arg('shot', '0') === '1';
-const OUT = resolve(ROOT, arg('out', 'progress/shots'));
-const CHROME = arg('chrome', '/tmp/chrome-headless-shell-linux64/chrome-headless-shell');
-const LIBS = arg('libs', '/tmp/xlibs/root/usr/lib/x86_64-linux-gnu');
 
-mkdirSync(OUT, { recursive: true });
-if (!existsSync(CHROME)) { console.error(`no chrome at ${CHROME}`); process.exit(2); }
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-const DP = 9833 + Math.floor(Math.random() * 400);
-const chrome = spawn(CHROME, [
-  '--headless', '--no-sandbox', '--disable-dev-shm-usage',
-  '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
-  '--disable-new-content-rendering-timeout', '--hide-scrollbars', '--mute-audio',
-  `--window-size=${W},${H}`, `--remote-debugging-port=${DP}`, 'about:blank'
-], {
-  env: { ...process.env, LD_LIBRARY_PATH: `${LIBS}:${process.env.LD_LIBRARY_PATH || ''}` },
-  stdio: ['ignore', 'ignore', 'pipe']
+const cdp = await openChrome({
+  w: W, h: H, port: PORT, shot: SHOT, out: arg('out', 'progress/shots'),
+  chrome: arg('chrome', undefined), libs: arg('libs', undefined)
 });
-let chromeErr = '';
-chrome.stderr.on('data', d => { chromeErr += d.toString(); });
-
-let wsUrl;
-for (let i = 0; i < 60; i++) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${DP}/json/list`);
-    const p = (await r.json()).find(t => t.type === 'page');
-    if (p) { wsUrl = p.webSocketDebuggerUrl; break; }
-  } catch { /* not up */ }
-  await sleep(150);
-}
-if (!wsUrl) { console.error('devtools never came up\n' + chromeErr.slice(-500)); process.exit(2); }
-
-const ws = new WebSocket(wsUrl);
-await new Promise(r => ws.addEventListener('open', r, { once: true }));
-
-let msgId = 0;
-const pending = new Map();
-const exceptions = [];
-ws.addEventListener('message', e => {
-  const m = JSON.parse(e.data);
-  if (m.id !== undefined) {
-    const p = pending.get(m.id);
-    if (p) { pending.delete(m.id); p(m.result || { __err: m.error }); }
-    return;
-  }
-  if (m.method === 'Runtime.exceptionThrown') {
-    exceptions.push(m.params.exceptionDetails.exception?.description
-      || m.params.exceptionDetails.text);
-  }
-});
-const send = (method, params = {}, ms = 25000) => new Promise(res => {
-  const id = ++msgId;
-  pending.set(id, res);
-  ws.send(JSON.stringify({ id, method, params }));
-  setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ __err: 'timeout' }); } }, ms);
-});
-const ev = async (expr, awaitPromise = false) => {
-  const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise });
-  if (r?.exceptionDetails) return { __err: r.exceptionDetails.exception?.description || r.exceptionDetails.text };
-  return r?.result?.value;
-};
-const T0 = Date.now();
-const el = () => ((Date.now() - T0) / 1000).toFixed(1) + 's';
-const shot = async name => {
-  if (!SHOT) return;
-  console.log(`  [${el()}] capturing ${name}...`);
-  const r = await send('Page.captureScreenshot', { format: 'png' }, 60000);
-  if (!r?.data) { console.log(`  shot ${name} FAILED`); return; }
-  writeFileSync(resolve(OUT, `${name}.png`), Buffer.from(r.data, 'base64'));
-  console.log(`  [${el()}] shot ${name}.png`);
-};
-
-await send('Page.enable'); await send('Runtime.enable');
-await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
-
-let booted = false;
-for (let i = 0; i < 120; i++) {
-  if (await ev('!!(window.__ISLAND__&&window.__ISLAND__.state)') === true) { booted = true; break; }
-  await sleep(120);
-}
-if (!booted) { console.error('GAME DID NOT BOOT'); ws.close(); chrome.kill('SIGKILL'); process.exit(1); }
+const { send, ev, shot, done, exceptions } = cdp;
 
 await ev(`Promise.all([
   import('/src/core/rules.js').then(m=>{window.__R__=m}),
@@ -202,9 +117,7 @@ const holdFlow = async on => ev(on
   : `(()=>{const g=window.__ISLAND__.game;
       if(g.__heldUpdate){g.flow.update=g.__heldUpdate;g.__heldUpdate=null;}return 1})()`);
 
-const done = (code = 0) => { ws.close(); chrome.kill('SIGKILL'); process.exit(code); };
-
-const say = (k, v) => console.log(`  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+const say =(k, v) => console.log(`  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
 let pass = true;
 const check = (label, ok, extra = '') => {
   if (!ok) pass = false;
@@ -939,5 +852,4 @@ if (exceptions.length) {
 }
 console.log(pass ? `\n${TRACE}: all checks passed` : `\n${TRACE}: FAILURES ABOVE`);
 
-ws.close(); chrome.kill('SIGKILL');
-process.exit(pass ? 0 : 1);
+done(pass ? 0 : 1);
