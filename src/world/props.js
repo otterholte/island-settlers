@@ -143,16 +143,27 @@ const STATIC_KITS = {
  *
  * The four small item kits doubled in size, which changes what the dressing is
  * FOR on those hexes. A fields tile no longer needs ninety-two decorative wheat
- * tufts to read as gold — twenty-two bound sheaves do that on their own — and
- * every tuft standing between them is now a triangle spent hiding the thing the
+ * tufts to read as gold — the harvestable plants do most of that on their own —
+ * and every tuft standing between them is a triangle spent hiding the thing the
  * player came for. Wheat, pasture grass and mountain rubble are down
  * accordingly; the forest, which the player says already reads correctly, is
- * untouched. */
+ * untouched.
+ *
+ * The one that moved AGAIN is wheat, in the other direction. The item is a tall
+ * STANDING PLANT now rather than a squat sheaf, and a tall narrow plant covers
+ * far less ground than a fat one: twenty-two of them on a hex is a stand of
+ * corn, not a field. So the decorative crop goes UP, 66 to 96, on a tighter
+ * footprint — a knee-high version of the same plant packed into the blue-noise
+ * lanes the harvestable ones leave. The hex has to read as a solid mass of gold
+ * from the play camera and still have ground you can see to run down, and the
+ * height difference between the two is what keeps "run at this" legible inside
+ * it. The loose green grass goes almost entirely: stubble under a gold crop was
+ * the one thing breaking the mass. */
 const RECIPE = {
   forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
                undergrowth: 12, grass: 26, rockSmall: 3 },
-  fields:    { wheat: 66, hay: 3, fence: 6, crate: 2, grass: 8,
-               rockSmall: 2, undergrowth: 3 },
+  fields:    { wheat: 96, hay: 3, fence: 6, crate: 2, grass: 3,
+               rockSmall: 2, undergrowth: 2 },
   pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
                broadleaf: 2, hay: 2 },
   hills:     { clayWorks: 3, rockSmall: 8, boulder: 3, grass: 22,
@@ -187,7 +198,9 @@ const TINTS = {
   undergrowth:  [[1.00, 1.00, 1.00], [0.84, 0.96, 0.82], [1.18, 1.08, 0.82]],
   grass:        [[1.00, 1.00, 1.00], [0.86, 0.96, 0.84], [1.14, 1.06, 0.86], [0.94, 1.02, 0.96]],
   flower:       [[1.00, 1.00, 1.00], [0.90, 0.98, 0.88], [1.10, 1.04, 0.90]],
-  wheat:        [[1.00, 1.00, 1.00], [1.08, 0.98, 0.80], [0.88, 0.86, 0.74], [1.04, 1.06, 0.92]],
+  // Held near 1 for the same reason as the field crop in nodelife.js: a wheat
+  // field varies in hue, not in value, and a drab quarter of it reads as dirt.
+  wheat:        [[1.00, 1.00, 1.00], [1.06, 1.00, 0.86], [0.94, 0.93, 0.84], [1.03, 1.05, 0.94]],
   hay:          [[1.00, 1.00, 1.00], [1.06, 0.98, 0.84], [0.90, 0.88, 0.80]],
   rockSmall:    [[1.00, 1.00, 1.00], [0.84, 0.87, 0.94], [1.10, 1.04, 0.94], [0.70, 0.71, 0.74]],
   boulder:      [[1.00, 1.00, 1.00], [0.82, 0.86, 0.94], [1.12, 1.05, 0.93], [0.72, 0.73, 0.77]],
@@ -207,7 +220,7 @@ const TINTS = {
    forest tile read as scattered copses with lawn between them. */
 const FOOT = {
   conifer: 0.54, coniferShort: 0.48, broadleaf: 0.72, deadwood: 0.85,
-  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.185, hay: 0.62,
+  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.15, hay: 0.62,
   rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
   crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
   // Every field item reserves a disc so no backdrop prop ever sprouts through
@@ -229,7 +242,10 @@ const STYLE = {
   undergrowth:  { s: [0.75, 1.45], sink: 0.05, tilt: 0.35, yaw: true },
   grass:        { s: [0.70, 1.50], sink: 0.04, tilt: 0.35, yaw: true },
   flower:       { s: [0.75, 1.35], sink: 0.04, tilt: 0.35, yaw: true },
-  wheat:        { s: [0.78, 1.46], sink: 0.05, tilt: 0.25, yaw: true },
+  // Kept under the harvestable plant on purpose: the tallest tuft tops out at
+  // about 1.2 units, the shortest takeable plant at 2.0. Height alone is what
+  // separates "run at this" from "scenery" on a full fields hex.
+  wheat:        { s: [0.86, 1.42], sink: 0.04, tilt: 0.25, yaw: true },
   hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
   rockSmall:    { s: [0.55, 1.35], sink: 0.12, tilt: 0.85, yaw: true },
   // Capped well under the harvestable ore boulder, which runs 0.98..1.18 on a

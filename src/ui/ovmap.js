@@ -82,6 +82,28 @@ export function createPainter(ctx, proj) {
 
   /* ------------------------------------------------------------------ sea */
 
+  /**
+   * Just the water, edge to edge, with no island on it.
+   *
+   * `overview.js` bakes the whole board into an offscreen canvas and blits it.
+   * Once the player can DRAG that board around (ovpan.js) the blit no longer
+   * covers the frame, and what it leaves behind is open ocean — so this paints
+   * open ocean under it rather than leaving bare canvas. Runs every frame the
+   * map is up, so the gradient is cached on the canvas height.
+   */
+  let seaGrad = null, seaH = -1;
+  function fillSea() {
+    if (!seaGrad || seaH !== proj.h) {
+      seaH = proj.h;
+      seaGrad = ctx.createLinearGradient(0, 0, 0, proj.h);
+      seaGrad.addColorStop(0, '#062a52');
+      seaGrad.addColorStop(0.5, '#0b4b86');
+      seaGrad.addColorStop(1, '#0a3a68');
+    }
+    ctx.fillStyle = seaGrad;
+    ctx.fillRect(0, 0, proj.w, proj.h);
+  }
+
   function drawSea() {
     const { w, h } = proj;
     const g = ctx.createLinearGradient(0, 0, 0, h);
@@ -800,7 +822,7 @@ export function createPainter(ctx, proj) {
 
   return {
     PX, PY, hexPath, plate, rounded,
-    drawSea, drawFrame, drawShelf, drawTiles, drawTokens, tokenRects,
+    drawSea, fillSea, drawFrame, drawShelf, drawTiles, drawTokens, tokenRects,
     drawPorts, portRects, drawRoads, drawBuildings, drawRobber, ownerPip,
     drawSettlers
   };

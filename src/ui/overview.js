@@ -25,6 +25,12 @@
  * World (x, z) maps to canvas (x, y) with a single uniform scale, so the
  * pointy-top hexes stay pointy-top.
  *
+ * The board also MOVES: `ovpan.js` owns drag / pinch / wheel / +- and writes
+ * straight into `proj`, so the coast that lives under the title plate or the
+ * player rail can be pulled into the open. Clamped so the middle of the island
+ * can never leave the middle three quarters of the frame, and reset on a fresh
+ * open so a placement mode always starts on the whole board.
+ *
  * Painting lives in ./ovmap.js. Nothing writes text onto the hexes: the board
  * carries the terrain, the number tokens, the docks, everybody's pieces and a
  * single gold pin for where you are standing. Who the other settlers are, what
@@ -42,9 +48,10 @@ import {
 import { el, button, toggle, setText, clamp, onTap } from './dom.js';
 import { icon, avatar } from './icons.js';
 import { createPainter } from './ovmap.js';
+import { createOvPan } from './ovpan.js';
 
 const MODE_INFO = {
-  'view':              { title: 'Island Map', hint: 'Tap the map to look around' },
+  'view':              { title: 'Island Map', hint: 'Drag the board · pinch to zoom' },
   'place-road':        { title: 'Place a Road', hint: 'Tap a glowing edge' },
   'place-settlement':  { title: 'Place a Settlement', hint: 'Tap a glowing corner' },
   'place-city':        { title: 'Upgrade to a City', hint: 'Tap one of your settlements' },
@@ -52,8 +59,7 @@ const MODE_INFO = {
   'draft-watch':       { title: 'Opening Draft', hint: 'Watch the board' }
 };
 
-/* The draft rail lives here rather than in ui.css so the UI agent's stylesheet
-   is never touched. Everything is scoped under `.ov`. */
+/* The draft rail lives here rather than in ui.css. Scoped under `.ov`. */
 const DRAFT_STYLE_ID = 'ov-draft-style';
 const DRAFT_CSS = `
 /* The draft narration lives in this plate, and the board's height is measured
@@ -169,15 +175,23 @@ export function createOverview(root, state, game) {
   const PX = x => x * proj.s + proj.ox;
   const PY = z => z * proj.s + proj.oy;
 
+  /* Drag / pinch / wheel / +- over the board; buttons and hint live in `wrap`. */
+  const pan = createOvPan(cv, proj, { root: wrap, isOpen: () => openFlag });
+
   /* The board itself — sea, island, tokens, docks, everyone's pieces — only
-     changes when someone builds or the frame is resized. Painting nineteen
+     changes when someone builds or the frame moves. Painting nineteen
      gradient-stacked hexes sixty times a second is a waste of a phone's
-     battery, so it is baked once into an offscreen canvas and blitted. Only
-     the pulsing targets and the moving settlers are redrawn per frame. */
+     battery, so it is baked once offscreen and blitted; only the pulsing
+     targets and the moving settlers are redrawn per frame. */
   const bg = ctx && typeof document !== 'undefined' ? document.createElement('canvas') : null;
   const bgx = bg && bg.getContext ? bg.getContext('2d') : null;
   const bgPaint = bgx ? createPainter(bgx, proj) : null;
   let bgKey = '';
+  /* The projection the bake was painted at. While a finger is down the board is
+     blitted through the difference between this and the live one — one
+     transformed drawImage, not nineteen gradient hexes a frame — and it re-bakes
+     sharp the moment the gesture ends. */
+  let bgS = 1, bgOX = 0, bgOY = 0;
 
   function boardKey() {
     let unlocked = 0;
@@ -203,6 +217,7 @@ export function createOverview(root, state, game) {
     bgPaint.drawRoads(state);
     bgPaint.drawBuildings(state);
     bgPaint.drawRobber(state);
+    bgS = proj.s; bgOX = proj.ox; bgOY = proj.oy;
   }
 
   /* ------------------------------------------------------------ rail rows */
@@ -368,9 +383,14 @@ export function createOverview(root, state, game) {
     // and the board starts floating in dead blue again.
     const bw = BOUNDS.width + HEX_SIZE * 1.35;
     const bd = BOUNDS.depth + HEX_SIZE * 1.35;
-    proj.s = Math.min(availW / bw, availH / bd);
-    proj.ox = f.x + padX + availW / 2 - BOUNDS.cx * proj.s;
-    proj.oy = f.y + padT + availH / 2 - BOUNDS.cz * proj.s;
+    // The fit-to-frame projection, unchanged — where the board sits with no
+    // gesture on it. ovpan.js takes it from here and writes the live `proj`.
+    const s = Math.min(availW / bw, availH / bd);
+    pan.apply({
+      s,
+      ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
+      oy: f.y + padT + availH / 2 - BOUNDS.cz * s
+    });
     toggle(rail, 'hid', railW === 0);
   }
 
@@ -618,9 +638,18 @@ export function createOverview(root, state, game) {
     if (!ctx) return;
     measure();
     if (bgx) {
-      bakeBoard();
+      // Re-bake when the board is still; ride the last bake while it moves.
+      if (!pan.gesturing || !bgKey) bakeBoard();
       ctx.clearRect(0, 0, proj.w, proj.h);
+      // Water first: once the board has been dragged the bake no longer
+      // reaches the frame edge, and what it leaves behind is open ocean.
+      paint.fillSea();
+      const k = bgS > 0 ? proj.s / bgS : 1;
+      ctx.save();
+      ctx.translate(proj.ox - bgOX * k, proj.oy - bgOY * k);
+      ctx.scale(k, k);
       ctx.drawImage(bg, 0, 0, proj.w, proj.h);
+      ctx.restore();
     } else {
       paint.drawSea();
       paint.drawShelf();
@@ -664,6 +693,8 @@ export function createOverview(root, state, game) {
 
   onTap(cv, e => {
     if (!openFlag || mode === 'view' || mode === 'draft-watch') return;
+    // A drag that moved the board is not a choice of corner.
+    if (pan.moved) return;
     const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
     const hit = pick(e.clientX - r.left, e.clientY - r.top);
     if (hit === null || hit === undefined) return;
@@ -767,6 +798,9 @@ export function createOverview(root, state, game) {
     closeTimer = 0;
     if (wasOpen) return true;
 
+    // A fresh open starts on the whole board; re-dressing in place (the draft,
+    // pick to pick) deliberately keeps whatever the player has pushed it to.
+    pan.reset();
     toggle(wrap, 'hid', false);
     lastW = 0; lastH = 0;
     // Next frame so the transition actually runs.
@@ -842,8 +876,14 @@ export function createOverview(root, state, game) {
     open, close, update,
     get isOpen() { return openFlag; },
     get mode() { return mode; },
+    /** Pan / zoom of the board — pose, clamp box, and whether it is on screen. */
+    get panInfo() { return pan.info; },
+    resetView() { return pan.reset(true); },
     select, commit,
-    destroy() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+    destroy() {
+      pan.destroy();
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    }
   };
 }
 

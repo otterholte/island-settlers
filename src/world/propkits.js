@@ -120,7 +120,7 @@ export function broadleaf() {
  * its OUTLINE alone at the twenty-odd pixels it actually draws at:
  *
  *   brick  a stepped stack of five fat terracotta bricks on a spoil mound
- *   wheat  a bound sheaf, tied at the waist and flaring into a head of ears
+ *   wheat  a tall standing plant: one stalk, five pairs of leaves, an ear on top
  *   ore    a large, low, dark BOULDER with a bright seam of metal across it
  *   sheep  a plump, lumpy fleece on a dark leg block with the head held clear
  *
@@ -180,36 +180,82 @@ export function fieldSheep() {
   return merge(parts);
 }
 
+/*
+ * The crop's own ramp, warmer and a good deal brighter than `C.wheat`, which
+ * was mixed for the ears of a bound sheaf against pale sand. A field of standing
+ * plants is seen almost edge-on — near-vertical leaf cards, so the key light
+ * grazes them — and at that angle the old amber came back as olive-brown. These
+ * four are the ramp the reference actually shows: dark honey at the root, warm
+ * gold through the leaves, near-cream on the ear.
+ */
+const WH_LO = 0xba8720;
+const WH_MID = 0xeab033;
+const WH_HI = 0xffe89c;
+const WH_TOP = 0xfff6d2;
+
 /**
- * One bound sheaf of wheat.  (46 tris)
+ * One STANDING WHEAT PLANT.  (36 tris)
  *
- * Not four loose blades any more — a STOOK: stalks gathered and tied at the
- * waist, flaring into a fat head of ears that is wider at the top than the
- * bundle is at the bottom. That hourglass is the silhouette, and it is the only
- * one in the field that gets wider as it goes up, so a wheat hex never reads as
- * anything else. Four loose ears break the crown so the outline is not a cone.
+ * The reference the player attached is a hex of tall, upright, densely packed
+ * golden wheat: every plant a straight central stalk with symmetrical pairs of
+ * leaves stepping up it and tapering toward the top — little golden ferns —
+ * standing well clear of the ground, and the hex reading as one solid mass of
+ * gold rather than as a scatter of objects on sand.
+ *
+ * What this replaced was a bound sheaf: stalks tied at the waist flaring into a
+ * cone of ears. A sheaf is CUT wheat. It is a fine shape, but it says "harvest
+ * already happened" and it is squat, so a full hex of them read as a row of
+ * bollards. This is the crop still growing.
+ *
+ * The build:
+ *   * one tapered central stalk running the full height, dark amber at the root
+ *     and pale gold at the top, so a plant has its own value range and a hex of
+ *     them has depth instead of being one flat yellow;
+ *   * five leaf pairs stepping up it, each pair shorter and tighter than the one
+ *     below so the plant narrows as it rises, and each pair given its own
+ *     bearing so twenty-two of them are never a grid;
+ *   * a slim ear on top — the one thing that reads at twenty pixels and says
+ *     grain rather than grass.
+ *
+ * Silhouette check: trees are conical and round, the ore is a low wide boulder,
+ * the brick is a cuboid stack, the sheep is a white lump. Nothing else on the
+ * island is a narrow vertical spine with paired arms, and nothing else is this
+ * colour. The dressing tuft below is a knee-high version of the same plant, so a
+ * fields hex is one crop at two heights rather than two different species.
+ *
+ * Leaves are flat cards, so the field batch rides the double-sided `grass`
+ * material (see `nodelife.js`) — which also gives the crop a real breeze.
  */
 export function fieldWheat() {
   const parts = [];
-  // The bound stalks run a deep amber, not the bleached gold the ears wear:
-  // a sheaf standing on pale sand needs its own dark value at the bottom or the
-  // whole thing dissolves into the ground it grew out of.
-  parts.push(gradient(place(cyl(0.38, 0.24, 1.02, 6, C.wheat, true), 0, 0.51, 0),
-    0x7d5410, C.wheat));
-  // the twine at the waist
-  parts.push(gradient(place(cyl(0.30, 0.30, 0.18, 5, C.hay, true), 0, 0.32, 0),
-    0x63481a, 0x9c7830));
-  // The head of ears: a cone stood on its point, so the sheaf spreads as it
-  // rises. Its cap now faces the sky and earns its six faces.
-  const crown = cone(0.56, 1.02, 6, C.wheatHi);
-  place(crown, 0, 1.50, 0, Math.PI, 0, 0);
-  parts.push(gradient(crown, 0x9c6c17, C.wheatHi));
-  for (let i = 0; i < 3; i++) {
-    const a = i * 2.14 + 0.4;
-    const ear = cone(0.17, 0.56, 3, C.wheatHi, 0, true);
-    place(ear, Math.cos(a) * 0.30, 1.92, Math.sin(a) * 0.30, 0, a, (i % 2 ? 0.30 : -0.26));
-    parts.push(gradient(ear, C.wheat, C.wheatHi));
+  const H = 1.72;                       // stalk height, before the ear
+  const PAIRS = 6;
+
+  // The stalk. Deliberately thin: the leaves carry the mass, and a fat stalk
+  // reads as a post. Open-ended — you never see either cap.
+  parts.push(gradient(place(cyl(0.028, 0.062, H, 4, WH_LO, true), 0, H / 2, 0),
+    WH_LO, WH_HI));
+
+  for (let i = 0; i < PAIRS; i++) {
+    const t = i / (PAIRS - 1);          // 0 at the ground, 1 at the top
+    const y = 0.20 + t * (H - 0.46);
+    const len = 0.70 - t * 0.36;        // longest at the bottom
+    const wid = 0.20 - t * 0.10;
+    const a = i * 1.07 + 0.3;           // the pair's own bearing
+    for (const side of [1, -1]) {
+      const leaf = blade(wid, len, WH_MID, WH_HI, 0.34, 1);
+      // Two steps, so the tilt happens in the leaf's own frame first and the
+      // bearing is applied to the finished pair: a clean, symmetrical V.
+      place(leaf, 0, 0, 0, 0, 0, side * (1.15 - t * 0.26));
+      place(leaf, 0, y, 0, 0, a, 0);
+      parts.push(leaf);
+    }
   }
+
+  // The ear: narrow, upright, and the brightest thing on the plant.
+  const ear = cone(0.085, 0.46, 4, WH_HI, 0, true);
+  place(ear, 0, H + 0.17, 0, 0, 0.6, 0.05);
+  parts.push(gradient(ear, WH_MID, WH_TOP));
   return merge(parts);
 }
 
@@ -465,31 +511,39 @@ export function flowerTuft() {
 /* --------------------------------------------------------------- wheat */
 
 /**
- * Dense wheat cluster: tapered stalks topped with fat ears.  (24 tris)
+ * Three young wheat plants — the crop between the crop.  (27 tris)
  *
- * Six stalks, four of them eared. Combined with a tight footprint in props.js
- * the fields tiles read as a solid gold mass instead of sparse twigs on bare
- * sand. This is the most-instanced kit in the game after grass (472 of them),
- * so the ears are open cones: their base points at the sky-facing stalk top and
- * is covered by it, and each cap was costing the frame 1,400 triangles.
+ * The same plant as `fieldWheat` at knee height: a stalk, one low leaf pair and
+ * an ear. It exists to close the blue-noise gaps the harvestable plants leave,
+ * so a fields hex reads as a FIELD and not as twenty-two ornaments on sand —
+ * and because it is the same silhouette at a smaller size, filling those gaps
+ * costs the hex none of its legibility. Nothing here is takeable; the tall ones
+ * are, and the height difference is what says so at a glance.
+ *
+ * This is the most-instanced kit in the game after grass, so the ear is an open
+ * cone: its base points at the sky-facing stalk top and is covered by it.
  */
 export function wheatTuft() {
   const parts = [];
-  for (let i = 0; i < 6; i++) {
-    const a = i * 1.08;
-    const r = 0.09 + (i % 3) * 0.055;
+  for (let i = 0; i < 3; i++) {
+    const a = i * 2.11 + 0.3;
+    const r = 0.10 + (i % 2) * 0.07;
     const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    const h = 0.78 + (i % 3) * 0.16;
-    // single-segment blades: 2 triangles each instead of 4, and at this size
-    // the bend was never visible anyway
-    const b = blade(0.19, h, C.wheat, C.wheatHi, 0.16, 1);
-    place(b, x, 0, z, 0, a, 0.11);
-    parts.push(b);
-    if (i % 3 !== 2) {
-      const ear = cone(0.13, 0.40, 3, C.wheatHi, 0, true);
-      place(ear, x + 0.02, h + 0.06, z, 0, a, 0.14);
-      parts.push(gradient(ear, C.wheat, C.wheatHi));
+    const h = 0.66 + (i % 3) * 0.13;
+    // single-segment blades: 2 triangles each, and at this size the bend was
+    // never visible anyway
+    const st = blade(0.10, h, WH_LO, WH_HI, 0.12, 1);
+    place(st, x, 0, z, 0, a, 0.07);
+    parts.push(st);
+    for (const side of [1, -1]) {
+      const leaf = blade(0.135, 0.34, WH_MID, WH_HI, 0.32, 1);
+      place(leaf, 0, 0, 0, 0, 0, side * 1.12);
+      place(leaf, x, h * 0.30, z, 0, a, 0);
+      parts.push(leaf);
     }
+    const ear = cone(0.075, 0.30, 3, WH_HI, 0, true);
+    place(ear, x, h + 0.09, z, 0, a, 0.06);
+    parts.push(gradient(ear, WH_MID, WH_TOP));
   }
   return merge(parts);
 }

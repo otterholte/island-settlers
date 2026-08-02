@@ -62,14 +62,16 @@ const TAU = Math.PI * 2;
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const easeOut = t => 1 - (1 - t) * (1 - t) * (1 - t);
 
-/* The sheaf moved off the `wheat` material and onto `tree`. `wheat` sways at
-   0.145 per unit of height, which is right for a flat blade card and turns a
-   solid, closed, two-unit-tall bundle into jelly: at the top of the crown it
-   was shearing the geometry a third of a unit sideways. A bound stook should
-   barely move, and 0.026 is exactly that. */
+/* Wheat is a STANDING PLANT again — a stalk with flat leaf cards paired up it —
+   so it needs a double-sided material or every leaf pointing away from the
+   camera vanishes. It rides `grass` (0.105 sway) rather than `wheat` (0.145):
+   growing wheat should lean in the wind, which is exactly what this buys, but
+   0.145 on a plant this tall shears the top of it a quarter of a unit sideways
+   and the crop starts to slosh. The old bound sheaf sat on `tree` for the
+   opposite reason — a closed, tied bundle should barely move at all. */
 const KIT = {
   tree:    { make: K.fieldTree,  mat: 'tree',  cast: true },
-  wheat:   { make: K.fieldWheat, mat: 'tree',  cast: false },
+  wheat:   { make: K.fieldWheat, mat: 'grass', cast: false },
   sheep:   { make: K.fieldSheep, mat: 'solid', cast: true },
   claypit: { make: K.fieldClay,  mat: 'solid', cast: true },
   orerock: { make: K.fieldOre,   mat: 'solid', cast: true }
@@ -78,7 +80,10 @@ const KIT = {
 /* Per-instance colour variation. Three or four readings per kind for free. */
 const TINTS = {
   tree:    [[1.00, 1.02, 0.96], [1.09, 1.00, 0.84], [0.90, 1.04, 0.94], [1.14, 1.05, 0.90]],
-  wheat:   [[1.00, 1.00, 1.00], [1.10, 0.99, 0.80], [0.88, 0.87, 0.76]],
+  // Kept close to 1: a standing crop varies in HUE across a field, not in
+  // brightness. The old 0.88/0.87/0.76 reading turned a third of every hex
+  // olive, which is what made the gold look muddy at play distance.
+  wheat:   [[1.00, 1.00, 1.00], [1.06, 1.01, 0.86], [0.95, 0.94, 0.88]],
   sheep:   [[1.00, 1.00, 1.00], [0.93, 0.92, 0.90], [1.05, 1.04, 1.00]],
   claypit: [[1.00, 1.00, 1.00], [1.10, 0.93, 0.84], [0.88, 0.84, 0.82]],
   orerock: [[1.00, 1.00, 1.00], [0.84, 0.88, 0.98], [1.04, 1.00, 0.94]]
@@ -93,14 +98,20 @@ const TINTS = {
    place of a 1.3-unit stone with spires on it), so its instance scale comes
    down to keep the widest of them from growing into the blue-noise gaps a
    settler has to run down. Sunk deeper too — a boulder sits IN the ground. */
+/* Wheat is the other odd one out now: its GEOMETRY went from a 2.0-unit sheaf to
+   a 2.2-unit standing plant, and twenty-two of those on a 5-pip hex is a lot of
+   vertical. The instance scale comes down to match, which lands a plant between
+   2.0 and 2.4 units tall — a clear step over the sheep, the brick stack and the
+   ore boulder, a clear step under the harvestable tree, and narrow enough at the
+   base that the blue-noise lanes a settler runs down stay open. */
 const SCALE = {
   tree:    [1.10, 1.50],
-  wheat:   [1.06, 1.32],
+  wheat:   [0.92, 1.10],
   sheep:   [1.12, 1.34],
   claypit: [1.14, 1.40],
   orerock: [0.98, 1.12]
 };
-const SINK = { tree: 0.10, wheat: 0.06, sheep: 0.02, claypit: 0.10, orerock: 0.10 };
+const SINK = { tree: 0.10, wheat: 0.04, sheep: 0.02, claypit: 0.10, orerock: 0.10 };
 
 /* Per-item size jitter, folded on top of SCALE. The board hands out
    `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a

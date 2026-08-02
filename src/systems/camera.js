@@ -3,11 +3,30 @@
  *
  *   createGameCamera(renderer, scene) ->
  *     { camera, follow(x,z,dt), setOverview(on), celebrate(player),
- *       shake(amount), update(dt, state, overviewOpen), isOverview, yaw }
+ *       shake(amount), update(dt, state, overviewOpen), isOverview, yaw,
+ *       setFreeLook(on, mode), freeMode(mode), freeDrag(dx,dy,h),
+ *       freeTurn(dYaw,dPitch), freeZoom(k), freeStep(fwd,right,dt),
+ *       freeRecentre(), freeInfo }
  *
  * Third-person, spring-damped, fixed yaw (0) so "stick up" is always away
  * from the camera — the controller reads `yaw` to map the joystick into world
  * space.
+ *
+ * FREE LOOK — after the match only
+ * --------------------------------
+ * Once the results panel has been dismissed there is no settler left to follow,
+ * so the camera becomes the player's own. `setFreeLook(true, mode)` blends out
+ * of whatever framing is on screen and into a pose the player drives directly:
+ * a focus point on the ground, a yaw, a pitch and a distance. `systems/freecam.js`
+ * owns the pointer, wheel and keyboard that push it; everything here does is
+ * hold the pose, ease it and CLAMP it — the focus stays inside a disc around the
+ * island, pitch stays between 16 and 78 degrees, the distance stays between a
+ * shoulder-height framing and a little past the whole-island one, and the eye is
+ * never allowed under the ground. There is no way to fly off into the void and
+ * no way to end up under the sea looking up at it.
+ *
+ * Nothing about the in-match follow camera changes: `freeOn` is false for the
+ * entire match, and while it is false not one line of this runs.
  *
  * Framing (art-director pass 2): pitch 50 degrees down with a long 36-degree
  * lens, dollied back so 4-5 hexes read around the settler and the ocean stays
@@ -55,6 +74,21 @@ const CELEB_SEC = 1.4;
 const CELEB_PITCH = 38 * DEG;
 const CELEB_DIST = 50;
 
+/* ---------------------------------------------------------------- free look */
+/** Blend in / out of the free camera, seconds. */
+const FREE_SEC = 0.5;
+/** How far the focus point may wander from the middle of the board. The island
+ *  itself runs to BOUNDS.radius; the extra 15% is the beach and a strip of
+ *  water, which is as far out as anybody wants to stand. */
+const FREE_RANGE = BOUNDS.radius * 1.15;
+const FREE_PITCH_MIN = 16 * DEG;
+const FREE_PITCH_MAX = 78 * DEG;
+const FREE_DIST_MIN = 18;
+/** Multiplier on the whole-island framing distance — the far end of the zoom. */
+const FREE_DIST_MAX_K = 1.45;
+/** Metres the eye is always kept above whatever ground is under it. */
+const FREE_EYE_CLEAR = 3.5;
+
 export function createGameCamera(renderer, scene) {
   const dom = renderer && renderer.domElement ? renderer.domElement : null;
   const w = (dom && dom.clientWidth) || (typeof innerWidth !== 'undefined' ? innerWidth : 1280);
@@ -86,6 +120,21 @@ export function createGameCamera(renderer, scene) {
   const celCenter = new THREE.Vector3(BOUNDS.cx, 3, BOUNDS.cz);
 
   let shakeAmt = 0, shakeT = 0;
+
+  /* ------------------------------------------------------------- free look */
+  // `live` is what the camera is using this frame; `want` is where the player
+  // has asked it to be. A drag writes both (so it tracks the finger exactly);
+  // a mode change writes only `want` (so it eases across).
+  const fLive = {
+    x: BOUNDS.cx, z: BOUNDS.cz,
+    yaw: PLAY_YAW, pitch: PLAY_PITCH, dist: BASE_DIST
+  };
+  const fWant = { ...fLive };
+  let freeOn = false;
+  let freeT = 0;
+  let freeModeName = 'close';
+  /** Set true by clampFree() whenever the player is pushing at a limit. */
+  let freeAtLimit = '';
 
   const _pos = new THREE.Vector3();
   const _look = new THREE.Vector3();
@@ -156,6 +205,139 @@ export function createGameCamera(renderer, scene) {
   function shake(amount) {
     const a = Number.isFinite(amount) ? amount : 0.3;
     shakeAmt = clamp(shakeAmt + Math.abs(a), 0, 1.4);
+  }
+
+  /* ----------------------------------------------------------- free look */
+
+  const freeDistMax = () => Math.max(FREE_DIST_MIN + 10, overviewDistance() * FREE_DIST_MAX_K);
+
+  /** The one place a free pose is allowed to become legal. */
+  function clampFree(p) {
+    freeAtLimit = '';
+    if (!Number.isFinite(p.x)) p.x = BOUNDS.cx;
+    if (!Number.isFinite(p.z)) p.z = BOUNDS.cz;
+    const dx = p.x - BOUNDS.cx, dz = p.z - BOUNDS.cz;
+    const r = Math.hypot(dx, dz);
+    if (r > FREE_RANGE) {
+      const k = FREE_RANGE / r;
+      p.x = BOUNDS.cx + dx * k;
+      p.z = BOUNDS.cz + dz * k;
+      freeAtLimit += 'range ';
+    }
+    if (!Number.isFinite(p.pitch)) p.pitch = PLAY_PITCH;
+    if (p.pitch < FREE_PITCH_MIN) { p.pitch = FREE_PITCH_MIN; freeAtLimit += 'pitch-lo '; }
+    if (p.pitch > FREE_PITCH_MAX) { p.pitch = FREE_PITCH_MAX; freeAtLimit += 'pitch-hi '; }
+    if (!Number.isFinite(p.dist)) p.dist = BASE_DIST;
+    const dmax = freeDistMax();
+    if (p.dist < FREE_DIST_MIN) { p.dist = FREE_DIST_MIN; freeAtLimit += 'near '; }
+    if (p.dist > dmax) { p.dist = dmax; freeAtLimit += 'far '; }
+    // Yaw is free to wind, but keep it in a sane float range forever.
+    if (!Number.isFinite(p.yaw)) p.yaw = PLAY_YAW;
+    if (p.yaw > Math.PI * 8 || p.yaw < -Math.PI * 8) p.yaw %= Math.PI * 2;
+    return p;
+  }
+
+  /** The two framings the end-of-match bar switches between. */
+  function freeMode(mode, snap) {
+    freeModeName = mode === 'board' ? 'board' : 'close';
+    if (freeModeName === 'board') {
+      fWant.x = BOUNDS.cx; fWant.z = BOUNDS.cz;
+      fWant.yaw = 0;
+      fWant.pitch = OVER_PITCH;
+      fWant.dist = overviewDistance();
+    } else {
+      fWant.x = followX; fWant.z = followZ;
+      fWant.yaw = PLAY_YAW;
+      fWant.pitch = PLAY_PITCH;
+      fWant.dist = BASE_DIST;
+    }
+    clampFree(fWant);
+    if (snap) Object.assign(fLive, fWant);
+    return freeModeName;
+  }
+
+  /**
+   * Hand the camera to the player (or take it back). Called by hud-end.js once
+   * the results panel has been dismissed — never during a match.
+   */
+  function setFreeLook(on, mode) {
+    const next = !!on;
+    if (next && !freeOn) {
+      // Start from wherever we are so the blend has somewhere sensible to go.
+      freeMode(mode || freeModeName, true);
+    } else if (next && mode) {
+      freeMode(mode, false);
+    }
+    freeOn = next;
+    return freeOn;
+  }
+
+  /* Ground metres per screen pixel at the current framing. Horizontal and
+     vertical differ because the ground is seen at a slant. */
+  function metresPerPixel(hPx) {
+    const h = Number.isFinite(hPx) && hPx > 1 ? hPx : ((dom && dom.clientHeight) || 720);
+    return (2 * fLive.dist * Math.tan((FOV * DEG) / 2)) / h;
+  }
+
+  /** Drag the ground: the world follows the finger. Pixels in, metres out. */
+  function freeDrag(dxPx, dyPx, hPx) {
+    if (!freeOn) return false;
+    const mpp = metresPerPixel(hPx);
+    // A shallow pitch stretches vertical screen travel across a lot of ground;
+    // the divisor is capped so a near-horizon drag does not teleport.
+    const vert = mpp / Math.max(0.35, Math.sin(fLive.pitch));
+    const fx = -Math.sin(fLive.yaw), fz = -Math.cos(fLive.yaw);   // away from camera
+    const rx = -fz, rz = fx;                                      // screen right
+    const mx = -dxPx * mpp, my = -dyPx * vert;
+    fWant.x = fLive.x + rx * mx + fx * my;
+    fWant.z = fLive.z + rz * mx + fz * my;
+    clampFree(fWant);
+    fLive.x = fWant.x; fLive.z = fWant.z;
+    return true;
+  }
+
+  /** Orbit. Radians in — the driver decides how many per pixel. */
+  function freeTurn(dYaw, dPitch) {
+    if (!freeOn) return false;
+    fWant.yaw = fLive.yaw + (Number.isFinite(dYaw) ? dYaw : 0);
+    fWant.pitch = fLive.pitch + (Number.isFinite(dPitch) ? dPitch : 0);
+    clampFree(fWant);
+    fLive.yaw = fWant.yaw; fLive.pitch = fWant.pitch;
+    return true;
+  }
+
+  /** Multiplicative: < 1 pulls in, > 1 pushes out. */
+  function freeZoom(k) {
+    if (!freeOn || !Number.isFinite(k) || k <= 0) return false;
+    fWant.dist = fLive.dist * k;
+    clampFree(fWant);
+    // Zoom eases rather than snapping — it is the one gesture that reads better
+    // with a little weight behind it.
+    return true;
+  }
+
+  /** Keyboard pan. `fwd` / `right` in -1..1, scaled by how far out we are. */
+  function freeStep(fwd, right, dt) {
+    if (!freeOn) return false;
+    const f = Number.isFinite(fwd) ? clamp(fwd, -1, 1) : 0;
+    const r = Number.isFinite(right) ? clamp(right, -1, 1) : 0;
+    if (!f && !r) return false;
+    const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 1 / 60;
+    const speed = clamp(fLive.dist * 0.65, 16, 90);
+    const fx = -Math.sin(fLive.yaw), fz = -Math.cos(fLive.yaw);
+    const rx = -fz, rz = fx;
+    fWant.x = fLive.x + (fx * f + rx * r) * speed * step;
+    fWant.z = fLive.z + (fz * f + rz * r) * speed * step;
+    clampFree(fWant);
+    fLive.x = fWant.x; fLive.z = fWant.z;
+    return true;
+  }
+
+  /** Back to the preset for whichever framing we are in. */
+  function freeRecentre() {
+    if (!freeOn) return false;
+    freeMode(freeModeName, false);
+    return true;
   }
 
   /* --------------------------------------------------------------- update */
@@ -265,6 +447,40 @@ export function createGameCamera(renderer, scene) {
       _look.lerp(_l2, k);
     }
 
+    /* ---- free look -----------------------------------------------------
+       Last, so it wins outright: after the match the player owns the view and
+       nothing — not the overview blend, not a stray orbit — may argue with it.
+       The pose eases toward whatever the driver has asked for, is clamped every
+       frame (not only when a gesture writes it), and the eye is lifted clear of
+       the ground so a low pitch on the coast cannot bury the camera in a cliff. */
+    const freeTarget = freeOn ? 1 : 0;
+    const freeRate = step / FREE_SEC;
+    freeT = freeTarget > freeT ? Math.min(1, freeT + freeRate) : Math.max(0, freeT - freeRate);
+    if (freeT > 0) {
+      const kk = 1 - Math.exp(-9 * step);
+      fLive.x += (fWant.x - fLive.x) * kk;
+      fLive.z += (fWant.z - fLive.z) * kk;
+      fLive.yaw += (fWant.yaw - fLive.yaw) * kk;
+      fLive.pitch += (fWant.pitch - fLive.pitch) * kk;
+      fLive.dist += (fWant.dist - fLive.dist) * kk;
+      clampFree(fLive);
+
+      const gy = groundAt(fLive.x, fLive.z);
+      const aimY = gy + FOCUS_LIFT;
+      const cp = Math.cos(fLive.pitch), sp2 = Math.sin(fLive.pitch);
+      _p2.set(
+        fLive.x + Math.sin(fLive.yaw) * fLive.dist * cp,
+        aimY + fLive.dist * sp2,
+        fLive.z + Math.cos(fLive.yaw) * fLive.dist * cp
+      );
+      const floorY = groundAt(_p2.x, _p2.z) + FREE_EYE_CLEAR;
+      if (_p2.y < floorY) _p2.y = floorY;
+      _l2.set(fLive.x, aimY, fLive.z);
+      const fk = easeIO(freeT);
+      _pos.lerp(_p2, fk);
+      _look.lerp(_l2, fk);
+    }
+
     /* ---- shake -------------------------------------------------------- */
     if (shakeAmt > 0.0005) {
       shakeT += step * 42;
@@ -295,6 +511,36 @@ export function createGameCamera(renderer, scene) {
     endCelebrate,
     shake,
     update,
+
+    /* ---- free look: driven by systems/freecam.js after the match ---- */
+    setFreeLook, freeMode, freeDrag, freeTurn, freeZoom, freeStep, freeRecentre,
+    get freeLook() { return freeOn; },
+    /** Everything a trace needs to prove the camera moved and stayed bounded.
+     *  `limit` lists the bounds the LIVE pose is currently resting against, so
+     *  a capture can assert "pushed past the edge, stopped at the edge". */
+    get freeInfo() {
+      const dmax = freeDistMax();
+      const r = Math.hypot(fLive.x - BOUNDS.cx, fLive.z - BOUNDS.cz);
+      const lim = [];
+      if (r >= FREE_RANGE - 0.08) lim.push('range');
+      if (fLive.pitch <= FREE_PITCH_MIN + 1e-3) lim.push('pitch-lo');
+      if (fLive.pitch >= FREE_PITCH_MAX - 1e-3) lim.push('pitch-hi');
+      if (fLive.dist <= FREE_DIST_MIN + 0.02) lim.push('near');
+      if (fLive.dist >= dmax - 0.02) lim.push('far');
+      return {
+        on: freeOn, mode: freeModeName, blend: +freeT.toFixed(3),
+        x: +fLive.x.toFixed(2), z: +fLive.z.toFixed(2),
+        r: +r.toFixed(2),
+        yaw: +fLive.yaw.toFixed(3), pitch: +fLive.pitch.toFixed(3),
+        dist: +fLive.dist.toFixed(2),
+        limit: lim.join('+'),
+        clamped: freeAtLimit.trim(),
+        range: +FREE_RANGE.toFixed(2),
+        pitchRange: [+FREE_PITCH_MIN.toFixed(3), +FREE_PITCH_MAX.toFixed(3)],
+        distRange: [FREE_DIST_MIN, +dmax.toFixed(2)]
+      };
+    },
+
     /** Gameplay yaw — fixed, so joystick-up is always away from the camera. */
     get yaw() { return PLAY_YAW; },
     get isOverview() { return overviewOn; },

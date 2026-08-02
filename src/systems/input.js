@@ -23,6 +23,13 @@
  * `stick` is normalised with magnitude clamped to 1; +y is "up the screen"
  * (away from the camera). Edge flags are true for exactly one update().
  *
+ * AFTER THE MATCH the same keys drive the free camera instead (see
+ * `systems/freecam.js`). Nothing changes here: freecam only ever listens once
+ * the end-of-match bar has armed it, matchflow.js has already zeroed `stick`
+ * every step by then, and freecam stands down the instant `keyboardCaptured`
+ * goes true — so the trade sheet keeps its arrows and the settler never moves
+ * on a key meant for the camera.
+ *
  * Owner: Character agent.
  */
 
