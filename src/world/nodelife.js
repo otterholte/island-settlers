@@ -81,7 +81,7 @@ const TINTS = {
   wheat:   [[1.00, 1.00, 1.00], [1.10, 0.99, 0.80], [0.88, 0.87, 0.76]],
   sheep:   [[1.00, 1.00, 1.00], [0.93, 0.92, 0.90], [1.05, 1.04, 1.00]],
   claypit: [[1.00, 1.00, 1.00], [1.10, 0.93, 0.84], [0.88, 0.84, 0.82]],
-  orerock: [[1.00, 1.00, 1.00], [0.84, 0.88, 0.98], [1.10, 1.05, 0.98]]
+  orerock: [[1.00, 1.00, 1.00], [0.84, 0.88, 0.98], [1.04, 1.00, 0.94]]
 };
 
 /* How big each item stands, and how far it sinks into the ground. Deliberately
@@ -89,14 +89,18 @@ const TINTS = {
    The tree is untouched — the player likes the tree, it is the benchmark — and
    the other four have been walked up toward it until each one is a real
    two-unit object rather than a trinket in tall grass. */
+/* The ore is the odd one out: its GEOMETRY grew (a 2.3-unit-wide boulder in
+   place of a 1.3-unit stone with spires on it), so its instance scale comes
+   down to keep the widest of them from growing into the blue-noise gaps a
+   settler has to run down. Sunk deeper too — a boulder sits IN the ground. */
 const SCALE = {
   tree:    [1.10, 1.50],
   wheat:   [1.06, 1.32],
   sheep:   [1.12, 1.34],
   claypit: [1.14, 1.40],
-  orerock: [1.06, 1.32]
+  orerock: [0.98, 1.12]
 };
-const SINK = { tree: 0.10, wheat: 0.06, sheep: 0.02, claypit: 0.10, orerock: 0.18 };
+const SINK = { tree: 0.10, wheat: 0.06, sheep: 0.02, claypit: 0.10, orerock: 0.10 };
 
 /* Per-item size jitter, folded on top of SCALE. The board hands out
    `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a
@@ -110,6 +114,17 @@ const JITTER_GAIN = 0.62;
 /* Seconds. TAKE is short on purpose — the player asked to not wait for it. */
 const TAKE = 0.26;
 const GROW = 0.52;
+
+/* What share of the harvestable trees leave a stump where they stood. Under a
+   half: enough that a worked forest still says "this was timber", not so many
+   that a cleared hex is a pincushion. Deterministic on the item id so the same
+   trees always leave the same marks, run after run. */
+const FIELD_STUMP_SHARE = 0.42;
+function leavesStump(id) {
+  let h = Math.imul(id ^ 0x9e3779b9, 2246822519);
+  h = Math.imul(h ^ (h >>> 15), 3266489917);
+  return ((h ^ (h >>> 16)) >>> 0) % 1000 < FIELD_STUMP_SHARE * 1000;
+}
 
 export function buildField(group, mats, opts = {}) {
   const byKind = { tree: [], wheat: [], sheep: [], claypit: [], orerock: [] };
@@ -196,15 +211,23 @@ export function buildField(group, mats, opts = {}) {
     m.instanceMatrix.needsUpdate = true;
   }
 
-  /* Stumps. One per harvestable tree, plus however many spares `stand.js`
-     asked for so the decorative timber can leave stumps on the SAME batch —
-     which is what turns a cleared forest into a clear-cut instead of a forest
-     with holes in it. Shared mesh, so it costs no extra draw call. */
+  /* Stumps, and how few of them there now are.
+   *
+   *   "Make the empty hexes once the resources are gone look more empty and
+   *    less busy. Right now it's too overstimulating."
+   *
+   * Every harvestable tree used to leave one, and every fellable decorative
+   * conifer left one on top of that — fifty-odd posts standing in a hex that is
+   * supposed to read as CLEARED. A stump field is not empty, it is a different
+   * kind of busy. So only a deterministic slice of the trees leaves a mark now
+   * (`FIELD_STUMP_SHARE` here, a smaller share again for the dressing over in
+   * `stand.js`), which is enough to say "trees stood here" and nowhere near
+   * enough to fill the hex back up. Shared mesh, so it costs no extra call. */
   let stumpMesh = null;
   let stumpBase = 0;
   const stumpSpare = Math.max(0, opts.extraStumps | 0);
   {
-    const treeSlots = slots.filter(s => s.kind === 'tree');
+    const treeSlots = slots.filter(s => s.kind === 'tree' && leavesStump(s.item.id));
     const total = treeSlots.length + stumpSpare;
     if (total) {
       const geo = K.stump();

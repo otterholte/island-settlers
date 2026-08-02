@@ -8,6 +8,13 @@
  *   moodAttrFromPositions(geo)  per-VERTEX aMood for a baked / ground mesh
  *   moodTint(tileId, out)       the same tint as a plain rgb multiplier
  *
+ *   startVictoryFlood(pid, o)   END OF MATCH: sweep every hex to the winner's
+ *   floodWinner(hex, p01)       colour. Full contract in the block headed
+ *   updateVictoryFlood(dt)      "THE VICTORY FLOOD" further down this file;
+ *   stopVictoryFlood()          all of it is re-exported from `buildProps`, so
+ *   victoryFloodActive()        the flow layer reaches it as
+ *   floodProgress() floodOf(t)  `game.world.props.startVictoryFlood(pid)`.
+ *
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
@@ -38,8 +45,17 @@
  *   tone  +1  yours — collect here, and it glows
  *   tone   0  neutral (the desert; nobody's crop)
  *   tone  -1  off limits — you own no corner of it, or the Raider has it shut
- *   spent  1  worked out; grey stubble, NO glow, and a countdown overhead
+ *   spent  1  worked out; calm bare ground, NO glow, a countdown overhead
  *   flash  1  the moment it all comes back
+ *
+ * SPENT is deliberately the QUIETEST state on the board. It used to crush the
+ * hex most of the way to a flat neutral stone colour and sit that under a pile
+ * of stumps, churn, scars and a rotating dashed warning band, and the player's
+ * verdict was "too overstimulating". It now drains the hex's internal colour,
+ * keeps its own terrain ink so you can still see what it was, and drops the
+ * value a clear step — one flat, restful tone with a big countdown badge over
+ * it and almost nothing left standing on it (see `stand.js` / `nodelife.js`
+ * for the residue cull and `regions.js` for the ground treatment).
  *
  * ---------------------------------------------------------------------------
  * ...AND WHAT THE MUTE USED TO COST
@@ -70,7 +86,8 @@
  * ---------------------------------------------------------------------------
  * A 19x2 RGBA byte texture, one column per hex — updated for the price of 152
  * bytes a frame and shared by every material in the world. The bottom row is
- * the live state (tone, spent, flash); the top row is that hex's duotone ink,
+ * the live state (tone, spent, flash, and in ALPHA the end-of-match victory
+ * flood, which is zero for the whole match); the top row is that hex's ink,
  * a fixed colour derived from its terrain. Each mesh carries an `aMood`
  * attribute of (tileIndex, influence): per-vertex on the baked ground,
  * per-instance on the four hundred instanced props. A mesh that has no `aMood`
@@ -81,6 +98,7 @@
  */
 
 import * as THREE from 'three';
+import { PLAYER_COLORS } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
 import {
   tileFraction, tileRecovery, isTileExhausted, tileItemsRemaining, tileItemCount
@@ -199,8 +217,92 @@ export const uMoodTime = { value: 0 };
  *  a strobe, and it has to sit under the game for four minutes at a time. */
 export const GLOW_HZ = 1.85;
 
+/* ===========================================================================
+ * THE VICTORY FLOOD
+ * ===========================================================================
+ *
+ *   "I don't understand why random tiles light up at the end when someone wins,
+ *    it seems to be random tiles. Could you actually animate that all of the
+ *    hexes/tiles turn into the color of the winner, and then the celebration
+ *    happens right after that."
+ *
+ * ---------------------------------------------------------------------------
+ * THE API — this is what the flow layer drives
+ * ---------------------------------------------------------------------------
+ * Everything below is re-exported from the object `buildProps(scene)` returns,
+ * which `main.js` hangs on the world, so from `systems/matchflow.js`:
+ *
+ *     const props = game.world.props;          // may be a stub — see below
+ *
+ *     // 1. FIRE AND FORGET (the normal way). Starts the wave and advances it
+ *     //    on the clock inside props.update(dt), which main.js already calls
+ *     //    every frame. Returns the TOTAL SECONDS the whole thing will take,
+ *     //    so the celebration can be scheduled for straight afterwards.
+ *     const secs = props.startVictoryFlood(winnerPlayerId);
+ *     //  -> startVictoryFlood(pid, opts?) -> seconds
+ *     //     pid   0..3, the winning player's index. Its colour comes from
+ *     //           PLAYER_COLORS[pid].hex and the wave starts on the hexes that
+ *     //           player holds, spreading outward from them across the island.
+ *     //     opts  { color: 0xRRGGBB,   override the winner's colour
+ *     //             from: [tileId,..], override the seed hexes ([] = centre)
+ *     //             duration: 2.4,     seconds for the wave to cross the board
+ *     //             hold: 1.0 }        seconds fully flooded before it lets go
+ *     //     Returns duration + hold.
+ *
+ *     // 2. DRIVE IT BY HAND, if the flow layer would rather own the clock.
+ *     props.floodWinner(0xd0472f, 0.55);   // colour, progress 0..1
+ *     //  -> floodWinner(playerColorHex, progress01)
+ *     //     progress 0 = untouched island, 1 = every hex in the winner's
+ *     //     colour. Safe to call every frame with your own easing; it cancels
+ *     //     any running clock and takes over. Seeds default to the island
+ *     //     centre unless startVictoryFlood set them first.
+ *
+ *     // 3. HOUSEKEEPING
+ *     props.stopVictoryFlood();            // instantly back to normal colour
+ *     props.victoryFloodActive();          // bool
+ *     props.floodProgress();               // 0..1, the wave's global progress
+ *
+ * If nothing ever calls any of it, every per-hex value stays at zero, the
+ * texture's alpha channel stays at zero, and the shader's flood branch never
+ * fires. It degrades to nothing.
+ *
+ * ---------------------------------------------------------------------------
+ * HOW IT LOOKS
+ * ---------------------------------------------------------------------------
+ * Not nineteen hexes switching on in sequence, which is what "random tiles
+ * flickering" was. Every hex is given an ORDER KEY — its distance from the
+ * nearest hex the winner holds, normalised across the board — and a band of
+ * width `BAND` sweeps that key from 0 to 1. Any hex the band is crossing is
+ * part way over, so at every instant there is a continuous WAVEFRONT travelling
+ * outward from the winner's own land: terrain, trees, sheep, boulders and
+ * stumps all turning together, because they all read the same per-hex texture.
+ * The crest of the wave gets an additive lift in the winner's colour so the
+ * edge of it is a visible line of light rather than a soft gradient.
+ */
+
+const FLOOD = {
+  running: false,      // the internal clock is advancing
+  manual: false,       // floodWinner() is driving instead
+  t: 0,
+  duration: 2.4,
+  hold: 1.0,
+  progress: 0,
+  key: new Float32Array(N),   // 0..1 order key per hex, seeded on start
+  val: new Float32Array(N)    // 0..1 how flooded each hex is right now
+};
+
+/** Width of the travelling wavefront, in units of the order key. */
+const BAND = 0.36;
+
+/** The winner's colour, in the renderer's working (linear) space. */
+export const uFloodColor = { value: new THREE.Color(0xffc93c) };
+
 /* The board is re-dealt between matches and `tiles` is mutated in place, so the
-   ink row is refreshed off the LIVE terrain whenever a hex changes under us. */
+   ink row is refreshed off the LIVE terrain whenever a hex changes under us.
+
+   Row 0's ALPHA channel carries the victory flood (see the block below). It is
+   zero for the whole match and nothing reads it until the flood is started, so
+   a build that never calls the flood API behaves exactly as it did before. */
 function writeTexture() {
   const inkRow = N * 4;
   for (let i = 0; i < N; i++) {
@@ -208,7 +310,7 @@ function writeTexture() {
     data[i * 4] = Math.round(clamp01((m.tone + 1) * 0.5) * 255);
     data[i * 4 + 1] = Math.round(clamp01(m.spent) * 255);
     data[i * 4 + 2] = Math.round(clamp01(m.flash) * 255);
-    data[i * 4 + 3] = 255;
+    data[i * 4 + 3] = Math.round(clamp01(FLOOD.val[i]) * 255);
 
     const terrain = tiles[i] ? tiles[i].terrain : m.terrain;
     if (terrain !== m.inkFor) {
@@ -303,6 +405,131 @@ export function syncMood() {
 
 export function moodOf(tileId) { return MOOD[tileId] || null; }
 
+/* ========================================================= the flood, driven */
+
+/** Every hex the given player holds a corner of. Empty if we cannot tell. */
+function heldTiles(pid) {
+  const I = match();
+  const state = I && I.state;
+  const out = [];
+  if (!state || !state.buildings) return out;
+  for (const t of tiles) {
+    try { if (playerOwnsTile(state, pid, t.id)) out.push(t.id); }
+    catch (e) { /* mid-restart; fall back to the centre */ }
+  }
+  return out;
+}
+
+/**
+ * Give every hex its place in the queue: distance from the nearest seed hex,
+ * normalised so the furthest corner of the island lands at 1. With no seeds at
+ * all it falls back to distance from the middle of the board, which sweeps the
+ * island from the centre outward — still ordered, still legible.
+ */
+function seedOrder(from) {
+  const seeds = [];
+  if (Array.isArray(from)) {
+    for (const id of from) {
+      const t = tiles[id];
+      if (t) seeds.push(t);
+    }
+  }
+  let hi = 0;
+  for (let i = 0; i < N; i++) {
+    const t = tiles[i];
+    if (!t) { FLOOD.key[i] = 0; continue; }
+    let d = Infinity;
+    if (seeds.length) {
+      for (const s of seeds) {
+        const dd = Math.hypot(t.x - s.x, t.z - s.z);
+        if (dd < d) d = dd;
+      }
+    } else {
+      d = Math.hypot(t.x, t.z);
+    }
+    FLOOD.key[i] = d;
+    if (d > hi) hi = d;
+  }
+  const inv = 1 / (hi || 1);
+  for (let i = 0; i < N; i++) FLOOD.key[i] *= inv;
+}
+
+/** Resolve the per-hex values for a global progress and push them to the GPU. */
+function applyFloodProgress(p) {
+  FLOOD.progress = clamp01(p);
+  // The wave has to travel a little past 1 for the last hex to finish filling,
+  // hence the (1 + BAND) span.
+  const front = FLOOD.progress * (1 + BAND);
+  for (let i = 0; i < N; i++) {
+    const v = (front - FLOOD.key[i]) / BAND;
+    FLOOD.val[i] = v < 0 ? 0 : v > 1 ? 1 : v;
+  }
+  writeTexture();
+}
+
+function setFloodColor(hex) {
+  if (hex === undefined || hex === null) return;
+  uFloodColor.value.setHex(hex >>> 0, THREE.SRGBColorSpace);
+}
+
+/**
+ * Start the wave and let it run itself. See the long comment above for the
+ * full contract; `props.update(dt)` advances it, so the caller only ever needs
+ * this one line. Returns the total seconds the sequence will take.
+ */
+export function startVictoryFlood(pid, opts = {}) {
+  const p = PLAYER_COLORS[pid | 0];
+  setFloodColor(opts.color !== undefined ? opts.color : (p ? p.hex : 0xffc93c));
+  seedOrder(opts.from !== undefined ? opts.from : heldTiles(pid | 0));
+  FLOOD.duration = Math.max(0.2, +opts.duration || 2.4);
+  FLOOD.hold = Math.max(0, opts.hold === undefined ? 1.0 : +opts.hold);
+  FLOOD.t = 0;
+  FLOOD.running = true;
+  FLOOD.manual = false;
+  applyFloodProgress(0);
+  return FLOOD.duration + FLOOD.hold;
+}
+
+/**
+ * Drive the wave by hand: colour plus a 0..1 progress. Cancels the internal
+ * clock, so a flow layer that would rather own the easing can simply call this
+ * every frame.
+ */
+export function floodWinner(playerColorHex, progress01) {
+  setFloodColor(playerColorHex);
+  if (!FLOOD.manual && !FLOOD.running) seedOrder(null);
+  FLOOD.running = false;
+  FLOOD.manual = true;
+  applyFloodProgress(+progress01 || 0);
+}
+
+/** Advance the internal clock. Harmless — and free — when nothing is running. */
+export function updateVictoryFlood(dt) {
+  if (!FLOOD.running) return;
+  FLOOD.t += dt;
+  applyFloodProgress(FLOOD.t / FLOOD.duration);
+}
+
+/** Back to normal colour immediately. */
+export function stopVictoryFlood() {
+  FLOOD.running = false;
+  FLOOD.manual = false;
+  applyFloodProgress(0);
+}
+
+export function victoryFloodActive() {
+  return (FLOOD.running || FLOOD.manual) && FLOOD.progress > 0;
+}
+
+/** The wave's global progress, 0..1. */
+export function floodProgress() { return FLOOD.progress; }
+
+/** How flooded one hex is right now, 0..1 — the region layer fades against it. */
+export function floodOf(tileId) {
+  const v = FLOOD.val[tileId | 0];
+  return v > 0 ? v : 0;
+}
+
 /* ============================================================== attributes */
 
 /**
@@ -348,6 +575,7 @@ uniform sampler2D uMoodTex;
 uniform float uMoodN;
 varying vec3 vMood;
 varying vec3 vInk;
+varying float vFlood;
 `;
 
 const MOOD_BODY_VERT = /* glsl */`
@@ -356,13 +584,22 @@ const MOOD_BODY_VERT = /* glsl */`
   vec4 md = texture2D(uMoodTex, vec2(mu, 0.25));
   vMood = vec3(md.r * 2.0 - 1.0, md.g, md.b) * aMood.y;
   vInk = texture2D(uMoodTex, vec2(mu, 0.75)).rgb * ${INK_ENC.toFixed(2)};
+  // The victory flood rides the alpha channel. It uses a HARDER influence curve
+  // than the tint does: the ground's per-vertex influence tapers off across the
+  // tan border strip so the mood tint stays on the hex top, but the flood is
+  // supposed to swallow the whole island, so anything with any influence at all
+  // is taken all the way. A mesh with no aMood (boats, roads, buildings) still
+  // gets the constant (0, 0) and is still left completely alone.
+  vFlood = md.a * smoothstep(0.0, 0.30, aMood.y);
 }
 `;
 
 const MOOD_PARS_FRAG = /* glsl */`
 varying vec3 vMood;
 varying vec3 vInk;
+varying float vFlood;
 uniform float uMoodTime;
+uniform vec3 uFloodCol;
 `;
 
 /*
@@ -396,16 +633,38 @@ const MOOD_BODY_FRAG = /* glsl */`
     diffuseColor.rgb = mix(diffuseColor.rgb, lit, mTone);
   }
   if (mSpent > 0.003) {
-    // "When it's out of resources it goes totally greyed out." Not darker —
-    // GREY: pulled most of the way to a flat neutral so a cleared forest, a
-    // cleared pasture and a cleared mountain all read as the same dead stone
-    // colour, and the stumps left standing in it still catch a highlight.
-    vec3 ash = mix(vec3(mLum * 0.90), vec3(0.345, 0.340, 0.330), 0.58);
-    diffuseColor.rgb = mix(diffuseColor.rgb, ash, mSpent * 0.94);
+    // CALM, not grey.
+    //
+    //   "Make the empty hexes once the resources are gone look more empty and
+    //    less busy. Right now it's too overstimulating."
+    //
+    // The old treatment crushed a spent hex almost the whole way to a flat
+    // neutral stone colour. That did say "worked out" — and it also threw away
+    // the terrain identity the duotone pass had just bought back, and it sat a
+    // hard grey plate underneath an already noisy pile of residue.
+    //
+    // This is quieter in every direction that matters. The hex keeps its OWN
+    // ink (so a cleared forest is still plainly a forest and a cleared mountain
+    // is still slate), most of its internal colour variation is drained so
+    // nothing on it competes for attention, and the value comes down a clear
+    // step. Restful bare ground with a countdown over it — which is exactly
+    // what a spent hex is.
+    vec3 rest = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.74) * 0.64;
+    diffuseColor.rgb = mix(diffuseColor.rgb, rest, mSpent * 0.88);
   }
   if (mFlash > 0.003) {
     diffuseColor.rgb = mix(diffuseColor.rgb,
       clamp(diffuseColor.rgb * 1.85 + vec3(0.09, 0.24, 0.05), 0.0, 1.0), mFlash * 0.85);
+  }
+  // THE VICTORY FLOOD, last and over the top of everything else. The surface
+  // keeps its own light and shade — a tree is still darker than the grass it
+  // stands on — but every hue on the hex is replaced by the winner's, so a
+  // flooded forest, a flooded mountain and a flooded wheat field are one solid
+  // block of their colour with the island's modelling still visible in it.
+  if (vFlood > 0.002) {
+    float fl = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 won = clamp(uFloodCol * (0.32 + 1.15 * fl), 0.0, 1.0);
+    diffuseColor.rgb = mix(diffuseColor.rgb, won, vFlood);
   }
 }
 `;
@@ -439,10 +698,20 @@ const MOOD_BODY_FRAG = /* glsl */`
 const MOOD_GLOW_FRAG = /* glsl */`
 {
   float gTone = vMood.x, gSpent = vMood.y;
-  float glow = max(gTone, 0.0) * (1.0 - gSpent);
+  float glow = max(gTone, 0.0) * (1.0 - gSpent) * (1.0 - vFlood);
   if (glow > 0.004) {
     float breath = 0.30 + 0.70 * (0.5 + 0.5 * sin(uMoodTime * ${GLOW_HZ.toFixed(2)}));
     outgoingLight += vec3(0.026, 0.054, 0.110) * glow * breath;
+  }
+  if (vFlood > 0.002) {
+    // The CREST of the wave. A hex part way through the sweep gets a bright
+    // additive lift in the winner's colour, peaking dead in the middle of the
+    // transition, so the leading edge of the flood reads as a line of light
+    // running outward across the island instead of a soft cross-fade. What is
+    // left behind it keeps a small steady lift, so the flooded island looks
+    // lit in their colour rather than merely painted it.
+    float crest = sin(vFlood * 3.14159265);
+    outgoingLight += uFloodCol * (crest * crest * 0.52 + vFlood * 0.10);
   }
 }
 `;
@@ -463,6 +732,7 @@ export function applyMood(mat) {
     sh.uniforms.uMoodTex = uMoodTex;
     sh.uniforms.uMoodN = uMoodN;
     sh.uniforms.uMoodTime = uMoodTime;
+    sh.uniforms.uFloodCol = uFloodColor;
     sh.vertexShader = MOOD_PARS_VERT + sh.vertexShader;
     sh.vertexShader = sh.vertexShader.replace(
       '#include <begin_vertex>', '#include <begin_vertex>\n' + MOOD_BODY_VERT);

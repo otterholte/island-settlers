@@ -38,7 +38,11 @@ import { buildField } from './nodelife.js';
 import { buildPickupFX } from './gatherfx.js';
 import { buildRegions } from './regions.js';
 import { countFellable } from './stand.js';
-import { applyMood, syncMood, moodAttrFromList, moodAttrFromPositions } from './mood.js';
+import {
+  applyMood, syncMood, moodAttrFromList, moodAttrFromPositions,
+  startVictoryFlood, floodWinner, updateVictoryFlood, stopVictoryFlood,
+  victoryFloodActive, floodProgress
+} from './mood.js';
 
 /*
  * Dressing kits that are part of the STAND, not scenery around it. Every
@@ -151,11 +155,19 @@ const RECIPE = {
                rockSmall: 2, undergrowth: 3 },
   pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
                broadleaf: 2, hay: 2 },
-  hills:     { clayWorks: 3, rockSmall: 11, boulder: 6, grass: 22,
+  hills:     { clayWorks: 3, rockSmall: 8, boulder: 3, grass: 22,
                undergrowth: 5, crate: 2, deadwood: 1 },
-  mountains: { spire: 6, boulder: 7, rockSmall: 12, conifer: 2, coniferShort: 2,
+  // "Can you make the ore look more like large boulders."
+  //
+  // Which means the mountain's own scenery has to get out of the way. The
+  // harvestable ore is now a low, wide, dark, ore-veined BOULDER, and it can
+  // only own that silhouette if the hex is not already carpeted in grey stones
+  // the same size. Decorative boulders 7 -> 3, loose rubble 12 -> 6, skyline
+  // spires 6 -> 4, and `boulder()` / `smallRock()` themselves are smaller than
+  // they were. What is left is a skyline and a scatter, not a rival.
+  mountains: { spire: 4, boulder: 3, rockSmall: 6, conifer: 2, coniferShort: 2,
                grass: 10, timber: 2 },
-  desert:    { rockSmall: 9, boulder: 4, crate: 3, grass: 8, hay: 2,
+  desert:    { rockSmall: 8, boulder: 3, crate: 3, grass: 8, hay: 2,
                deadwood: 2, coniferShort: 1 }
 };
 
@@ -219,8 +231,10 @@ const STYLE = {
   flower:       { s: [0.75, 1.35], sink: 0.04, tilt: 0.35, yaw: true },
   wheat:        { s: [0.78, 1.46], sink: 0.05, tilt: 0.25, yaw: true },
   hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
-  rockSmall:    { s: [0.55, 1.60], sink: 0.12, tilt: 0.85, yaw: true },
-  boulder:      { s: [0.70, 1.45], sink: 0.18, tilt: 0.65, yaw: true },
+  rockSmall:    { s: [0.55, 1.35], sink: 0.12, tilt: 0.85, yaw: true },
+  // Capped well under the harvestable ore boulder, which runs 0.98..1.18 on a
+  // geometry that is already wider than this one.
+  boulder:      { s: [0.62, 1.10], sink: 0.20, tilt: 0.65, yaw: true },
   spire:        { s: [0.75, 1.60], sink: 0.20, tilt: 0.45, yaw: true },
   clayWorks:    { s: [0.80, 1.25], sink: 0.08, tilt: 0.30, yaw: true },
   fence:        { s: [0.92, 1.12], sink: 0.10, tilt: 0.45, yaw: true },
@@ -610,6 +624,9 @@ export function buildProps(scene) {
     mats.tree.userData.wind.value = wind;
     mats.grass.userData.wind.value = wind * 1.35;
     mats.wheat.userData.wind.value = wind * 1.2;
+    // Advances the end-of-match colour wave if one has been started, and costs
+    // a single boolean test if one never is.
+    updateVictoryFlood(dt);
     syncMood();
     field.update(dt);
     pickup.update(dt);
@@ -635,6 +652,39 @@ export function buildProps(scene) {
     /** Where an item's visual currently stands — handy for FX anchoring. */
     itemAnchor(id) { return field.itemAnchor(id); },
     nodeAnchor(ref) { return field.nodeAnchor(ref); },
+
+    /* ------------------------------------------------ THE VICTORY FLOOD
+     *
+     * Published here so `systems/matchflow.js` can sequence the end of a match
+     * without knowing anything about the shader that draws it. Reachable as
+     * `game.world.props.*` (main.js puts this object on `world.props`).
+     *
+     *   const secs = world.props.startVictoryFlood(winnerId);
+     *       -> starts a wave that sweeps EVERY hex on the island to that
+     *          player's colour, beginning on the hexes they hold and running
+     *          outward. Terrain, trees, flock, boulders and stumps all turn
+     *          together. Advances itself inside props.update(dt), which the
+     *          frame loop already calls. Returns the total seconds it will
+     *          take, so the celebration can be fired straight after.
+     *          Optional second argument:
+     *            { color, from: [tileIds], duration = 2.4, hold = 1.0 }
+     *
+     *   world.props.floodWinner(0xd0472f, 0.55);
+     *       -> drive the same wave by hand: colour plus a 0..1 progress.
+     *          Cancels the internal clock and takes over.
+     *
+     *   world.props.stopVictoryFlood();     back to normal colour at once
+     *   world.props.victoryFloodActive();   bool
+     *   world.props.floodProgress();        0..1
+     *
+     * All of it is optional. Call none of it and nothing changes.
+     * Full contract: the header block in `src/world/mood.js`.
+     */
+    startVictoryFlood(pid, opts) { return startVictoryFlood(pid, opts); },
+    floodWinner(colorHex, progress01) { floodWinner(colorHex, progress01); },
+    stopVictoryFlood() { stopVictoryFlood(); },
+    victoryFloodActive() { return victoryFloodActive(); },
+    floodProgress() { return floodProgress(); },
 
     update,
 

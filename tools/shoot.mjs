@@ -553,6 +553,117 @@ if (STAGE === 'intro') {
       declared:{market:[world.market.drawCalls,world.market.triangles],
         ports:[world.portsView.drawCalls,world.portsView.triangles]}};})()`)));
 
+} else if (STAGE === 'art') {
+  /*
+   * One tight, single-shot look at a hex — the world-art review framing.
+   * Deliberately minimal so it always finishes inside a short shell call.
+   *
+   *   --terrain=mountains   which hex to stand over
+   *   --clear=0|1           strip the hex of every item first (the spent read)
+   *   --skip=6              seconds of countdown to burn before the shot
+   *   --dist / --eye / --fov / --tag
+   */
+  const TERRAIN = arg('terrain', 'mountains');
+  const TAG = arg('tag', 'now');
+  await finishDraft();
+  await ev(`import('/src/board/nodes.js').then(m=>{window.__N__=m}).then(()=>1)`, true);
+  console.log('  setup ' + await ev(`(()=>{const{state,game,camera}=window.__ISLAND__,R=window.__R__;
+    return import('/src/board/layout.js').then(L=>{
+      const cands=L.tiles.filter(x=>x.terrain===${JSON.stringify(TERRAIN)});
+      let t=cands.find(x=>R.playerOwnsTile(state,0,x.id));
+      if(!t){ outer: for(const c of cands){ for(const corner of c.corners){
+        const ph=state.phase; state.phase='setup';
+        const ok=R.placeSettlement(state,0,corner,true); state.phase=ph;
+        if(ok){ t=c; break outer; } } } }
+      if(!t) t=cands[0];
+      if(!t) return 'no '+${JSON.stringify(TERRAIN)}+' hex';
+      window.__T__=t;
+      state.robberTile=L.DESERT.id; state.robberOwner=0;
+      const p=state.players[0];
+      p.x=t.x; p.z=t.z+12.5; p.vx=0; p.vz=0; p.action='idle'; p.facing=-Math.PI/2;
+      game.avatars[0].group.position.set(p.x,0,p.z);
+      window.__STEP__=(k)=>{for(let i=0;i<k;i++){window.__R__.tickWorld(state,1/60);
+        game.flow.update(1/60);game.gathering.update(1/60);}return +state.time.toFixed(1);};
+      if(${arg('clear', '0')}){
+        // Through the real contact-pickup path, exactly as play does it.
+        for(let k=0;k<60;k++){
+          const it=window.__N__.nearestItem(p.x,p.z,{tile:t.id});
+          if(!it) break;
+          p.x=it.x; p.z=it.z; p.sweptAt=-1;
+          window.__R__.tickWorld(state,1/60); game.gathering.update(1/60);
+        }
+        p.x=t.x; p.z=t.z+12.5;
+        game.avatars[0].group.position.set(p.x,0,p.z);
+        for(let i=0;i<Math.round(${+arg('skip', 6)}*60);i++){
+          window.__R__.tickWorld(state,1/60); game.flow.update(1/60);
+        }
+      }
+      game.camera.update=()=>{};
+      camera.position.set(t.x+1.0, ${+arg('eye', 11)}, t.z+${+arg('dist', 16)});
+      camera.lookAt(t.x, ${+arg('aim', 3.2)}, t.z);
+      camera.fov=${+arg('fov', 34)}; camera.updateProjectionMatrix();
+      return 'hex '+t.id+' '+t.terrain+' items='+window.__N__.tileItemsRemaining(t.id)
+        +'/'+window.__N__.tileItemCount(t.id)
+        +' owns='+R.playerOwnsTile(state,0,t.id)+' may='+R.canGatherTile(state,0,t.id);
+    });})()`, true));
+  await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+  // --only=field-orerock isolates one instanced batch so a single kit can be
+  // judged without the rest of the hex standing in front of it.
+  const ONLY = arg('only', '');
+  if (ONLY) {
+    console.log('  only ' + await ev(`(()=>{const g=window.__ISLAND__.world.props.group;
+      let kept=0;g.traverse(o=>{if(o.isMesh){const k=(o.name||'').indexOf(${JSON.stringify(ONLY)})>=0;
+        o.visible=k;if(k)kept++;}});return kept;})()`));
+  }
+  await sleep(+arg('settle', 2400));
+  await shot(`art-${TAG}`);
+
+} else if (STAGE === 'flood') {
+  /*
+   * The end-of-match colour wave. Drives world.props.floodWinner() by hand at
+   * fixed progress values so the sweep can be photographed mid-flight without
+   * racing a real clock.
+   *
+   *   --p=0.35,0.7   progress values to capture (one shot each)
+   *   --pid=1        which player's colour floods the island
+   *   --tag=name
+   */
+  const PS = arg('p', '0.4,0.85').split(',').filter(Boolean);
+  const PID = +arg('pid', 1);
+  const TAG = arg('tag', 'now');
+  await finishDraft();
+  if (arg('hud', '0') === '0') {
+    await ev(`(()=>{const u=document.getElementById('ui');if(u)u.style.display='none';return 1})()`);
+  }
+  await ev(`(()=>{const{camera,THREE}=window.__ISLAND__;
+    window.__ISLAND__.game.camera.update=()=>{};
+    camera.position.set(8,62,74); camera.lookAt(0,2,-2);
+    camera.fov=42; camera.updateProjectionMatrix();
+    const C=[0x3b7fd4,0xd0472f,0x3f9a52,0x8552c4][${PID}]||0xffc93c;
+    window.__FLOOD__=(p)=>{window.__ISLAND__.world.props.floodWinner(C,p);
+      return {p:window.__ISLAND__.world.props.floodProgress(),
+              on:window.__ISLAND__.world.props.victoryFloodActive()};};
+    // seed the wave on the winner's own holdings, then hand it back to manual
+    try{ window.__ISLAND__.world.props.startVictoryFlood(${PID}); }catch(e){}
+    return 1;})()`);
+  await sleep(+arg('settle', 1400));
+  if (arg('auto', '0') === '1') {
+    // The fire-and-forget path: startVictoryFlood() + props.update(dt) only.
+    console.log('  start ' + await ev(`(()=>{const p=window.__ISLAND__.world.props;
+      p.stopVictoryFlood();
+      const secs=p.startVictoryFlood(${PID},{duration:${+arg('dur', 3.0)},hold:2});
+      return {secs, on:p.victoryFloodActive()};})()`));
+    await sleep(+arg('at', 1500));
+    console.log('  at ' + JSON.stringify(await ev(`window.__ISLAND__.world.props.floodProgress()`)));
+    await shot(`fl-${TAG}-auto`);
+  } else {
+    for (const p of PS) {
+      console.log('  flood ' + JSON.stringify(await ev(`window.__FLOOD__(${+p})`)));
+      await sleep(+arg('gap', 500));
+      await shot(`fl-${TAG}-${String(p).replace('.', '')}`);
+    }
+  }
+
 } else if (STAGE === 'map') {
   await finishDraft();
   await sleep(1500);

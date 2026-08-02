@@ -72,18 +72,48 @@ export const ROLE = {
   }
 };
 
-/* Vertical squash and horizontal pinch a `crop` leaves behind. A cropped field
-   still has to LOOK like a field: cut too far and a worked-out fields hex is
-   bare mud with a fence round it. */
+/* Vertical squash and horizontal pinch a `crop` leaves behind.
+ *
+ *   "Make the empty hexes once the resources are gone look more empty and less
+ *    busy. Right now it's too overstimulating."
+ *
+ * Cut a good deal closer to the ground than it was. A cropped field still has
+ * to LOOK like the field it was — the stubble is the identity, and it keeps its
+ * full footprint so the hex is not bare mud with a fence round it — but at a
+ * fifth of its standing height it is a flat mat of colour rather than a hex
+ * full of half-height twigs competing with the countdown badge overhead. */
 const CROP = {
-  wheat:  [1.08, 0.26],
-  grass:  [0.98, 0.34],
-  flower: [0.85, 0.24],
-  undergrowth: [0.95, 0.28]
+  wheat:  [1.10, 0.17],
+  grass:  [1.00, 0.20],
+  flower: [0.88, 0.14],
+  undergrowth: [0.98, 0.16]
 };
 
-/* How big a stump a felled dressing tree leaves, relative to its own scale. */
-const STUMP_K = { conifer: 0.72, coniferShort: 0.66, broadleaf: 0.80 };
+/* How big a stump a felled dressing tree leaves, relative to its own scale.
+   Down a notch with the smaller stump geometry in `propkits.js`. */
+const STUMP_K = { conifer: 0.62, coniferShort: 0.58, broadleaf: 0.70 };
+
+/*
+ * What share of the felled DRESSING leaves a stump behind — a quarter, against
+ * 42% of the harvestable trees over in `nodelife.js`.
+ *
+ * A forest hex used to end up with about forty-five posts standing in it: one
+ * for every tree you took plus one for every backdrop conifer that went down
+ * with them. That is not an empty hex, it is a hex full of a different prop.
+ * It is now nearer a dozen, spread over the whole tile, which still says
+ * "somebody logged this" from the far side of the island and leaves the ground
+ * between them genuinely bare.
+ *
+ * Deterministic on world position, and shared by `countFellable` (which sizes
+ * the batch) and `buildStand` (which fills it), so the two can never disagree.
+ */
+const STUMP_SHARE = 0.25;
+
+/** Stable 0..1 from a world position. */
+export function propHash01(x, z) {
+  const h = ((x * 71.3 + z * 137.9) * 1000) | 0;
+  return ((h ^ (h >>> 11)) >>> 0) % 997 / 997;
+}
 
 /* instanceColor multiplier at full response — straw, dust and dead wood. */
 const WORN_MUL = {
@@ -110,7 +140,9 @@ export function countFellable(bucket) {
     for (const o of bucket[kit]) {
       const t = tiles[o.tile];
       if (!t) continue;
-      if ((ROLE[t.terrain] || {})[kit] === 'fell') n++;
+      if ((ROLE[t.terrain] || {})[kit] !== 'fell') continue;
+      if (propHash01(o.x, o.z) >= STUMP_SHARE) continue;
+      n++;
     }
   }
   return n;
@@ -153,8 +185,7 @@ export function buildStand(group, dressing, stumps) {
         const role = (ROLE[reg.tile.terrain] || {})[kit];
         if (!role) continue;
 
-        const hash = ((o.x * 71.3 + o.z * 137.9) * 1000) | 0;
-        const r01 = ((hash ^ (hash >>> 11)) >>> 0) % 997 / 997;
+        const r01 = propHash01(o.x, o.z);
         const it = {
           kit, mesh, i, role, reg,
           x: o.x, y: o.y, z: o.z, gy: heightAt(o.x, o.z) - 0.05,
@@ -167,7 +198,7 @@ export function buildStand(group, dressing, stumps) {
           spin: (r01 - 0.5) * 0.9,
           d: Math.hypot(o.x - reg.tile.x, o.z - reg.tile.z) / APOTHEM
         };
-        if (role === 'fell' && smesh && snext < scap) {
+        if (role === 'fell' && r01 < STUMP_SHARE && smesh && snext < scap) {
           it.stump = sbase + snext++;
           // the borrowed stump belongs to this hex, so it greys out with it
           if (smood) {

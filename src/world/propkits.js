@@ -14,7 +14,9 @@
  */
 
 import * as THREE from 'three';
-import { merge, place, tint, gradient, box, cyl, cone, ball, blob, rock, blade } from './geo.js';
+import {
+  merge, place, gradient, ensureAttrs, box, cyl, cone, ball, blob, rock, blade
+} from './geo.js';
 
 /*
  * Triangle discipline
@@ -119,7 +121,7 @@ export function broadleaf() {
  *
  *   brick  a stepped stack of five fat terracotta bricks on a spoil mound
  *   wheat  a bound sheaf, tied at the waist and flaring into a head of ears
- *   ore    a hero stone with three bright faceted crystals breaking out of it
+ *   ore    a large, low, dark BOULDER with a bright seam of metal across it
  *   sheep  a plump, lumpy fleece on a dark leg block with the head held clear
  *
  * Nothing is round-and-grey twice, nothing is a cone twice. The triangle budget
@@ -236,38 +238,141 @@ export function fieldClay() {
 }
 
 /**
- * One crystal-bearing chunk of ore.  (52 tris)
+ * A chunky, rounded, hard-facetted STONE.  (20 tris)
  *
- * A hero stone at full 20-face resolution — it holds the silhouette and it is
- * twice the size it used to be — with a chip beside it and THREE tall faceted
- * crystals breaking out of the top in the bright glacial blue nothing else on
- * the island wears. The crystals are what say "ore" rather than "boulder": the
- * mountains are already full of grey rocks, and an item you cannot tell from
- * the scenery is an item you cannot decide to run at.
+ * `geo.js`'s `rock()` is not this shape and cannot be made into it. It jitters
+ * every vertex of an already non-indexed polyhedron independently, so the three
+ * copies of each shared corner walk apart and the result is a shattered spiky
+ * thing — which is right for rubble and quite wrong for a boulder. Here the
+ * offset is cached per CORNER, so all twenty faces stay welded and the stone
+ * reads as one convex mass with big flat planes on it.
+ *
+ * Two more things make it a boulder rather than a ball:
+ *   * `squash` flattens it on Y, so it is wider than it is tall;
+ *   * `flatten` shears the underside off against a plane, so it SITS on the
+ *     ground with its weight on a face instead of balancing on a point.
+ */
+function facetStone(r, rough, seed, squash = 0.80, flatten = 0.34) {
+  // PolyhedronGeometry is already non-indexed: 20 faces, 60 vertices, flat
+  // shaded by construction, which is exactly the painted-stone look.
+  const g = new THREE.IcosahedronGeometry(r, 0);
+  const p = g.attributes.position;
+  const cache = new Map();
+  let s = (seed * 2654435761) >>> 0;
+  const rnd = () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  const floor = -r * flatten;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const key = `${Math.round(x / r * 2000)},${Math.round(y / r * 2000)},${Math.round(z / r * 2000)}`;
+    let k = cache.get(key);
+    if (k === undefined) { k = 1 + (rnd() - 0.5) * rough * 2; cache.set(key, k); }
+    let ny = y * k * squash;
+    if (ny < floor) ny = floor;
+    p.setXYZ(i, x * k, ny, z * k);
+  }
+  g.computeVertexNormals();
+  return ensureAttrs(g);
+}
+
+/**
+ * Paint a metallic SEAM across a rock's vertex colours.  (0 tris)
+ *
+ * The band is a plane slab in the geometry's own local space: every vertex
+ * whose signed distance to the plane falls inside `width` is pulled toward the
+ * seam colour, hardest at the centre of the band. `rock()` returns non-indexed
+ * flat-shaded geometry, so a triangle whose three corners land in the slab goes
+ * bright as a whole FACET — which is what an exposed vein of metal in a broken
+ * stone actually looks like, and it costs not one extra triangle.
+ */
+function seam(g, hex, nx, ny, nz, at, width, strength = 1) {
+  const pos = g.attributes.position.array;
+  const col = g.attributes.color.array;
+  const n = g.attributes.position.count;
+  const c = new THREE.Color(hex);
+  const inv = 1 / Math.max(width, 1e-4);
+  // Per FACE, not per vertex. A twenty-face stone has its corners a long way
+  // apart, so a per-vertex falloff smears the vein into a soft gradient that
+  // reads as nothing at all at forty pixels. Testing the face CENTROID and
+  // flooding all three of its corners instead gives whole bright PLANES of
+  // metal — which is both what exposed ore looks like and the only version of
+  // it that survives being twenty pixels across on a phone.
+  for (let f = 0; f + 2 < n; f += 3) {
+    const a = f * 3, b = (f + 1) * 3, e = (f + 2) * 3;
+    const cx = (pos[a] + pos[b] + pos[e]) / 3;
+    const cy = (pos[a + 1] + pos[b + 1] + pos[e + 1]) / 3;
+    const cz = (pos[a + 2] + pos[b + 2] + pos[e + 2]) / 3;
+    const d = cx * nx + cy * ny + cz * nz - at;
+    const k = 1 - Math.min(1, Math.abs(d) * inv);
+    if (k <= 0) continue;
+    const t = Math.min(1, k * 1.7) * strength;
+    for (const i of [a, b, e]) {
+      col[i] += (c.r - col[i]) * t;
+      col[i + 1] += (c.g - col[i + 1]) * t;
+      col[i + 2] += (c.b - col[i + 2]) * t;
+    }
+  }
+  g.attributes.color.needsUpdate = true;
+  return g;
+}
+
+/**
+ * One ore-bearing BOULDER.  (36 tris)
+ *
+ * The player's words: "Can you make the ore look more like large boulders."
+ *
+ * What this replaced was a stone the size of a football with three tall glacial
+ * crystals growing out of it — a crystal cluster, not a rock. So the crystals
+ * are gone and the mass has taken their place. This is now the biggest and by a
+ * long way the heaviest-looking thing on the board: a wide, squat block of
+ * stone about two and a half units across and barely a metre and a half tall,
+ * sunk into the ground so the bottom of it disappears, built from a lead
+ * icosahedron at LOW roughness (0.19) so its twenty faces read as a handful of
+ * big flat facets instead of a lumpy potato. A second mass on the shoulder and
+ * a split-off chip at the base keep the outline from being one symmetrical
+ * dome — a boulder that has been worked is a boulder with a corner off it.
+ *
+ * It is still obviously ORE. Two seams of glacial blue run across the facets
+ * (see `seam` above), bright against the near-black stone and in a colour
+ * nothing else on the island wears, so "the metal is IN this rock" is said
+ * without a single spire breaking the silhouette.
+ *
+ * And it must not be confused with the scenery: the decorative boulders and
+ * spires on a mountain hex have been cut back in both number and size in
+ * `props.js` / `boulder()` below, so this shape — low, wide, dark, veined —
+ * belongs to the harvestable item alone.
  */
 export function fieldOre() {
   const parts = [];
-  // A mountain hex is bare pale rock flour, so a mid-grey stone standing on it
-  // is invisible. The seam runs a long way DARKER than the ground it sits on —
-  // near-black at the base, gunmetal at the shoulder — which is what makes the
-  // chunk a shape rather than a texture.
-  // The ramp tops out at gunmetal, not at highlight grey: a mountain is looked
-  // at from ABOVE, so the top of the chunk is the part that has to hold the
-  // contrast, and the pale spires and boulders already dressing the hex are
-  // exactly the thing it must not be mistaken for.
-  parts.push(gradient(place(rock(0.62, 0, C.iron, 0.26, 41), 0, 0.54, 0),
-    0x1e222a, 0x5a6472));
-  parts.push(gradient(place(rock(0.38, 0, C.iron, 0.42, 47, true), 0.62, 0.24, 0.32),
-    0x1e222a, 0x4a5260));
-  const spike = (x, y, z, rx, ry, rz, r, tall) => {
-    const g = new THREE.OctahedronGeometry(r, 0);
-    tint(g, C.oreGlint);
-    place(g, x, y, z, rx, ry, rz, 1, tall, 1);
-    parts.push(gradient(g, 0x1f9ec4, 0xbdf4ff));
-  };
-  spike(-0.04, 1.12, 0.02, 0.10, 0.60, 0.14, 0.31, 2.35);
-  spike(0.34, 0.96, -0.20, 0.26, 1.10, -0.42, 0.22, 2.10);
-  spike(-0.36, 0.90, 0.24, -0.20, 0.30, 0.46, 0.18, 1.90);
+  // A mountain hex is bare PALE rock flour and the decorative stones on it are
+  // paler still, so the whole read here is VALUE: this thing is near-black at
+  // the bottom and never gets past a dull gunmetal at the top, which is two
+  // full stops below anything else on the hex. A mountain is looked at from
+  // above, so it is the top facets that have to hold that contrast — the ramp
+  // deliberately stops short of highlight grey.
+  const main = facetStone(1.05, 0.16, 41, 0.74, 0.38);
+  gradient(main, 0x0d0f14, 0x3f4855);
+  seam(main, 0x8fd6ee, 0.30, 0.88, 0.36, 0.36, 0.13, 0.54);
+  place(main, 0, 0.44, 0, 0, 0.5, 0, 1.06, 1.00, 1.00);
+  parts.push(main);
+
+  // A second mass welded onto the shoulder, overlapping the lead stone rather
+  // than sitting beside it: one boulder that has broken, not two rocks.
+  const shoulder = facetStone(0.66, 0.20, 47, 0.76, 0.34);
+  gradient(shoulder, 0x0b0d11, 0x374050);
+  seam(shoulder, 0x8fd6ee, 0.24, 0.86, -0.44, 0.20, 0.10, 0.46);
+  place(shoulder, -0.66, 0.34, 0.20, 0, 0.9, 0, 1.10, 1.00, 1.04);
+  parts.push(shoulder);
+
+  // A slab split off at the base, lying flat. Reads as weight, and keeps the
+  // footprint from being a circle.
+  const chip = facetStone(0.46, 0.24, 53, 0.42, 0.40);
+  gradient(chip, 0x0b0d11, 0x333b46);
+  place(chip, 0.80, 0.13, -0.34, 0, 1.6, 0, 1.08, 1.00, 1.08);
+  parts.push(chip);
+
   return merge(parts);
 }
 
@@ -280,8 +385,12 @@ export function fieldOre() {
  * pixels across, and nobody has ever counted the sides of one.
  */
 export function stump() {
-  const g = cyl(0.34, 0.46, 0.54, 5, C.barkDark);
-  place(g, 0, 0.27, 0);
+  // Lower and narrower than it was. A cleared hex is supposed to read as EMPTY,
+  // and far fewer of these are handed out now (see `stand.js` / `nodelife.js`),
+  // so the ones that survive are a quiet mark on the ground rather than a
+  // knee-high post you have to look past.
+  const g = cyl(0.28, 0.39, 0.38, 5, C.barkDark);
+  place(g, 0, 0.19, 0);
   return gradient(g, C.barkDark, C.barkPale);
 }
 
@@ -399,16 +508,23 @@ export function hayBale() {
 
 /** Pebble grade — 307 of them, none wider than half a metre.  (8 tris) */
 export function smallRock(seed = 5) {
-  return rock(0.36, 0, C.stone, 0.50, seed, true);
+  return rock(0.30, 0, C.stone, 0.50, seed, true);
 }
 
-/** (28 tris) */
+/**
+ * Decorative grey stone.  (28 tris)
+ *
+ * Deliberately SMALLER than it used to be (lead stone 0.88 -> 0.72). The
+ * harvestable ore is a boulder now, and the one thing a boulder-shaped item
+ * cannot afford is a hex full of boulder-shaped scenery. This is the backdrop
+ * stone: pale, unveined and comfortably under the item it stands next to.
+ */
 export function boulder(seed = 9) {
   const parts = [];
-  // Lead stone keeps its 20 faces — boulders are a metre across and sit on the
-  // waterline where they catch the eye. The companion chip goes low poly.
-  parts.push(place(rock(0.88, 0, C.stone, 0.30, seed), 0, 0.60, 0));
-  parts.push(place(rock(0.40, 0, C.stoneHi, 0.46, seed + 3, true), 0.78, 0.24, 0.32));
+  // Lead stone keeps its 20 faces — these sit on the waterline where they catch
+  // the eye. The companion chip goes low poly.
+  parts.push(place(rock(0.72, 0, C.stone, 0.30, seed), 0, 0.48, 0));
+  parts.push(place(rock(0.33, 0, C.stoneHi, 0.46, seed + 3, true), 0.64, 0.20, 0.26));
   return merge(parts);
 }
 

@@ -45,7 +45,10 @@ import * as THREE from 'three';
 import { RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
 import { tiles } from '../board/layout.js';
 import { heightAt, APOTHEM } from './terrain.js';
-import { MOOD, syncMood, onRestored, onSpent, uMoodTime, GLOW_HZ } from './mood.js';
+import {
+  MOOD, syncMood, onRestored, onSpent, uMoodTime, GLOW_HZ,
+  floodOf, victoryFloodActive
+} from './mood.js';
 import { buildMarkers, markerAtlas, GLYPH, MAX_SEC } from './regionmark.js';
 import { buildStand } from './stand.js';
 
@@ -350,20 +353,33 @@ function buildOverlay(list) {
           over(col, a, uWarm, lift * own * plate);
         }
 
-        // ---- 3. churned patches spread out of the noise field as you sweep,
-        // so a half-worked hex looks blotchy — ground you have walked over.
-        float churn = smoothstep(0.0, 0.30, work * 1.42 - n * 0.82);
-        over(col, a, vWorn, churn * (0.54 + 0.30 * work) * plate);
+        // ---- 3. worked ground spreads out of the noise field as you sweep, so
+        // a half-worked hex looks like ground you have walked over.
+        //
+        // Both the contrast and the amount are well down on what they were, and
+        // the whole thing is faded out again as the hex goes fully spent:
+        //
+        //   "Make the empty hexes once the resources are gone look more empty
+        //    and less busy. Right now it's too overstimulating."
+        //
+        // Churn belongs to the ACT of harvesting — it is the mud you are making
+        // right now. A finished hex should have settled.
+        float churn = smoothstep(0.06, 0.52, work * 1.20 - n * 0.44);
+        over(col, a, vWorn, churn * (0.26 + 0.16 * work) * (1.0 - spent * 0.72) * plate);
 
-        // ---- 4. worked out: grey, dug over and scarred.
+        // ---- 4. worked out: ONE flat, even wash and nothing else.
+        //
+        // Gone from here: the noise-modulated grey plate, the streaked scar
+        // layer on top of it, and the dashed amber warning band that rotated
+        // around the boundary. Three separate treatments fighting each other on
+        // the one hex the player is meant to simply glance at and walk away
+        // from. What is left is a single quiet tone in the terrain's own worked
+        // colour and a soft dark edge — so the loudest thing anywhere near a
+        // spent hex is the countdown badge floating over it, which is the one
+        // thing on it that is actually telling you something.
         if (spent > 0.004) {
-          over(col, a, vec3(0.46, 0.455, 0.44), spent * (0.30 + 0.14 * n) * plate);
-          float scar = smoothstep(0.52, 0.92, vn(vW * 1.05 + 21.0)) * spent;
-          over(col, a, vWorn * 0.50, scar * 0.40 * plate);
-          // a dashed amber warning band right on the boundary: this hex is shut
-          float t2 = fract(atan(vW.y, vW.x) * 3.8 + uTime * 0.30);
-          float dash = step(0.42, t2);
-          over(col, a, vec3(0.92, 0.52, 0.10), rim * dash * spent * 0.75);
+          over(col, a, vWorn * 0.86, spent * 0.30 * plate);
+          over(col, a, uMute, rim * 0.34 * spent);
         }
 
         // ---- 5. THE GLOW. The owner's rim is no longer a translucent stripe
@@ -518,27 +534,40 @@ export function buildRegions(group, dressing, stumps) {
     const mc = marker.aCol.array;
     let groundDirty = false;
 
+    /* Once the victory flood is running, this whole layer gets out of the way.
+       The rims, the light walls, the worked ground and the countdown badges all
+       belong to a match that is still being played; what the player is being
+       shown now is the island turning the winner's colour, and it has to read
+       as ONE thing. Each hex fades out exactly as the wave reaches it, so the
+       overlay dissolves under the front rather than snapping off. */
+    const flooding = victoryFloodActive();
+
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
       const m = r.mood;
+      const fade = flooding ? 1 - clamp01(floodOf(r.tile.id) * 1.6) : 1;
 
       // How worked-over the hex looks: how much of its field is still standing.
       const wantWork = m.exhausted ? 1 : clamp01(1 - m.fraction);
       const kw = Math.min(1, dt * (wantWork > r.work ? 3.4 : 2.4));
       r.work += (wantWork - r.work) * kw;
 
+      const sWork = r.work * fade;
+      const sSpent = m.spent * fade;
+      const sFlash = m.flash * fade;
+      const sTone = m.tone * fade;
       const o = r.vStart * 4;
-      const moved = Math.abs(st[o] - r.work) > 0.0015
-        || Math.abs(st[o + 1] - m.spent) > 0.0015
-        || Math.abs(st[o + 2] - m.flash) > 0.0015
-        || Math.abs(st[o + 3] - m.tone) > 0.0015;
+      const moved = Math.abs(st[o] - sWork) > 0.0015
+        || Math.abs(st[o + 1] - sSpent) > 0.0015
+        || Math.abs(st[o + 2] - sFlash) > 0.0015
+        || Math.abs(st[o + 3] - sTone) > 0.0015;
       if (moved) {
         for (let v = 0; v < r.vCount; v++) {
           const k = (r.vStart + v) * 4;
-          st[k] = r.work;
-          st[k + 1] = m.spent;
-          st[k + 2] = m.flash;
-          st[k + 3] = m.tone;
+          st[k] = sWork;
+          st[k + 1] = sSpent;
+          st[k + 2] = sFlash;
+          st[k + 3] = sTone;
         }
         groundDirty = true;
       }
@@ -549,7 +578,10 @@ export function buildRegions(group, dressing, stumps) {
       let wantA = 0, size = 6.4, fill = 1, cell = -1, spent = 0;
       let accent = r.rgb;
       if (m.exhausted) {
-        wantA = 1; size = 7.4; spent = 1;
+        // Bigger than it was. With the residue and the ground treatment under
+        // it both pulled right back, the badge is now unambiguously the loudest
+        // thing on a spent hex — which is what the player asked for.
+        wantA = 1; size = 8.6; spent = 1;
         fill = clamp01(m.progress);
         cell = Math.max(0, Math.min(MAX_SEC, Math.ceil(m.seconds - 0.001)));
         accent = [EMBER.r, EMBER.g, EMBER.b];
@@ -558,6 +590,7 @@ export function buildRegions(group, dressing, stumps) {
         cell = GLYPH.blocked;
         accent = [EMBER.r, EMBER.g, EMBER.b];
       }
+      wantA *= fade;
       r.alpha += (wantA - r.alpha) * Math.min(1, dt * (wantA > r.alpha ? 8 : 3.6));
 
       r.bob += dt * 1.5;
