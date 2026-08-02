@@ -110,6 +110,30 @@ const WIN = {
   reveal: 5.85
 };
 
+/*
+ * AND THEN THE COLOUR HAS TO GO
+ *
+ *   "Also remove the color of all the tiles after I view the scoreboard, so
+ *    that I can tell what the hexes' resources were."
+ *
+ * The flood is the celebration and it stays for the celebration. But the moment
+ * the player has seen the score and gone back to the island to look at it, the
+ * winner's colour is no longer a trophy — it is nineteen identical hexes with no
+ * readable terrain on any of them, which is the one thing a review view exists
+ * to show.
+ *
+ * So the review state clears it. `hud-end.js` raises the review bar the instant
+ * the results are dismissed and tells this module; the wave then RECEDES the way
+ * it came — `floodWinner(colour, progress)` driven from 1 back to 0 over
+ * `FLOOD_FADE_SEC` — and `stopVictoryFlood()` lands it exactly on the ordinary
+ * terrain. It is not a snap, and it is not undone by toggling BOARD / CLOSE
+ * VIEW or by bringing the scoreboard back: once cleared, it stays cleared for
+ * the rest of the review.
+ */
+const FLOOD_FADE_SEC = 1.60;
+/** A beat first, so the island is not already changing as the panel slides out. */
+const FLOOD_FADE_DELAY = 0.35;
+
 const HALF_TARGET = Math.ceil(VICTORY_POINTS / 2);
 const FINAL_CALL = 60;                 // seconds of soft cap left for the warning
 
@@ -165,6 +189,10 @@ export function createMatchFlow(state, game) {
     flooded: false, hasFlood: false,
     celebrated: false, orbitEnded: false, board: true
   };
+
+  // The receding flood. `done` latches so a second dismissal of the scoreboard
+  // does not re-run a fade that has already finished.
+  const fade = { active: false, done: false, t: 0, from: 1 };
 
   const beats = { half: false, matchPoint: new Set(), finalCall: false };
   let beatT = 0;
@@ -482,6 +510,61 @@ export function createMatchFlow(state, game) {
     try { p.stopVictoryFlood(); } catch (e) { warn(e); }
   }
 
+  function floodLive() {
+    const p = floodApi();
+    if (!p || typeof p.victoryFloodActive !== 'function') return false;
+    try { return !!p.victoryFloodActive(); } catch (e) { return false; }
+  }
+
+  /* --------------------------------------------------- clearing the colour */
+
+  /**
+   * The score has been seen; hand the terrain back.
+   *
+   * Called by hud-end.js the moment the review bar goes up — which is the one
+   * state where the player is looking at the island rather than at a panel.
+   * Safe to call repeatedly and safe to call with no flood running at all.
+   */
+  function clearVictoryFlood(opts) {
+    if (fade.active || fade.done) return fade.done;
+    if (!floodLive()) {
+      // Nothing to clear (a degraded build, or the flood never started). Mark it
+      // done so we never come back and so `floodCleared` reads true.
+      fade.done = true;
+      return true;
+    }
+    const at = floodAt();
+    fade.active = true;
+    fade.t = 0;
+    fade.from = at > 0 ? Math.min(1, at) : 1;
+    if (opts && opts.immediate) { fade.t = FLOOD_FADE_DELAY + FLOOD_FADE_SEC; runFade(0); }
+    return false;
+  }
+
+  /** Drive the recede. Runs off the flow's own clock, every frame, after done. */
+  function runFade(d) {
+    if (!fade.active) return;
+    const p = floodApi();
+    if (!p || typeof p.floodWinner !== 'function') {
+      fade.active = false; fade.done = true; stopFlood();
+      return;
+    }
+    fade.t += d;
+    const k = (fade.t - FLOOD_FADE_DELAY) / FLOOD_FADE_SEC;
+    if (k <= 0) return;                       // the held beat before it moves
+    const e = k >= 1 ? 1 : 1 - Math.pow(1 - k, 3);   // ease out, no snap
+    const w = state.players[win.wid];
+    try {
+      p.floodWinner(w ? w.color.hex : 0xffc93c, fade.from * (1 - e));
+    } catch (err) { warn(err); }
+    if (k >= 1) {
+      fade.active = false;
+      fade.done = true;
+      // Land it exactly on the ordinary terrain rather than on 0.0001 of tint.
+      stopFlood();
+    }
+  }
+
   /**
    * Which framing the player is looking at once the scoreboard has been put
    * away. hud-end.js drives this from its BOARD VIEW / CLOSE VIEW button; the
@@ -522,6 +605,9 @@ export function createMatchFlow(state, game) {
     if (win.done) {
       // Belt and braces: the match is over and stays over.
       if (state.phase !== 'over') state.phase = 'over';
+      // The review state is the only thing still moving after the scoreboard:
+      // the winner's colour draining back off the island.
+      runFade(d);
       return;
     }
     win.t += d;
@@ -687,6 +773,7 @@ export function createMatchFlow(state, game) {
     win.flooded = false; win.hasFlood = false;
     win.celebrated = false; win.orbitEnded = false; win.board = true;
     beats.half = false; beats.finalCall = false; beats.matchPoint.clear();
+    fade.active = false; fade.done = false; fade.t = 0; fade.from = 1;
     // A replay starts on a clean island, not on the last winner's colour.
     stopFlood();
     count.cancel();
@@ -717,6 +804,12 @@ export function createMatchFlow(state, game) {
 
   return {
     update, begin, skipIntro, restartInPlace, setEndView,
+    /** hud-end.js calls this when the review bar goes up. See FLOOD_FADE_SEC. */
+    clearVictoryFlood,
+    /** True once the winner's colour is off the island for good. */
+    get floodCleared() { return fade.done && !fade.active; },
+    /** True while it is draining. */
+    get floodFading() { return fade.active; },
     get endView() { return win.board ? 'board' : 'close'; },
     get stage() { return stage; },
     get elapsed() { return elapsed; },

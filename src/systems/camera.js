@@ -88,6 +88,28 @@ const FREE_DIST_MIN = 18;
 const FREE_DIST_MAX_K = 1.45;
 /** Metres the eye is always kept above whatever ground is under it. */
 const FREE_EYE_CLEAR = 3.5;
+/**
+ * The review camera runs slow on purpose.
+ *
+ *   "When I'm reviewing the board game after it ends, make the camera movement
+ *    go slower."
+ *
+ * `FREE_PAN_GAIN` is metres of ground per pixel of drag as a fraction of the
+ * true 1:1 projection — the ground no longer sticks to the finger exactly, it
+ * trails it, which is what makes a slow drag readable. `FREE_STEP_K` is the
+ * keyboard walk as a fraction of the framing distance, and `FREE_EASE` is how
+ * hard the live pose chases the wanted one (it is what gives zoom and recentre
+ * their glide). Every clamp above is untouched.
+ *
+ *   pan drag       1.00 -> 0.45 of ground metres per pixel
+ *   keyboard pan   dist * 0.65 clamped 16..90 m/s -> dist * 0.28 clamped 7..34
+ *   pose ease      9.0 -> 5.0 per second
+ */
+const FREE_PAN_GAIN = 0.45;
+const FREE_STEP_K = 0.28;
+const FREE_STEP_MIN = 7;
+const FREE_STEP_MAX = 34;
+const FREE_EASE = 5.0;
 
 export function createGameCamera(renderer, scene) {
   const dom = renderer && renderer.domElement ? renderer.domElement : null;
@@ -279,10 +301,10 @@ export function createGameCamera(renderer, scene) {
     return (2 * fLive.dist * Math.tan((FOV * DEG) / 2)) / h;
   }
 
-  /** Drag the ground: the world follows the finger. Pixels in, metres out. */
+  /** Drag the ground: the world trails the finger. Pixels in, metres out. */
   function freeDrag(dxPx, dyPx, hPx) {
     if (!freeOn) return false;
-    const mpp = metresPerPixel(hPx);
+    const mpp = metresPerPixel(hPx) * FREE_PAN_GAIN;
     // A shallow pitch stretches vertical screen travel across a lot of ground;
     // the divisor is capped so a near-horizon drag does not teleport.
     const vert = mpp / Math.max(0.35, Math.sin(fLive.pitch));
@@ -323,7 +345,7 @@ export function createGameCamera(renderer, scene) {
     const r = Number.isFinite(right) ? clamp(right, -1, 1) : 0;
     if (!f && !r) return false;
     const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 1 / 60;
-    const speed = clamp(fLive.dist * 0.65, 16, 90);
+    const speed = clamp(fLive.dist * FREE_STEP_K, FREE_STEP_MIN, FREE_STEP_MAX);
     const fx = -Math.sin(fLive.yaw), fz = -Math.cos(fLive.yaw);
     const rx = -fz, rz = fx;
     fWant.x = fLive.x + (fx * f + rx * r) * speed * step;
@@ -457,7 +479,7 @@ export function createGameCamera(renderer, scene) {
     const freeRate = step / FREE_SEC;
     freeT = freeTarget > freeT ? Math.min(1, freeT + freeRate) : Math.max(0, freeT - freeRate);
     if (freeT > 0) {
-      const kk = 1 - Math.exp(-9 * step);
+      const kk = 1 - Math.exp(-FREE_EASE * step);
       fLive.x += (fWant.x - fLive.x) * kk;
       fLive.z += (fWant.z - fLive.z) * kk;
       fLive.yaw += (fWant.yaw - fLive.yaw) * kk;
@@ -538,6 +560,15 @@ export function createGameCamera(renderer, scene) {
         range: +FREE_RANGE.toFixed(2),
         pitchRange: [+FREE_PITCH_MIN.toFixed(3), +FREE_PITCH_MAX.toFixed(3)],
         distRange: [FREE_DIST_MIN, +dmax.toFixed(2)]
+      };
+    },
+
+    /** The review camera's own rates, so a trace can report them verbatim. */
+    get freeRates() {
+      return {
+        panGain: FREE_PAN_GAIN, stepK: FREE_STEP_K,
+        stepClamp: [FREE_STEP_MIN, FREE_STEP_MAX], ease: FREE_EASE,
+        blendSec: FREE_SEC
       };
     },
 

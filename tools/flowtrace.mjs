@@ -1,7 +1,7 @@
 /**
  * Match-flow trace rig.
  *
- *   node tools/flowtrace.mjs --t=countdown|road|knight|flood [--shot=1] [--w] [--h]
+ *   node tools/flowtrace.mjs --t=countdown|road|knight|flood|camera [--shot=1]
  *
  * Data first, pixels second. Each trace drives the REAL game in headless Chrome
  * through the same entry points a thumb would hit — the overview's Confirm
@@ -14,10 +14,15 @@
  *              road of the draft to GO — nobody may move by so much as 1e-6
  *   road       Road Building: two roads land, nothing is paid; and with no
  *              legal edge anywhere the card is NOT spent and no panel opens
- *   knight     the Knight opens the FULL board in Raider mode and the Raider
- *              lands on the region that was chosen
+ *   knight     the Knight RAISES the full board itself in Raider mode, the
+ *              simulation is held still for as long as it is up, and the Raider
+ *              lands on the region that was chosen. A rival's Knight must never
+ *              open the human's map.
  *   flood      floodProgress() sampled across the win sequence, with the
- *              celebration required to start only once it reads 1
+ *              celebration required to start only once it reads 1 — and then
+ *              draining back to 0 once the scoreboard has been dismissed
+ *   camera     the post-match review camera: one fixed gesture on every axis,
+ *              pointer and keyboard, with the travel it produces printed
  */
 
 import { spawn } from 'node:child_process';
@@ -152,6 +157,27 @@ window.__draftUI = function(maxSec){
   return {phase:st.phase,picks,steps:i};
 };
 window.__pos = () => I().state.players.map(p=>[+p.x.toFixed(6),+p.z.toFixed(6)]);
+/**
+ * main.js's fixed-step loop, verbatim — including THE BOARD MAP PAUSES THE
+ * MATCH: while the overview is open the world, the settler, the gathering and
+ * the bots are all skipped and only the flow (and the HUD, which is outside the
+ * fixed step) is stepped. A headless page gets almost no rAF, so every trace
+ * that needs game time to pass drives it through here.
+ */
+window.__frame = function(n){
+  const st=I().state, g=I().game, R=window.__R__;
+  let paused=0;
+  for(let i=0;i<n;i++){
+    const mapPaused = !!(g.overview && g.overview.isOpen);
+    g.flow.update(S);
+    if(mapPaused){ paused++; }
+    else { R.tickWorld(st,S); g.controller.update(S); g.gathering.update(S); g.bots.update(S); }
+    g.hud.update(S);
+    if(I().world.props && I().world.props.update) I().world.props.update(S);
+    g.overview.update(S); g.panels.update(S);
+  }
+  return paused;
+};
 window.__grant = (pid,bag)=>{const p=I().state.players[pid];for(const k in bag)p.res[k]=bag[k];return {...p.res};};
 window.__confirm = ()=>{const b=document.querySelector('.ov-bar .btn.green');
   if(b&&!b.disabled){b.click();return 'button';}
@@ -380,9 +406,13 @@ if (TRACE === 'road') {
 
 if (TRACE === 'knight') {
   say('draft', await ev('__draftUI(45)'));
-  await ev(`(()=>{const S=1/60,I=()=>window.__ISLAND__;
-    for(let i=0;i<60*4;i++) I().game.flow.update(S); return 1;})()`);
+  await ev('__frame(60*4)');
 
+  /* --- 1. the card lands, and NOBODY touches anything ---------------------
+     The player's report was that the board never came up. It now raises
+     itself, so this half of the trace makes no gesture at all: the card goes
+     into the hand and the frame loop runs, exactly as it would while the
+     player is running around. */
   const drew = await ev(`(()=>{
     const I=()=>window.__ISLAND__, st=I().state, g=I().game, p=st.players[0];
     p.cards.push({type:'knight',id:'trace'});
@@ -390,16 +420,32 @@ if (TRACE === 'knight') {
     const cue=document.querySelector('.kn-cue');
     return { chip: !!cue && !cue.classList.contains('hid'), cls: cue?cue.className:'',
       chipText: cue ? cue.textContent.replace(/\\s+/g,' ').trim() : '',
+      autoPending: g.knightCue.autoPending, autoIn: +g.knightCue.autoIn.toFixed(2),
+      ovOpen: g.overview.isOpen,
       banner: (document.querySelector('.ann-txt')||{}).textContent };})()`);
   say('on drawing a Knight', drew);
   check('the draw is announced in the centre banner', /knight/i.test(drew.banner || ''),
     `"${drew.banner}"`);
   check('a standing call-to-action appears', drew.chip === true, `"${drew.chipText}"`);
+  check('and the board is already on its way up, unasked',
+    drew.autoPending === true && drew.ovOpen === false,
+    `raising in ${drew.autoIn}s`);
   if (SHOT && arg('at', 'board') === 'cue') { await sleep(250); await shot('fl-knight-cue'); done(); }
+
+  // Run the loop with nothing touched. The board must come up by itself.
+  const rise = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, g=I().game, st=I().state;
+    const t0=st.time; let atStep=-1;
+    for(let i=0;i<60*4;i++){ __frame(1); if(atStep<0 && g.overview.isOpen) atStep=i+1; }
+    return { atStep, seconds:+(atStep/60).toFixed(2), open:g.overview.isOpen,
+      mode:g.overview.mode, clockToRaise:+(st.time-t0).toFixed(2) };})()`);
+  say('raised itself after', `${rise.seconds}s of play (step ${rise.atStep})`);
+  check('the Knight opens the FULL board with no tap at all',
+    rise.open === true && rise.mode === 'place-robber' && rise.atStep > 0,
+    `mode=${rise.mode} after ${rise.seconds}s`);
 
   const open = await ev(`(()=>{
     const I=()=>window.__ISLAND__, g=I().game, L=window.__L__, st=I().state;
-    g.knightCue.play();
     const ov=g.overview;
     // The chosen region: a productive hex the Raider is not already on.
     const want=L.tiles.filter(t=>t.id!==st.robberTile&&t.resource).slice(-1)[0].id;
@@ -409,15 +455,39 @@ if (TRACE === 'knight') {
       title:(document.querySelector('.ov-title')||{}).textContent,
       hint:(document.querySelector('.ov-hint')||{}).textContent,
       barVisible: !!bar && !bar.classList.contains('hid'),
+      targets: (()=>{ let n=0; for(const t of L.tiles) if(t.id!==st.robberTile) n++; return n; })(),
       overviewCam: !!(g.camera && g.camera.isOverview),
+      autoRaised: g.knightCue.autoRaised,
       want, robberWas:st.robberTile };})()`);
   say('board opened', open);
   if (SHOT) { await sleep(250); await shot('fl-knight-board'); done(); }
   check('the FULL board opens in Raider mode',
     open.open === true && open.mode === 'place-robber' && open.overviewCam === true,
-    `mode=${open.mode} overviewCamera=${open.overviewCam}`);
+    `mode=${open.mode} overviewCamera=${open.overviewCam} legalRegions=${open.targets}`);
   check('the instruction is plain', /choose a region to block/i.test(open.hint || ''),
     `"${open.title}" / "${open.hint}"`);
+
+  /* --- 2. and the match STOPS while they think --------------------------- */
+  const held = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, st=I().state, g=I().game;
+    const t0=st.time, a=__pos();
+    const bots0=st.players.slice(1).map(p=>p.res.wood+p.res.brick+p.res.ore+p.res.wheat+p.res.wool);
+    const paused=__frame(60*3);
+    const b=__pos(); let move=0;
+    for(let k=0;k<a.length;k++) move=Math.max(move,Math.hypot(b[k][0]-a[k][0],b[k][1]-a[k][1]));
+    return { steps:180, pausedSteps:paused, clock:+(st.time-t0).toFixed(6),
+      maxMove:+move.toFixed(8), stillOpen:g.overview.isOpen,
+      botGain: st.players.slice(1)
+        .map((p,i)=>(p.res.wood+p.res.brick+p.res.ore+p.res.wheat+p.res.wool)-bots0[i]) };})()`);
+  say('three seconds with the board up', held);
+  check('the match is PAUSED while the board is up — the clock does not move',
+    held.clock === 0, `state.time advanced ${held.clock}s over ${held.steps} steps`);
+  check('nothing on the island moves — player or bot', held.maxMove === 0,
+    `largest displacement ${held.maxMove}`);
+  check('every fixed step was gated', held.pausedSteps === held.steps,
+    `${held.pausedSteps}/${held.steps}`);
+  check('and no rival gathered a thing while the player was thinking',
+    held.botGain.every(v => v === 0), JSON.stringify(held.botGain));
 
   const landed = await ev(`(()=>{
     const I=()=>window.__ISLAND__, st=I().state, g=I().game;
@@ -448,19 +518,47 @@ if (TRACE === 'knight') {
   await sleep(600);
   // The hold is measured in game time, and SwiftShader feeds this loop about a
   // tenth of the frames a phone does — so step it the way main.js does.
-  const back = await ev(`(()=>{const g=window.__ISLAND__.game; let held=0;
-    for(let i=0;i<180&&g.overview.isOpen;i++){ g.hud.update(1/60); held=i+1; }
+  const back = await ev(`(()=>{const I=()=>window.__ISLAND__, g=I().game, st=I().state;
+    let held=0; const t0=st.time;
+    for(let i=0;i<180&&g.overview.isOpen;i++){ __frame(1); held=i+1; }
+    const a=__pos(); __frame(60); const b=__pos(); let move=0;
+    for(let k=0;k<a.length;k++) move=Math.max(move,Math.hypot(b[k][0]-a[k][0],b[k][1]-a[k][1]));
     const c=document.querySelector('.kn-cue');
     return { heldSeconds:+(held/60).toFixed(2), open:g.overview.isOpen,
-      overviewCam: !!g.camera.isOverview,
+      overviewCam: !!g.camera.isOverview, clockAfter:+(st.time-t0).toFixed(2),
+      movedAfter:+move.toFixed(3),
       cls: c?c.className:'(gone)', knightsHeld:g.knightCue.pending,
+      autoPending: g.knightCue.autoPending,
       chip: !!document.querySelector('.kn-cue.on') };})()`);
   say('back in play', back);
   check('and then it hands the board back',
     back.open === false && back.overviewCam === false,
     `board held ~${back.heldSeconds}s after Confirm, then closed`);
+  check('play resumes — the clock runs and the island moves again',
+    back.clockAfter > 0.9 && back.movedAfter > 0,
+    `clock +${back.clockAfter}s, largest move ${back.movedAfter}`);
   check('the call-to-action clears once the Knight is spent',
-    back.chip === false && back.knightsHeld === 0, `class="${back.cls}"`);
+    back.chip === false && back.knightsHeld === 0 && back.autoPending === false,
+    `class="${back.cls}"`);
+
+  /* --- 3. a RIVAL's Knight must never take the human's screen ------------ */
+  const bot = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, st=I().state, g=I().game, R=window.__R__, L=window.__L__;
+    g.closeOverview(); __frame(30);
+    const rival=st.players[1];
+    rival.cards.push({type:'knight',id:'trace-bot'});
+    const target=L.tiles.filter(t=>t.id!==st.robberTile)[0].id;
+    const ok=R.playKnight(st,1,target);
+    let openedOnUs=0;
+    for(let i=0;i<60*3;i++){ __frame(1); if(g.overview.isOpen) openedOnUs++; }
+    return { played:ok, robber:st.robberTile, target, owner:st.robberOwner,
+      openedOnUs, humanKnights:g.knightCue.pending,
+      autoPending:g.knightCue.autoPending, ovOpen:g.overview.isOpen };})()`);
+  say('a rival plays a Knight', bot);
+  check('a bot Knight moves the Raider without opening the human\'s map',
+    bot.played === true && bot.robber === bot.target && bot.owner === 1
+    && bot.openedOnUs === 0 && bot.autoPending === false,
+    `map open on ${bot.openedOnUs} of 180 frames`);
 }
 
 /* ========================================================= 4. victory flood */
@@ -482,6 +580,26 @@ if (TRACE === 'flood') {
     return { phase:st.phase, winner:st.winner, vp:R.scoreOf(st,p),
       s:p.settlements.size, c:p.cities.size, vpCards:p.vpCards };})()`);
   say('forced finish', setup);
+
+  if (SHOT && arg('at', 'mid') === 'cleared') {
+    // Run the whole thing out, put the scoreboard away, and photograph the
+    // island the player is left reviewing: every hex its own terrain again.
+    const st = await ev(`(()=>{
+      const S=1/60, I=()=>window.__ISLAND__, R=window.__R__;
+      const s=I().state, g=I().game, props=I().world.props;
+      for(let i=0;i<60*9;i++){ R.tickWorld(s,S); g.flow.update(S); props.update(S); }
+      const btn=[...document.querySelectorAll('.results .rs-foot .btn')]
+        .find(b=>/see the board/i.test(b.textContent||''));
+      if(btn) btn.click(); else g.panels.hideResults();
+      for(let i=0;i<60*4;i++){ g.flow.update(S); props.update(S); g.camera.update(S,s,false); }
+      return { flood:+props.floodProgress().toFixed(3), active:props.victoryFloodActive(),
+        bar: !!document.querySelector('.endbar:not(.hid)') };})()`);
+    say('review state', st);
+    await holdFlow(true);
+    await sleep(400);
+    await shot('fl-flood-cleared');
+    done();
+  }
 
   if (SHOT) {
     // Pin the wave mid-flight with mood.js's manual driver, hold the flow, and
@@ -536,9 +654,248 @@ if (TRACE === 'flood') {
     out.revealAt > out.celebAt, `results ${out.revealAt}s vs celebration ${out.celebAt}s`);
   check('no per-tile flicker is left behind — one wave, not nineteen events',
     out.active === true);
+
+  /* --- and it comes back off once the score has been seen ---------------- */
+  const clear = await ev(`(()=>{
+    const S=1/60, I=()=>window.__ISLAND__, R=window.__R__;
+    const st=I().state, g=I().game, props=I().world.props;
+    const before=+props.floodProgress().toFixed(3);
+    // The tap a thumb makes on the scoreboard: SEE THE BOARD.
+    const btn=[...document.querySelectorAll('.results .rs-foot .btn')]
+      .find(b=>/see the board/i.test(b.textContent||''));
+    const how = btn ? 'button' : 'api';
+    if(btn) btn.click(); else g.panels.hideResults();
+    const samples=[]; let zeroAt=-1;
+    for(let i=0;i<60*4;i++){
+      R.tickWorld(st,S); g.flow.update(S); props.update(S);
+      const p=+props.floodProgress().toFixed(3);
+      if(i%12===0) samples.push([+(i/60).toFixed(2), p]);
+      if(zeroAt<0 && p<=0.001) zeroAt=+(i/60).toFixed(2);
+    }
+    return { how, before, samples, zeroAt,
+      after:+props.floodProgress().toFixed(3),
+      active: props.victoryFloodActive(),
+      cleared: g.flow.floodCleared, fading: g.flow.floodFading,
+      reviewBar: !!document.querySelector('.endbar:not(.hid)'),
+      panel: g.panels.kind };})()`);
+  console.log('  t(s)  flood  (after the scoreboard was dismissed)');
+  for (const s of clear.samples) console.log(`  ${String(s[0]).padStart(5)}  ${String(s[1]).padStart(5)}`);
+  say('dismissed via', clear.how);
+  say('flood', `${clear.before} -> ${clear.after}, reached zero at ${clear.zeroAt}s`);
+  check('the review bar comes up when the score is put away',
+    clear.reviewBar === true && clear.panel === null);
+  check('the winner\'s colour drains off rather than snapping',
+    clear.samples.filter(s => s[1] > 0.02 && s[1] < 0.98).length >= 3,
+    `${clear.samples.filter(s => s[1] > 0.02 && s[1] < 0.98).length} sampled frames mid-fade`);
+  check('every hex is its own terrain again once the score has been seen',
+    clear.after <= 0.001 && clear.active === false && clear.cleared === true,
+    `floodProgress=${clear.after} active=${clear.active}`);
+
+  // And it stays cleared: bringing the score back and putting it away again
+  // must not repaint the island.
+  const again = await ev(`(()=>{
+    const S=1/60, I=()=>window.__ISLAND__, g=I().game, props=I().world.props;
+    g.panels.showResults(g.flow.winner);
+    for(let i=0;i<30;i++) g.flow.update(S);
+    g.panels.hideResults();
+    for(let i=0;i<120;i++){ g.flow.update(S); props.update(S); }
+    return { p:+props.floodProgress().toFixed(3), active:props.victoryFloodActive() };})()`);
+  say('after a second look at the score', again);
+  check('and it stays cleared', again.p <= 0.001 && again.active === false);
 }
 
-/* ============================================== 5. results panel (probe) */
+/* ================================================ 5. the review camera */
+
+if (TRACE === 'camera') {
+  /* The rates this pass replaced, so the trace prints the comparison rather
+     than the reader having to hold two files in their head. */
+  const WAS = {
+    yawPerPx: 0.0060, pitchPerPx: 0.0042, yawStep: 0.30, pitchStep: 0.13,
+    zoomStep: 1.18, keyYaw: 1.60, keyPitch: 0.80,
+    wheelGain: 0.0016, wheelCap: 1.2, pinchPower: 1, pinchTwist: 1,
+    panGain: 1.0, stepK: 0.65, stepClamp: [16, 90], ease: 9.0
+  };
+
+  say('draft', await ev('__draftUI(45)'));
+  await ev('__frame(60*5)');
+  await ev(`(()=>{
+    const I=()=>window.__ISLAND__, R=window.__R__, st=I().state, p=st.players[0];
+    for(let k=0;k<16;k++){const L=R.legalRoads(st,0);if(!L.length)break;R.placeRoad(st,0,L[0],true);}
+    for(let k=0;k<5;k++){const L=R.legalSettlements(st,0);if(!L.length)break;R.placeSettlement(st,0,L[0],true);}
+    [...p.settlements].slice(0,5).forEach(i=>R.upgradeCity(st,0,i,true));
+    while(R.scoreOf(st,p) < 13 && p.vpCards < 14) p.vpCards++;
+    R.checkVictory(st); return st.phase;})()`);
+  // Run the whole win sequence out, then put the scoreboard away — which is
+  // the only thing that ever hands the camera to the player.
+  const armed = await ev(`(()=>{
+    const S=1/60, I=()=>window.__ISLAND__, R=window.__R__, g=I().game, st=I().state;
+    for(let i=0;i<60*9;i++){ R.tickWorld(st,S); g.flow.update(S); I().world.props.update(S); }
+    const btn=[...document.querySelectorAll('.results .rs-foot .btn')]
+      .find(b=>/see the board/i.test(b.textContent||''));
+    if(btn) btn.click(); else g.panels.hideResults();
+    for(let i=0;i<20;i++){ g.flow.update(S); g.camera.update(S, st, false); }
+    return { freecam: !!g.freecam && g.freecam.armed, mode: g.freecam && g.freecam.mode,
+      free: g.camera.freeLook, pad: !!document.querySelector('.fcam:not(.hid)'),
+      info: g.camera.freeInfo };})()`);
+  say('after the scoreboard', armed);
+  check('the camera is handed to the player once the score is put away',
+    armed.freecam === true && armed.free === true && armed.pad === true);
+
+  const rates = await ev(`({ ...window.__ISLAND__.game.freecam.rates,
+    ...window.__ISLAND__.game.camera.freeRates })`);
+
+  if (SHOT) {
+    // What one unhurried gesture buys: a slow orbit and a notch of zoom in,
+    // then hold and photograph what the player is left looking at.
+    await ev(`(()=>{const I=()=>window.__ISLAND__, c=I().game.camera, r=I().game.freecam.rates;
+      // Let the flood drain first — the review state is the cleared island.
+      for(let i=0;i<180;i++){ I().game.flow.update(1/60); I().world.props.update(1/60);
+        c.update(1/60, I().state, false); }
+      for(let i=0;i<40;i++) c.freeTurn(-r.yawPerPx*6, -r.pitchPerPx*3);
+      c.freeZoom(1/r.zoomStep);
+      for(let i=0;i<90;i++){ I().game.flow.update(1/60); c.update(1/60, I().state, false); }
+      return { cam:c.freeInfo, flood:I().world.props.floodProgress() };})()`);
+    await holdFlow(true);
+    await sleep(400);
+    await shot('fl-review-camera');
+    done();
+  }
+
+  /* One fixed gesture per axis, measured through the REAL driver. */
+  const V = await ev('({w:innerWidth,h:innerHeight})');
+  const px = (x, y) => ({ x: Math.round(V.w * x), y: Math.round(V.h * y) });
+  const A = px(0.32, 0.34), B = px(0.62, 0.34);      // a 30%-of-width drag right
+
+  const snap = () => ev('window.__ISLAND__.game.camera.freeInfo');
+  const step = n => ev(`(()=>{const I=()=>window.__ISLAND__;
+    for(let i=0;i<${n};i++) I().game.camera.update(1/60, I().state, false); return 1;})()`);
+
+  async function drag(shift) {
+    const mods = shift ? 8 : 0;
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: A.x, y: A.y, button: 'left', clickCount: 1, buttons: 1, modifiers: mods });
+    for (let i = 1; i <= 6; i++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', buttons: 1, modifiers: mods,
+        x: Math.round(A.x + (B.x - A.x) * i / 6), y: A.y
+      });
+    }
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: B.x, y: A.y, button: 'left', clickCount: 1, buttons: 0, modifiers: mods });
+  }
+
+  const measured = {};
+  const dx = B.x - A.x;
+
+  let a = await snap();
+  await drag(false);
+  await step(6);
+  let b = await snap();
+  measured.panPerDrag = +Math.hypot(b.x - a.x, b.z - a.z).toFixed(3);
+
+  a = await snap();
+  await drag(true);
+  await step(6);
+  b = await snap();
+  measured.yawPerDrag = +Math.abs(b.yaw - a.yaw).toFixed(4);
+
+  // Wheel: one full notch of a desktop mouse.
+  a = await snap();
+  await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: A.x, y: A.y, deltaX: 0, deltaY: 120 });
+  await step(40);
+  b = await snap();
+  measured.zoomPerNotch = +(b.dist / a.dist).toFixed(4);
+
+  // The on-screen pad: one press of TURN RIGHT and one of ZOOM IN.
+  const padPress = async label => {
+    const p = await ev(`(()=>{const b=[...document.querySelectorAll('.fcam b.fcam-k')]
+      .find(b=>b.getAttribute('aria-label')==='${label}'); if(!b) return null;
+      const r=b.getBoundingClientRect(); return {x:(r.left+r.width/2)|0,y:(r.top+r.height/2)|0};})()`);
+    if (!p) return false;
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', clickCount: 1, buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', clickCount: 1, buttons: 0 });
+    return true;
+  };
+  a = await snap();
+  await padPress('Turn right');
+  await step(6);
+  b = await snap();
+  measured.yawPerPadPress = +Math.abs(b.yaw - a.yaw).toFixed(4);
+
+  /* The keyboard. freecam's own key loop runs on requestAnimationFrame, which a
+     headless page barely gets, so a held key is played back exactly the way that
+     loop plays it: one second of fixed steps at the tuned rate. */
+  const kb = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, c=I().game.camera, r=I().game.freecam.rates;
+    const a=c.freeInfo;
+    for(let i=0;i<60;i++) c.freeStep(0,1,1/60);          // one second of D held
+    const b=c.freeInfo;
+    for(let i=0;i<60;i++) c.freeTurn(r.keyYaw/60,0);     // one second of E held
+    const d=c.freeInfo;
+    return { panPerSec:+Math.hypot(b.x-a.x,b.z-a.z).toFixed(2),
+      yawPerSec:+Math.abs(d.yaw-b.yaw).toFixed(3) };})()`);
+  Object.assign(measured, kb);
+
+  console.log('  axis                     before          after');
+  const row = (lab, was, now) =>
+    console.log(`  ${lab.padEnd(24)} ${String(was).padEnd(15)} ${now}`);
+  row('orbit drag, yaw', WAS.yawPerPx + ' rad/px', rates.yawPerPx + ' rad/px');
+  row('orbit drag, pitch', WAS.pitchPerPx + ' rad/px', rates.pitchPerPx + ' rad/px');
+  row('pan drag', WAS.panGain + 'x ground', rates.panGain + 'x ground');
+  row('pad turn press', WAS.yawStep + ' rad', rates.yawStep + ' rad');
+  row('pad tilt press', WAS.pitchStep + ' rad', rates.pitchStep + ' rad');
+  row('zoom press', 'x' + WAS.zoomStep, 'x' + rates.zoomStep);
+  row('wheel gain / cap', WAS.wheelGain + ' / ' + WAS.wheelCap, rates.wheelGain + ' / ' + rates.wheelCap);
+  row('pinch power / twist', WAS.pinchPower + ' / ' + WAS.pinchTwist, rates.pinchPower + ' / ' + rates.pinchTwist);
+  row('Q E held', WAS.keyYaw + ' rad/s', rates.keyYaw + ' rad/s');
+  row('R F held', WAS.keyPitch + ' rad/s', rates.keyPitch + ' rad/s');
+  row('WASD held', WAS.stepK + ' x dist ' + JSON.stringify(WAS.stepClamp),
+    rates.stepK + ' x dist ' + JSON.stringify(rates.stepClamp));
+  row('pose ease', WAS.ease + '/s', rates.ease + '/s');
+  say('measured through the real driver', measured);
+  say('gesture', `${dx}px drag, one 120-unit wheel notch, one pad press, 1s of key`);
+
+  const slower = k => rates[k] < WAS[k];
+  check('every pointer axis is slower than it was',
+    slower('yawPerPx') && slower('pitchPerPx') && slower('zoomStep')
+    && slower('wheelGain') && slower('wheelCap') && slower('panGain'),
+    `yaw ${(WAS.yawPerPx / rates.yawPerPx).toFixed(2)}x, pan ${(WAS.panGain / rates.panGain).toFixed(2)}x slower`);
+  check('every keyboard axis is slower than it was',
+    slower('keyYaw') && slower('keyPitch') && slower('stepK'),
+    `Q/E ${(WAS.keyYaw / rates.keyYaw).toFixed(2)}x, WASD ${(WAS.stepK / rates.stepK).toFixed(2)}x slower`);
+  check('and every gesture still MOVES the camera',
+    measured.panPerDrag > 0.5 && measured.yawPerDrag > 0.01
+    && measured.zoomPerNotch !== 1 && measured.yawPerPadPress > 0.01
+    && measured.panPerSec > 1 && measured.yawPerSec > 0.1,
+    JSON.stringify(measured));
+
+  /* The clamps are untouched: push far past every edge and stop at it. */
+  const clamped = await ev(`(()=>{
+    const I=()=>window.__ISLAND__, c=I().game.camera;
+    for(let i=0;i<400;i++) c.freeStep(1,1,1/60);
+    const far=c.freeInfo;
+    for(let i=0;i<200;i++) c.freeTurn(0,0.2);
+    const hi=c.freeInfo;
+    for(let i=0;i<200;i++) c.freeTurn(0,-0.2);
+    const lo=c.freeInfo;
+    for(let i=0;i<80;i++){ c.freeZoom(1.3); c.update(1/60,I().state,false); }
+    const out=c.freeInfo;
+    for(let i=0;i<120;i++){ c.freeZoom(0.7); c.update(1/60,I().state,false); }
+    const inn=c.freeInfo;
+    return { range:far.r, rangeMax:far.range, farLimit:far.limit,
+      pitchHi:hi.pitch, pitchLo:lo.pitch, pitchRange:hi.pitchRange,
+      distOut:out.dist, distIn:inn.dist, distRange:out.distRange,
+      limits:[far.limit,hi.limit,lo.limit,out.limit,inn.limit] };})()`);
+  say('pushed past every edge', clamped);
+  check('the clamps still hold — range, pitch and distance',
+    clamped.range <= clamped.rangeMax + 0.01
+    && clamped.pitchHi <= clamped.pitchRange[1] + 1e-6
+    && clamped.pitchLo >= clamped.pitchRange[0] - 1e-6
+    && clamped.distOut <= clamped.distRange[1] + 0.02
+    && clamped.distIn >= clamped.distRange[0] - 0.02,
+    JSON.stringify(clamped.limits));
+
+}
+
+/* ============================================== 6. results panel (probe) */
 
 if (TRACE === 'results') {
   say('draft', await ev('__draftUI(45)'));

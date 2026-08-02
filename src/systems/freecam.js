@@ -38,12 +38,47 @@
 
 const STYLE_ID = 'freecam-style';
 
+/* ---------------------------------------------------------------- the rates
+ *
+ *   "When I'm reviewing the board game after it ends, make the camera movement
+ *    go slower."
+ *
+ * Everything below used to be tuned for a fast look-around and it flew. A
+ * review camera is not a flight camera: the player is reading a finished board,
+ * so every axis is now roughly HALF the rate it was, on pointer and on keyboard
+ * alike. The clamps in camera.js are untouched — the same range is reachable,
+ * it simply takes a gesture and a half to cross it instead of a flick.
+ *
+ *   axis                     before        after
+ *   orbit drag, yaw          0.0060 rad/px 0.0026 rad/px   (0.34 -> 0.15 deg/px)
+ *   orbit drag, pitch        0.0042 rad/px 0.0018 rad/px   (0.24 -> 0.10 deg/px)
+ *   pan drag                 1.00x ground  0.45x ground    (see camera.js)
+ *   pad turn, one press      0.30 rad      0.13 rad        (17.2 -> 7.4 deg)
+ *   pad tilt, one press      0.13 rad      0.055 rad       (7.4 -> 3.2 deg)
+ *   zoom, one press          x1.18         x1.07
+ *   wheel                    0.0016/unit   0.00060/unit, capped e^0.5 not e^1.2
+ *   pinch zoom               raw ratio     ratio^0.45
+ *   pinch twist              1.00x         0.45x
+ *   Q / E hold               1.60 rad/s    0.65 rad/s
+ *   R / F hold               0.80 rad/s    0.34 rad/s
+ *   W A S D hold             see camera.js freeStep (0.65 -> 0.28 of distance)
+ */
+
 /* Radians per pixel for an orbit drag, and per press of a pad button. */
-const YAW_PER_PX = 0.0060;
-const PITCH_PER_PX = 0.0042;
-const YAW_STEP = 0.30;
-const PITCH_STEP = 0.13;
-const ZOOM_STEP = 1.18;
+const YAW_PER_PX = 0.0026;
+const PITCH_PER_PX = 0.0018;
+const YAW_STEP = 0.13;
+const PITCH_STEP = 0.055;
+const ZOOM_STEP = 1.07;
+/** Radians per second while a turn / tilt key is held. */
+const KEY_YAW_RATE = 0.65;
+const KEY_PITCH_RATE = 0.34;
+/** Wheel: radians-free, a multiplier per notch. Gain, then the hard cap. */
+const WHEEL_GAIN = 0.00060;
+const WHEEL_CAP = 0.5;
+/** Pinch: the raw finger ratio raised to this power, and the twist scaled. */
+const PINCH_POWER = 0.45;
+const PINCH_TWIST = 0.45;
 /** Below this much travel a pointer is a tap, not a drag. */
 const DRAG_SLOP = 3;
 
@@ -265,14 +300,17 @@ export function createFreeCam(game, opts = {}) {
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
       if (pinchDist > 8 && d > 8) {
-        // Fingers apart -> pull the camera in.
-        if (c.freeZoom) c.freeZoom(pinchDist / d);
+        // Fingers apart -> pull the camera in. The raw ratio is flattened
+        // toward 1 so a pinch reads as easing in rather than as a jump cut.
+        if (c.freeZoom) c.freeZoom(Math.pow(pinchDist / d, PINCH_POWER));
         stats.zooms++;
       }
       let dAng = ang - pinchAng;
       while (dAng > Math.PI) dAng -= Math.PI * 2;
       while (dAng < -Math.PI) dAng += Math.PI * 2;
-      if (Math.abs(dAng) > 0.008 && c.freeTurn) { c.freeTurn(-dAng, 0); stats.turns++; }
+      if (Math.abs(dAng) > 0.008 && c.freeTurn) {
+        c.freeTurn(-dAng * PINCH_TWIST, 0); stats.turns++;
+      }
       pinchDist = d; pinchAng = ang;
       markTouched();
       if (ev.cancelable) ev.preventDefault();
@@ -305,7 +343,7 @@ export function createFreeCam(game, opts = {}) {
     const d = Number.isFinite(ev.deltaY) ? ev.deltaY : 0;
     if (!d) return;
     markTouched();
-    c.freeZoom(Math.exp(Math.max(-1.2, Math.min(1.2, d * 0.0016))));
+    c.freeZoom(Math.exp(Math.max(-WHEEL_CAP, Math.min(WHEEL_CAP, d * WHEEL_GAIN))));
     stats.zooms++;
     if (ev.cancelable) ev.preventDefault();
   }
@@ -366,10 +404,10 @@ export function createFreeCam(game, opts = {}) {
       const m = Math.hypot(fwd, right) || 1;
       c.freeStep(fwd / m, right / m, dt);
     }
-    if (keys.has('KeyQ')) turn(-1.6 * dt, 0);
-    if (keys.has('KeyE')) turn(1.6 * dt, 0);
-    if (keys.has('KeyR')) turn(0, -0.8 * dt);
-    if (keys.has('KeyF')) turn(0, 0.8 * dt);
+    if (keys.has('KeyQ')) turn(-KEY_YAW_RATE * dt, 0);
+    if (keys.has('KeyE')) turn(KEY_YAW_RATE * dt, 0);
+    if (keys.has('KeyR')) turn(0, -KEY_PITCH_RATE * dt);
+    if (keys.has('KeyF')) turn(0, KEY_PITCH_RATE * dt);
   }
 
   /* --------------------------------------------------------------- wiring */
@@ -436,6 +474,16 @@ export function createFreeCam(game, opts = {}) {
     get debug() {
       const c = cam();
       return { armed, mode, ...stats, cam: c && c.freeInfo ? c.freeInfo : null };
+    },
+    /** The tuned rates, so a trace can report them rather than re-derive them. */
+    get rates() {
+      return {
+        yawPerPx: YAW_PER_PX, pitchPerPx: PITCH_PER_PX,
+        yawStep: YAW_STEP, pitchStep: PITCH_STEP, zoomStep: ZOOM_STEP,
+        keyYaw: KEY_YAW_RATE, keyPitch: KEY_PITCH_RATE,
+        wheelGain: WHEEL_GAIN, wheelCap: WHEEL_CAP,
+        pinchPower: PINCH_POWER, pinchTwist: PINCH_TWIST
+      };
     },
     destroy() {
       disarm();

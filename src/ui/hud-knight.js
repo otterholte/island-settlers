@@ -28,6 +28,35 @@
  *              the Raider land on the hex you picked before it hands the board
  *              back to third-person play.
  *
+ * ---------------------------------------------------------------------------
+ * AND THEN THE BOARD STILL DID NOT COME UP
+ * ---------------------------------------------------------------------------
+ *   "When I got the knight card, I still didn't see the full map view in order
+ *    to let me choose the spot I want to place the robber. Then we keep going —
+ *    it should stop and show me the full map."
+ *
+ * Every route above WORKED — the chip opens the board, so does the card in the
+ * CARDS sheet — but every one of them needed the player to go and find a
+ * control while three rivals and a match clock carried on around them. Nothing
+ * ever brought the board up by itself, so the honest answer to "I never saw the
+ * map" is that nothing ever showed it to them.
+ *
+ * A Knight now RAISES THE BOARD ITSELF. `AUTO_DELAY` after the card lands — long
+ * enough for the "Knight Card!" plate to be read and not one beat longer — the
+ * full map comes up in Raider mode with every legal region lit, and main.js
+ * holds the entire simulation still for as long as it is open (no clock, no
+ * bots, no gathering, no settler). The match genuinely stops and asks.
+ *
+ * It is never a trap: Cancel keeps the Knight in hand, hands the island back and
+ * does not ask again until another Knight is drawn — the chip stays up, so the
+ * board is one tap away whenever they want it. The raise also waits politely for
+ * anything else that owns the screen (a trade sheet, a placement map, the
+ * opening countdown, the end of the match) rather than fighting it.
+ *
+ * A RIVAL'S Knight can never do this: the trigger is the human's own hand
+ * growing a Knight, and `me` is `state.players[0]`. Bots resolve theirs inside
+ * bots.js without ever touching this module.
+ *
  * Nothing here mutates the match directly: the placement is committed by
  * `economy.playKnightAt` (or `rules.playKnight` if economy is absent), which is
  * the same call the overview's own default Confirm makes.
@@ -102,6 +131,20 @@ const CSS = `
 /** How long the board stays up after Confirm so the Raider can be seen landing. */
 const WATCH_MS = 1150;
 
+/**
+ * Seconds between a Knight landing in the hand and the board raising itself.
+ * The centre plate ("Knight Card!") holds for about a second, so this lets it
+ * be read and then changes the screen while the player is still looking at it.
+ */
+const AUTO_DELAY = 1.05;
+
+/**
+ * How long the raise keeps trying if something else owns the screen when it
+ * comes due — a trade sheet, a free-road placement, the start countdown. After
+ * this it gives up quietly and the chip is the route, as before.
+ */
+const AUTO_PATIENCE = 25;
+
 function injectStyle(doc) {
   if (!doc || !doc.head || !doc.createElement) return;
   if (doc.getElementById && doc.getElementById(STYLE_ID)) return;
@@ -116,7 +159,8 @@ const NOOP = () => {};
 function stub() {
   return {
     update: NOOP, play: () => false, destroy: NOOP,
-    get pending() { return 0; }, get open() { return false; }
+    get pending() { return 0; }, get open() { return false; },
+    get autoPending() { return false; }, get autoIn() { return -1; }
   };
 }
 
@@ -148,7 +192,7 @@ export function createKnightCue(root, state, game) {
       el('span', { class: 'kn-ico', html: icon('knight', 24) }),
       el('span', { class: 'kn-txt' },
         el('b', { text: 'Knight Ready' }),
-        el('span', { text: 'Tap · block a region' })),
+        el('span', { text: 'Tap · open the map' })),
       countEl);
     root.appendChild(cue);
   } catch (e) {
@@ -170,18 +214,70 @@ export function createKnightCue(root, state, game) {
 
   let watching = 0;
 
+  /* The self-raising board. `autoWant` is armed the instant a Knight lands in
+     the human's hand and is only ever disarmed by the board actually coming up,
+     by the player cancelling out of it, or by patience running out. */
+  let autoWant = false;
+  let autoT = 0;
+  let autoLeft = 0;
+  let autoFired = false;
+
   function overview() {
     return g.overview && typeof g.overview.open === 'function' ? g.overview : null;
+  }
+
+  /** True while the flow is running ordinary third-person play. */
+  function flowIsPlaying() {
+    const f = g.flow;
+    if (!f) return true;
+    if (f.isWinSequence) return false;
+    if (f.counting) return false;
+    return f.stage === undefined || f.stage === 'play';
+  }
+
+  /**
+   * May the board raise ITSELF right now? Everything here is "is somebody else
+   * using the screen", never "is the Knight legal" — that is `play()`'s job.
+   */
+  function canAutoRaise() {
+    if (!autoWant) return false;
+    if (state.phase !== 'play') return false;
+    if (!hasCard(me, 'knight')) return false;
+    if (!flowIsPlaying()) return false;
+    const ov = overview();
+    if (!ov || ov.isOpen) return false;                 // a map is already up
+    if (g.panels && g.panels.isOpen) return false;      // trade / cards / score
+    // A free road still owed will re-open the placement map from main.js on the
+    // very next frame; two maps fighting is worse than a short wait.
+    if ((me.freeRoads | 0) > 0) return false;
+    const tut = g.tutorial;
+    if (tut && tut.running) return false;
+    return true;
+  }
+
+  function disarmAuto() {
+    autoWant = false;
+    autoT = 0;
+    autoLeft = 0;
   }
 
   /**
    * Open the FULL board map in Raider mode. overview.js computes the legal
    * regions (every hex but the one the Raider already sits on) and pulses each
    * of them; we supply the plain instruction and the commit.
+   *
+   * main.js holds the whole simulation still for as long as the map is open, so
+   * from here until Confirm or Cancel nothing on the island moves.
    */
-  function play() {
-    if (state.phase !== 'play') { say('The match is not running', 'warn'); return false; }
-    if (!hasCard(me, 'knight')) { say('No Knight in hand', 'warn'); return false; }
+  function play(auto) {
+    if (state.phase !== 'play') {
+      if (!auto) say('The match is not running', 'warn');
+      return false;
+    }
+    if (!hasCard(me, 'knight')) {
+      if (!auto) say('No Knight in hand', 'warn');
+      return false;
+    }
 
     // The cards sheet, if it is what launched this, has to get out of the way
     // before the board comes up over it.
@@ -189,21 +285,42 @@ export function createKnightCue(root, state, game) {
 
     const ov = overview();
     if (!ov) {
-      say('The map is unavailable', 'warn');
+      if (!auto) say('The map is unavailable', 'warn');
       return false;
     }
 
     const opened = safe(() => ov.open('place-robber', {
       title: 'Send the Raider',
-      hint: 'Choose a region to block',
+      // The match is genuinely held still while this is up (main.js stops the
+      // clock, the bots, the gathering and the settler), so say so.
+      hint: 'Match paused · choose a region to block',
       pickLabel: 'Choose a region',
       cancellable: true,
       keepOpen: true,          // stay up long enough to watch the Raider land
       onConfirm: tile => land(tile),
-      onCancel() { say('Knight kept in hand', 'info'); }
+      onCancel() {
+        // Cancelling is not a refusal of the card, only of this moment: the
+        // Knight stays in hand, the chip stays up, and the board does not
+        // ask again until another one is drawn.
+        disarmAuto();
+        say('Knight kept in hand — tap KNIGHT READY when you want the map', 'info');
+      }
     }));
-    if (opened === false) { say('No region left to block', 'warn'); return false; }
-    say('Pick the region to shut down', 'info');
+    if (opened === false) {
+      if (!auto) say('No region left to block', 'warn');
+      return false;
+    }
+    // The player did not ask for this one, so say what just happened to their
+    // screen as well as what to do with it.
+    if (auto) {
+      shout('Send the Raider', '#ffc93c');
+      say('The match is paused — choose a region to block', 'info');
+    } else {
+      say('Pick the region to shut down', 'info');
+    }
+    disarmAuto();
+    autoFired = !!auto;
+    safe(() => g.audio && g.audio.sfx && g.audio.sfx('card'));
     return true;
   }
 
@@ -248,10 +365,16 @@ export function createKnightCue(root, state, game) {
     if (n > held) {
       // A Knight just arrived. This is the moment the player said they missed.
       shout('Knight Card!', '#ffc93c');
-      say('Knight — send the Raider onto a rival region', 'good');
+      say('Knight — the map is about to open, pick a region to block', 'good');
       sfx('award');
+      // Arm the self-raising board. `held` is the HUMAN's hand, so a rival
+      // playing a Knight can never reach this line.
+      autoWant = true;
+      autoT = AUTO_DELAY;
+      autoLeft = AUTO_PATIENCE;
     }
     held = n;
+    if (!n) disarmAuto();
 
     const want = n > 0 && playable;
     if (want !== shown || force) {
@@ -279,16 +402,36 @@ export function createKnightCue(root, state, game) {
     }
     pollT += d;
     if (pollT < 0.15) return;
+    // Poll the hand first: the arm below is set by refresh().
+    const step = pollT;
     pollT = 0;
     refresh(false);
+
+    // The self-raising board. Counted in the same clock the rest of the HUD
+    // runs on, so a paused match — where hud.update is still called — cannot
+    // strand a raise that is waiting on something to close.
+    if (!autoWant) return;
+    if (autoT > 0) { autoT -= step; return; }
+    autoLeft -= step;
+    if (autoLeft <= 0) { disarmAuto(); return; }
+    if (canAutoRaise()) play(true);
   }
 
   refresh(true);
+  // A Knight already in hand at construction (a restored match) is the player's
+  // business, not a surprise: no auto-raise, just the chip.
+  disarmAuto();
 
   return {
     update, play,
     get pending() { return held; },
     get open() { return watching > 0; },
+    /** True while a drawn Knight is still waiting to raise the board itself. */
+    get autoPending() { return autoWant; },
+    /** Seconds until the raise, -1 when none is armed. Capture-rig hook. */
+    get autoIn() { return autoWant ? Math.max(0, autoT) : -1; },
+    /** True when the board on screen was raised by the card, not by a tap. */
+    get autoRaised() { return autoFired; },
     destroy() {
       if (cue && cue.parentNode) cue.parentNode.removeChild(cue);
     }

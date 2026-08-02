@@ -151,11 +151,30 @@ export function createEndgame(root, state, game, hooks = {}) {
       el('i', { text: 'for the score' })));
   root.appendChild(dock);
 
-  /** Show or hide the bar, and mark the interface root so the HUD stands down. */
+  /**
+   * Show or hide the bar, and mark the interface root so the HUD stands down.
+   *
+   * Raising it is also the moment the island stops being a trophy and starts
+   * being something to read:
+   *
+   *   "Also remove the color of all the tiles after I view the scoreboard, so
+   *    that I can tell what the hexes' resources were."
+   *
+   * The score has been seen by definition — this bar only exists once the
+   * results have been dismissed — so the winner's flood is told to drain off.
+   * matchflow.js owns the fade; all we do is say when. Lowering the bar (a
+   * replay) deliberately does NOT put the colour back.
+   */
   function setDock(on) {
     toggle(dock, 'hid', !on);
     if (on) { board = true; setText(viewLab, 'Close View'); }
     if (root && root.classList) toggle(root, 'endgame', !!on);
+    if (on) {
+      const flow = game && game.flow;
+      if (flow && typeof flow.clearVictoryFlood === 'function') {
+        try { flow.clearVictoryFlood(); } catch (e) { /* the flood is optional */ }
+      }
+    }
     const fc = cameraDriver();
     if (!fc) return;
     try {
