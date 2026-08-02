@@ -308,6 +308,19 @@ export function createBots(state, world, opts = {}) {
       for (const key in RAMP_CEILING) {
         const a = out[key], c = RAMP_CEILING[key];
         if (typeof a !== 'number' || typeof c !== 'number') continue;
+        // Same rule as the soft ramp above, and for the same reason: A RAMP MAY
+        // ONLY EVER SHARPEN. Expert now sits PAST the ceiling on `speed` and
+        // `accel` — it runs at 1.14 x BOT_SPEED where the ceiling is 1.00 — and
+        // an unguarded blend would have slowed the hardest rivals in the game
+        // down at the exact moment the match was being forced to a finish.
+        //
+        // Which way is "sharper" differs per knob (more speed, less hesitation),
+        // and the cheapest place to read it off is the SOFTEST level: whatever
+        // direction easy -> ceiling runs in, that is the sharp direction. If
+        // moving `a` toward the ceiling would run the other way, it is a
+        // softening, and it is skipped.
+        const soft = LEVELS.easy[key];
+        if (typeof soft === 'number' && (c - a) * (c - soft) < 0) continue;
         out[key] = Math.max(0, a + (c - a) * panic);
       }
     }

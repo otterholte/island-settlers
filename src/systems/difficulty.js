@@ -167,31 +167,49 @@ export const LEVELS = {
     key: 'expert',
     label: 'Expert',
     blurb: 'Relentless — they play to win',
-    // NEW GROUND: every knob is SEVEN TENTHS of the way from the old Expert to
-    // RAMP_CEILING (the flawless profile the anti-stall ramp blends toward).
-    // They run at 95% of full speed, re-plan every 1.14s, barely loiter,
-    // postpone almost nothing they can afford, trade at the first opportunity,
-    // and can land a Knight on the leader every three seconds of cooldown.
+    // THE TOP OF THE LADDER, AND IT IS MEANT TO HURT. Third pass — half the way
+    // to RAMP_CEILING, then seven tenths, and now essentially all of it on every
+    // knob that models a MISTAKE: they barely hesitate, never wander, postpone
+    // nothing they can afford, take the best option rather than the second, and
+    // can land a Knight on the leader on a one-second cooldown.
     //
-    // Half the distance was the first attempt and it was not enough. The
-    // novice-stand-in measurement cannot see the difference up here — below
-    // about 10% a bad player is losing to noise rather than to skill, so the
-    // number barely moved — but the knobs are what a GOOD player meets, and
-    // "now that I know how to play, I keep winning on expert" is a report from
-    // somebody the novice metric does not describe.
+    // AND THEY ARE FASTER THAN YOU. This is the lever the earlier passes never
+    // pulled, and it is the reason they were not enough. `speed` multiplies
+    // BOT_SPEED (11.0) through a 0.93..1.00 per-bot scale, so a rival at the old
+    // ceiling of 1.00 topped out at 11 against the player's PLAYER_SPEED of
+    // 12 — a permanent 9-16% handicap in a game where gathering is almost
+    // entirely a movement problem. No amount of sharper decision-making closes
+    // that, which is why "I keep winning on expert" survived two passes of
+    // sharpening decisions. At 1.20 an Expert rival runs at 12.3 to 13.2 against
+    // the player's 12: for the first time the top rung is not conceding the one
+    // thing that decides how fast a pack fills, and is very slightly ahead on
+    // it. `accel` goes with it — 1.12 x BOT_ACCEL (55) is 61.6 against the
+    // human's 60.
     //
-    // It is still not the ceiling, and deliberately so: nothing a player can
-    // PICK plays perfectly, because a rival that never makes a mistake is not
-    // an opponent, it is a wall.
-    speed: 0.95, accel: 0.96,
-    replan: 1.14, hesitate: 0.07, pause: 0.15, actDelay: 0.09,
-    noise: 1.26, secondBest: 0.04, routeSlop: 0.07, tileSlop: 0.06,
-    wander: 0.01, wanderSec: 0.5,
-    hoard: 0.015,
-    trade: 0.92,
-    knight: 0.89, knightAim: 0.87, knightGap: 3,
-    endgame: true, award: 0.96, setupNoise: 1.20, desperate: 15,
-    rampFrom: 160
+    // It is capped THERE on purpose. Sweeping it to 1.45 takes the good-player
+    // stand-in down to 2%, but 16 world units a second against the player's 12
+    // is a rival visibly teleporting round the island. A top difficulty should
+    // feel unfair to lose to; it should not look broken.
+    //
+    // `rampFrom` 160 -> 100 as well, so the anti-stall ramp starts sharpening
+    // them a minute earlier — at this level it is not an anti-stall measure any
+    // more, it is the second half of the match.
+    //
+    // Measured against a stand-in built to play like somebody who KNOWS the
+    // game — the old Hard bot's decision-making at human running speed, which
+    // is a far better model of the player than `novice` is. It took 11% of 57
+    // matches off the previous Expert; against this one, 6% of 86.
+    // Against the plain novice stand-in this level is at 0-2%, which is the
+    // floor of what that measurement can see.
+    speed: 1.20, accel: 1.12,
+    replan: 1.05, hesitate: 0.03, pause: 0.07, actDelay: 0.04,
+    noise: 1.10, secondBest: 0.02, routeSlop: 0.03, tileSlop: 0.03,
+    wander: 0.005, wanderSec: 0.2,
+    hoard: 0.005,
+    trade: 0.97,
+    knight: 0.96, knightAim: 0.95, knightGap: 1,
+    endgame: true, award: 0.98, setupNoise: 1.06, desperate: 15,
+    rampFrom: 100
   },
 
   /**

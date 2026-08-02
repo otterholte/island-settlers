@@ -1587,7 +1587,7 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
     // which is what put the whole bottom band five pixels below the fold in
     // roughly one run in three.
     let stable = '', matches = 0, settled = false;
-    for (let k = 0; k < 24; k++) {
+    for (let k = 0; k < 44; k++) {
       const now = await pev(`(()=>(document.querySelector('.hud.pre') ? 'pre|' : '') +
         [...document.querySelectorAll('.hud-bc,.hud-bl,.hud-br,.hud-tc')]
         .map(n=>{const b=n.getBoundingClientRect();
@@ -1600,6 +1600,10 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
       stable = now;
       await sleep(90);
     }
+    // ...and one fixed beat after that. Two matching samples prove the rects
+    // stopped moving BETWEEN SAMPLES, which under a renderer that repaints
+    // twice a second is not quite the same as the transition being over.
+    await sleep(350);
     const geo = await pev(`(()=>{
       const r=el=>{const n=document.querySelector(el); if(!n) return null;
         const b=n.getBoundingClientRect();
