@@ -1126,6 +1126,96 @@ if (STAGE === 'home') {
     andANewMatch: after.ky < 0.999
   }));
 
+/* --------------------------------------------------------- picked for you
+ *
+ *   "Add a setting that lets me have a randomized settlement and road
+ *    placement for the start of the game, instead of forcing them to spend the
+ *    time picking. Don't give them really scrappy locations though — just have
+ *    the bot choose for them too."
+ *
+ * Two claims, and the second is the one worth checking. That the draft
+ * completes with nobody touching the screen is easy; that the corners it hands
+ * over are GOOD is the request. So this measures the opening the player was
+ * dealt against the three the rivals dealt themselves — same board, same
+ * chooser, and the player's is the only one run with the difficulty's opening
+ * randomness turned off.
+ */
+} else if (STAGE === 'autodraft') {
+  await waitIntro();
+  // Turn it on the way the setting does, then start a match and touch nothing.
+  console.log('  SET ' + JSON.stringify(await ev(`(async()=>{
+    const o=await import('/src/core/options.js');
+    o.setAutoDraft(true);
+    return {on:o.autoDraft(),
+      stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').autoDraft};})()`,
+  true)));
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+
+  let out = null;
+  for (let i = 0; i < 60; i++) {
+    /* Pump the stage machine rather than waiting on the wall clock. Under
+       SwiftShader this scene renders at a few frames a second, so a draft that
+       takes half a minute of game time takes several of real time — and the
+       thing being tested is the draft, not the software rasteriser. */
+    await ev(`(()=>{const g=window.__ISLAND__.game;
+      for(let k=0;k<300;k++){g.flow.update(1/60);if(g.bots.update)g.bots.update(1/60);}
+      return 1})()`);
+    await sleep(60);
+    out = await ev(`(()=>{const I=window.__ISLAND__;
+      return {phase:I.state.phase, b:I.state.buildings.size, r:I.state.roadOwner.size,
+        mine:I.state.players[0].settlements.size,
+        myRoads:[...I.state.roadOwner.values()].filter(v=>v===0).length};})()`);
+    if (out && out.phase === 'play') break;
+  }
+  console.log('  DRAFTED ' + JSON.stringify(out));
+  console.log('  HANDSOFF ' + JSON.stringify({
+    finishedWithNoInput: !!out && out.phase === 'play' && out.b === 8 && out.r === 8,
+    twoCornersTwoRoads: !!out && out.mine === 2 && out.myRoads === 2
+  }));
+
+  /* AND THEY ARE NOT SCRAPPY. Pip total is the board's own measure of how much
+     a corner produces, and every seat drafted from the same nineteen hexes. */
+  const worth = await ev(`(async()=>{
+    const L=await import('/src/board/layout.js');
+    const I=window.__ISLAND__;
+    const pipsAt=iid=>L.intersections[iid].tiles
+      .reduce((n,t)=>n+(L.tiles[t].pips||0),0);
+    const per=I.state.players.map(p=>({
+      pid:p.id, name:p.name,
+      pips:[...p.settlements].reduce((n,i)=>n+pipsAt(i),0),
+      kinds:new Set([...p.settlements].flatMap(i=>L.intersections[i].tiles
+        .map(t=>L.tiles[t].resource).filter(Boolean))).size
+    }));
+    return per;})()`, true);
+  console.log('  OPENINGS ' + JSON.stringify(worth));
+  const me = worth.find(w => w.pid === 0);
+  const bots = worth.filter(w => w.pid !== 0);
+  const avg = bots.reduce((n, b) => n + b.pips, 0) / Math.max(1, bots.length);
+  /* WHAT TO ASSERT, AND WHAT NOT TO.
+   *
+   * Not "beats the rivals": the snake order is 0,1,2,3,3,2,1,0, so seat 0 gets
+   * the pick of an empty board AND the very last leftover, while seat 3 gets
+   * two middling corners back to back. Whether that adds up to more pips is a
+   * property of the DRAFT POSITION, not of the chooser, and asserting on it
+   * would fail on boards where the opening is perfectly good. Reported as
+   * context, deliberately not asserted.
+   *
+   * What IS the request is that the opening is not scrappy, and that has two
+   * halves that both matter: enough total production to build from, and enough
+   * DIFFERENT resources that the first settlement does not need a 4:1 trade to
+   * start. Twelve pips is a low bar a bad opening does not clear; three
+   * resources out of five is the floor for building anything. */
+  console.log('  QUALITY ' + JSON.stringify({
+    myPips: me && me.pips,
+    rivalAverage: +avg.toFixed(1),
+    resourcesCovered: me && me.kinds,
+    notScrappy: !!me && me.kinds >= 3 && me.pips >= 12,
+    forContext: 'seat 0 picks 1st and 8th — the snake gives and takes back'
+  }));
+  await shot(`autodraft-${TAG}`);
+  await ev(`(async()=>{(await import('/src/core/options.js')).setAutoDraft(false);
+    return 1})()`, true);
+
 } else if (STAGE === 'book') {
   // The book does not need the opening screen to be on screen — the TUTORIAL
   // button is pressed here, but going through the real button means waiting

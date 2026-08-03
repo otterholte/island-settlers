@@ -33,6 +33,10 @@
  */
 
 import { reshuffle, BOUNDS } from '../board/layout.js';
+import { legalRoads, legalSettlements } from '../core/rules.js';
+import { chooseSetupSettlement, chooseSetupRoad } from '../systems/botBrain.js';
+import { difficultyParams } from '../systems/difficulty.js';
+import { autoDraft } from '../core/options.js';
 import { PLAYER_SPEED } from '../core/constants.js';
 import { createMirror } from './mirror.js';
 import { REQ, PUSH, ACT, INPUT_HZ, INTERP_DELAY_MS, errText } from './protocol.js';
@@ -191,6 +195,7 @@ export function createNetMatch(state, game, client) {
   /** Hand the rules back to this machine. */
   function stand_down() {
     active = false;
+    if (autoT) { clearTimeout(autoT); autoT = 0; }
     if (game.economy && game.economy.setNetAgent) game.economy.setNetAgent(null);
     if (game.flow && game.flow.useDraft) game.flow.useDraft(null);
   }
@@ -227,8 +232,10 @@ export function createNetMatch(state, game, client) {
     if (msg.need === 'done') { draftState.done = true; draftState.open = false; return; }
     // Yours: targets and a confirm. Anybody else's: the same board, re-dressed
     // to say whose turn it is. Never nothing — that was the bug.
-    if (draftState.pid === 0 && msg.need !== 'loading') openPick(msg);
-    else closePick();
+    if (draftState.pid === 0 && msg.need !== 'loading') {
+      if (autoDraft()) { closePick(); autoPick(msg); }
+      else openPick(msg);
+    } else closePick();
     notify('draft', { ...draftState });
   });
 
@@ -332,6 +339,45 @@ export function createNetMatch(state, game, client) {
     });
     draftState.boardUp = opened !== false;
     return draftState.boardUp;
+  }
+
+  /* ------------------------------------------------------ picked for you
+   *
+   * The same setting the single-player draft honours, honoured here — which is
+   * most of why it is a per-device preference and not a room setting. Nobody
+   * else in the lobby has to agree that you would rather be dealt a corner,
+   * and nothing about it goes on the wire: this sends exactly the act a thumb
+   * would have sent, through the same path, a beat later so the board has time
+   * to show whose turn it is.
+   *
+   * `setupNoise: 0` for the same reason as offline — the rivals' difficulty is
+   * about how well THEY play, and it must not quietly hand the player a worse
+   * corner than they would have picked themselves.
+   */
+  const CLEAN_BRAIN = () => ({ d: { ...difficultyParams(), setupNoise: 0 } });
+  let autoT = 0;
+
+  function autoPick(msg) {
+    if (autoT) clearTimeout(autoT);
+    autoT = setTimeout(() => {
+      autoT = 0;
+      // Still my turn, still needing the same thing? The clock may have run
+      // out and the server may have placed for me while this was waiting.
+      if (!active || draftState.pid !== 0 || draftState.need !== msg.need) return;
+      const wantRoad = msg.need === 'road';
+      let id = -1;
+      try {
+        id = wantRoad
+          ? chooseSetupRoad(state, 0, draftState.anchor, Math.random, CLEAN_BRAIN())
+          : chooseSetupSettlement(state, 0, Math.random, CLEAN_BRAIN());
+      } catch (e) { id = -1; }
+      const legal = wantRoad
+        ? legalRoads(state, 0, true, draftState.anchor)
+        : legalSettlements(state, 0, true);
+      if (legal.indexOf(id) < 0) id = legal.length ? legal[0] : -1;
+      if (id < 0) return;
+      send(wantRoad ? ACT.DRAFT_ROAD : ACT.DRAFT_SETTLEMENT, { id });
+    }, 900);
   }
 
   /* --------------------------------------------------------------- picks

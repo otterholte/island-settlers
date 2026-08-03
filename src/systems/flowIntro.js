@@ -38,7 +38,7 @@ import { icon, avatar } from '../ui/icons.js';
 import {
   DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
 } from './difficulty.js';
-import { knightsOn, setKnights } from '../core/options.js';
+import { knightsOn, setKnights, autoDraft, setAutoDraft } from '../core/options.js';
 
 export const INTRO_CSS = `
 /* --------------------------------------------------------- opening screen */
@@ -558,6 +558,51 @@ export function buildIntro(state, onBegin) {
    * choice sticks between matches, and the switch is right here on every
    * opening screen so it is still a per-match decision.
    */
+  /* --------------------------------------------------------- pick for me
+   *
+   *   "Add a setting to the game setup page that lets me have a randomized
+   *    settlement and road placement for the start of the game, instead of
+   *    forcing them to spend the time picking where they want it. Don't give
+   *    them really scrappy locations though — just have the bot choose for
+   *    them too."
+   *
+   * So the switch does exactly that and no more: your two corners and two
+   * roads are chosen by the same brain the rivals use, and the draft plays
+   * itself while you watch. Not random — `botBrain.chooseSetupSettlement`
+   * weighs supply rate, then how many DIFFERENT resources the corner covers,
+   * then how far it sits from your other one. Turned all the way up, with the
+   * difficulty's opening randomness set to zero, so an EASY match still deals
+   * you a good opening: the setting is about not spending the minute, not
+   * about handicapping yourself.
+   *
+   * It sits beside Knights because it belongs to the same question — what kind
+   * of match do I want — and it is stored per device rather than per match, so
+   * it holds online too without anybody else having to agree to it. */
+  const autoNote = el('div', { class: 'mf-i-dnote' });
+  const autoState = el('b', { class: 'mf-raid-state', text: 'Off' });
+  const autoSwitch = button('mf-switch', {
+    role: 'switch',
+    'aria-label': 'Pick my opening for me — the bot claims your two corners and roads',
+    on: { click: () => pickAuto(!autoDraft()) }
+  });
+
+  function paintAuto() {
+    const cur = autoDraft();
+    autoSwitch.classList.toggle('on', cur);
+    autoSwitch.setAttribute('aria-checked', cur ? 'true' : 'false');
+    autoState.classList.toggle('on', cur);
+    autoState.textContent = cur ? 'On' : 'Off';
+    autoNote.textContent = cur
+      ? 'A strong opening is claimed for you · straight into the match'
+      : 'You claim your own two corners and two roads';
+    autoNote.classList.toggle('off', !cur);
+  }
+
+  function pickAuto(on) {
+    setAutoDraft(on);
+    paintAuto();
+  }
+
   const raidNote = el('div', { class: 'mf-i-dnote' });
   const raidState = el('b', { class: 'mf-raid-state', text: 'On' });
   const raidSwitch = button('mf-switch', {
@@ -584,8 +629,7 @@ export function buildIntro(state, onBegin) {
   }
 
   paintRaid();
-
-
+  paintAuto();
 
   /* ======================================================== the two screens
    *
@@ -796,7 +840,11 @@ export function buildIntro(state, onBegin) {
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Knights' }),
           el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
-          raidNote)),
+          raidNote),
+        el('div', { class: 'mf-p-row' },
+          el('div', { class: 'mf-i-dlab', text: 'Opening' }),
+          el('div', { class: 'mf-i-raid' }, autoSwitch, autoState),
+          autoNote)),
       el('div', { class: 'mf-p-foot' }, backBtn, startBtn)));
 
   function show(next) {
@@ -815,6 +863,7 @@ export function buildIntro(state, onBegin) {
     nudgeFriends,
     refreshDifficulty: paint,
     refreshKnights: paintRaid,
+    refreshAutoDraft: paintAuto,
     /** flowUI re-shows this node between matches; always come back HOME. */
     reset: () => show('home'),
     get step() { return step; }

@@ -41,6 +41,8 @@ import {
 } from '../core/rules.js';
 
 import { chooseSetupSettlement, chooseSetupRoad } from './bots.js';
+import { autoDraft } from '../core/options.js';
+import { difficultyParams } from './difficulty.js';
 
 /* ------------------------------------------------------------------ timing */
 
@@ -242,7 +244,15 @@ export function createDraft(state, game, deps) {
     step.opened = false;
     step.idle = 0;
     step.pid = setupCurrentPlayer(state);
-    step.human = step.pid === 0;
+    /* WHOSE HANDS THIS PICK IS IN.
+     *
+     * Seat 0 is the player — unless they have asked not to be asked, in which
+     * case the turn runs down the bot path from here: telegraphed, aimed at,
+     * placed, narrated as theirs. That is the whole implementation of "just
+     * have the bot choose for them too", and it costs no second code path;
+     * the difference is one boolean and `brainOpts` handing seat 0 a cleaner
+     * set of eyes than any rival gets. */
+    step.human = step.pid === 0 && !autoDraft();
     step.target = -1;
     step.road = state.setupNeed === 'road';
     step.phase = 'beat';
@@ -282,16 +292,28 @@ export function createDraft(state, game, deps) {
       ? safeRoadChoice(step.pid, state.setupAnchor)
       : safeSettlementChoice(step.pid);
 
+    /* Seat 0 is called "You", so the third-person phrasing the rivals get
+       reads as "You is choosing a corner". When the opening is being claimed
+       on the player's behalf it is still THEIR corner, and the board should
+       say so in the second person. */
+    const mine = step.pid === 0;
     ui.setDraft({
       index: state.setupIndex, pid: step.pid,
-      status: p.name,
-      sub: road ? 'is laying a road' : 'is choosing a corner',
-      tip: road ? picksLeftLine() : `${p.name} plays ${strategyOf(p)}.`
+      status: mine ? 'Your Pick' : p.name,
+      sub: mine
+        ? (road ? 'Your road, claimed for you' : 'Your corner, claimed for you')
+        : (road ? 'is laying a road' : 'is choosing a corner'),
+      tip: road ? picksLeftLine() : (mine
+        ? 'Your opening is being picked for you — change that under Opening.'
+        : `${p.name} plays ${strategyOf(p)}.`)
     });
 
     showBoard('draft-watch', {
-      title: road ? `${p.name} is laying a road` : `${p.name} is choosing`,
-      hint: `${pickLine()} · ${road ? picksLeftLine() : 'Plays ' + strategyOf(p)}`
+      title: mine
+        ? (road ? 'Your Road' : 'Your Corner')
+        : (road ? `${p.name} is laying a road` : `${p.name} is choosing`),
+      hint: `${pickLine()} · ${road ? picksLeftLine()
+        : (mine ? 'Claimed for you' : 'Plays ' + strategyOf(p))}`
     });
   }
 
@@ -333,9 +355,25 @@ export function createDraft(state, game, deps) {
     return bits.join(' ');
   }
 
+  /**
+   * The brain's options for one seat.
+   *
+   *   "Don't give them really scrappy locations though — just have the bot
+   *    choose for them too."
+   *
+   * Both halves matter. It is the SAME chooser the rivals use, so the opening
+   * is a real opening and not a random legal corner — but with `setupNoise` at
+   * zero, which is the knob the difficulty levels turn UP to make a weak rival
+   * misjudge the draft. An Easy match must not deal its own player a bad
+   * corner for the sake of consistency: the setting is about not spending the
+   * minute, not about playing worse.
+   */
+  const CLEAN = { d: { ...difficultyParams(), setupNoise: 0 } };
+  const brainOpts = pid => (pid === 0 ? CLEAN : {});
+
   function safeSettlementChoice(pid) {
     let iid = -1;
-    try { iid = chooseSetupSettlement(state, pid, rng); } catch (e) { warn(e); }
+    try { iid = chooseSetupSettlement(state, pid, rng, brainOpts(pid)); } catch (e) { warn(e); }
     const legal = legalSettlements(state, pid, true);
     if (legal.indexOf(iid) < 0) iid = legal.length ? legal[0] : -1;
     return iid;
@@ -343,7 +381,7 @@ export function createDraft(state, game, deps) {
 
   function safeRoadChoice(pid, anchor) {
     let eid = -1;
-    try { eid = chooseSetupRoad(state, pid, anchor, rng); } catch (e) { warn(e); }
+    try { eid = chooseSetupRoad(state, pid, anchor, rng, brainOpts(pid)); } catch (e) { warn(e); }
     const legal = legalRoads(state, pid, true, anchor);
     if (legal.indexOf(eid) < 0) eid = legal.length ? legal[0] : -1;
     return eid;
@@ -490,11 +528,20 @@ export function createDraft(state, game, deps) {
     return true;
   }
 
+  /* The last resort, and it used to take the FIRST legal spot in the list —
+     which is an arbitrary corner and exactly the "really scrappy location" the
+     player asked not to be given. It asks the brain first now, for the same
+     reason and with the same clean eyes as the Opening setting; the first legal
+     spot survives only as the fallback behind the fallback. */
   function autoPlaceForHuman() {
     if (state.setupNeed === 'road') {
+      const pick = safeRoadChoice(0, state.setupAnchor);
+      if (pick >= 0 && setupPlaceRoad(state, 0, pick)) return;
       const list = legalRoads(state, 0, true, state.setupAnchor);
       for (const eid of list) if (setupPlaceRoad(state, 0, eid)) return;
     } else {
+      const pick = safeSettlementChoice(0);
+      if (pick >= 0 && setupPlaceSettlement(state, 0, pick)) return;
       const list = legalSettlements(state, 0, true);
       for (const iid of list) if (setupPlaceSettlement(state, 0, iid)) return;
     }

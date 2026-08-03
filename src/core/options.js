@@ -71,6 +71,24 @@ export const OPTION_DEFAULTS = Object.freeze({
      from anywhere on the screen now, so there is no side for it to be on and
      no setting worth asking anybody about — "so it doesn't need a toggle". */
   buttonsSide: 'right',
+
+  /* PICK MY OPENING FOR ME.
+   *
+   *   "Add a setting to the game setup page that lets me have a randomized
+   *    settlement and road placement for the start of the game, instead of
+   *    forcing them to spend the time picking where they want it. Don't give
+   *    them really scrappy locations though — just have the bot choose for
+   *    them too."
+   *
+   * A match is three and a half minutes and the draft is a minute of it, most
+   * of which is watching. Somebody who wants to play rather than plan should be
+   * able to skip straight to the running about.
+   *
+   * A PERSONAL preference, not a match setting: it is stored on the device
+   * beside the name and the button side, so it holds across every match and
+   * applies online without going on the wire — nobody else needs to know, or
+   * needs to agree, that you would rather be dealt a corner. */
+  autoDraft: false,
   /* HOW FAR THE BOARD MAP IS TILTED BACK, 0 (flat overhead) to 1 (as far as
      it goes). Set with two fingers dragged up or down on the map itself, and
      kept here so it survives the match:
@@ -163,6 +181,9 @@ const side = v => (v === 'left' ? 'left' : 'right');
 export function buttonsSide() { return side(current.buttonsSide); }
 export function setButtonsSide(v) { return setOption('buttonsSide', side(v)); }
 
+export function autoDraft() { return !!current.autoDraft; }
+export function setAutoDraft(v) { return setOption('autoDraft', !!v); }
+
 const TILT_MAX = 1;
 export function mapTilt() {
   const v = Number(current.mapTilt);
@@ -178,5 +199,6 @@ export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
 export default {
   getOption, setOption, onOptionsChange,
-  knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt
+  knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt,
+  autoDraft, setAutoDraft
 };
