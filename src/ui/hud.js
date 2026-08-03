@@ -356,6 +356,16 @@ export function createHUD(root, state, game) {
     if (state.phase === 'setup') { toast('Finish the opening draft first', 'warn'); return false; }
     if (!COST[kind]) return false;
 
+    // ONLINE, NOTHING IS BOUGHT HERE. These cards pay and draw locally, which
+    // is right when this machine owns the rules and wrong when a server does —
+    // it would spend the same resources twice and put down a piece the server
+    // may refuse. economy.js knows how to ask; it runs the identical gates
+    // first, so the refusals the player sees are the same refusals.
+    const eco = game.economy;
+    if (eco && typeof eco.isNet === 'function' && eco.isNet()) {
+      return eco.buy(kind) !== false;
+    }
+
     if (pieceCapped(state, 0, kind)) {
       toast(`No ${kind} pieces left`, 'warn'); flashCost(kind); return false;
     }
@@ -476,10 +486,37 @@ export function createHUD(root, state, game) {
     if (n) setText(b.badge, n > 9 ? '9+' : n);
   }
 
+  /* --------------------------------------------------- the latched counters
+   *
+   *   "That way you can't be stolen from while actively trading. But you don't
+   *    know the Knight hit until you leave the port or trading post."
+   *
+   * Offline a trade sheet stops the world, so nothing can move behind it.
+   * Online it cannot, so the five numbers you are trading against are frozen
+   * at what they were when the sheet opened. They are DISPLAY only: `me.res`
+   * stays truthful underneath, so a trade is judged on the goods you really
+   * have and the server never has to disagree with the button you pressed.
+   *
+   * main.js holds the Knight card itself for the same window. Between them,
+   * everything that would tell you about a raid mid-trade waits until you are
+   * done and then arrives at once.
+   */
+  let latch = null;
+
+  function displayRes() {
+    const net = game.net;
+    const online = !!(net && net.active);
+    const sheet = !!(game.panels && game.panels.isOpen && state.phase === 'play');
+    if (!online || !sheet) { latch = null; return me.res; }
+    if (!latch) latch = { ...me.res };
+    return latch;
+  }
+
   function refreshAll(force) {
+    const shown = displayRes();
     for (const r of RES) {
       const s = resSlots[r];
-      const v = me.res[r] | 0;
+      const v = shown[r] | 0;
       if (s.last !== v) {
         if (v > s.last && s.last >= 0) replay(s.node, 'pop', 480);
         s.last = v;

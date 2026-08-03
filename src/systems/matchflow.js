@@ -304,10 +304,27 @@ export function createMatchFlow(state, game) {
   // `onDone` fires on the same tick as the last road — including when the
   // player's own Confirm places it — so the one view change of the draft is
   // synchronous with the placement that earned it.
-  const draft = createDraft(state, g, {
+  const localDraft = createDraft(state, g, {
     ui, cam, rng, announce, toast, sfx, warn, world,
     onDone: () => enterHandoff()
   });
+
+  /**
+   * An online match brings its OWN draft.
+   *
+   * The stage machine below asks the draft two questions — are you holding the
+   * board, and are you finished — and neither answer changes when a server is
+   * choosing the order. What does change is everything underneath: there are
+   * no bots here to pick for, the pick clock belongs to the server, and a
+   * human's turn arrives as a message rather than as a cursor this module
+   * moved. `src/net/netmatch.js` supplies an object with the same two answers
+   * and swaps it in through `useDraft`.
+   */
+  let draft = localDraft;
+  function useDraft(next) {
+    draft = next || localDraft;
+    return draft;
+  }
 
   /* -------------------------------------------------------------- start line */
 
@@ -434,7 +451,16 @@ export function createMatchFlow(state, game) {
       toast('When the clock runs out the leader takes the island', 'warn');
     }
 
-    if (state.time >= MATCH_SOFT_CAP_SEC) endOnPoints();
+    // ONLINE THE CLOCK IS NOT OURS TO CALL. Four machines counting to 420
+    // independently will not agree on which frame crosses it, and the one that
+    // gets there first would declare a winner the others have not seen. The
+    // server runs the same cap and sends the result.
+    if (state.time >= MATCH_SOFT_CAP_SEC && !netOwned()) endOnPoints();
+  }
+
+  /** True while a networked match owns the rules; see systems/economy.js. */
+  function netOwned() {
+    return !!(g.net && g.net.active);
   }
 
   /** Stalemate safety net — decide it on points rather than running forever. */
@@ -834,7 +860,7 @@ export function createMatchFlow(state, game) {
   /* ------------------------------------------------------------------ api */
 
   return {
-    update, begin, skipIntro, restartInPlace, setEndView,
+    update, begin, skipIntro, restartInPlace, setEndView, useDraft,
     /** hud-end.js calls this when the review bar goes up. See FLOOD_FADE_SEC. */
     clearVictoryFlood,
     /** True once the winner's colour is off the island for good. */

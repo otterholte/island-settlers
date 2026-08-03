@@ -144,9 +144,8 @@ export const INTRO_CSS = `
 .mf-view.hid{display:none}
 
 /* The two big choices, side by side and the SAME SIZE: neither is the small
-   one. PLAY is green because it is what most presses do; FRIENDS is cream and
-   carries its own "Soon" ribbon rather than being greyed out, because a
-   disabled button tells you nothing about when it will not be.
+   one. PLAY is green because it is what most presses do; FRIENDS is cream
+   because it is the same size of decision made for a different reason.
 
    The width is pinned and the stack is forced because .btn is a ROW: left to
    itself the label and the sub-line sit shoulder to shoulder, so the button
@@ -166,13 +165,6 @@ export const INTRO_CSS = `
   display:block;margin-top:3px;
   font:700 clamp(7px,1.1vw,9px)/1.2 var(--ff);letter-spacing:.09em;
   text-transform:uppercase;opacity:.72;
-}
-.mf-soon{
-  position:absolute;top:-9px;right:-8px;
-  padding:3px 8px 4px;border-radius:9px;font-style:normal;
-  font:800 clamp(7px,1vw,9px)/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
-  color:#0b1d33;background:linear-gradient(180deg,#ffe79a,#ffc93c);
-  border:1.5px solid rgba(90,58,30,.85);box-shadow:0 2px 5px rgba(0,0,0,.5);
 }
 .mf-i-note{
   margin-top:2px;padding:5px 12px 6px;border-radius:10px;
@@ -241,7 +233,6 @@ export const INTRO_CSS = `
   .mf-p-foot{padding:6px 12px 8px;gap:10px}
   .mf-panel .mf-play{min-height:42px}
   .mf-back{min-height:40px}
-  .mf-soon{top:-7px;right:-6px;padding:2px 6px 3px}
   /* Specificity, not order: the un-nested compact rule for .btn.mf-diff loses
      to .mf-panel .btn.mf-diff above wherever it sits in the file, so the panel
      needs its own compact width. 4x110 + 3x6.7 = 460 inside the 476px body of
@@ -454,14 +445,22 @@ export const INTRO_CSS = `
 /** Raised when TUTORIAL is pressed; systems/tutorial.js is listening. */
 export const TUTORIAL_EVENT = 'mf-tutorial';
 
-function askForTutorial() {
+/** Raised when PLAY WITH FRIENDS is pressed; flowUI.js is listening.
+ *  Same grain as the tutorial: a document event rather than a callback, so the
+ *  opening screen never has to hold a reference to the thing it opens. */
+export const FRIENDS_EVENT = 'mf-friends';
+
+function raise(type) {
   if (typeof document === 'undefined' || !document.dispatchEvent) return;
   try {
     document.dispatchEvent(typeof CustomEvent === 'function'
-      ? new CustomEvent(TUTORIAL_EVENT)
-      : Object.assign(document.createEvent('Event'), { type: TUTORIAL_EVENT }));
+      ? new CustomEvent(type)
+      : Object.assign(document.createEvent('Event'), { type }));
   } catch (e) { /* a browser this old is not running the game anyway */ }
 }
+
+function askForTutorial() { raise(TUTORIAL_EVENT); }
+function askForFriends() { raise(FRIENDS_EVENT); }
 
 /** The whole opening screen as one detached node. */
 export function buildIntro(state, onBegin) {
@@ -602,20 +601,20 @@ export function buildIntro(state, onBegin) {
    * what it is waiting for is the honest version of "it is coming".
    */
   const friendsBtn = button('cream huge mf-friends', {
-    'aria-label': 'Play with friends — coming next',
-    on: { click: () => nudgeFriends() }
+    'aria-label': 'Play with friends — sign in, add friends and invite them',
+    on: { click: () => askForFriends() }
   },
     el('span', { class: 'sb-lab', text: 'Play with Friends' }),
-    el('span', { class: 'mf-p-sub', text: 'Invite people you added' }),
-    el('i', { class: 'mf-soon', text: 'Soon' }));
+    el('span', { class: 'mf-p-sub', text: 'Invite people you added' }));
 
-  const friendsNote = el('div', { class: 'mf-i-note hid', text:
-    'Not ready yet — friends and invites are the next thing being built.' });
+  const friendsNote = el('div', { class: 'mf-i-note hid', text: '' });
   let noteT = 0;
-  function nudgeFriends() {
+  /** Shown only when the friends screen could not be built at all. */
+  function nudgeFriends(text) {
+    friendsNote.textContent = text;
     friendsNote.classList.remove('hid');
     if (noteT) clearTimeout(noteT);
-    noteT = setTimeout(() => friendsNote.classList.add('hid'), 3200);
+    noteT = setTimeout(() => friendsNote.classList.add('hid'), 3600);
   }
 
   /*
@@ -687,6 +686,8 @@ export function buildIntro(state, onBegin) {
   return {
     node, cards, playBtn, startBtn, friendsBtn, tutBtn, backBtn,
     diffButtons, raidSwitch,
+    /** flowUI calls this if the friends screen could not be built at all. */
+    nudgeFriends,
     refreshDifficulty: paint,
     refreshKnights: paintRaid,
     /** flowUI re-shows this node between matches; always come back HOME. */

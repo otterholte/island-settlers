@@ -16,6 +16,7 @@
 @import './ui-hud.css';
 @import './ui-boot.css';
 @import './tutorial.css';
+@import './friends.css';
 
 /* ======================================================== opening screen
    The match-flow module sets `mf-introlive` on the interface root while the

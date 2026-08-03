@@ -24,7 +24,7 @@
  */
 
 import { el, toggle, setText } from '../ui/dom.js';
-import { buildIntro, INTRO_CSS } from './flowIntro.js';
+import { buildIntro, INTRO_CSS, FRIENDS_EVENT } from './flowIntro.js';
 
 const STYLE_ID = 'mf-flow-style';
 
@@ -285,7 +285,53 @@ export function createFlowUI(root, state, game) {
     function destroy() {
       clearStagger();
       toggle(root, 'mf-introlive', false);
+      if (typeof document !== 'undefined' && document.removeEventListener) {
+        document.removeEventListener(FRIENDS_EVENT, openFriends);
+      }
+      if (friends && friends.destroy) { try { friends.destroy(); } catch (e) { /* fine */ } }
       if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+    }
+
+    /* ------------------------------------------------------ play with friends
+       The third view, built the first time somebody asks for it and never
+       before: it opens a websocket, and a player who only ever plays alone
+       should not have one opened on their behalf. Loaded dynamically for the
+       same reason — the whole net layer stays off the critical path of a solo
+       boot. The opening screen raises a document event rather than calling
+       anything, exactly as TUTORIAL does. */
+    let friends = null;
+    let friendsLoading = false;
+
+    async function openFriends() {
+      if (friends) { toggle(intro, 'mf-hid', true); friends.show(); return; }
+      if (friendsLoading) return;
+      friendsLoading = true;
+      try {
+        const [{ createFriends }, { netClient }] = await Promise.all([
+          import('../ui/friends.js'),
+          import('../net/client.js')
+        ]);
+        friends = createFriends(layer, {
+          client: netClient(),
+          onClose: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); },
+          // START does not draw anything: the server answers with a match and
+          // netmatch.js parks it and reloads the page into the right island.
+          onStart: () => { /* the reload is the transition */ }
+        });
+        toggle(intro, 'mf-hid', true);
+        friends.show();
+      } catch (err) {
+        if (typeof console !== 'undefined') console.warn('[flow] friends screen —', err.message);
+        if (built.nudgeFriends) {
+          built.nudgeFriends('Multiplayer could not load — check your connection and reload.');
+        }
+      } finally {
+        friendsLoading = false;
+      }
+    }
+
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener(FRIENDS_EVENT, openFriends);
     }
 
     return {
@@ -293,8 +339,10 @@ export function createFlowUI(root, state, game) {
       onSkip(fn) { skipFn = fn; },
       showDraft, setDraft, hideDraft,
       showObjective, hideObjective,
+      openFriends,
       update, destroy,
       get introOpen() { return introOn; },
+      get friendsOpen() { return !!(friends && friends.node && !friends.node.classList.contains('hid')); },
       get root() { return layer; }
     };
   } catch (err) {

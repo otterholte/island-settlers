@@ -57,6 +57,7 @@ import { icon, avatar } from './icons.js';
 import { createPainter, pipRadius } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
+import { netCommit } from '../systems/economy.js';
 
 /* Every placement hint names the double-tap, because a route nobody is told
    about is a route nobody uses — see `onTap` below. */
@@ -675,6 +676,13 @@ export function createOverview(root, state, game) {
     let ok = false;
     if (typeof opts.onConfirm === 'function') {
       ok = opts.onConfirm(id) !== false;
+    } else if (netCommit(mode, id)) {
+      // ONLINE, THIS PANEL DOES NOT PLACE ANYTHING. With no onConfirm supplied
+      // — which is the normal route for a HUD build card — the branches below
+      // would write a piece onto the board that no server has agreed to yet.
+      // netCommit sends it instead and the piece arrives with the server's
+      // own `build` event, through the same handler that draws it offline.
+      ok = true;
     } else if (mode === 'place-road') {
       ok = placeRoad(state, 0, id, !!opts.free, opts.anchor === undefined ? -1 : opts.anchor);
     } else if (mode === 'place-settlement') {

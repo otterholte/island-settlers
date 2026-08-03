@@ -1,0 +1,247 @@
+/* ==========================================================================
+   Island Settlers — sign in, friends, invites and the lobby.
+
+   The third view of the opening screen. It sits over a live 3D island with a
+   drifting camera, which is why every part of it lives inside one opaque
+   plate: the same reason MATCH SETUP became a box.
+
+   Loaded from ui.css. Owner: net agent.
+   ========================================================================== */
+
+.fr-wrap{
+  position:absolute;inset:0;z-index:12;
+  display:flex;align-items:center;justify-content:center;
+  padding:calc(8px + var(--sat,0px)) calc(10px + var(--sar,0px))
+          calc(8px + var(--sab,0px)) calc(10px + var(--sal,0px));
+  pointer-events:auto;
+}
+.fr-wrap.hid{display:none}
+
+.fr-panel{
+  position:relative;
+  display:flex;flex-direction:column;
+  width:min(560px,94vw);max-height:calc(100vh - 20px);
+  border-radius:20px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(14,36,64,.975),rgba(6,18,36,.985));
+  border:2.5px solid rgba(255,201,60,.44);
+  box-shadow:0 14px 0 rgba(0,0,0,.35),0 22px 50px rgba(0,0,0,.6),
+             inset 0 2px 0 rgba(255,255,255,.14);
+}
+.fr-wrap.busy .fr-panel{filter:saturate(.8) brightness(.9)}
+.fr-wrap.busy button{pointer-events:none}
+
+/* ------------------------------------------------------------------ head */
+.fr-head{
+  position:relative;
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  padding:clamp(8px,1.8vh,13px) 52px clamp(7px,1.5vh,11px) 16px;
+  background:linear-gradient(180deg,rgba(255,201,60,.16),rgba(255,201,60,0));
+  border-bottom:1.5px solid rgba(255,255,255,.12);
+}
+.fr-title{
+  font:800 clamp(12px,2vw,16px)/1 var(--ff);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+  text-shadow:0 2px 4px rgba(0,0,0,.7);
+}
+.fr-sub{
+  font:700 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.14em;
+  text-transform:uppercase;color:rgba(206,226,246,.6);
+}
+.fr-x{position:absolute;right:8px;top:8px}
+
+/* The connection lamp. Three states and no spinner: a spinner says "wait",
+   and the honest message when a server cannot be reached is not "wait". */
+.fr-status{display:flex;align-items:center;gap:6px;margin-right:auto;flex:0 0 auto}
+.fr-dot{width:8px;height:8px;border-radius:50%;background:#7c8794;flex:0 0 auto}
+.fr-dot.ok{background:#5fd07a;box-shadow:0 0 8px rgba(95,208,122,.8)}
+.fr-dot.wait{background:#ffc93c;animation:frPulse 1.1s ease-in-out infinite}
+.fr-dot.bad{background:#f5342a;box-shadow:0 0 8px rgba(245,52,42,.7)}
+@keyframes frPulse{0%,100%{opacity:1}50%{opacity:.35}}
+.fr-status-t{
+  font:700 clamp(7px,1vw,9px)/1 var(--ff);letter-spacing:.1em;
+  text-transform:uppercase;color:rgba(206,226,246,.55);white-space:nowrap;
+}
+
+/* ------------------------------------------------------------------ body */
+.fr-body{
+  flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  display:flex;flex-direction:column;gap:clamp(5px,1.1vh,9px);
+  padding:clamp(9px,2vh,15px) clamp(10px,2.4vw,18px);
+}
+.fr-copy{
+  margin:0;font:700 clamp(8px,1.25vw,10.5px)/1.45 var(--ff);letter-spacing:.04em;
+  color:rgba(214,232,250,.78);
+}
+.fr-hint{
+  margin:0;font:700 clamp(7px,1.05vw,9px)/1.4 var(--ff);letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(180,204,230,.5);
+}
+.fr-lab{
+  font:800 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+}
+.fr-sec{
+  margin-top:4px;padding-top:7px;border-top:1.5px solid rgba(255,255,255,.1);
+  font:800 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.2em;
+  text-transform:uppercase;color:rgba(255,231,154,.72);
+}
+
+/* Inputs are 44px tall because they are tap targets first and text fields
+   second; the 16px floor on the font is what stops iOS zooming the page when
+   one is focused, which on a landscape-locked game looks like a crash. */
+.fr-input{
+  width:100%;min-height:44px;padding:0 12px;
+  border-radius:12px;border:2px solid rgba(255,201,60,.34);
+  background:rgba(4,14,28,.72);
+  font:700 max(16px,clamp(12px,1.8vw,14px))/1 var(--ff);letter-spacing:.06em;
+  color:#eaf3ff;
+  -webkit-appearance:none;appearance:none;
+}
+.fr-input::placeholder{color:rgba(180,204,230,.42);letter-spacing:.08em}
+.fr-input:focus{outline:none;border-color:rgba(255,201,60,.85);
+  box-shadow:0 0 0 3px rgba(255,201,60,.18)}
+.fr-addrow{display:flex;gap:8px;align-items:stretch}
+.fr-addrow .fr-add{flex:1 1 auto}
+
+/* ------------------------------------------------------------------ rows */
+.fr-row{
+  display:flex;align-items:center;gap:9px;
+  min-height:42px;padding:5px 10px;border-radius:12px;
+  background:rgba(255,255,255,.045);
+  border:1.5px solid rgba(255,255,255,.08);
+}
+.fr-row.on{background:rgba(95,208,122,.08);border-color:rgba(95,208,122,.24)}
+.fr-pip{width:8px;height:8px;border-radius:50%;background:#5a6674;flex:0 0 auto}
+.fr-pip.on{background:#5fd07a;box-shadow:0 0 7px rgba(95,208,122,.75)}
+.fr-name{
+  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:800 clamp(10px,1.6vw,13px)/1 var(--ff);letter-spacing:.1em;color:#eaf3ff;
+}
+.fr-when{
+  font:700 clamp(7px,1.05vw,9px)/1 var(--ff);letter-spacing:.12em;
+  text-transform:uppercase;color:rgba(180,204,230,.5);white-space:nowrap;
+}
+
+.fr-invite{
+  display:flex;align-items:center;gap:9px;
+  padding:8px 10px;border-radius:12px;
+  background:linear-gradient(180deg,rgba(255,201,60,.22),rgba(255,201,60,.08));
+  border:2px solid rgba(255,201,60,.55);
+  box-shadow:0 0 18px rgba(255,201,60,.22);
+  animation:frLand .35s cubic-bezier(.2,1.3,.35,1);
+}
+@keyframes frLand{from{transform:translateY(-8px) scale(.97);opacity:0}}
+.fr-i-txt{
+  flex:1 1 auto;font:700 clamp(8.5px,1.3vw,11px)/1.3 var(--ff);letter-spacing:.05em;
+  color:#fff3d8;
+}
+.fr-i-txt b{color:#ffe79a}
+
+/* ----------------------------------------------------------------- seats */
+.fr-seats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.fr-seat{
+  position:relative;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:center;gap:2px;
+  min-height:52px;padding:6px 10px 7px 16px;border-radius:12px;
+  background:rgba(255,255,255,.05);
+  border:1.5px solid rgba(255,255,255,.1);
+}
+.fr-seat.human{background:rgba(255,255,255,.085);border-color:rgba(255,255,255,.2)}
+.fr-seat.me{border-color:rgba(255,201,60,.8);box-shadow:0 0 16px rgba(255,201,60,.22)}
+.fr-band{
+  position:absolute;left:0;top:0;bottom:0;width:6px;
+  background:linear-gradient(180deg,var(--cl,#93cbff),var(--c,#2f8ffb));
+}
+.fr-seat.empty .fr-band{opacity:.28;filter:grayscale(.8)}
+.fr-sname{
+  font:800 clamp(10px,1.6vw,13px)/1 var(--ff);letter-spacing:.11em;
+  text-transform:uppercase;color:#eaf3ff;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.fr-seat.empty .fr-sname{color:rgba(180,204,230,.45)}
+.fr-srole{
+  font:700 clamp(6.6px,1vw,8.4px)/1.2 var(--ff);letter-spacing:.11em;
+  text-transform:uppercase;color:rgba(180,204,230,.5);
+}
+.fr-seat .fr-drop{position:absolute;right:6px;top:6px}
+
+/* -------------------------------------------------------------- settings */
+.fr-set{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.fr-slab{
+  min-width:58px;
+  font:800 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+}
+.fr-diff{display:flex;gap:6px;flex:1 1 auto;flex-wrap:wrap}
+.btn.fr-d{
+  flex:1 1 0;min-width:64px;min-height:38px;padding:0 8px;
+  font-size:clamp(9px,1.4vw,11.5px);letter-spacing:.11em;border-radius:11px;
+  --f1:#fdf5e2;--f2:#f0dfb6;--f3:#dcc496;--lip:#8f7444;--fg:#4a2f16;
+  filter:saturate(.85) brightness(.95);
+}
+.btn.fr-d.on{
+  --f1:#ffe79a;--f2:#ffc93c;--f3:#eaad20;--lip:#a8741a;--fg:#3a2208;
+  filter:none;box-shadow:0 4px 0 var(--lip),0 0 16px rgba(255,201,60,.45),
+    inset 0 2px 0 rgba(255,255,255,.7);
+}
+.btn.fr-switch{flex:0 0 auto}
+.fr-swtxt{
+  font:800 clamp(9px,1.4vw,12px)/1 var(--ff);letter-spacing:.16em;
+  text-transform:uppercase;color:#eaf3ff;
+}
+
+/* ------------------------------------------------------------------ foot */
+.fr-foot{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:clamp(8px,1.8vh,13px) clamp(10px,2.4vw,16px) clamp(10px,2.2vh,16px);
+  border-top:1.5px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.24);
+}
+.btn.fr-go{
+  min-height:46px;padding:0 clamp(14px,3vw,26px);border-radius:14px;
+  font-size:clamp(11px,1.7vw,14px);letter-spacing:.13em;
+  --f1:#a6e58c;--f2:#4bab53;--f3:#2f8a3d;--lip:#1a5526;--fg:#0c2c13;
+}
+.btn.fr-alt{
+  min-height:44px;padding:0 clamp(11px,2.4vw,18px);border-radius:13px;
+  font-size:clamp(10px,1.5vw,12px);
+  --f1:#e7e0cd;--f2:#cfc4a8;--f3:#b6a988;--lip:#7d6c48;--fg:#3f2a12;
+}
+.btn.fr-small{min-height:40px;padding:0 12px;font-size:10px;
+  --f1:#e7e0cd;--f2:#cfc4a8;--f3:#b6a988;--lip:#7d6c48;--fg:#3f2a12}
+.btn.fr-tiny{
+  min-height:34px;min-width:34px;padding:0 11px;border-radius:10px;
+  font-size:clamp(8.5px,1.25vw,10.5px);letter-spacing:.1em;flex:0 0 auto;
+}
+.btn.fr-drop{
+  min-width:30px;min-height:30px;padding:0;font-size:14px;line-height:1;
+  --f1:#f0d5cd;--f2:#d8b0a4;--f3:#c09284;--lip:#7d5348;--fg:#4a2018;
+}
+
+/* ------------------------------------------------------------------ note */
+.fr-note{
+  margin:0 clamp(10px,2.4vw,18px) 2px;padding:7px 11px 8px;border-radius:11px;
+  font:700 clamp(8px,1.2vw,10px)/1.35 var(--ff);letter-spacing:.05em;
+  background:rgba(8,22,42,.86);border:1.5px solid rgba(255,255,255,.14);
+  color:rgba(226,240,255,.86);
+}
+.fr-note.hid{display:none}
+.fr-note.good{border-color:rgba(95,208,122,.5);color:#d7f7de}
+.fr-note.bad{border-color:rgba(245,90,70,.6);color:#ffd8cf}
+.fr-note.warn{border-color:rgba(255,201,60,.55);color:#ffeec4}
+
+/* --------------------------------------------------------------- compact
+   The landscape phone. The seat grid stays two-up — four in a row at 375px
+   wide gives each name 80px, which is not a name. */
+@media (max-height:400px){
+  .fr-panel{width:min(520px,96vw);max-height:calc(100vh - 12px)}
+  .fr-head{padding:6px 42px 5px 12px}
+  .fr-body{gap:5px;padding:7px 10px}
+  .fr-foot{padding:6px 10px 8px;gap:7px}
+  .fr-input{min-height:40px}
+  .fr-row{min-height:38px;padding:4px 8px}
+  .fr-seat{min-height:46px;padding:5px 8px 6px 14px}
+  .btn.fr-go{min-height:42px}
+  .btn.fr-alt{min-height:38px}
+  .btn.fr-tiny{min-height:32px;min-width:32px}
+}

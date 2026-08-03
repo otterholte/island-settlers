@@ -29,10 +29,22 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const RUN_THRESHOLD = 0.6;      // world units/sec before we call it running
 
-export function createPlayerController(state, settler, gameCamera, input, world) {
+/**
+ * `opts.pid` names the seat this controller drives. It is 0 in the browser and
+ * always will be — there is one human here and they are player zero.
+ *
+ * The online server is the reason it is a parameter at all: it runs this exact
+ * file, headlessly, once per human in the match, so that a settler moves on the
+ * server for precisely the same reasons it moves in front of the person
+ * pushing it. A second implementation of "how fast does a settler accelerate"
+ * is a second implementation that can disagree with the first, and the whole
+ * point of an authoritative server is that it does not.
+ */
+export function createPlayerController(state, settler, gameCamera, input, world, opts = {}) {
   if (world && typeof world.heightAt === 'function') useHeightSampler(world.heightAt);
 
-  const p = state && state.players ? state.players[0] : null;
+  const pid = Number.isInteger(opts.pid) ? opts.pid : 0;
+  const p = state && state.players ? state.players[pid] : null;
   if (p) {
     if (p.nearTarget === undefined) p.nearTarget = null;
     if (p.nearTrade === undefined) p.nearTrade = null;
@@ -87,7 +99,7 @@ export function createPlayerController(state, settler, gameCamera, input, world)
     // sweeps by proximity and does not consult it.
     p.nearTarget = nearestItem(p.x, p.z, {
       maxDist: INTERACT_RADIUS,
-      filter: it => canGatherTile(state, 0, it.tile)
+      filter: it => canGatherTile(state, pid, it.tile)
     });
 
     // --- trading -------------------------------------------------------
@@ -95,7 +107,7 @@ export function createPlayerController(state, settler, gameCamera, input, world)
     if (dm < TRADE_RADIUS) {
       p.nearTrade = 'market';
     } else {
-      const port = nearestPortFor(state, 0, p.x, p.z, TRADE_RADIUS);
+      const port = nearestPortFor(state, pid, p.x, p.z, TRADE_RADIUS);
       p.nearTrade = port ? port.id : null;
     }
   }

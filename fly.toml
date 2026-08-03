@@ -1,0 +1,66 @@
+# Island Settlers — Fly.io deployment for the multiplayer server.
+#
+#   fly launch --no-deploy --copy-config     # once, to claim the app name
+#   fly volumes create island_data --size 1  # once, 1GB is enormous for this
+#   fly secrets set SESSION_SECRET="$(openssl rand -base64 32)"
+#   fly deploy
+#
+# Change `app` to whatever name you claimed, then put the matching websocket
+# address into DEFAULT_SERVER in src/net/config.js — or just type it into the
+# box on the friends screen the first time you sign in.
+
+app = "island-settlers"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  DATA = "/data"
+  # Six concurrent matches on a 256MB machine. Each one is a worker thread
+  # holding its own island and item field — about 40MB — so this number and
+  # the memory below move together.
+  MAX_MATCHES = "6"
+
+# Accounts and the friend graph are one JSON file, so they need somewhere that
+# survives a deploy. Without this every restart is a fresh server and everyone
+# has to sign up again.
+[mounts]
+  source = "island_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # NEVER SCALE THIS TO ZERO. A suspended machine drops every open websocket,
+  # which means every match in progress. Fly's free allowance covers one small
+  # always-on machine, and a game server that goes to sleep is not one.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  # A match is a live websocket per player; a hard connection cap would drop
+  # somebody mid-draft. The soft limit is where Fly starts preferring another
+  # machine, if you ever run more than one.
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 400
+
+# ONE MACHINE, ON PURPOSE. The store is a file on a volume and rooms live in
+# memory, so two machines would be two separate games where friends can see
+# each other on one and not the other. Scaling past this means moving the store
+# and the room registry out of the process — see the note at the top of
+# server/store.mjs.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[[http_service.checks]]
+  grace_period = "10s"
+  interval = "30s"
+  method = "GET"
+  timeout = "5s"
+  path = "/health"

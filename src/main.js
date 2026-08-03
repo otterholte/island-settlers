@@ -39,7 +39,32 @@ async function boot() {
   scene.background = new THREE.Color(0x8fd4ef);
   scene.fog = new THREE.Fog(0x9adcf0, 150, 340);
 
-  const state = createMatch({ seed: (Math.random() * 1e9) | 0 });
+  /* ------------------------------------------------------- the same island
+     A networked match hands its board over as a SEED, and the deal has to
+     happen here — before the module list below is even loaded, let alone the
+     terrain, the props, the docks and the three hundred pickups built from it.
+     `reshuffle` re-dresses the tiles in place and every one of those modules
+     reads them on the way up, so this is the only moment in the page's life at
+     which the island can change. That is why joining a match reloads the page:
+     see `src/net/netmatch.js`. */
+  let joining = null;
+  try {
+    const net = await load('./net/netmatch.js', null);
+    joining = net && net.pendingMatch ? net.pendingMatch() : null;
+    if (joining) {
+      const { reshuffle } = await import('./board/layout.js');
+      reshuffle(joining.seed >>> 0);
+      const opt = await import('./core/options.js');
+      if (opt && opt.setKnights) opt.setKnights(joining.knights !== false);
+      const diff = await import('./systems/difficulty.js');
+      if (diff && diff.setDifficulty && joining.difficulty) diff.setDifficulty(joining.difficulty);
+    }
+  } catch (e) {
+    console.warn('[boot] no networked match to join —', e && e.message);
+    joining = null;
+  }
+
+  const state = createMatch({ seed: joining ? (joining.seed >>> 0) : ((Math.random() * 1e9) | 0) });
 
   // ---------------------------------------------------------------- modules
   const [
@@ -174,6 +199,29 @@ async function boot() {
   game.flow = flow;
   if (ecoM && ecoM.attach) ecoM.attach(game);
 
+  /* ------------------------------------------------------------ multiplayer
+     One connection per page, shared by the friends screen and the match. It
+     dials only when somebody asks for it — a solo player never opens a socket
+     and never needs to know a server exists. */
+  let net = null;
+  try {
+    const netM = await load('./net/netmatch.js', null);
+    const clientM = await load('./net/client.js', null);
+    if (netM && clientM) {
+      const client = clientM.netClient();
+      net = netM.createNetMatch(state, game, client);
+      game.net = net;
+      game.netClient = client;
+      // Loaded straight into a match: take it over now rather than waiting for
+      // the server to say so again, so the board and the seats are right while
+      // the load-in pause runs.
+      if (joining) { net.start(joining); client.connect(); }
+    }
+  } catch (e) {
+    console.warn('[boot] multiplayer unavailable —', e && e.message);
+    net = null;
+  }
+
   // ---------------------------------------------------------------- resize
   const resize = () => {
     const w = innerWidth, h = innerHeight;
@@ -192,7 +240,67 @@ async function boot() {
   const gatherSound = r =>
     ({ wood: 'chop', brick: 'dig', ore: 'mine', wheat: 'reap', wool: 'shear' }[r] || 'chop');
 
+  /* ------------------------------------------------- the held Knight card
+   *
+   *   "If a Knight is played you won't know until you exit the trading post or
+   *    port, that way you can't be stolen from while actively trading. But you
+   *    don't know the Knight hit until you leave the port or trading post."
+   *
+   * Offline this is handled by stopping the world; online the world cannot be
+   * stopped, so the SECRET is kept instead. A Knight that lands while a sheet
+   * is open goes in here — silently, no horn, no shake, no banner — and is
+   * released the moment the sheet closes, whole, with its own card and its own
+   * announcement. What the player is looking at while they trade is a pack
+   * that has not moved (hud.js latches the counters for the same reason), so
+   * the trade they are halfway through is the trade they set up.
+   *
+   * A second Knight inside the window replaces the first only in the sense
+   * that both are shown, in order, on the way out.
+   */
+  const heldKnights = [];
+  let sheetWasOpen = false;
+
+  function sheetOpen() {
+    return !!(panels && panels.isOpen && state.phase === 'play');
+  }
+
+  function releaseHeldKnights() {
+    if (!heldKnights.length) return;
+    const batch = heldKnights.splice(0);
+    // A beat after the sheet is gone, so the card is not fighting the closing
+    // animation for the middle of the screen.
+    setTimeout(() => {
+      for (const ev of batch) showKnight(ev, true);
+    }, 260);
+  }
+
+  function showKnight(ev, late) {
+    structures.setRobber(ev.tile);
+    audio.sfx('horn');
+    effects.shockwave(ev.tile);
+    state.players.forEach(p => avatars[p.id].setCarry(p.res));
+    const mine = (ev.losses || []).find(l => l.player === 0);
+    const tookFromMe = ev.player !== 0 && mine && mine.total > 0;
+    hud.raid(ev);
+    const who = state.players[ev.player];
+    if (tookFromMe) {
+      audio.sfx('deny');
+      gameCamera.shake && gameCamera.shake(0.5);
+      hud.announce(
+        late ? `${who.name} played a Knight while you traded!` : `${who.name} played a Knight!`,
+        '#ff8a6a');
+    } else {
+      hud.announce(`${who.name} sent the Knight!`, who.color.css);
+    }
+  }
+
   function handleEvents() {
+    // Closing a sheet is what lets the news out. Checked here rather than in
+    // panels.js so there is one place that knows about the hold.
+    const open = sheetOpen();
+    if (sheetWasOpen && !open) releaseHeldKnights();
+    sheetWasOpen = open;
+
     for (const ev of drainEvents(state)) {
       switch (ev.type) {
         case 'gained': {
@@ -222,27 +330,9 @@ async function boot() {
           if (ev.player === 0) hud.toast('Road Building — place two roads free');
           break;
         case 'knight': {
-          structures.setRobber(ev.tile);
-          audio.sfx('horn');
-          effects.shockwave(ev.tile);
-          state.players.forEach(p => avatars[p.id].setCarry(p.res));
-          // THE BILL. `playKnight` has always emitted a full per-player
-          // breakdown of what it took and nothing has ever read it, so a bot
-          // Knighting the human out of well over half their goods arrived as a
-          // horn and five counters quietly dropping. hud-raid.js puts the
-          // numbers on screen for a few seconds; the centre banner and the
-          // camera shake are there to make sure they are looked at.
-          const mine = (ev.losses || []).find(l => l.player === 0);
-          const tookFromMe = ev.player !== 0 && mine && mine.total > 0;
-          hud.raid(ev);
-          if (tookFromMe) {
-            audio.sfx('deny');
-            gameCamera.shake && gameCamera.shake(0.5);
-            hud.announce(`${state.players[ev.player].name} played a Knight!`, '#ff8a6a');
-          } else {
-            hud.announce(`${state.players[ev.player].name} sent the Knight!`,
-                         state.players[ev.player].color.css);
-          }
+          // Online, and mid-trade: hold it. See the block above handleEvents.
+          if (net && net.active && sheetOpen()) { heldKnights.push(ev); break; }
+          showKnight(ev, false);
           break;
         }
         case 'award':
@@ -326,13 +416,40 @@ async function boot() {
     // The trade chip appears whenever you are on a post's own hex, and freezing
     // three rivals every time somebody runs across the desert — or parks there
     // — would be a very different feature.
-    const sheetPaused = !!(panels && panels.isOpen && state.phase === 'play');
-    const mapPaused = !!(overview && overview.isOpen) || sheetPaused;
+    //
+    // ONLINE, NONE OF THAT IS TRUE — AND IT CANNOT BE.
+    //
+    //   "Because it's multiplayer and normally the game pauses at certain
+    //    points, if it's now multiplayer, maybe make it so that during what
+    //    would've been pause points the timer and other players still go, but
+    //    if a Knight is played you won't know until you exit the trading post
+    //    or port, that way you can't be stolen from while actively trading."
+    //
+    // Three other people cannot be frozen because one of them opened a sheet,
+    // and a clock that stops on one machine and not the others is not a clock.
+    // So online the world keeps running and the PROTECTION MOVES: the trade
+    // sheet renders from a snapshot of your pack taken when it opened, and the
+    // Knight card that would have told you what you lost is held until you
+    // close it. You cannot be robbed mid-trade because you cannot find out you
+    // were robbed mid-trade, and the numbers you are trading against do not
+    // move under your hands. See `netHold` below and hud.js's `latchResources`.
+    const online = !!(net && net.active);
+    const sheetPaused = !online && !!(panels && panels.isOpen && state.phase === 'play');
+    const mapPaused = !online && (!!(overview && overview.isOpen) || sheetPaused);
 
     while (acc >= FIXED && steps++ < 4) {
       acc -= FIXED;
       flow.update(FIXED);
       if (mapPaused) continue;
+      if (online) {
+        // The server ticks the world, gathers for everybody and drives the
+        // bots. What is left here is the local half: your own settler is
+        // predicted at 60Hz so it answers the stick immediately, and everyone
+        // else is eased between snapshots.
+        controller.update(FIXED);
+        net.update(FIXED);
+        continue;
+      }
       tickWorld(state, FIXED);
       controller.update(FIXED);
       gathering.update(FIXED);

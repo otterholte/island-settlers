@@ -53,6 +53,60 @@ import { MARKET, ports } from '../board/layout.js';
  *  overview's close transition to run before it re-opens. */
 const FREE_ROAD_GAP_MS = 340;
 
+/* ============================================================= the network
+ *
+ * In an online match NOTHING here may change the board.
+ *
+ * The server is running this same rulebook and it is the only copy that
+ * counts; a client that also paid for its own road would be spending money
+ * twice and putting a piece down that the server may be about to refuse. So
+ * every mutation in this file asks first: is there a net agent? If there is,
+ * the action goes down the wire and the piece appears when the server's event
+ * comes back — sixty milliseconds later, through exactly the same `build`
+ * handler that draws it in single player.
+ *
+ * The gates ABOVE the mutation stay where they are. Affordability, piece caps,
+ * legal targets, proximity to a dock — all of that still runs locally, because
+ * it is what makes the interface honest before you commit, and because being
+ * told "need 2 more brick" instantly beats being told it by a server. The
+ * server checks all of it again and does not believe a word of ours.
+ *
+ * `netAgent(kind, body)` returns true if it took the action. Null in single
+ * player, which is every branch below falling through to the local rules
+ * exactly as it always has.
+ */
+let netAgent = null;
+
+/** systems/netmatch.js installs this when a networked match begins, and
+ *  clears it when one ends. */
+export function setNetAgent(fn) {
+  netAgent = typeof fn === 'function' ? fn : null;
+  return netAgent;
+}
+
+export function isNetMatch() { return !!netAgent; }
+
+/**
+ * The last line of defence, called by `overview.js` at the moment it would
+ * otherwise place a piece itself.
+ *
+ * The board map places pieces directly whenever nobody handed it an
+ * `onConfirm` — which is the normal route for a build card, and would be a
+ * quiet way for a client to put a road down that the server never agreed to.
+ * Returning true here means "sent; do not touch the board".
+ */
+export function netCommit(mode, id) {
+  if (!netAgent) return false;
+  const kind = {
+    'place-road': 'build.road',
+    'place-settlement': 'build.settlement',
+    'place-city': 'build.city',
+    'place-robber': 'play.knight'
+  }[mode];
+  if (!kind) return false;
+  return netAgent(kind, kind === 'play.knight' ? { tile: id } : { id });
+}
+
 /**
  * Seconds of breathing room after the player cancels out of a free-road
  * placement.
@@ -195,6 +249,7 @@ export function buy(kind, game = G) {
   }
 
   if (kind === 'card') {
+    if (netAgent) return netAgent('buy.card', {});
     const card = drawCard(state, 0);
     if (!card) return deny(g, 'card', 'Cannot draw a card right now');
     if (card.type === 'victoryPoint') {
@@ -232,6 +287,10 @@ function openPlacement(g, kind) {
       if (!canAfford(state.players[0].res, COST[kind])) {
         deny(g, kind, `Need ${listMissing(missingFrom(state.players[0].res, COST[kind]))}`);
         return false;
+      }
+      if (netAgent) {
+        return netAgent(kind === 'road' ? 'build.road'
+          : kind === 'settlement' ? 'build.settlement' : 'build.city', { id });
       }
       let ok = false;
       if (kind === 'road') ok = placeRoad(state, 0, id, false);
@@ -311,6 +370,15 @@ export function placeFreeRoads(game = G) {
       hint: 'Tap a glowing edge, then tap it again — this one is free',
       pickLabel: 'Pick an edge',
       onConfirm(eid) {
+        if (netAgent) {
+          // The server decrements the debt and tells us the new figure, so
+          // the chained re-open below is driven by its answer, not our guess.
+          netAgent('free.road', { id: eid });
+          if (freeRoadsOf(p) > 1 && typeof setTimeout === 'function') {
+            setTimeout(step, FREE_ROAD_GAP_MS + 120);
+          }
+          return true;
+        }
         const ok = placeRoad(state, 0, eid, true);   // free: nothing is paid
         if (!ok) { sfx(g, 'deny'); return false; }
         p.freeRoads = Math.max(0, freeRoadsOf(p) - 1);
@@ -356,6 +424,15 @@ export function useRoadBuilding(game = G) {
     say(g, `${room.reason}. Keep the card for now.`, 'warn');
     return false;
   }
+  if (netAgent) {
+    // The card is spent server-side; its `roadBuilding` event sets freeRoads
+    // and the map comes up on the back of that rather than on our say-so.
+    netAgent('play.roads', {});
+    freeRoadDeferUntil = 0;
+    say(g, 'Two free roads — place them now', 'good');
+    if (typeof setTimeout === 'function') setTimeout(() => placeFreeRoads(g), 180);
+    return true;
+  }
   if (!playRoadBuilding(state, 0)) return false;
   freeRoadDeferUntil = 0;
   say(g, 'Two free roads — place them now', 'good');
@@ -374,6 +451,7 @@ export function playKnightAt(tileId, game = G) {
   const g = game || G;
   if (!g || typeof tileId !== 'number') return false;
   if (!hasKnight(g)) { say(g, 'No Knight in hand', 'warn'); return false; }
+  if (netAgent) return netAgent('play.knight', { tile: tileId });
   const ok = playKnight(g.state, 0, tileId);
   if (!ok) sfx(g, 'deny');
   return ok;
@@ -473,6 +551,12 @@ export function trade(give, get, game = G) {
     };
   }
 
+  if (netAgent) {
+    netAgent('trade', { give, get, ratio: q.ratio, port: q.portId ?? null });
+    say(g, `Traded ${q.ratio} ${RES_LABEL[give]} for 1 ${RES_LABEL[get]}`, 'good');
+    return { ok: true, ratio: q.ratio, at: q.at, portId: q.portId, reason: '' };
+  }
+
   if (!doTrade(state, 0, give, get, q.ratio)) {
     sfx(g, 'deny');
     return { ok: false, ratio: q.ratio, reason: 'That trade was refused' };
@@ -499,6 +583,10 @@ export function attach(game) {
   }
 
   const api = {
+    /** True while a networked match owns the rules. Read by hud.js so its
+     *  build cards route through here instead of paying locally. */
+    isNet: () => isNetMatch(),
+    setNetAgent,
     buy: kind => buy(kind, game),
     trade: (give, get) => trade(give, get, game),
     quote: give => quote(give, game),

@@ -328,6 +328,188 @@ if (STAGE === 'home') {
     return {homeShown:!h.classList.contains('hid'),
             setupShown:!s.classList.contains('hid')};})()`)));
 
+/* PLAY WITH FRIENDS. Point `--port` at a server started with STATIC=1 and the
+   page is served from the same origin the websocket lives on, so the client
+   finds it with no configuration — which is also the local-development story
+   this stage is proving works. */
+} else if (STAGE === 'friends') {
+  await waitIntro();
+  await sleep(300);
+  console.log('  CLICK ' + JSON.stringify(await ev(`(()=>{
+    const b=document.querySelector('.mf-friends');
+    if(!b)return 'no friends button';
+    b.click();return 'clicked';})()`)));
+  // The screen is built by a dynamic import and then waits on a websocket.
+  for (let i = 0; i < 60; i++) {
+    const st = await ev(`(()=>{const n=document.querySelector('.fr-wrap');
+      if(!n||n.classList.contains('hid'))return null;
+      const d=n.querySelector('.fr-dot');
+      return d?d.className:'';})()`);
+    if (typeof st === 'string' && st.includes('ok')) break;
+    await sleep(250);
+  }
+  console.log('  FRIENDS ' + JSON.stringify(await ev(`(()=>{
+    const R=s=>{const n=document.querySelector(s);if(!n)return null;
+      const r=n.getBoundingClientRect();
+      return {x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height),
+        right:Math.round(r.right),bottom:Math.round(r.bottom)};};
+    const wrap=document.querySelector('.fr-wrap');
+    const panel=R('.fr-panel');
+    return {vw:innerWidth,vh:innerHeight,
+      shown:!!(wrap&&!wrap.classList.contains('hid')),
+      introHidden:!!document.querySelector('.mf-intro.mf-hid'),
+      status:(document.querySelector('.fr-status-t')||{}).textContent,
+      dot:(document.querySelector('.fr-dot')||{}).className,
+      title:(document.querySelector('.fr-title')||{}).textContent,
+      panel,
+      fits:panel?(panel.y>=0&&panel.bottom<=innerHeight
+        &&panel.x>=0&&panel.right<=innerWidth):false,
+      inputs:[...document.querySelectorAll('.fr-input')].map(n=>{
+        const r=n.getBoundingClientRect();
+        return {ph:n.placeholder,w:Math.round(r.width),h:Math.round(r.height)};}),
+      buttons:[...document.querySelectorAll('.fr-foot .btn')].map(b=>{
+        const r=b.getBoundingClientRect();
+        return {lab:(b.textContent||'').trim().slice(0,20),
+          w:Math.round(r.width),h:Math.round(r.height)};}),
+      scrollW:document.documentElement.scrollWidth,
+      scrollH:document.documentElement.scrollHeight};})()`)));
+  await shot(`friends-${TAG}`);
+
+  // Sign up, so the friends list itself can be photographed too.
+  const who = 'shot' + Math.floor(Math.random() * 100000);
+  console.log('  SIGNUP ' + JSON.stringify(await ev(`(async()=>{
+    const c=(await import('/src/net/client.js')).netClient();
+    try{ const u=await c.register('${who}','islandpass'); return u&&u.name; }
+    catch(e){ return 'ERR ' + (e.code||e.message); }})()`, true)));
+  await sleep(700);
+  console.log('  LIST ' + JSON.stringify(await ev(`(()=>{
+    return {title:(document.querySelector('.fr-title')||{}).textContent,
+      sub:(document.querySelector('.fr-sub')||{}).textContent,
+      rows:document.querySelectorAll('.fr-row').length,
+      addBox:!!document.querySelector('.fr-add'),
+      buttons:[...document.querySelectorAll('.fr-foot .btn')]
+        .map(b=>(b.textContent||'').trim())};})()`)));
+  await shot(`friends-list-${TAG}`);
+
+  // ...and open a lobby, which is the screen with the seats in it.
+  console.log('  LOBBY ' + JSON.stringify(await ev(`(async()=>{
+    const btns=[...document.querySelectorAll('.fr-foot .btn')];
+    const open=btns.find(b=>/lobby/i.test(b.textContent||''));
+    if(!open)return 'no lobby button';
+    open.click(); return 'clicked';})()`, true)));
+  await sleep(900);
+  console.log('  SEATS ' + JSON.stringify(await ev(`(()=>{
+    const seats=[...document.querySelectorAll('.fr-seat')].map(s=>({
+      kind:s.className.replace('fr-seat','').trim(),
+      name:(s.querySelector('.fr-sname')||{}).textContent}));
+    const panel=document.querySelector('.fr-panel');
+    const r=panel?panel.getBoundingClientRect():null;
+    return {title:(document.querySelector('.fr-title')||{}).textContent,
+      sub:(document.querySelector('.fr-sub')||{}).textContent,
+      seats,
+      diff:[...document.querySelectorAll('.btn.fr-d')]
+        .map(b=>(b.textContent||'').trim()+(b.classList.contains('on')?'*':'')),
+      fits:r?(r.top>=0&&r.bottom<=innerHeight):false,
+      h:r?Math.round(r.height):0};})()`)));
+  await shot(`lobby-${TAG}`);
+
+/* THE HANDOFF. The riskiest path in the whole multiplayer build: pressing
+   START parks the match in sessionStorage and reloads the page, and main.js
+   has to deal THAT island before it builds a single mesh. If this works, a
+   browser really is playing an authoritative match. */
+} else if (STAGE === 'netmatch') {
+  await waitIntro();
+  await sleep(300);
+  const who = 'net' + Math.floor(Math.random() * 100000);
+  console.log('  SIGNUP ' + JSON.stringify(await ev(`(async()=>{
+    const c=(await import('/src/net/client.js')).netClient();
+    c.connect(true);
+    for(let i=0;i<40 && c.status!=='ready';i++) await new Promise(r=>setTimeout(r,150));
+    try{ const u=await c.register('${who}','islandpass'); return u&&u.name; }
+    catch(e){ return 'ERR ' + (e.code||e.message); }})()`, true)));
+
+  console.log('  START ' + JSON.stringify(await ev(`(async()=>{
+    const c=(await import('/src/net/client.js')).netClient();
+    const P=await import('/src/net/protocol.js');
+    const room=await c.req(P.REQ.ROOM_CREATE,{});
+    await c.req(P.REQ.ROOM_SETTINGS,{difficulty:'easy',knights:true});
+    await c.req(P.REQ.ROOM_START,{});
+    return room.room.id;})()`, true)));
+
+  // The reload is the transition. Wait for the page to come back up INSIDE the
+  // match rather than on the opening screen.
+  // The page has no rules handle of its own; import one so the stage can work
+  // out what is legal, exactly as the browser's own draft panel does.
+  let back = null;
+  for (let i = 0; i < 140; i++) {
+    await sleep(400);
+    back = await ev(`(()=>{
+      const I=window.__ISLAND__;
+      if(!I||!I.state)return null;
+      const n=I.game.net;
+      return {net:!!(n&&n.active), phase:I.state.phase,
+        seed:(n&&n.info)?n.info.seed:null,
+        yourPid:(n&&n.info)?n.info.yourPid:null,
+        draft:(n&&n.draftState)?{pid:n.draftState.pid,need:n.draftState.need}:null,
+        buildings:I.state.buildings.size, roads:I.state.roadOwner.size,
+        names:I.state.players.map(p=>p.name+':'+p.color.key),
+        stage:(I.game.flow||{}).stage,
+        time:+I.state.time.toFixed(1)};})()`);
+    if (back && back.net) break;
+  }
+  console.log('  REJOINED ' + JSON.stringify(back));
+  await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+
+  // Let the load-in pause run out and the draft play itself: three of the four
+  // seats are bots, and the fourth auto-places if the browser says nothing.
+  for (let i = 0; i < 90; i++) {
+    await sleep(1000);
+    /* Tap for the player. This deliberately goes through the REAL panel —
+       select a glowing target and press its Confirm — so the path under test
+       is the one a thumb takes: overview.commit -> openPick's onConfirm ->
+       netmatch.send -> the server. */
+    await ev(`(()=>{
+      const I=window.__ISLAND__; const n=I.game.net, ov=I.game.overview;
+      if(!n||!n.draftState||n.draftState.pid!==0)return 0;
+      if(!ov||!ov.isOpen)return 0;
+      const R=window.__R__;
+      const legal=n.draftState.need==='road'
+        ? R.legalRoads(I.state,0,true,n.draftState.anchor)
+        : R.legalSettlements(I.state,0,true);
+      if(!legal.length)return 0;
+      ov.select(legal[0]);
+      const btn=document.querySelector('.ov-bar .btn.green');
+      if(btn&&!btn.disabled)btn.click(); else ov.commit();
+      return 1;})()`);
+    const now2 = await ev(`(()=>{const I=window.__ISLAND__;
+      const n=I.game.net;
+      return {phase:I.state.phase, b:I.state.buildings.size, r:I.state.roadOwner.size,
+        pid:n&&n.draftState?n.draftState.pid:-9,
+        need:n&&n.draftState?n.draftState.need:'?',
+        open:!!(I.game.overview&&I.game.overview.isOpen),
+        snaps:n&&n.mirror?n.mirror.stats.snaps:0,
+        evs:n&&n.mirror?n.mirror.stats.events:0,
+        me:[+I.state.players[0].x.toFixed(1),+I.state.players[0].z.toFixed(1)],
+        t:+I.state.time.toFixed(1)};})()`);
+    if (i === 3 || i === 12 || i === 30) console.log(`  t+${i}s ` + JSON.stringify(now2));
+    if (now2 && now2.b >= 8 && now2.r >= 8 && now2.phase === 'play') {
+      console.log('  DRAFTED ' + JSON.stringify(now2));
+      break;
+    }
+  }
+  await sleep(2500);
+  console.log('  PLAYING ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__; const n=I.game.net;
+    return {phase:I.state.phase, buildings:I.state.buildings.size,
+      roads:I.state.roadOwner.size,
+      packs:I.state.players.map(p=>p.res.wood+p.res.brick+p.res.wool+p.res.wheat+p.res.ore),
+      snaps:n.mirror.stats.snaps, events:n.mirror.stats.events,
+      dropped:n.mirror.stats.dropped, unknown:n.mirror.stats.unknown,
+      buffered:n.buffered, t:+I.state.time.toFixed(1),
+      hudUp:!!document.querySelector('.hud:not(.pre)')};})()`)));
+  await shot(`netmatch-${TAG}`);
+
 /* The gear popup, which carries the second way home for the rest of the match
    — the map pad is only up while the map is. */
 } else if (STAGE === 'settings') {

@@ -1,0 +1,10 @@
+# The server needs src/ (it runs the real rules) but nothing that is only ever
+# looked at, run once, or generated.
+.git
+.github
+node_modules
+progress
+server/data
+*.log
+*.tmp
+claude_commit_msg.tmp
