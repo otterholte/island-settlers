@@ -13,7 +13,7 @@
  *    elements cover the map's edges."
  *
  * So the board now moves. One finger drags it, two fingers pinch it, a wheel or
- * the +/- keys zoom it about wherever the pointer is, and a home button puts it
+ * the +/- keys zoom it about wherever the pointer is, and a FIT button puts it
  * back. The clamp is the promise: the CENTRE of the board is never allowed
  * outside the middle three quarters of the map frame, at any zoom, so the island
  * can be pushed far enough to get a dock out from under a panel and never far
@@ -26,6 +26,24 @@
  * `proj` object the painter reads. Nothing else in the map knows this file
  * exists — targets, docks, pieces and the settler pin all follow because they
  * are all drawn through `proj`.
+ *
+ * The HOME key
+ * ------------
+ * The top key on the pad is not a map control. It used to be a house glyph
+ * wired to fit-to-frame, which is not what a house means to anybody:
+ *
+ *   "If I've already started a game, let the home button on the left of the
+ *    screen work all the time and exit the game back to the home screen even
+ *    when other players or bots are choosing their spots in the draft."
+ *
+ * So the house now does what it looks like, fit-to-frame took a corner-brackets
+ * glyph, and the map pad is the one control that is up in EVERY overview mode
+ * including `draft-watch` — which is exactly the moment the quote is about, when
+ * the board is locked and there is otherwise no way out of the match.
+ *
+ * It arms on the first tap and leaves on the second, within ARM_MS. A single
+ * stray tap on a 38px key should not throw away a twenty-minute match, and a
+ * modal confirm over a locked draft board is worse than a key that says LEAVE?
  *
  * `gesturing` is true only while a finger is down. overview.js uses it to skip
  * re-baking the nineteen-hex background mid-drag and blit the last bake through
@@ -46,6 +64,8 @@ const ZOOM_STEP = 1.22;
 const KEEP_IN = 0.14;
 /** Travel under which a pointer was a tap; overview.js owns taps. */
 const DRAG_SLOP = 4;
+/** How long the HOME key stays armed after the first tap, in ms. */
+const ARM_MS = 4200;
 
 const CSS = `
 .ovz{position:absolute;display:flex;flex-direction:column;gap:5px;z-index:6;
@@ -59,24 +79,52 @@ const CSS = `
   transition:transform .1s ease,border-color .15s ease}
 .ovz b:active{transform:translateY(2px) scale(.95);border-color:rgba(255,201,60,.9)}
 .ovz b svg{display:block}
+/* The HOME key is the odd one out on this pad and is coloured to say so: it
+   leaves the match, it does not move the board. The 9px lower margin is the
+   seam between "get out" and the three map controls under it. */
+.ovz b.ovz-home{margin-bottom:9px;
+  background:linear-gradient(180deg,rgba(122,32,28,.96),rgba(62,12,10,.96));
+  border-color:rgba(255,150,120,.62)}
+.ovz b.ovz-home.arm{
+  background:linear-gradient(180deg,rgba(224,58,46,.98),rgba(148,22,16,.98));
+  border-color:rgba(255,216,180,.95);
+  box-shadow:0 3px 10px rgba(0,0,0,.5),0 0 16px rgba(245,60,42,.6),
+             inset 0 1px 0 rgba(255,255,255,.2)}
+/* left/top are written by layout(), which parks it beside the HOME key. */
+.ovz-ask{position:absolute;white-space:nowrap;pointer-events:none;
+  padding:4px 9px 5px;border-radius:10px;z-index:7;
+  background:linear-gradient(180deg,rgba(214,54,44,.97),rgba(120,16,14,.97));
+  border:1.5px solid rgba(255,214,180,.85);box-shadow:0 3px 10px rgba(0,0,0,.55);
+  font:800 8.5px/1.2 var(--ff,system-ui);letter-spacing:.13em;text-transform:uppercase;
+  color:#fff2e2;opacity:1;transition:opacity .2s ease}
+.ovz-ask.off{opacity:0}
 .ovz-hint{position:absolute;display:flex;align-items:center;gap:6px;
   padding:4px 9px 5px;border-radius:11px;pointer-events:none;z-index:6;
   background:rgba(6,20,40,.78);border:1.5px solid rgba(255,201,60,.30);
   font:700 8px/1.2 var(--ff,system-ui);letter-spacing:.12em;text-transform:uppercase;
   color:rgba(206,226,246,.86);transition:opacity .3s ease}
 .ovz-hint.off{opacity:0}
-@media (max-height:400px){.ovz b{width:33px;height:30px}.ovz-hint{font-size:7px}}
+@media (max-height:400px){.ovz b{width:33px;height:30px}.ovz-hint{font-size:7px}
+  .ovz b.ovz-home{margin-bottom:7px}.ovz-ask{font-size:7.5px}}
 `;
 
 const SV = body =>
   `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">${body}</svg>`;
-const P = (d, w = 2.3) =>
-  `<path d="${d}" fill="none" stroke="#ffe0a0" stroke-width="${w}" ` +
+const P = (d, w = 2.3, c = '#ffe0a0') =>
+  `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" ` +
   `stroke-linecap="round" stroke-linejoin="round"/>`;
 const GLYPH = {
   plus: SV(P('M12 5.6v12.8M5.6 12h12.8')),
   minus: SV(P('M5.6 12h12.8')),
-  home: SV(P('M4.4 11.4L12 4.6l7.6 6.8') + P('M6.8 10v9.4h10.4V10', 2))
+  /* Corner brackets, the universal "fit to frame". The house that used to sit
+     here is now the HOME key, one row up, and it leaves the match. */
+  fit: SV(P('M4.6 9V4.6H9M15 4.6h4.4V9M19.4 15v4.4H15M9 19.4H4.6V15')
+    + P('M9.4 9.4h5.2v5.2H9.4z', 1.7)),
+  home: SV(P('M4.4 11.4L12 4.6l7.6 6.8', 2.3, '#ffd9cc')
+    + P('M6.8 10v9.4h10.4V10', 2, '#ffd9cc')),
+  /* Armed: a door with an arrow going out of it. No going back from here. */
+  leave: SV(P('M13.4 4.6H5.4v14.8h8', 2.3, '#fff2e2')
+    + P('M11.2 12h8.4M16.4 8.8L19.6 12l-3.2 3.2', 2.3, '#fff2e2'))
 };
 
 function injectStyle(doc) {
@@ -105,7 +153,9 @@ export function createOvPan(cv, proj, opts = {}) {
   const stats = { drags: 0, zooms: 0, resets: 0 };
 
   /* ------------------------------------------------------------------ DOM */
-  let pad = null, hint = null;
+  let pad = null, hint = null, homeKey = null, ask = null;
+  let armT = 0, armed = false;
+  const onLeave = typeof opts.onLeave === 'function' ? opts.onLeave : null;
   if (doc && host && doc.createElement) {
     injectStyle(doc);
     const key = (glyph, label, fn) => {
@@ -123,12 +173,25 @@ export function createOvPan(cv, proj, opts = {}) {
     };
     pad = doc.createElement('div');
     pad.className = 'ovz';
+    if (onLeave) {
+      homeKey = key(GLYPH.home, 'Leave the match and go home', () => tapHome());
+      homeKey.className = 'ovz-home';
+      pad.appendChild(homeKey);
+    }
     pad.appendChild(key(GLYPH.plus, 'Zoom in', () => zoomAt(ZOOM_STEP)));
     pad.appendChild(key(GLYPH.minus, 'Zoom out', () => zoomAt(1 / ZOOM_STEP)));
-    const home = key(GLYPH.home, 'Fit the board', () => reset(true));
-    home.className = 'ovz-home';
-    pad.appendChild(home);
+    const fit = key(GLYPH.fit, 'Fit the board', () => reset(true));
+    fit.className = 'ovz-fit';
+    pad.appendChild(fit);
     host.appendChild(pad);
+
+    if (onLeave) {
+      ask = doc.createElement('div');
+      ask.className = 'ovz-ask off';
+      ask.textContent = 'Leave match? Tap again';
+      ask.style.display = 'none';
+      host.appendChild(ask);
+    }
 
     hint = doc.createElement('div');
     hint.className = 'ovz-hint';
@@ -140,6 +203,46 @@ export function createOvPan(cv, proj, opts = {}) {
     if (touched) return;
     touched = true;
     if (hint) hint.classList.add('off');
+  }
+
+  /* ------------------------------------------------------------- home key
+     Tap once to arm, tap again to go. The armed state is loud on purpose —
+     red key, door glyph, a chip that says what the next tap does — because
+     the thing on the other side of it is an abandoned match. */
+  function disarmHome() {
+    armed = false;
+    if (armT) { clearTimeout(armT); armT = 0; }
+    if (homeKey) {
+      homeKey.classList.remove('arm');
+      homeKey.innerHTML = GLYPH.home;
+      homeKey.setAttribute('aria-label', 'Leave the match and go home');
+    }
+    if (ask) {
+      ask.classList.add('off');
+      ask.style.display = 'none';
+    }
+  }
+
+  function tapHome() {
+    if (!onLeave) return;
+    if (armed) { disarmHome(); onLeave(); return; }
+    armed = true;
+    if (homeKey) {
+      homeKey.classList.add('arm');
+      homeKey.innerHTML = GLYPH.leave;
+      homeKey.setAttribute('aria-label', 'Tap again to leave the match');
+    }
+    if (ask) {
+      ask.style.display = '';
+      // layout() measures the chip, which forces the reflow the fade needs:
+      // un-hiding and un-fading in the same frame with no read between them
+      // makes the browser collapse both into one paint and skip the
+      // transition. Hence measure, THEN drop the class, in that order.
+      layout();
+      ask.classList.remove('off');
+    }
+    if (armT) clearTimeout(armT);
+    armT = setTimeout(disarmHome, ARM_MS);
   }
 
   /* --------------------------------------------------------------- clamps */
@@ -190,8 +293,20 @@ export function createOvPan(cv, proj, opts = {}) {
   function layout() {
     if (!pad) return;
     const f = frame();
-    pad.style.left = Math.round(f.x + 12) + 'px';
-    pad.style.top = Math.round(f.y + f.h / 2 - 56) + 'px';
+    // Measured, not counted: the pad is three keys without a HOME key and four
+    // with one, and the compact breakpoint shrinks every key. 112 is the
+    // three-key height and only stands in when the pad has not been laid out.
+    const padH = pad.offsetHeight || 112;
+    const left = Math.round(f.x + 12);
+    const top = Math.round(f.y + f.h / 2 - padH / 2);
+    pad.style.left = left + 'px';
+    pad.style.top = top + 'px';
+    if (ask && homeKey && ask.style.display !== 'none') {
+      const keyH = homeKey.offsetHeight || 34;
+      const askH = ask.offsetHeight || 20;
+      ask.style.left = (left + (pad.offsetWidth || 38) + 8) + 'px';
+      ask.style.top = Math.round(top + keyH / 2 - askH / 2) + 'px';
+    }
     if (hint) {
       hint.style.left = Math.round(f.x + f.w / 2) + 'px';
       hint.style.bottom = '10px';
@@ -365,15 +480,20 @@ export function createOvPan(cv, proj, opts = {}) {
     },
     /** So overview.js can hide the buttons in the confirm-bar modes if it likes. */
     controls: pad,
+    /** So a caller closing the map can drop an armed HOME key on the way out. */
+    disarm: disarmHome,
     setVisible(v) {
+      if (!v) disarmHome();
       if (pad) pad.style.display = v ? '' : 'none';
       if (hint) hint.style.display = v ? '' : 'none';
     },
     destroy() {
+      disarmHome();
       for (const [t, type, fn, o] of bound) t.removeEventListener(type, fn, o);
       bound.length = 0;
       if (pad && pad.parentNode) pad.parentNode.removeChild(pad);
       if (hint && hint.parentNode) hint.parentNode.removeChild(hint);
+      if (ask && ask.parentNode) ask.parentNode.removeChild(ask);
     }
   };
 }

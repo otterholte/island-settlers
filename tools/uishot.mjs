@@ -268,7 +268,7 @@ const MEASURE_INTRO = `(()=>{
     .map(b=>{const r=b.getBoundingClientRect();
       return {lab:(b.textContent||'').trim().slice(0,18),
         w:Math.round(r.width),h:Math.round(r.height)};});
-  const rects=[...document.querySelectorAll('.mf-intro > *, .mf-i-foot > *, .mf-i-cta > *')]
+  const rects=[...document.querySelectorAll('.mf-view > *, .mf-i-cta > *')]
     .map(n=>({c:String(n.className).split(' ')[0],
       t:Math.round(n.getBoundingClientRect().top),
       b:Math.round(n.getBoundingClientRect().bottom)}));
@@ -280,6 +280,119 @@ if (STAGE === 'home') {
   await sleep(350);
   console.log('  INTRO ' + JSON.stringify(await ev(MEASURE_INTRO)));
   await shot(`home-${TAG}`);
+
+/* The opening screen's second view. PLAY no longer starts a match — it opens
+   MATCH SETUP, a panel over the same board, and BEGIN THE DRAFT is in there.
+   This stage checks the panel fits and that the two views really do swap. */
+} else if (STAGE === 'setup') {
+  await waitIntro();
+  await sleep(300);
+  console.log('  CLICK ' + JSON.stringify(await ev(`(()=>{
+    const b=document.querySelector('.mf-play');
+    if(!b)return 'no play button';
+    b.click();return 'clicked';})()`)));
+  await sleep(400);
+  console.log('  SETUP ' + JSON.stringify(await ev(`(()=>{
+    const R=s=>{const n=document.querySelector(s);if(!n)return null;
+      const r=n.getBoundingClientRect();
+      return {x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height),
+        right:Math.round(r.right),bottom:Math.round(r.bottom)};};
+    const vis=s=>{const n=document.querySelector(s);
+      return !!(n&&!n.classList.contains('hid'));};
+    const panel=R('.mf-panel');
+    const out={vw:innerWidth,vh:innerHeight,
+      homeShown:vis('.mf-home'),setupShown:vis('.mf-setup'),
+      panel,head:R('.mf-p-head'),body:R('.mf-p-body'),foot:R('.mf-p-foot'),
+      diffRow:R('.mf-i-diff'),knightRow:R('.mf-i-raid'),
+      back:R('.mf-back'),begin:R('.mf-setup .mf-play'),
+      scrollW:document.documentElement.scrollWidth,
+      scrollH:document.documentElement.scrollHeight};
+    if(panel){
+      out.panelFits=panel.y>=0&&panel.bottom<=innerHeight
+        &&panel.x>=0&&panel.right<=innerWidth;
+      out.overflowTop=Math.round(-panel.y);
+      out.overflowBottom=Math.round(panel.bottom-innerHeight);
+    }
+    out.tapTargets=[...document.querySelectorAll('.mf-setup button')]
+      .map(b=>{const r=b.getBoundingClientRect();
+        return {lab:(b.textContent||'').trim().slice(0,20),
+          w:Math.round(r.width),h:Math.round(r.height)};});
+    return out;})()`)));
+  await shot(`setup-${TAG}`);
+  console.log('  BACK ' + JSON.stringify(await ev(`(()=>{
+    const b=document.querySelector('.mf-back');
+    if(!b)return 'no back button';
+    b.click();
+    const h=document.querySelector('.mf-home'),s=document.querySelector('.mf-setup');
+    return {homeShown:!h.classList.contains('hid'),
+            setupShown:!s.classList.contains('hid')};})()`)));
+
+/* The gear popup, which carries the second way home for the rest of the match
+   — the map pad is only up while the map is. */
+} else if (STAGE === 'settings') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  for (let i = 0; i < 90; i++) {
+    if (await ev('window.__ISLAND__.state.phase') === 'play') break;
+    await ev(`(()=>{const g=window.__ISLAND__.game;
+      for(let i=0;i<600;i++){g.flow.update(1/60);g.bots.update&&g.bots.update(1/60);}
+      return 1})()`);
+    await sleep(120);
+  }
+  await ev(`(()=>{document.querySelector('.hud-tl .cbtn').click();return 1})()`);
+  await sleep(320);
+  console.log('  SETTINGS ' + JSON.stringify(await ev(`(()=>{
+    const s=document.querySelector('.pop.settings');
+    const r=s?s.getBoundingClientRect():null;
+    return {phase:window.__ISLAND__.state.phase,
+      open:!!(s&&!s.classList.contains('hid')),
+      box:r?{x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)}:null,
+      onScreen:r?(r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight):false,
+      buttons:[...(s?s.querySelectorAll('.btn'):[])].map(b=>{
+        const q=b.getBoundingClientRect();
+        return {lab:(b.textContent||'').trim().slice(0,20),
+          w:Math.round(q.width),h:Math.round(q.height)};})};})()`)));
+  await shot(`settings-${TAG}`);
+
+/* The map pad's HOME key, in the one state the player named it for: the
+   opening draft, where the board is locked and the map cannot be dismissed. */
+} else if (STAGE === 'leavedraft') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  for (let i = 0; i < 60; i++) {
+    const p = await ev('window.__ISLAND__.state.phase');
+    if (p === 'draft') break;
+    await sleep(250);
+  }
+  await sleep(1200);
+  console.log('  DRAFT ' + JSON.stringify(await ev(`(()=>{
+    const ov=window.__ISLAND__.game.overview;
+    const pad=document.querySelector('.ovz');
+    const home=document.querySelector('.ovz-home');
+    const R=n=>{if(!n)return null;const r=n.getBoundingClientRect();
+      return {x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)};};
+    return {phase:window.__ISLAND__.state.phase,mapOpen:!!ov.isOpen,
+      keys:pad?pad.children.length:0,pad:R(pad),home:R(home),
+      homeLabel:home?home.getAttribute('aria-label'):null};})()`)));
+  await shot(`draftpad-${TAG}`);
+  // Arm it, but do NOT fire the second tap: the second tap reloads the page.
+  await ev(`(()=>{const h=document.querySelector('.ovz-home');
+    h.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));return 1})()`);
+  await sleep(250);
+  console.log('  ARMED ' + JSON.stringify(await ev(`(()=>{
+    const h=document.querySelector('.ovz-home'),a=document.querySelector('.ovz-ask');
+    const r=a?a.getBoundingClientRect():null;
+    return {armed:h.classList.contains('arm'),
+      label:h.getAttribute('aria-label'),
+      chip:a?(a.textContent||'').trim():null,
+      chipOn:a?!a.classList.contains('off'):false,
+      chipBox:r?{x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)}:null,
+      chipOnScreen:r?(r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight):false};})()`)));
+  await shot(`leavedraft-${TAG}`);
 
 } else if (STAGE === 'book') {
   // The book does not need the opening screen to be on screen — the TUTORIAL

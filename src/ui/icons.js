@@ -417,7 +417,16 @@ export const ICONS = {
 
   anchor:
     `<circle cx="12" cy="4.6" r="2.6" fill="none" stroke="${C.steelL}" stroke-width="2"/>` +
-    K('M12 7.4v13M7 11h10M4 14.6c0 3.9 3.6 6.4 8 6.4s8-2.5 8-6.4', 2.1)
+    K('M12 7.4v13M7 11h10M4 14.6c0 3.9 3.6 6.4 8 6.4s8-2.5 8-6.4', 2.1),
+
+  /* Leave the match. A roof with a door under it — the opening screen, not the
+     `house` piece, which is a settlement and already means something else. */
+  home:
+    `<path d="M12 3.6l9 8.1H3z" fill="${C.brick}"/>` +
+    K('M12 3.6l9 8.1H3z', 2) +
+    `<path d="M5.6 10.6h12.8v9.8H5.6z" fill="${C.cream}"/>` +
+    K('M5.6 10.6h12.8v9.8H5.6z', 2) +
+    `<path d="M10 14.4h4v6h-4z" fill="${C.brown}"/>`
 };
 
 /** Icons authored on the larger, higher-detail box. */

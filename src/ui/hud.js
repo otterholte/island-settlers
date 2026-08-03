@@ -281,7 +281,13 @@ export function createHUD(root, state, game) {
     howBody,
     button('wide red', { on: { click: () => game.restart() } },
       el('span', { class: 'sb-ico', html: icon('restart', 20) }),
-      el('span', { class: 'sb-lab', text: 'Restart Match' }))
+      el('span', { class: 'sb-lab', text: 'Restart Match' })),
+    /* The second way home. The map pad's HOME key is the one the player named,
+       but the pad is only up while the map is, so the gear carries the same
+       exit for the rest of the match. Both land on the opening screen. */
+    button('wide cream', { on: { click: () => leaveMatch() } },
+      el('span', { class: 'sb-ico', html: icon('home', 20) }),
+      el('span', { class: 'sb-lab', text: 'Leave Match' }))
   );
 
   hud.appendChild(tl); hud.appendChild(tc); hud.appendChild(tr);
@@ -401,6 +407,13 @@ export function createHUD(root, state, game) {
     settingsOpen = force === undefined ? !settingsOpen : !!force;
     toggle(settings, 'hid', !settingsOpen);
     toggle(gearBtn, 'on', settingsOpen);
+  }
+
+  /** Back to the opening screen. Falls back to a restart on an older `game`. */
+  function leaveMatch() {
+    toggleSettings(false);
+    if (typeof game.leaveMatch === 'function') game.leaveMatch();
+    else if (typeof game.restart === 'function') game.restart();
   }
 
     /* ------------------------------------------------------------ standings */

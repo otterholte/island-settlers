@@ -130,6 +130,125 @@ export const INTRO_CSS = `
              0 0 22px rgba(255,201,60,.45),inset 0 2px 0 rgba(255,255,255,.9);
 }
 
+/* ============================================================ the two views
+   HOME and MATCH SETUP share the layer; one is hidden at a time. Both fill it
+   and centre their own column, so switching between them never shifts the
+   crest or the buttons sideways. */
+.mf-view{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:clamp(4px,1.4vh,10px);
+  padding:calc(8px + var(--sat,0px)) calc(10px + var(--sar,0px))
+          calc(8px + var(--sab,0px)) calc(10px + var(--sal,0px));
+}
+.mf-view.hid{display:none}
+
+/* The two big choices, side by side and the SAME SIZE: neither is the small
+   one. PLAY is green because it is what most presses do; FRIENDS is cream and
+   carries its own "Soon" ribbon rather than being greyed out, because a
+   disabled button tells you nothing about when it will not be.
+
+   The width is pinned and the stack is forced because .btn is a ROW: left to
+   itself the label and the sub-line sit shoulder to shoulder, so the button
+   with the longer sub simply grows. That measured 306px against 531px — two
+   buttons meant to read as equal choices, one nearly twice the other. */
+.mf-i-cta .btn{
+  flex-direction:column;gap:0;text-align:center;
+  width:clamp(176px,25.5vw,254px);
+  padding:0 clamp(10px,1.8vw,16px);
+  min-height:clamp(52px,13vh,62px);
+  font-size:clamp(12.5px,2vw,16px);letter-spacing:.11em;
+}
+.mf-i-cta .btn .sb-lab{white-space:normal;line-height:1.12}
+.mf-friends{position:relative;--f1:#fdf5e2;--f2:#f0dfb6;--f3:#dcc493;--lip:#8f7444;--fg:#3f2a12}
+.mf-friends .sb-lab{color:#3f2a12}
+.mf-play .mf-p-sub,.mf-friends .mf-p-sub{
+  display:block;margin-top:3px;
+  font:700 clamp(7px,1.1vw,9px)/1.2 var(--ff);letter-spacing:.09em;
+  text-transform:uppercase;opacity:.72;
+}
+.mf-soon{
+  position:absolute;top:-9px;right:-8px;
+  padding:3px 8px 4px;border-radius:9px;font-style:normal;
+  font:800 clamp(7px,1vw,9px)/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
+  color:#0b1d33;background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  border:1.5px solid rgba(90,58,30,.85);box-shadow:0 2px 5px rgba(0,0,0,.5);
+}
+.mf-i-note{
+  margin-top:2px;padding:5px 12px 6px;border-radius:10px;
+  background:rgba(8,22,42,.86);border:1.5px solid rgba(255,201,60,.32);
+  font:700 clamp(8px,1.2vw,10px)/1.3 var(--ff);letter-spacing:.06em;
+  text-transform:uppercase;color:rgba(226,240,255,.86);
+}
+.mf-i-note.hid{display:none}
+
+/* ------------------------------------------------------------- setup panel
+   A BOX, and an opaque one.
+
+     "Make it so those settings are on a popup so the background images of the
+      board on the home screen isn't overwhelming visually. I like having the
+      settings grouped within a box for better clear UI."
+
+   The controls used to float loose down the middle of a live 3D island with a
+   drifting camera behind them, which is a lot of moving detail to read four
+   buttons and a switch against. This is a plate with a real background, a
+   heading, and one labelled row per setting. */
+.mf-panel{
+  width:min(560px,92vw);
+  border-radius:20px;overflow:hidden;
+  background:linear-gradient(180deg,rgba(14,36,64,.97),rgba(6,18,36,.98));
+  border:2.5px solid rgba(255,201,60,.44);
+  box-shadow:0 14px 0 rgba(0,0,0,.35),0 22px 50px rgba(0,0,0,.6),
+             inset 0 2px 0 rgba(255,255,255,.14);
+}
+.mf-p-head{
+  display:flex;align-items:baseline;justify-content:center;gap:10px;
+  padding:clamp(8px,1.8vh,13px) 16px clamp(7px,1.5vh,11px);
+  background:linear-gradient(180deg,rgba(255,201,60,.16),rgba(255,201,60,0));
+  border-bottom:1.5px solid rgba(255,255,255,.12);
+}
+.mf-p-head b{font:800 clamp(12px,2vw,16px)/1 var(--ff);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+  text-shadow:0 2px 4px rgba(0,0,0,.7)}
+.mf-p-head span{font:700 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.14em;
+  text-transform:uppercase;color:rgba(206,226,246,.6)}
+.mf-p-body{display:flex;flex-direction:column;gap:clamp(6px,1.4vh,12px);
+  padding:clamp(9px,2vh,15px) clamp(10px,2.4vw,18px)}
+.mf-p-row{display:flex;flex-direction:column;align-items:center;
+  gap:clamp(3px,0.8vh,6px)}
+.mf-p-foot{
+  display:flex;align-items:center;justify-content:center;
+  gap:clamp(10px,2.2vw,18px);
+  padding:clamp(8px,1.8vh,13px) 16px clamp(10px,2.2vh,16px);
+  border-top:1.5px solid rgba(255,255,255,.12);
+  background:rgba(0,0,0,.22);
+}
+/* The four rungs were sized for the whole title screen — 4x152 + 3x10 inside a
+   940px content box. The panel gives them 520, so left alone they wrapped 2x2
+   and the body grew a whole extra row. Re-sized for 4x118 + 3x8 = 496. */
+.mf-panel .mf-i-drow{gap:clamp(4px,1vw,8px)}
+.mf-panel .btn.mf-diff{width:clamp(82px,20.5vw,118px);min-height:46px;padding:5px 5px 8px}
+.mf-panel .btn.mf-diff .mf-d-name{font-size:clamp(10px,1.6vw,13px)}
+.mf-panel .mf-play{min-height:clamp(46px,11.5vh,56px);animation:none}
+.mf-back{min-height:clamp(40px,9vh,48px);padding:0 clamp(14px,3vw,24px);
+  border-radius:14px;
+  --f1:#e7e0cd;--f2:#cfc4a8;--f3:#b6a988;--lip:#7d6c48;--fg:#3f2a12}
+
+@media (max-height:400px){
+  .mf-panel{width:min(500px,94vw)}
+  .mf-p-head{padding:6px 12px 5px}
+  .mf-p-body{gap:5px;padding:7px 10px}
+  .mf-p-foot{padding:6px 12px 8px;gap:10px}
+  .mf-panel .mf-play{min-height:42px}
+  .mf-back{min-height:40px}
+  .mf-soon{top:-7px;right:-6px;padding:2px 6px 3px}
+  /* Specificity, not order: the un-nested compact rule for .btn.mf-diff loses
+     to .mf-panel .btn.mf-diff above wherever it sits in the file, so the panel
+     needs its own compact width. 4x110 + 3x6.7 = 460 inside the 476px body of
+     a 500px panel — one row at 667x375, which is where this last wrapped. */
+  .mf-panel .btn.mf-diff{width:clamp(78px,16.4vw,110px);min-height:44px;padding:4px 4px 7px}
+}
+
 /* ------------------------------------------------------------- the Knight
    A SWITCH, not two buttons.
 
@@ -238,16 +357,15 @@ export const INTRO_CSS = `
 
 /* ------------------------------------------------------------- call to act
    THE GAP IS LOAD-BEARING. .mf-play carries a 7px hard under-lip and floats
-   3px on its idle bounce, and neither is part of its layout box — with the old
-   5px gap the lip painted straight across the help line underneath it ("the
-   Begin draft is covering the text below it"). The floor here is 14px: 7 for
-   the lip, 3 for the bounce, and 4 of actual air. Measured at 960x444 and
-   667x375, button-bottom to hint-top, not eyeballed. */
-.mf-i-foot{
-  display:flex;flex-direction:column;align-items:center;
-  gap:clamp(14px,3.4vh,20px);margin-top:clamp(4px,1.2vh,8px);
+   3px on its idle bounce, and neither is part of its layout box — with a 5px
+   gap the lip paints straight across whatever sits underneath it. The floor is
+   14px: 7 for the lip, 3 for the bounce, and 4 of actual air. Measured at
+   960x444 and 667x375, button-bottom to next-top, not eyeballed. */
+.mf-i-cta{
+  display:flex;align-items:center;justify-content:center;
+  gap:clamp(9px,2vw,16px);margin-top:clamp(4px,1.2vh,8px);
+  flex-wrap:wrap;
 }
-.mf-i-cta{display:flex;align-items:center;gap:clamp(9px,2vw,16px)}
 .mf-play{
   position:relative;overflow:hidden;
   min-height:clamp(48px,12vh,58px);padding:0 clamp(22px,5vw,44px);
@@ -306,6 +424,8 @@ export const INTRO_CSS = `
   text-transform:uppercase;color:rgba(206,228,250,.72);text-align:center;
   text-shadow:0 1px 3px rgba(0,0,0,.8)}
 .mf-i-hint b{color:var(--gold-l,#ffe79a)}
+/* Clears the PLAY button's 7px lip plus its 3px idle bounce — see .mf-i-cta. */
+.mf-home .mf-i-hint{margin-top:clamp(10px,2.2vh,14px)}
 
 @media (max-height:400px){
   .mf-intro{gap:4px}
@@ -327,7 +447,7 @@ export const INTRO_CSS = `
   .mf-i-dnote{font-size:7px;margin-top:1px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
-  .mf-i-foot{gap:14px;margin-top:4px}
+  .mf-i-cta{gap:10px;margin-top:4px}
 }
 `;
 
@@ -445,13 +565,58 @@ export function buildIntro(state, onBegin) {
 
   paintRaid();
 
-  const knights = el('div', { class: 'mf-i-diff' },
-    el('div', { class: 'mf-i-dlab', text: 'Knights' }),
-    el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
-    raidNote);
 
-  const playBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
-    el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
+
+  /* ======================================================== the two screens
+   *
+   *   "Maybe make the first home screen the normal play, or play with friends,
+   *    then the second screen you see the difficulty level and knights
+   *    settings. Also make it so those settings are on a popup so the
+   *    background images of the board on the home screen isn't overwhelming
+   *    visually. I like having the settings grouped within a box."
+   *
+   * One node, two states, switched by `show()`. HOME asks the only question
+   * that matters first — who are you playing — and MATCH SETUP is a solid
+   * panel: opaque enough that the island behind it stops competing with the
+   * controls on top of it, which is the whole complaint. Everything that used
+   * to be stacked loose down the middle of the title screen now lives inside
+   * that box, in labelled rows.
+   *
+   * Back is always available and never costs anything: both settings are
+   * stored the moment they are touched (difficulty.js / core/options.js), so
+   * stepping back and forward is free.
+   */
+  let step = 'home';
+
+  const playBtn = button('green huge mf-play', { on: { click: () => show('setup') } },
+    el('span', { class: 'sb-lab', text: 'Play' }),
+    el('span', { class: 'mf-p-sub', text: 'You against three rivals' }));
+
+  /*
+   * PLAY WITH FRIENDS is on the screen and is honestly labelled as not ready.
+   *
+   * It is a real feature being built next, and it needs a real backend — the
+   * game is a static site with no server, no accounts and no network code, so
+   * a friends list and an invite have nowhere to live yet. A button that
+   * silently did nothing would be worse than no button; a button that says
+   * what it is waiting for is the honest version of "it is coming".
+   */
+  const friendsBtn = button('cream huge mf-friends', {
+    'aria-label': 'Play with friends — coming next',
+    on: { click: () => nudgeFriends() }
+  },
+    el('span', { class: 'sb-lab', text: 'Play with Friends' }),
+    el('span', { class: 'mf-p-sub', text: 'Invite people you added' }),
+    el('i', { class: 'mf-soon', text: 'Soon' }));
+
+  const friendsNote = el('div', { class: 'mf-i-note hid', text:
+    'Not ready yet — friends and invites are the next thing being built.' });
+  let noteT = 0;
+  function nudgeFriends() {
+    friendsNote.classList.remove('hid');
+    if (noteT) clearTimeout(noteT);
+    noteT = setTimeout(() => friendsNote.classList.add('hid'), 3200);
+  }
 
   /*
    * TUTORIAL, IN THE CORNER.
@@ -459,15 +624,12 @@ export function buildIntro(state, onBegin) {
    *   "Put the tutorial in the corner of the screen somewhere so the Start Game
    *    button can be centered."
    *
-   * It used to sit beside BEGIN THE DRAFT in a two-button row, which meant the
+   * It used to sit beside the start button in a two-button row, which meant the
    * one button everybody presses was never actually in the middle of the screen
    * — it was in the middle of a pair, pushed left by the width of a control
-   * most players use once and never again. Bottom-right corner now, out of the
-   * title's column entirely, and the green button is centred on the screen the
-   * way it always looked like it was supposed to be.
-   *
-   * It keeps its full size and its own hit area, so "somewhere out of the way"
-   * has not turned into "somewhere hard to press".
+   * most players use once and never again. Top-right corner now, out of the
+   * title's column entirely, and it belongs to the HOME screen only: once you
+   * are choosing a difficulty you have already decided not to read the rules.
    */
   const tutBtn = button('cream mf-tut', {
     'aria-label': 'Tutorial — read the rules or take a guided practice run',
@@ -476,25 +638,60 @@ export function buildIntro(state, onBegin) {
     el('b', { class: 'mf-t-lab', text: 'Tutorial' }),
     el('span', { class: 'mf-t-sub', text: 'New here? Start with this' }));
 
-  const node = el('div', { class: 'mf-intro mf-hid' },
+  const startBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
+    el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
+
+  const backBtn = button('cream mf-back', {
+    'aria-label': 'Back to the home screen',
+    on: { click: () => show('home') }
+  }, el('span', { class: 'sb-lab', text: 'Back' }));
+
+  /* --------------------------------------------------------------- screen 1 */
+  const homeView = el('div', { class: 'mf-view mf-home' },
     el('div', { class: 'mf-i-crest', text: 'Island' }),
     el('div', { class: 'mf-i-title', text: 'Settlers' }),
     el('div', { class: 'mf-i-obj', html: icon('trophy', 15) },
       el('span', { text: `First to ${VICTORY_POINTS} Points` })),
     el('div', { class: 'mf-i-row' }, cards),
-    difficulty,
-    knights,
-    el('div', { class: 'mf-i-foot' },
-      el('div', { class: 'mf-i-cta' }, playBtn),
-      el('div', { class: 'mf-i-hint' },
-        el('b', { text: 'Claim two corners' }),
-        ' · gather from the land you touch · build roads, settlements and cities')),
+    el('div', { class: 'mf-i-cta' }, playBtn, friendsBtn),
+    friendsNote,
+    el('div', { class: 'mf-i-hint' },
+      el('b', { text: 'Claim two corners' }),
+      ' · gather from the land you touch · build roads, settlements and cities'),
     tutBtn);
 
+  /* --------------------------------------------------------------- screen 2 */
+  const setupView = el('div', { class: 'mf-view mf-setup hid' },
+    el('div', { class: 'mf-panel' },
+      el('div', { class: 'mf-p-head' },
+        el('b', { text: 'Match Setup' }),
+        el('span', { text: `First to ${VICTORY_POINTS} points` })),
+      el('div', { class: 'mf-p-body' },
+        el('div', { class: 'mf-p-row' },
+          el('div', { class: 'mf-i-dlab', text: 'Rivals' }), difficulty),
+        el('div', { class: 'mf-p-row' },
+          el('div', { class: 'mf-i-dlab', text: 'Knights' }),
+          el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
+          raidNote)),
+      el('div', { class: 'mf-p-foot' }, backBtn, startBtn)));
+
+  function show(next) {
+    step = next === 'setup' ? 'setup' : 'home';
+    homeView.classList.toggle('hid', step !== 'home');
+    setupView.classList.toggle('hid', step !== 'setup');
+    friendsNote.classList.add('hid');
+  }
+
+  const node = el('div', { class: 'mf-intro mf-hid' }, homeView, setupView);
+
   return {
-    node, cards, playBtn, tutBtn, diffButtons, raidSwitch,
+    node, cards, playBtn, startBtn, friendsBtn, tutBtn, backBtn,
+    diffButtons, raidSwitch,
     refreshDifficulty: paint,
-    refreshKnights: paintRaid
+    refreshKnights: paintRaid,
+    /** flowUI re-shows this node between matches; always come back HOME. */
+    reset: () => show('home'),
+    get step() { return step; }
   };
 }
 

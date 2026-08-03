@@ -857,7 +857,16 @@ await test(7, 'Roads follow legal connection rules; illegal placements are rejec
 /* ---- 8. settlement rules ------------------------------------------------ */
 
 await test(8, 'Settlements obey the distance rule and require a connected road', async () => {
-  await ensurePlay();
+  /* A MATCH OF ITS OWN, for the same reason check 10 gets one: checks 6 and 7
+     build their way out to the docks, and they can leave the player holding all
+     SEVEN settlements. legalSettlements does not know about the piece cap but
+     placeSettlement does, so the legal corner is then correctly refused and the
+     distance rule looks broken when the cap is what spoke. A fresh draft hands
+     back two settlements and five slots. */
+  await pev('window.__ISLAND__.game.flow.restartInPlace({seed:808})');
+  await sleep(400);
+  const fresh = await pev('__draft(45)');
+  if (fresh.phase !== 'play') await ensurePlay();
   const out = await pev(`(()=>{
     const R=window.__R__, L=window.__L__, C=window.__C__;
     const st=window.__ISLAND__.state; const p=st.players[0];
@@ -895,6 +904,11 @@ await test(8, 'Settlements obey the distance rule and require a connected road',
     const aAfter = nb2===undefined ? null : R.placeSettlement(st,0,nb2,false);
     return { laid, mine, adj, aAdj, orphan:orphan?orphan.id:null, aOrphan, orphanReason,
              good, aGood, cost, want:C.COST.settlement,
+             // When the legal corner is refused this is the reason, and without
+             // it the failure is unreadable: legalSettlements does not know
+             // about the seven-settlement cap, but placeSettlement does.
+             held:p.settlements.size, cap:C.PIECE_LIMIT.settlement,
+             couldAfford:C.canAfford(p.res,C.COST.settlement),
              nb2, aAfter, buildings:{before:nb, after:st.buildings.size} };})()`);
   if (out.noSettlement || out.noLegalSpot) {
     return { pass: false, evidence: `precondition missing: ${JSON.stringify(out)}` };
@@ -908,7 +922,8 @@ await test(8, 'Settlements obey the distance rule and require a connected road',
       `beside my own settlement #${out.mine} -> corner #${out.adj} rejected=${out.aAdj === false}\n` +
       `no connected road (#${out.orphan}, distanceOk=${out.orphanReason && out.orphanReason.distanceOk}, ` +
       `roadTouching=${out.orphanReason && out.orphanReason.roadTouching}) -> rejected=${out.aOrphan === false}\n` +
-      `legal corner #${out.good} accepted=${out.aGood}, charged ${JSON.stringify(out.cost)}\n` +
+      `legal corner #${out.good} accepted=${out.aGood}, charged ${JSON.stringify(out.cost)}` +
+      (out.aGood ? '' : `  <-- holding ${out.held}/${out.cap} settlements, could afford=${out.couldAfford}`) + '\n' +
       `its neighbour #${out.nb2} now rejected=${out.aAfter === false}`
   };
 });
@@ -953,7 +968,18 @@ await test(9, 'Cities upgrade only the owner\'s own settlements', async () => {
 /* ---- 10. development cards ---------------------------------------------- */
 
 await test(10, 'All three development cards work (Knight, Road Building, Victory Point)', async () => {
-  await ensurePlay();
+  /* THIS CHECK GETS A MATCH OF ITS OWN.
+     Checks 6 to 9 lay roads to reach docks and to legalise settlements, and
+     they leave the player at or near the 18-road cap with a score already
+     climbing. Road Building is then correctly refused — "all 18 of your roads
+     are already on the board" — or the match ends between the first free road
+     and the second and the second is correctly forfeited. Either way a card
+     that works reads as a card that does not. A fresh draft gives it two roads,
+     sixteen slots, and a scoreboard nowhere near the win. */
+  await pev('window.__ISLAND__.game.flow.restartInPlace({seed:1010})');
+  await sleep(400);
+  const fresh = await pev('__draft(45)');
+  if (fresh.phase !== 'play') await ensurePlay();
   const out = await pev(`(()=>{
     const R=window.__R__, L=window.__L__, E=window.__E__;
     const st=window.__ISLAND__.state, g=window.__ISLAND__.game; const p=st.players[0];
@@ -966,9 +992,22 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
       if(!c) break;
       draws.push(c.type);
       seen[c.type]=(seen[c.type]||0)+1;
-      if (c.type==='victoryPoint' && vpJump===null) vpJump = p.vpCards-before;
+      if (c.type==='victoryPoint'){
+        if (vpJump===null) vpJump = p.vpCards-before;
+        /* Hand the point straight back. It can take nine draws to see all
+           three card types, and that can include three victory points — which,
+           stacked on the settlements and the city checks 8 and 9 left standing,
+           is enough to WIN. The match then flips to phase 'over' and Road
+           Building is correctly refused ("the match is not running"), which
+           reads as a broken card. The jump is already measured by here. */
+        p.vpCards = before;
+      }
       if (seen.knight && seen.roadBuilding && seen.victoryPoint) break;
     }
+    /* Handing the card back is not enough on its own: drawCard settles the
+       victory check inside the call, so by the time the point comes off the
+       match is already over. Put it back on its feet. */
+    if (st.phase !== 'play') { st.phase='play'; st.winner=-1; }
     // --- knight ---
     const tile = L.tiles.find(t=>t.id!==st.robberTile && t.resource);
     const rivalBefore = st.players.slice(1).map(o=>window.__C__.totalRes(o.res));
@@ -978,7 +1017,23 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
     // --- road building: play it and remember the pre-state; economy chains the
     //     second free road through a 340ms timer, so the placements happen in
     //     separate turns of the harness below.
-    window.__rb = { roads0:p.roads.size, res0:{...p.res}, placed:0 };
+    /* Checks 6 to 9 lay roads to reach docks and to legalise settlements, and
+       by the time this check runs the player is often sitting on all 18 of
+       them. Road Building then correctly refuses — "all 18 of your roads are
+       already on the board" — and the check reads as a broken card when the
+       rule is doing exactly its job. So give the card somewhere to go first,
+       and report how much room it had. */
+    const CAP = window.__C__.PIECE_LIMIT.road;
+    const freed = [];
+    // Three, not two: at exactly two the second free road lands on the very
+    // last piece the player owns, and any road a bot happens to lay in the
+    // 340ms between the two placements takes that slot away again.
+    while (p.roads.size > CAP - 3) {
+      const last = [...p.roads][p.roads.size-1];
+      p.roads.delete(last); st.roadOwner.delete(last); freed.push(last);
+    }
+    window.__rb = { roads0:p.roads.size, res0:{...p.res}, placed:0,
+                    cap:CAP, freed:freed.length, room:E.roadRoom(g) };
     window.__rb.ok = E.useRoadBuilding(g);
     window.__rb.freeAfterPlay = p.freeRoads||0;
     return { draws, seen, vpCards:p.vpCards, vpJump,
@@ -988,9 +1043,9 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
 
   // Place both free roads through the real overview Confirm button. economy.js
   // re-opens the map on a 340ms timer between the two, so poll for it.
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 9; i++) {
     if (await pev('window.__rb.placed') >= 2) break;
-    await sleep(330);
+    await sleep(380);
     await pev(`(()=>{
       const R=window.__R__; const st=window.__ISLAND__.state; const ov=window.__ISLAND__.game.overview;
       if(!(ov&&ov.isOpen)) return 0;
@@ -1006,6 +1061,7 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
     const st=window.__ISLAND__.state; const p=st.players[0]; const rb=window.__rb;
     return { ok:rb.ok, freeAfterPlay:rb.freeAfterPlay, placedFree:rb.placed,
       roads:{before:rb.roads0, after:p.roads.size},
+      cap:rb.cap, freed:rb.freed, room:rb.room,
       paid:{ wood:rb.res0.wood-p.res.wood, brick:rb.res0.brick-p.res.brick },
       freeLeft:p.freeRoads||0 };})()`);
   out.roadBuilding = rbOut;
@@ -1023,7 +1079,9 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
       `drew ${out.draws.length} cards: ${JSON.stringify(out.seen)}\n` +
       `KNIGHT  played=${k.ok} knight->tile ${k.robberTile} (owner ${k.robberOwner}), ` +
       `knightsPlayed ${k.played.before}->${k.played.after}, rival stock ${JSON.stringify(k.rivalBefore)}->${JSON.stringify(k.rivalAfter)}\n` +
-      `ROADBLD played=${rb.ok} freeRoads=${rb.freeAfterPlay} placed=${rb.placedFree} ` +
+      `ROADBLD room=${rb.room.ok}${rb.room.ok ? '' : ` (${rb.room.reason})`} ` +
+      `at ${rb.roads.before}/${rb.cap} roads after freeing ${rb.freed}\n` +
+      `        played=${rb.ok} freeRoads=${rb.freeAfterPlay} placed=${rb.placedFree} ` +
       `roads ${rb.roads.before}->${rb.roads.after} paid=${JSON.stringify(rb.paid)}\n` +
       `VICTORY vpCards=${out.vpCards}, +${out.vpJump} on draw (instant)`
   };
@@ -1459,7 +1517,21 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
     return b.map(x=>({ pid:x.pid, goal:x.goal?x.goal.kind:null, lastKnight:+(x.lastKnight||0).toFixed(0),
       sinceAct:+(x.sinceAct||0).toFixed(1), avoidN:x.avoidTiles.size, avoidG:x.avoidGoals.size }));})()`;
   const brainsBefore = await pev(brainSnap);
-  const clicked = await pev(`__click('.rs-foot .btn')`);
+  /* PLAY AGAIN RELOADS THE PAGE, on purpose: the island is dealt at module
+     load, so a replay that stayed in this document would re-deal the same
+     nineteen hexes, and a fresh island every match is the point (see
+     game.restart in main.js). This harness cannot follow a reload — the very
+     next evaluate lands in a document with no __ISLAND__ on it, which is what
+     used to take out checks 18 and 19 as collateral. So the button is checked
+     for existence and wiring, and the reset itself is driven through the same
+     entry point the in-place path uses. */
+  const button = await pev(`(()=>{const b=document.querySelector('.rs-foot .btn');
+    return b?{found:true,label:(b.textContent||'').trim(),
+      enabled:!b.disabled&&!b.classList.contains('off')}:{found:false};})()`);
+  const clicked = button.found
+    ? `button "${button.label}" present and live (a real click would reload)`
+    : 'NO PLAY AGAIN BUTTON';
+  await pev(`window.__ISLAND__.game.flow.restartInPlace({seed:4321})`);
   await sleep(700);
   const after = await pev(`(()=>{
     const st=window.__ISLAND__.state, g=window.__ISLAND__.game, C=window.__C__;
@@ -1505,11 +1577,13 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
     && after.vpCards.every(v => v === 0) && after.knights.every(k => k === 0)
     && d2.phase === 'play' && d2.buildings === 8 && d2.roads === 8
     && play.gathered.slice(1).every(g => g > 0)
-    && staleBrains.length === 0 && stillStale.length === 0 && wasDirty;
+    && staleBrains.length === 0 && stillStale.length === 0 && wasDirty
+    && button.found && button.enabled;
   return {
     pass,
     evidence:
-      `Play Again -> ${clicked}; phase=${after.phase} time=${after.time} winner=${after.winner} ` +
+      `Play Again: ${clicked}\n` +
+      `reset -> phase=${after.phase} time=${after.time} winner=${after.winner} ` +
       `buildings=${after.buildings} roads=${after.roads} resultsHidden=${after.resultsHidden}\n` +
       `resources back to START=${cleanRes}; vpCards=${JSON.stringify(after.vpCards)} ` +
       `knights=${JSON.stringify(after.knights)} awards=${JSON.stringify(after.awards)}\n` +

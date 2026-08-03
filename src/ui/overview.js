@@ -186,7 +186,15 @@ export function createOverview(root, state, game) {
   const PY = z => z * proj.s + proj.oy;
 
   /* Drag / pinch / wheel / +- over the board; buttons and hint live in `wrap`. */
-  const pan = createOvPan(cv, proj, { root: wrap, isOpen: () => openFlag });
+  /* The pad carries the HOME key as well as the zoom keys, because the map is
+     the one panel that is up in every mode INCLUDING `draft-watch` — the state
+     the player asked to be able to leave from, where the board is locked and
+     there is otherwise no way back to the home screen. */
+  const pan = createOvPan(cv, proj, {
+    root: wrap,
+    isOpen: () => openFlag,
+    onLeave: typeof game.leaveMatch === 'function' ? () => game.leaveMatch() : null
+  });
 
   /* The board itself — sea, island, tokens, docks, everyone's pieces — only
      changes when someone builds or the frame moves. Painting nineteen
@@ -651,6 +659,7 @@ export function createOverview(root, state, game) {
     targets = [];
     opts = {};
     toggle(wrap, 'on', false);
+    if (pan.disarm) pan.disarm();
     closeTimer = 0.26;
     if (game.camera && game.camera.setOverview) game.camera.setOverview(false);
   }

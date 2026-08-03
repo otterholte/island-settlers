@@ -186,6 +186,10 @@ export function createFlowUI(root, state, game) {
     function showIntro() {
       if (introOn) return;
       introOn = true;
+      // The opening screen has two views now, and an in-place replay re-shows
+      // this same node — so come back on HOME rather than on whatever panel
+      // the last match was started from.
+      if (built.reset) built.reset();
       // The in-match HUD has nothing to say before the match exists, and it
       // was reading straight through the title. ui.css fades everything in
       // the interface layer except this one while the class is set.

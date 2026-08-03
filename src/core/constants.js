@@ -103,10 +103,11 @@ export const PICKUP_RADIUS = 2.4;
  * twenty-two to one. That gap is the whole point: the number printed on a hex
  * is supposed to BE the draft decision.
  *
- * `TILE_ITEM_POOL` moved 24 -> 28 with the top of the curve, since it is the
- * hard ceiling on any single hex. Item positions are best-candidate blue noise
- * with no minimum spacing, so a fuller hex packs tighter rather than failing to
- * place, and the island's total item count barely moves (300 -> 306).
+ * `TILE_ITEM_POOL` moved 24 -> 32, keeping four of headroom over the top of the
+ * curve rather than sitting exactly on it (see the note by the constant). Item
+ * positions are best-candidate blue noise with no minimum spacing, so a fuller
+ * hex packs tighter rather than failing to place, and the island's total item
+ * count barely moves (300 -> 306).
  */
 export const TILE_ITEMS = { 1: 5, 2: 8, 3: 17, 4: 23, 5: 28 };
 
@@ -118,7 +119,16 @@ export const TILE_REGEN = { 1: 34, 2: 28, 3: 16, 4: 10, 5: 6 };
 
 // Items generated per hex in the position pool. TILE_ITEMS never exceeds this;
 // the pool is fixed so positions stay stable while counts can be retuned.
-export const TILE_ITEM_POOL = 28;
+//
+// FOUR OF HEADROOM, NOT NONE. `scatterField` is best-candidate sampling with a
+// rejection guard, so it can come back a point or two short — and while the
+// pool sat at exactly the top of TILE_ITEMS, a 5-pip hex that came back 26
+// short-changed itself: `tileItemCount` is min(pool.length, TILE_ITEMS[pips]),
+// so the shortfall silently became the hex's real capacity. Every other rung
+// already drew from a pool far larger than it needed; the top rung now does
+// too. The extra positions are never enabled on any hex, so nothing renders
+// them and the island's item count is unchanged.
+export const TILE_ITEM_POOL = 32;
 
 /** Sustained items-per-second a full hex of this productivity can supply. */
 export function tileRateFor(pips) {

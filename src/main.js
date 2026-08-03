@@ -137,6 +137,24 @@ async function boot() {
       // every match is the whole point. Costs about a second of rebuild.
       location.reload();
     },
+    /**
+     * Abandon the match and go back to the opening screen.
+     *
+     *   "Let the home button on the left of the screen work all the time and
+     *    exit the game back to the home screen even when other players or bots
+     *    are choosing their spots in the draft."
+     *
+     * Same reload as restart(), and for the same reason — the intro is what a
+     * cold boot lands on, so a reload IS the home screen, and it is the one
+     * exit that cannot be left half-done by whatever phase was mid-flight. The
+     * draft is precisely the phase where an in-place teardown is hairiest
+     * (bots hold goals, matchflow holds a script, the map is locked open), and
+     * it is the phase the player named.
+     */
+    leaveMatch() {
+      try { if (overview && overview.close) overview.close(); } catch (e) { /* going anyway */ }
+      location.reload();
+    },
     toast(msg, kind) { hud.toast(msg, kind); }
   };
 
