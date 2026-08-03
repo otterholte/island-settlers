@@ -154,7 +154,7 @@ const CSS = `
   100%{transform:scale(1) rotate(0)}
 }
 
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   .raid{top:20%}
   .raid-card{padding:11px 16px 13px;border-radius:15px;min-width:min(90vw,340px)}
   .raid-ttl{font-size:25px;letter-spacing:.08em}

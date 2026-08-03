@@ -95,7 +95,7 @@ const CSS = INTRO_CSS + `
 .mf-obj b{font:800 17px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;color:#3a2208}
 .mf-obj span{font:700 9px/1 var(--ff);letter-spacing:.18em;text-transform:uppercase;color:#7a5228}
 
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .mf-i-row{gap:6px}
   .mf-cmp{width:min(21vw,132px);padding:6px 6px 7px}
   .mf-c-desc{font-size:8px}

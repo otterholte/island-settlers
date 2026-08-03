@@ -171,7 +171,7 @@
   background:linear-gradient(180deg,#8bf5a8,#2fd45f);
   box-shadow:0 0 6px rgba(47,212,95,.7);
 }
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   .tr-paused{padding:2px 6px 3px;font-size:7.5px;letter-spacing:.11em;gap:4px}
   .tr-paused i{width:6px;height:6px}
 }
@@ -444,7 +444,7 @@
   box-shadow:inset 0 0 0 1.4px rgba(255,201,60,.62)}
 .rs-tally i.won em{color:var(--gold-l)}
 .rs-tally i.won u{color:var(--gold-l);opacity:.92}
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   .rs-bd i,.rs-tally i{padding:1px 5px 2px;gap:4px}
   .rs-bd em,.rs-bd u{font-size:8px}
   .rs-tally em{font-size:11px}
@@ -578,7 +578,7 @@
    Verified at 667x375. The rule here is simple: gutters, gaps and text may
    shrink — a resource icon never does. Everything the thumb touches keeps a
    48px box, and the four bottom clusters are sized so they cannot meet. */
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   :root{--edge:9px}
 
   /* The gear and the clock stay side by side — together they are narrower than

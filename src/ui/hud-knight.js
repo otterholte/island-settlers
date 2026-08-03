@@ -118,7 +118,7 @@ const CSS = `
   50%{box-shadow:0 5px 0 rgba(90,58,30,.55),0 10px 20px rgba(0,0,0,.45),
     0 0 22px 5px rgba(255,201,60,.5),inset 0 2px 0 rgba(255,255,255,.72)}
 }
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .kn-cue{padding:5px 10px 6px 7px;gap:7px;bottom:calc(var(--gB,10px) + 84px);
     max-width:min(42vw,224px)}
   .kn-ico{width:29px;height:29px}

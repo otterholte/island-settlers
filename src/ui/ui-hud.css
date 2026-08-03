@@ -576,7 +576,25 @@
    Verified at 667x375. Gutters, gaps and text may shrink — a resource object
    never does. Every one of these selectors is scoped to `.hud` so it beats
    ui.css's older phone block, which is imported after this file. */
-@media (max-height:400px),(max-width:760px){
+/* =========================================================== compact phone
+ *
+ *   "When my large smart phone is in landscape I still see the full size
+ *    counter on the left side of the screen. It disappeared when I slid the
+ *    Android nav buttons in on the bottom, in essence shrinking the viewport.
+ *    Anything smaller than an iPad should have the small version."
+ *
+ * The breakpoint was 400px tall or 760px wide, which was written for a 667x375
+ * phone and has been wrong for years of phones since. A modern large handset in
+ * landscape is 956x440 — too tall for the height rule and too wide for the
+ * width one — so it got the desktop layout, and only fell into the phone
+ * layout when the Android navigation bar ate forty pixels off the bottom.
+ *
+ * 500 tall or 1023 wide is "smaller than an iPad", exactly as asked: a 9.7"
+ * iPad in landscape is 1024x768 and clears both, every phone in landscape is
+ * under 500 tall, and a desktop window dragged narrow gets the phone layout
+ * too, which is correct rather than a side effect.
+ * ========================================================================== */
+@media (max-height:500px),(max-width:1023px){
   /* ---------------------------------------------- the awards, a quarter size
    *
    *   "The counter on the left side of the screen that shows how long the

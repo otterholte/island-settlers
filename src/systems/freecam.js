@@ -129,7 +129,7 @@ const CSS = `
   background:linear-gradient(180deg,#ffe79a,#ffc93c);
   padding:3px 6px 4px;border-radius:6px;letter-spacing:.1em}
 .fcam-hint i{font-style:normal}
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .fcam-hint{font-size:8px;padding:4px 9px 5px;bottom:70px}
 }
 `;

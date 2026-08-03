@@ -4,11 +4,11 @@
  *   createInput(domRoot) ->
  *     { stick:{x,y}, tapped, actionPressed, mapPressed, update() }
  *
- * Mobile-first: an invisible virtual joystick. Press anywhere on the half of
- * the screen `core/options.js` names and a ring appears under your thumb; let
- * go and it fades. The joystick lives in the DOM (cheap, crisp, no draw calls)
- * and is inserted BEFORE #ui at a lower z-index so HUD panels always paint
- * over it. Everything is pointer-events:none except the knob itself.
+ * Mobile-first: an invisible virtual joystick. Press ANYWHERE that is not a
+ * control and a ring appears under your thumb; let go and it fades. The
+ * joystick lives in the DOM (cheap, crisp, no draw calls) and is inserted
+ * BEFORE #ui at a lower z-index so HUD panels always paint over it. Everything
+ * is pointer-events:none except the knob itself.
  *
  * Keyboard fallback for desktop / headless testing:
  *   WASD + arrows -> stick, Space -> actionPressed, Tab -> mapPressed.
@@ -33,35 +33,30 @@
  * Owner: Character agent.
  */
 
-import { stickSide, onOptionsChange } from '../core/options.js';
+/* No options are read here any more. The stick used to own half the screen and
+   `stickSide` said which half; it owns all of it now, so there is nothing left
+   to choose. See the note above `IGNORE_SEL`. */
 
 /**
- * THE STICK IS A GESTURE, AND IT IS INVISIBLE UNTIL YOU MAKE IT.
+ * THE STICK IS THE WHOLE SCREEN.
  *
- *   "I kind of like how it operated more before, where it was just generally
- *    the left side of the screen and no visible joystick — it felt more
- *    natural moving around. Can we do something similar but keep my toggles
- *    letting me choose which side each thing is on?"
+ *   "Let's actually switch the invisible joystick to work anywhere, but still
+ *    have the buttons switch sides. So it doesn't need a toggle."
  *
- * So both are true at once, and they were never actually in tension.
+ * Which is the right end of a three-pass argument. A fixed pad was built for
+ * the one-handed player and lost the feel; an invisible half-screen zone got
+ * the feel back and kept a setting to say WHICH half. But a zone that is the
+ * whole screen needs no setting at all, and it cannot be on the wrong side.
  *
- * The pass before this replaced the invisible zone with a fixed, always-drawn
- * pad, because a one-handed player has to be able to find the control without
- * looking. But "findable without looking" is exactly what a WHOLE HALF OF THE
- * SCREEN already is — more so than a 130px circle — and the thing that made
- * one-handed play impossible was never the stick being invisible. It was the
- * stick and the buttons being welded to opposite sides.
+ * `buttonsSide` survives on its own, and is now the only thing it ever really
+ * needed to be: which corner MAP, PAUSE and BUILD sit in. Drag from wherever
+ * your hand already is; reach for the buttons where you put them.
  *
- * That is what `stickSide` and `buttonsSide` fix, and they still do. The zone
- * moves to whichever half the player chose; the ring materialises under the
- * thumb inside it, and the origin follows the finger the way it used to, which
- * is what "felt more natural" is describing. Both settings survive.
- *
- * The zone stops short of the far edge so a thumb reaching for a build card on
- * the other side never grabs the stick instead.
+ * What makes this safe is `IGNORE_SEL`. Every control in the game lives under
+ * `#ui` and carries `data-ui`, and a pointer that starts on one of them is not
+ * the stick — so "anywhere" means anywhere that is not already a button, which
+ * is the whole of the board and the sky.
  */
-/** How much of the screen, from the chosen edge inward, is the stick's. */
-const ZONE = 0.46;
 const RING_R = 66;          // css px — ring radius
 const MAX_R = 52;           // knob travel
 const DEAD = 0.16;          // fraction of MAX_R ignored
@@ -162,10 +157,6 @@ export function createInput(domRoot) {
   let curX = 0, curY = 0;
   let touchStick = false;
 
-  /* Which half of the screen belongs to the stick. Recomputed on resize and
-     whenever the setting changes, so nothing here caches a stale side. */
-  let side = 'right';
-
   let tapId = null, tapX = 0, tapY = 0, tapT = 0;
   let tapPending = false;
   let actionPending = false;
@@ -182,16 +173,6 @@ export function createInput(domRoot) {
     const h = (win && win.innerHeight) || 720;
     return { left: 0, top: 0, width: w, height: h };
   };
-
-  /** Re-read which half is the stick's. Nothing to draw — it is invisible. */
-  function layoutPad() {
-    side = stickSide();
-  }
-
-  /** Is this point inside the stick's half of the screen? */
-  function inZone(lx, w) {
-    return side === 'left' ? lx < w * ZONE : lx > w * (1 - ZONE);
-  }
 
   function placeRing(x, y) {
     if (!ring) return;
@@ -273,37 +254,37 @@ export function createInput(domRoot) {
     const lx = ev.clientX - r.left;
     const ly = ev.clientY - r.top;
 
-    // On the stick's half, this is the stick. Everywhere else it is a tap,
-    // which is how the camera and the world still get their gestures.
-    if (inZone(lx, r.width)) {
-      if (stickId !== null) return;             // multi-touch safe
-      beginStick(ev.pointerId, lx, ly);
-      if (ev.cancelable) ev.preventDefault();
-    } else if (tapId === null) {
-      tapId = ev.pointerId;
-      tapX = ev.clientX; tapY = ev.clientY;
-      tapT = (win && win.performance ? win.performance.now() : Date.now());
-    }
+    if (stickId !== null) return;               // multi-touch safe
+    beginStick(ev.pointerId, lx, ly);
+    /* A press is a stick AND a candidate tap: there is no "everywhere else"
+       left to put taps in, so a short press that does not travel is still
+       reported as one when it ends. Nothing in the build reads `tapped` today,
+       but a gesture silently disappearing because the stick grew is the kind
+       of thing that is found six months later. */
+    tapId = ev.pointerId;
+    tapX = ev.clientX; tapY = ev.clientY;
+    tapT = (win && win.performance ? win.performance.now() : Date.now());
+    if (ev.cancelable) ev.preventDefault();
   }
 
   function onMove(ev) {
+    if (ev.pointerId === tapId
+      && Math.hypot(ev.clientX - tapX, ev.clientY - tapY) > TAP_MOVE) tapId = null;
     if (ev.pointerId === stickId) {
       const r = rect();
       moveStick(ev.clientX - r.left, ev.clientY - r.top);
       if (ev.cancelable) ev.preventDefault();
-    } else if (ev.pointerId === tapId) {
-      if (Math.hypot(ev.clientX - tapX, ev.clientY - tapY) > TAP_MOVE) tapId = null;
     }
   }
 
   function onUp(ev) {
-    if (ev.pointerId === stickId) { endStick(); return; }
     if (ev.pointerId === tapId) {
       const now = (win && win.performance ? win.performance.now() : Date.now());
       const moved = Math.hypot(ev.clientX - tapX, ev.clientY - tapY);
       if (moved <= TAP_MOVE && now - tapT <= TAP_MS) tapPending = true;
       tapId = null;
     }
+    if (ev.pointerId === stickId) endStick();
   }
 
   function onCancel(ev) {
@@ -393,10 +374,9 @@ export function createInput(domRoot) {
     on(win, 'keydown', onKeyDown);
     on(win, 'keyup', onKeyUp);
     on(win, 'contextmenu', e => { if (e.preventDefault) e.preventDefault(); });
-    // The pad is anchored to a corner, so a rotation or a keyboard opening
-    // moves the corner. Re-park it rather than leave the ring stranded.
-    on(win, 'resize', layoutPad);
-    on(win, 'orientationchange', () => setTimeout(layoutPad, 140));
+    // A rotation with a finger down would leave the ring somewhere the thumb
+    // is not. Let go of it rather than fight for it.
+    on(win, 'orientationchange', () => endStick());
 
     // Belt and braces for the other ways a browser silently drops a pointer:
     // an OS gesture, an alt-tab, a phone call, a backgrounded tab.
@@ -458,14 +438,7 @@ export function createInput(domRoot) {
     if (on) endStick();
   }
 
-  /* Park it now, and again whenever the player changes which hand they play
-     with. `onOptionsChange` fires for every option; layoutPad re-reads the one
-     it cares about and is cheap enough not to bother filtering. */
-  layoutPad();
-  const stopWatchingOptions = onOptionsChange(() => layoutPad());
-
   function dispose() {
-    try { stopWatchingOptions(); } catch (e) { /* already gone */ }
     for (const [t, type, fn, opts] of bound) t.removeEventListener(type, fn, opts);
     bound.length = 0;
     if (layer && layer.parentNode) layer.parentNode.removeChild(layer);

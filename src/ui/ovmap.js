@@ -50,6 +50,52 @@ export function createPainter(ctx, proj) {
   const PX = x => x * proj.s + proj.ox;
   const PY = z => z * proj.s + proj.oy;
 
+  /* ------------------------------------------------------------ billboards
+   *
+   *   "When I change the angle, please have the number tiles move to still be
+   *    facing me whatever viewpoint I'm at, instead of just always facing
+   *    straight up, making it harder to read in 3D."
+   *
+   * The tilt is a vertical squash applied to the whole canvas by overview.js,
+   * so everything painted through it is flattened — including the number
+   * discs, which become ellipses with squashed digits inside them. On a board
+   * tilted to 55% a 12 is half as tall as it should be, which is exactly the
+   * complaint.
+   *
+   * A billboard in a 3D scene is a flat thing turned to face the camera. Here
+   * that is the same operation and one line of maths: undo the squash about
+   * the label's OWN centre. The disc stays where the tilt put it — anchored to
+   * its hex, moving with the board — and stands up out of it, round and full
+   * height, which is what a token propped up on a tilted table looks like.
+   *
+   * Applied to the number discs and the dock ratio boards. Not to the hexes,
+   * the roads, the buildings or the coast: those are the board, and the board
+   * is what is being tilted. */
+  const billboard = (cx, cy) => {
+    const ky = proj.ky || 1;
+    if (ky >= 0.999) { note('board'); return false; }
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1, 1 / ky);
+    ctx.translate(-cx, -cy);
+    note('label');
+    return true;
+  };
+
+  /* What the canvas is ACTUALLY scaled by, sampled from the live context at
+     the two moments that matter: while the board is being drawn, and while a
+     billboarded label is. Nothing in the game reads these — they exist so the
+     capture rig can assert "the tokens are upright" against the transform the
+     painter really used, rather than against a screenshot of a number. */
+  const seen = { board: 1, label: 1 };
+  function note(which) {
+    if (typeof ctx.getTransform !== 'function') return;
+    const t = ctx.getTransform();
+    // `d` is the vertical scale, device pixels included; normalise by `a` so
+    // the number is the squash on its own whatever the display's DPR.
+    seen[which] = t.a ? t.d / t.a : t.d;
+  }
+
   /* ------------------------------------------------------------- geometry */
 
   function hexPath(t, inflate = 0, dy = 0, begin = true) {
@@ -342,7 +388,15 @@ export function createPainter(ctx, proj) {
   /* A third of the hex radius. The old floor of 13px was absolute, so on a
      667x375 phone the discs grew to the full radius of the hex they sat on and
      buried the terrain under them. */
-  const tokenR = () => Math.max(10.5, HEX_SIZE * proj.s * 0.33);
+  /* A billboarded disc keeps its full height while the board around it loses a
+     third of theirs, so at full tilt two tokens on hexes above one another can
+     touch. Giving back a little of the radius as the tilt grows keeps them
+     apart and still leaves them taller than they would be squashed: at ky 0.67
+     a disc is 0.91 of its flat size and 1.36x the height it would have had. */
+  const tokenR = () => {
+    const ky = proj.ky || 1;
+    return Math.max(10.5, HEX_SIZE * proj.s * 0.33 * (0.73 + 0.27 * ky));
+  };
 
   /** Where every number disc sits, in canvas css px. Label placement treats
       these as no-go zones — the numbers are what the player is reading. */
@@ -364,6 +418,7 @@ export function createPainter(ctx, proj) {
     const r = tokenR();
     const cx = PX(t.x), cy = PY(t.z);
     const hot = t.number === 6 || t.number === 8;
+    const up = billboard(cx, cy);
 
     ctx.beginPath(); ctx.arc(cx, cy + r * 0.2, r * 1.06, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.fill();
@@ -401,9 +456,13 @@ export function createPainter(ctx, proj) {
       ctx.beginPath(); ctx.arc(x, cy + r * 0.56, pr, 0, Math.PI * 2);
       ctx.fillStyle = hot ? '#bd2114' : '#523318'; ctx.fill();
     }
+    if (up) ctx.restore();
   }
 
-  function drawTokens() { for (const t of tiles) drawToken(t); }
+  function drawTokens() {
+    note('board');
+    for (const t of tiles) drawToken(t);
+  }
 
   /* ---------------------------------------------------------------- ports */
 
@@ -596,6 +655,8 @@ export function createPainter(ctx, proj) {
     const { bx, by, ox, oy, nx, ny, len, signW, signH } = d;
     const cx = bx + ox * (len + signH * 0.62);
     const cy = by + oy * (len + signH * 0.62);
+    // The ratio boards read like the number discs and stand up like them too.
+    const up = billboard(cx, cy);
 
     // Two legs from the deck tip up to the board.
     ctx.lineWidth = Math.max(1.4, proj.s * 0.2);
@@ -645,6 +706,7 @@ export function createPainter(ctx, proj) {
       ctx.lineWidth = Math.max(1.1, signH * 0.09);
       ctx.strokeStyle = '#7a4a16'; ctx.stroke();
     }
+    if (up) ctx.restore();
   }
 
   function drawPorts(state) {
@@ -839,6 +901,9 @@ export function createPainter(ctx, proj) {
   return {
     PX, PY, hexPath, plate, rounded,
     drawSea, fillSea, drawFrame, drawShelf, drawTiles, drawTokens, tokenRects,
+    /** The vertical scale the canvas really had while the board and while a
+     *  billboarded label were painted. Read by the capture rig only. */
+    get scales() { return { board: +seen.board.toFixed(3), label: +seen.label.toFixed(3) }; },
     drawPorts, portRects, drawRoads, drawBuildings, drawRobber, ownerPip,
     drawSettlers
   };

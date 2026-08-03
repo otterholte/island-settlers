@@ -129,7 +129,7 @@ const CSS = `
   0%{opacity:.85;transform:scale(.35)}
   100%{opacity:0;transform:scale(1.55)}
 }
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .fc-num{font-size:98px}
   .fc-num.go{font-size:82px}
   .fc-ring{width:140px;height:140px}

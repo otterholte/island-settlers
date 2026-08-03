@@ -272,7 +272,7 @@
 /* --------------------------------------------------------------- compact
    The landscape phone. The seat grid stays two-up — four in a row at 375px
    wide gives each name 80px, which is not a name. */
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .fr-panel{width:min(520px,96vw);max-height:calc(100vh - 12px)}
   .fr-head{padding:6px 42px 5px 12px}
   .fr-body{gap:5px;padding:7px 10px}

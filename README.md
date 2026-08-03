@@ -60,8 +60,9 @@ seats become bots at the room's difficulty. Everybody presses **START** and the
 match begins on the last press.
 
 Multiplayer needs the small server in `server/` — see `server/README.md`. The
-game finds it automatically when both are served from the same address, and the
-**SERVER** button on that screen is there for when they are not.
+address is compiled in and the game also falls back to the page's own origin,
+so a locally-served copy needs no configuration; `?server=wss://host/ws`
+overrides it for one tab.
 
 ### Install it to the home screen
 
@@ -87,17 +88,17 @@ Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
 
 | | Touch | Keyboard |
 |---|---|---|
-| Move | A joystick pad sits in the bottom corner, above the action buttons â€” put a thumb on it and drag | `W A S D` / arrows |
+| Move | Drag anywhere on the screen â€” an invisible stick appears under your thumb | `W A S D` / arrows |
 | Gather | Walk up to a tree, clay pit, sheep, wheat stand or ore seam and stop â€” gathering starts automatically | `Space` |
 | Board map | Tap **MAP** | `Tab` |
 | Build | Tap a build card, then tap a highlighted spot on the map and confirm | â€” |
 | Trade | Walk to the market or one of your unlocked docks, then tap the prompt | â€” |
 
-Both clusters are side-switchable, independently, under the gear: **Joystick
-Left/Right** and **Buttons Left/Right**. The default puts them together in the
-bottom right; splitting them across the two corners, or moving both to the
-left, are the other three arrangements. It exists because a one-handed player
-should not have to reach across the screen.
+The three action keys are side-switchable under the gear: **Buttons
+Left/Right**. The joystick needs no setting — it takes a drag from anywhere
+that is not already a control, so it cannot be on the wrong side. Together
+that is what a one-handed player needs: drag where your hand already is, and
+put MAP, PAUSE and BUILD in the corner you can reach.
 
 ---
 

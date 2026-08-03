@@ -65,7 +65,7 @@ const STYLE_ID = 'hud-road-style';
 const CSS = `
 .rb-cue{bottom:calc(var(--gB,10px) + 92px + 58px)}
 .rb-cue .kn-ico{background:linear-gradient(180deg,#ffe7c0,#e8a24a)}
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .rb-cue{bottom:calc(var(--gB,10px) + 84px + 50px)}
 }
 `;

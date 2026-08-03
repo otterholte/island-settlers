@@ -328,7 +328,7 @@
 
 /* ============================================================ compact phone
    Verified at 667x375. The scene keeps every layer; only the spacing gives. */
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   .bs-fore{gap:3px}
   /* `margin-top` on a bottom-anchored absolute box does nothing at all;
      this rule was dead for as long as it existed. The bar's clearance is its

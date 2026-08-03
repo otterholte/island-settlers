@@ -29,9 +29,7 @@ import {
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
-import {
-  knightsOn, stickSide, buttonsSide, setStickSide, setButtonsSide
-} from '../core/options.js';
+import { knightsOn, buttonsSide, setButtonsSide } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
@@ -50,7 +48,7 @@ const RES_ICON_PX = 28;
    switched off before the draft, because a How to Play that explains a mechanic
    the match does not have is worse than one that says nothing about it. */
 const HOW_TO_ALL = [
-  ['Move', 'Drag anywhere on your half of the screen to run — no need to find anything, the stick appears under your thumb. The gear says which half is yours.'],
+  ['Move', 'Drag anywhere on the screen to run — no need to find anything, the stick appears under your thumb.'],
   ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
   ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.'],
   ['Regions', 'Sweep a hex clean and the whole field rests, then comes back at once. The bars under the resource pill show what is still standing.'],
@@ -295,16 +293,15 @@ export function createHUD(root, state, game) {
 
   /* --- where the controls live --------------------------------------------
    *
-   *   "In the settings, give them the option to switch that, so the default is
-   *    having the buttons and the joystick on one side, but you can switch what
-   *    side it is on, or choose to have the 3 buttons and joystick on separate
-   *    sides."
+   *   "Let's actually switch the invisible joystick to work anywhere, but
+   *    still have the buttons switch sides. So it doesn't need a toggle."
    *
-   * Two independent switches rather than one four-way preset, because that is
-   * what the sentence describes: both-right, both-left, and either split fall
-   * out of them. The stick half is read by systems/input.js, which lays its pad
-   * out again whenever an option changes; the button half is this file's, and
-   * it is one class on the HUD root.
+   * So there is one switch where there were two. The joystick takes a drag from
+   * anywhere that is not already a control, which cannot be on the wrong side
+   * and therefore has nothing to ask; this is the half that was always the real
+   * question — which corner a one-handed player wants MAP, PAUSE and BUILD in.
+   * One class on the HUD root, and ui-hud.css reverses the row so the key
+   * nearest the screen edge is the same key either way.
    */
   function sideRow(label, get, set) {
     const keys = ['left', 'right'];
@@ -330,7 +327,6 @@ export function createHUD(root, state, game) {
       button('cbtn small ghost x', { 'aria-label': 'Close', on: { click: () => toggleSettings(false) } },
         mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
-    sideRow('Drag side', stickSide, setStickSide),
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     button('wide cream', { on: { click: () => toggle(howBody, 'hid', !howBody.classList.contains('hid')) } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),

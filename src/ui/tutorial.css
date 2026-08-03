@@ -318,7 +318,7 @@
 /* ============================================================ compact phone
    667x375. The sheet loses its margins and the art column narrows; nothing is
    removed, because the whole point of the reading route is the picture. */
-@media (max-height:400px),(max-width:760px){
+@media (max-height:500px),(max-width:1023px){
   .tut-sheet{padding:7px 10px 9px;gap:5px;height:calc(100vh - 14px);border-radius:17px}
   .tut-head{gap:7px}
   .tut-x{width:40px;min-width:40px;height:40px;min-height:40px}

@@ -66,7 +66,10 @@ export const OPTION_DEFAULTS = Object.freeze({
    *
    * These are 'left' or 'right'. They live here rather than on `state` for the
    * same reason `knights` does — see the note at the top of this file. */
-  stickSide: 'right',
+  /* WHICH CORNER THE THREE ACTION KEYS SIT IN, and nothing else.
+     There was a matching `stickSide` beside this. The joystick takes a drag
+     from anywhere on the screen now, so there is no side for it to be on and
+     no setting worth asking anybody about — "so it doesn't need a toggle". */
   buttonsSide: 'right',
   /* HOW FAR THE BOARD MAP IS TILTED BACK, 0 (flat overhead) to 1 (as far as
      it goes). Set with two fingers dragged up or down on the map itself, and
@@ -157,9 +160,7 @@ export function onOptionsChange(fn) {
 export function knightsOn() { return current.knights !== false; }
 
 const side = v => (v === 'left' ? 'left' : 'right');
-export function stickSide() { return side(current.stickSide); }
 export function buttonsSide() { return side(current.buttonsSide); }
-export function setStickSide(v) { return setOption('stickSide', side(v)); }
 export function setButtonsSide(v) { return setOption('buttonsSide', side(v)); }
 
 const TILT_MAX = 1;
@@ -177,6 +178,5 @@ export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
 export default {
   getOption, setOption, onOptionsChange,
-  knightsOn, setKnights, stickSide, buttonsSide, setStickSide, setButtonsSide,
-  mapTilt, setMapTilt
+  knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt
 };

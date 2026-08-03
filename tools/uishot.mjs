@@ -878,13 +878,13 @@ if (STAGE === 'home') {
 
   /* ------------------------------------------------------- the two sides
    *
-   *   "I have some players who only have a right hand. Also in the settings,
-   *    give them the option to switch that... you can switch what side it is
-   *    on, or choose to have the 3 buttons and joystick on separate sides."
+   *   "Let's actually switch the invisible joystick to work anywhere, but
+   *    still have the buttons switch sides. So it doesn't need a toggle."
    *
-   * Four arrangements out of two switches, so what is checked is that each
-   * switch moves ITS OWN cluster and not the other one. The pad is read off
-   * `#js-ring`, which is a live element and not a computed intention.
+   * One switch, and what is checked is that it moves the action rail and that
+   * the drag zone does not care: `#js-ring` has no resting position any more —
+   * it appears where a thumb lands — so the thing to prove is that a press on
+   * the far side from the buttons still raises it.
    *
    * The map is stood down for this: the settings popover is reachable from the
    * gear at any time, but during the opening draft the board is a full-screen
@@ -926,26 +926,19 @@ if (STAGE === 'home') {
 
   const before = await ev(SIDES);
   console.log('  SIDES-RR ' + JSON.stringify(before));
-  let t = await seg('Buttons', 'Left');
+  const t = await seg('Buttons', 'Left');
   console.log('  hit buttons/left ' + t.onTop);
   await press(t.x, t.y);
   const bl = await ev(SIDES);
-  console.log('  SIDES-LR ' + JSON.stringify(bl));
-  t = await seg('Joystick', 'Left');
-  await press(t.x, t.y);
-  const both = await ev(SIDES);
-  console.log('  SIDES-LL ' + JSON.stringify(both));
-  console.log('  SPLIT  ' + JSON.stringify({
-    buttonsMovedAlone: bl.railX < before.railX && bl.stickX === before.stickX,
-    stickMovedAfter: both.stickX < bl.stickX,
-    classFollows: bl.btnLeft === true && before.btnLeft === false
+  console.log('  SIDES-LEFT ' + JSON.stringify(bl));
+  console.log('  MOVED  ' + JSON.stringify({
+    railWentLeft: bl.railX < before.railX,
+    classFollows: bl.btnLeft === true && before.btnLeft === false,
+    onlyOneSwitch: bl.rows.length === 1 && bl.rows[0].lab === 'Buttons'
   }));
   await shot(`mobile-sides-${TAG}`);
-  // Put both switches back so the shot of the default layout is the default.
-  for (const r of ['Buttons', 'Joystick']) {
-    const q = await seg(r, 'Right');
-    await press(q.x, q.y);
-  }
+  // Put it back so the shot of the default layout is the default.
+  { const q = await seg('Buttons', 'Right'); await press(q.x, q.y); }
   console.log('  RESTORED ' + JSON.stringify(await ev(SIDES)));
   await ev(`(()=>{document.querySelector('.pop.settings')
     .classList.add('hid');
@@ -1061,6 +1054,32 @@ if (STAGE === 'home') {
 
   const tilted = await ev(READ);
   console.log('  TILTED ' + JSON.stringify(tilted));
+
+  /* AND THE NUMBER DISCS STAY ROUND.
+     The tilt squashes the whole canvas, so a token painted straight through it
+     is an ellipse with squashed digits in it — "making it harder to read in
+     3D". They are billboarded out of the squash, and the way to prove that
+     from outside the painter is to read the actual pixels: a round disc is as
+     tall as it is wide, a squashed one is not. */
+  /* AND THE NUMBER DISCS STAY UPRIGHT.
+   *
+   *   "When I change the angle, please have the number tiles move to still be
+   *    facing me whatever viewpoint I'm at, instead of just always facing
+   *    straight up, making it harder to read in 3D."
+   *
+   * The tilt squashes the whole canvas, so a disc painted straight through it
+   * is an ellipse with squashed digits in it. They are billboarded back out of
+   * the squash, and this reads the transform the painter ACTUALLY had at each
+   * of the two moments — no screenshot to interpret and no pixel to guess at.
+   * The board leans; the labels stand up in it. */
+  const up = await ev(`(()=>{const m=window.__ISLAND__.game.overview.metrics;
+    return {ky:m.ky, scales:m.scales};})()`);
+  console.log('  SCALES ' + JSON.stringify(up));
+  console.log('  UPRIGHT ' + JSON.stringify({
+    boardLeans: Math.abs(up.scales.board - up.ky) < 0.02,
+    labelsStandUp: Math.abs(up.scales.label - 1) < 0.02,
+    wouldHaveBeen: up.ky
+  }));
   console.log('  GAINED ' + JSON.stringify({
     tiltMoved: tilted.tilt > flat.tilt + 0.05,
     squashed: tilted.ky < flat.ky - 0.05,
@@ -1069,7 +1088,26 @@ if (STAGE === 'home') {
     biggerHexes: +(tilted.s / flat.s).toFixed(3),
     gestureSeen: tilted.tilts > 0
   }));
+
   await shot(`maptilt-tilted-${TAG}`);
+
+  /* AND YOU CAN PULL FURTHER BACK THAN THE FIT.
+   *   "I should be able to zoom out more on the 3D version of the map
+   *    overview. When I use two fingers to change the view I can't zoom out as
+   *    far as I need."
+   * The floor was 0.90 — ten per cent under the fit, which is a rounding error
+   * rather than a range. Walked all the way down here so the number in the
+   * log is the one a thumb can actually reach. */
+  const zoomedOut = await ev(`(()=>{
+    const ov=window.__ISLAND__.game.overview;
+    for(let i=0;i<24;i++) if(ov.zoomOutForTest) ov.zoomOutForTest();
+    return ov.panInfo;})()`);
+  console.log('  ZOOMOUT ' + JSON.stringify({
+    floor: zoomedOut.zoomRange ? zoomedOut.zoomRange[0] : null,
+    reached: zoomedOut.zoom,
+    boardStillOnScreen: zoomedOut.boardOnScreen
+  }));
+  await shot(`maptilt-out-${TAG}`);
 
   // And it is remembered. Reload the page and ask again.
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });

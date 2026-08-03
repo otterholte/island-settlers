@@ -226,7 +226,7 @@ export const INTRO_CSS = `
   border-radius:14px;
   --f1:#e7e0cd;--f2:#cfc4a8;--f3:#b6a988;--lip:#7d6c48;--fg:#3f2a12}
 
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .mf-panel{width:min(500px,94vw)}
   .mf-p-head{padding:6px 12px 5px}
   .mf-p-body{gap:5px;padding:7px 10px}
@@ -438,7 +438,7 @@ export const INTRO_CSS = `
 /* Clears the PLAY button's 7px lip plus its 3px idle bounce — see .mf-i-cta. */
 .mf-home .mf-i-hint{margin-top:clamp(10px,2.2vh,14px)}
 
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .mf-intro{gap:4px}
   /* Specificity on purpose: flowUI.js's own compact block still sizes the old
      four-card row, and this plate is not a card. */

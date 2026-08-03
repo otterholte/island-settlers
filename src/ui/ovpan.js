@@ -67,7 +67,21 @@ import { mapTilt, setMapTilt } from '../core/options.js';
 
 const STYLE_ID = 'ovpan-style';
 
-export const ZOOM_MIN = 0.90;
+/* HOW FAR BACK YOU CAN PULL.
+ *
+ *   "I should be able to zoom out more on the 3D version of the map overview.
+ *    When I use two fingers to change the view I can't zoom out as far as I
+ *    need."
+ *
+ * 0.90 was a floor set when the map only ever fitted the board to the frame:
+ * ten per cent under the fit is not a zoom range, it is a rounding error, and
+ * it existed to stop the island shrinking into a dot. There is a reason to go
+ * further now — a tilted board is fitted at a LARGER scale, so "all the way
+ * out" from a tilted view has further to travel before it shows the whole
+ * island and its docks with room around them. 0.45 is about a third of the
+ * fit, which is small enough to see the shape of the whole thing and still
+ * read which hex is which. */
+export const ZOOM_MIN = 0.45;
 export const ZOOM_MAX = 3.20;
 const ZOOM_STEP = 1.22;
 /** The board centre must stay this far inside the frame, as a fraction of it. */
@@ -131,7 +145,7 @@ const CSS = `
   font:800 8.5px/1.2 var(--ff,system-ui);letter-spacing:.13em;text-transform:uppercase;
   color:#fff2e2;opacity:1;transition:opacity .2s ease}
 .ovz-ask.off{opacity:0}
-@media (max-height:400px){.ovz b{width:33px;height:30px}
+@media (max-height:500px),(max-width:1023px){.ovz b{width:33px;height:30px}
   .ovz b.ovz-home{margin-bottom:7px}.ovz-ask{font-size:7.5px}}
 `;
 
@@ -430,6 +444,7 @@ export function createOvPan(cv, proj, opts = {}) {
       const [a, b] = [...live.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const spread = pinch > 8 && d > 8 ? Math.abs(d - pinch) : 0;
       if (pinch > 8 && d > 8) zoomAt(d / pinch, mx, my);
       pinch = d;
       /* Two fingers travelling the same way tilt; two fingers travelling apart
@@ -437,9 +452,15 @@ export function createOvPan(cv, proj, opts = {}) {
          each per frame, so the midpoint moves by dy/2 — which is what drives
          the tilt. Dragging DOWN tilts back, the way pulling a board towards you
          would. */
+      /* TELL THE TWO GESTURES APART. Fingers moving APART are a pinch and
+         fingers moving TOGETHER are a tilt, and a real hand does a bit of both
+         — so whichever dominates this frame wins it. Without this a pinch that
+         is not perfectly symmetric drags the tilt along with it, which reads
+         as "I can't zoom out", because the board is being stood up at the same
+         time as it is being pulled back. */
       if (mid !== null) {
         const dmid = my - mid;
-        if (Math.abs(dmid) > 0.01) {
+        if (Math.abs(dmid) > 0.01 && Math.abs(dmid) > spread * 0.6) {
           if (setTilt(view.tilt + dmid * TILT_PER_PX)) stats.tilts++;
         }
       }

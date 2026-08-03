@@ -175,7 +175,7 @@ const DRAFT_CSS = `
 .ov .ov-rk.on{border-color:rgba(255,201,60,.9);
   background:linear-gradient(180deg,rgba(255,201,60,.28),rgba(120,80,10,.5))}
 .ov .ov-rk svg{display:block}
-@media (max-height:400px){
+@media (max-height:500px),(max-width:1023px){
   .ov .ov-dr{padding:4px 5px 4px 10px}
   .ov .ov-dn{font-size:10.5px}
   .ov .ov-dp b{width:13px;height:13px;font-size:8px}
@@ -764,6 +764,14 @@ export function createOverview(root, state, game) {
      Everything below works in FLAT board space, so a screen point has to come
      back out of the tilt before it is compared with anything. One place, and
      it is the inverse of `tiltIn`. */
+  /** Flat board space -> the squashed canvas. The inverse of `unTilt`. */
+  function tiltY(py) {
+    const ky = proj.ky || 1;
+    if (ky >= 0.999) return py;
+    const cy = tiltCentre();
+    return (py - cy) * ky + cy;
+  }
+
   function unTilt(py) {
     const ky = proj.ky || 1;
     if (ky >= 0.999) return py;
@@ -1026,6 +1034,8 @@ export function createOverview(root, state, game) {
     get mode() { return mode; },
     /** Pan / zoom of the board — pose, clamp box, and whether it is on screen. */
     get panInfo() { return pan.info; },
+    /** Capture-rig hook: one notch out, so a rig can walk to the floor. */
+    zoomOutForTest() { return pan.zoomAt(1 / 1.22); },
 
     /**
      * Every size the placement layer paints at, in canvas css px.
@@ -1058,6 +1068,14 @@ export function createOverview(root, state, game) {
         roadSlabW: +(roadPaintW() + 4.5).toFixed(1),
         /** how long an edge is on screen, for scale */
         roadEdgePx: +(HEX_SIZE * proj.s).toFixed(1),
+        /** The vertical squash the tilt is applying, 1 flat. */
+        ky: +(proj.ky || 1).toFixed(3),
+        /** What the canvas was really scaled by while the board was drawn and
+         *  while a number disc was — the board leans, the discs stand up. */
+        /* The BAKE painter when there is one: that is the context the board
+           and its tokens are actually drawn into, and reporting the live
+           painter instead reports a code path that did not run. */
+        scales: (bgx ? bgPaint : paint) ? (bgx ? bgPaint : paint).scales : null,
         /** width of the tap zone around a target, corner to corner */
         hitPx: +(2 * hitRadius()).toFixed(1)
       };
