@@ -23,51 +23,68 @@ start.
 
 ---
 
-## Putting it on the internet (Fly.io)
+## Putting it on the internet
 
-Fly's free allowance covers one small always-on machine with a volume, which is
-exactly the shape this needs.
+### Railway (what this is deployed on)
+
+Connect the repo and it builds from the `Dockerfile` — `railway.json` pins the
+rest. Three things to set in the dashboard, once:
+
+1. **A volume.** Add one and mount it at `/data`. Without it the accounts file
+   lives on the container's own disk and every account vanishes at the next
+   deploy, silently.
+2. **`SESSION_SECRET`.** Any long random string. Without it a restart signs
+   everybody out, and the server says so in the log every boot.
+3. **`DATA=/data`** — optional. If you leave it unset the server reads
+   Railway's own `RAILWAY_VOLUME_MOUNT_PATH`, so it finds the volume wherever
+   you mounted it. Set it only if you want to pin the path yourself, and then
+   make sure the two agree.
+
+Railway injects `PORT`; the server reads it and binds `0.0.0.0`. Nothing to do.
+
+Then point the game at it — `DEFAULT_SERVER` in `src/net/config.js`, or type the
+address into the box on the friends screen, which overrides it per browser.
+
+**Check it worked** before trusting it with anybody's account:
 
 ```sh
-# once
+curl https://<your-app>.up.railway.app/health
+```
+
+The two fields that matter:
+
+```json
+"store": { "persists": true, "writable": true },
+"user":  { "droppedPrivileges": true, "tookVolume": true }
+```
+
+`persists` says the file is on the volume. `writable` says the bytes actually
+landed — those are different failures and the second one is the quiet one. A
+mounted volume the container cannot write to serves perfectly and loses
+everything at the next deploy, which is exactly what happened on the first
+deploy here. The server now starts as root, takes the directory, and drops to
+`node` before it opens a socket; `tookVolume` is it saying so.
+
+### Fly.io
+
+```sh
 fly launch --no-deploy --copy-config          # claim an app name
 fly volumes create island_data --size 1       # accounts must survive a deploy
 fly secrets set SESSION_SECRET="$(openssl rand -base64 32)"
-
-# every time
 fly deploy
 ```
 
-Then tell the game where the server is. Either edit one line —
+`fly.toml` pins `DATA=/data` explicitly, because Fly publishes no equivalent of
+`RAILWAY_VOLUME_MOUNT_PATH`.
 
-```js
-// src/net/config.js
-export const DEFAULT_SERVER = 'wss://your-app-name.fly.dev/ws';
-```
-
-— or leave it empty and type `your-app-name.fly.dev` into the box the friends
-screen shows the first time it cannot find a server. The address is remembered
-per browser, so it is asked once.
-
-Check it came up:
-
-```sh
-curl https://your-app-name.fly.dev/health
-```
-
-### Two things in `fly.toml` that matter
-
-**`auto_stop_machines = false`.** A suspended machine drops every open
-websocket, which drops every match in progress. This is a game server; it does
-not get to sleep.
-
-**The volume.** Accounts and the friend graph are one JSON file under `/data`.
-Without a volume it lives on the machine's ephemeral disk and every deploy
-signs everybody out permanently.
+**`auto_stop_machines = false`** matters more than it looks: a suspended machine
+drops every open websocket, which drops every match in progress. This is a game
+server; it does not get to sleep. Same reason `sleepApplication` is false in
+`railway.json`.
 
 ### One machine, deliberately
 
-Rooms live in memory and the store is a local file, so two machines would be
+Rooms live in memory and the store is a local file, so two instances would be
 two separate games — your friend online on one and invisible on the other.
 Scaling past one means moving both out of the process; the note at the top of
 `store.mjs` says what to replace.
@@ -76,13 +93,14 @@ Scaling past one means moving both out of the process; the note at the top of
 
 ## Other hosts
 
-Nothing here is Fly-specific. Anything that can run a container and give it a
+Nothing here is tied to either. Anything that can run a container and give it a
 persistent directory works:
 
 | | |
 |---|---|
 | `PORT` | what to listen on (default 8787) |
-| `DATA` | where `island.json` lives (default `server/data`) |
+| `DATA` | where `island.json` lives — falls back to `RAILWAY_VOLUME_MOUNT_PATH`, then `server/data` |
+| `RUN_AS` | who to drop to after taking the volume (default `node`) |
 | `SESSION_SECRET` | signs session tokens — **set it**, or every restart signs everybody out |
 | `STATIC` | `1` to also serve the game files |
 | `MAX_MATCHES` | concurrent matches (default 6; each is ~40MB) |
@@ -145,3 +163,15 @@ node tools/nettest.mjs --keep   # leave the server running afterwards
 
 It boots a real server, opens two real websockets, and plays a real match
 through the real client mirror. Nothing is stubbed.
+
+And the same 39 checks against a **deployed** server, over wss, through
+whatever proxy is in front of it:
+
+```sh
+node tools/nettest.mjs --remote=your-app.up.railway.app
+```
+
+That is the only way to find out whether a host will really hold a websocket
+open for the length of a match, and whether the volume is genuinely mounted,
+rather than believing a config file about it. It signs up two throwaway
+accounts with random names per run and touches nothing else.
