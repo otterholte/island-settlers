@@ -307,6 +307,116 @@ const I_TROPHY = (
   `<path d="${starPath(5, 4.4, 1.9, 24, 15)}" fill="${C.goldL}"/>`
 );
 
+/* ------------------------------------------------------- the winner's cup
+ *
+ * A SECOND trophy, drawn for one job: the 64px medallion on the results
+ * banner. `I_TROPHY` above stays exactly as it is, because it is a 20px chip
+ * on the scoreboard and a 15px chip on the objective ribbon, and at those
+ * sizes its heavy dark keyline is the only thing that keeps it readable.
+ *
+ * Blown up to 64 that same keyline is the problem:
+ *
+ *   "Make it a higher quality trophy, and not have the low quality look or
+ *    black edges."
+ *
+ * So this one is authored for the size it is used at. A 96 box instead of 48,
+ * so the curves have somewhere to live. Gradients instead of flat fills, with
+ * the light coming from the upper left the way it does everywhere else in the
+ * game. No black anywhere: what separates the metal from the plate behind it
+ * is a warm deep bronze at partial opacity, which is what an edge on a gold
+ * object actually looks like — the darkest part of the gold, not a line drawn
+ * around it.
+ */
+const TB = 'tb';   // gradient id prefix; the banner only ever draws one
+const I_TROPHY_BIG = (
+  '<defs>' +
+    `<linearGradient id="${TB}cup" x1="0.12" y1="0" x2="0.88" y2="1">` +
+      '<stop offset="0" stop-color="#fff6d6"/>' +
+      '<stop offset=".26" stop-color="#ffdc78"/>' +
+      '<stop offset=".58" stop-color="#f2ac22"/>' +
+      '<stop offset="1" stop-color="#a96a06"/>' +
+    '</linearGradient>' +
+    `<linearGradient id="${TB}rim" x1="0" y1="0" x2="1" y2="0">` +
+      '<stop offset="0" stop-color="#e8b53a"/>' +
+      '<stop offset=".38" stop-color="#fffbea"/>' +
+      '<stop offset=".72" stop-color="#ffd869"/>' +
+      '<stop offset="1" stop-color="#c98a12"/>' +
+    '</linearGradient>' +
+    `<linearGradient id="${TB}base" x1="0" y1="0" x2="0" y2="1">` +
+      '<stop offset="0" stop-color="#ffe9a8"/>' +
+      '<stop offset=".42" stop-color="#eab028"/>' +
+      '<stop offset="1" stop-color="#96590a"/>' +
+    '</linearGradient>' +
+    `<linearGradient id="${TB}handle" x1="0" y1="0" x2="0" y2="1">` +
+      '<stop offset="0" stop-color="#ffe9a8"/>' +
+      '<stop offset="1" stop-color="#c2840f"/>' +
+    '</linearGradient>' +
+    `<linearGradient id="${TB}spec" x1="0" y1="0" x2="1" y2="1">` +
+      '<stop offset="0" stop-color="#ffffff" stop-opacity=".9"/>' +
+      '<stop offset=".55" stop-color="#ffffff" stop-opacity=".16"/>' +
+      '<stop offset="1" stop-color="#ffffff" stop-opacity="0"/>' +
+    '</linearGradient>' +
+    `<radialGradient id="${TB}halo" cx=".5" cy=".4" r=".62">` +
+      '<stop offset="0" stop-color="#fff4c8" stop-opacity=".5"/>' +
+      '<stop offset="1" stop-color="#fff4c8" stop-opacity="0"/>' +
+    '</radialGradient>' +
+  '</defs>' +
+
+  /* The glow behind it. Nothing on this plate is a hard cut-out. */
+  `<circle cx="48" cy="42" r="40" fill="url(#${TB}halo)"/>` +
+
+  /* Handles first, so the cup overlaps them and they read as behind it. */
+  `<path d="M28 24C13 24 8.5 33 11 40.5 13.2 47 20 51 28 51.5" fill="none" ` +
+    `stroke="url(#${TB}handle)" stroke-width="6.4" stroke-linecap="round"/>` +
+  '<path d="M28 24C13 24 8.5 33 11 40.5 13.2 47 20 51 28 51.5" fill="none" ' +
+    'stroke="#7d4b06" stroke-opacity=".42" stroke-width="1.5" stroke-linecap="round"/>' +
+  `<path d="M68 24C83 24 87.5 33 85 40.5 82.8 47 76 51 68 51.5" fill="none" ` +
+    `stroke="url(#${TB}handle)" stroke-width="6.4" stroke-linecap="round"/>` +
+  '<path d="M68 24C83 24 87.5 33 85 40.5 82.8 47 76 51 68 51.5" fill="none" ' +
+    'stroke="#7d4b06" stroke-opacity=".42" stroke-width="1.5" stroke-linecap="round"/>' +
+
+  /* Plinth: a stepped base, lit on its top face and falling into shadow. */
+  '<path d="M30 79.5C30 72.5 36.5 69 48 69s18 3.5 18 10.5z" ' +
+    `fill="url(#${TB}base)"/>` +
+  '<rect x="25.5" y="79" width="45" height="9.5" rx="3.4" ' +
+    `fill="url(#${TB}base)"/>` +
+  '<rect x="25.5" y="79" width="45" height="3.2" rx="1.6" fill="#ffeeb4" opacity=".55"/>' +
+  '<path d="M30 79.5C30 72.5 36.5 69 48 69s18 3.5 18 10.5z" fill="none" ' +
+    'stroke="#7d4b06" stroke-opacity=".45" stroke-width="1.6"/>' +
+  '<rect x="25.5" y="79" width="45" height="9.5" rx="3.4" fill="none" ' +
+    'stroke="#7d4b06" stroke-opacity=".45" stroke-width="1.6"/>' +
+
+  /* Stem and its collar. */
+  `<path d="M42.5 57h11l-1.2 12h-8.6z" fill="url(#${TB}base)"/>` +
+  '<path d="M42.5 57h4.2l-.6 12h-3.6z" fill="#ffeeb4" opacity=".4"/>' +
+  `<ellipse cx="48" cy="69" rx="10" ry="3" fill="url(#${TB}rim)"/>` +
+
+  /* The bowl. */
+  `<path d="M27.5 20h41l-2.6 19.2C63.6 52.6 56.6 60 48 60s-15.6-7.4-17.9-20.8z" ` +
+    `fill="url(#${TB}cup)"/>` +
+  /* A specular sweep down the lit side — this is what makes it read as metal
+     rather than as a shape filled with a gradient. */
+  '<path d="M33 21.5h7.4l-1.6 20c-.7 8.6 1 14.4 4.4 17.6-6.6-1.8-11-8.6-12.6-19.4z" ' +
+    `fill="url(#${TB}spec)"/>` +
+  '<path d="M27.5 20h41l-2.6 19.2C63.6 52.6 56.6 60 48 60s-15.6-7.4-17.9-20.8z" ' +
+    'fill="none" stroke="#7d4b06" stroke-opacity=".45" stroke-width="1.7" ' +
+    'stroke-linejoin="round"/>' +
+
+  /* The mouth: a bright band with the darker inside showing through it. */
+  `<ellipse cx="48" cy="20" rx="20.5" ry="5.4" fill="url(#${TB}rim)"/>` +
+  '<ellipse cx="48" cy="20.6" rx="16" ry="3.4" fill="#9c6208"/>' +
+  '<ellipse cx="48" cy="20.6" rx="16" ry="3.4" fill="none" ' +
+    'stroke="#6f4205" stroke-opacity=".5" stroke-width="1"/>' +
+  '<ellipse cx="48" cy="20" rx="20.5" ry="5.4" fill="none" ' +
+    'stroke="#7d4b06" stroke-opacity=".4" stroke-width="1.5"/>' +
+
+  /* The star, sitting proud of the bowl with its own tiny shadow. */
+  `<path d="${starPath(5, 13.4, 5.8, 48, 39.6)}" fill="#8a5406" opacity=".3"/>` +
+  `<path d="${starPath(5, 12.6, 5.4, 48, 38.4)}" fill="#fffdf2"/>` +
+  `<path d="${starPath(5, 12.6, 5.4, 48, 38.4)}" fill="none" stroke="#c98a12" ` +
+    'stroke-opacity=".7" stroke-width="1.4" stroke-linejoin="round"/>'
+);
+
 /* -------------------------------------------------------------------- icons */
 
 export const ICONS = {
@@ -323,6 +433,7 @@ export const ICONS = {
   castle: I_CASTLE,
   cards: I_CARDS,
   trophy: I_TROPHY,
+  trophyBig: I_TROPHY_BIG,
 
   /* ---- chrome (24 box) ---- */
   knight:
@@ -432,7 +543,10 @@ export const ICONS = {
 /** Icons authored on the larger, higher-detail box. */
 const VBOX = {
   log: 48, brick: 48, sheep: 48, wheat: 48, ore: 48,
-  road: 48, house: 48, castle: 48, cards: 48, trophy: 48
+  road: 48, house: 48, castle: 48, cards: 48, trophy: 48,
+  /* The results medallion is drawn at 64 css px; a 96 box gives its curves
+     four times the room the 48 box would. */
+  trophyBig: 96
 };
 
 /* -------------------------------------------------------------------- API */

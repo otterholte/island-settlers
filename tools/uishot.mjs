@@ -510,6 +510,85 @@ if (STAGE === 'home') {
       hudUp:!!document.querySelector('.hud:not(.pre)')};})()`)));
   await shot(`netmatch-${TAG}`);
 
+/* The results sheet, both ways round. `--win=1` for your victory, `--win=0` to
+   lose to a rival, which is the state the medallion had to stop congratulating
+   people in. */
+} else if (STAGE === 'results') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+  /* The player's own draft turn WAITS — flowDraft.js says in as many words
+     that it never times out into an auto-pick, which is correct in a game
+     where the only thing waiting is three subroutines. So this stage taps for
+     them, through the real panel, or the draft never finishes and there is no
+     results screen to photograph. */
+  for (let i = 0; i < 90; i++) {
+    const p = await ev('window.__ISLAND__.state.phase');
+    if (p === 'play') break;
+    await ev(`(()=>{
+      const I=window.__ISLAND__, g=I.game, R=window.__R__;
+      for(let k=0;k<40;k++){ g.flow.update(1/60); g.bots&&g.bots.update&&g.bots.update(1/60); }
+      if(I.state.phase!=='setup')return 0;
+      if(R.setupCurrentPlayer(I.state)!==0)return 0;
+      const ov=g.overview;
+      if(!ov||!ov.isOpen)return 0;
+      const road=I.state.setupNeed==='road';
+      const legal=road
+        ? R.legalRoads(I.state,0,true,I.state.setupAnchor)
+        : R.legalSettlements(I.state,0,true);
+      if(!legal.length)return 0;
+      ov.select(legal[0]); ov.commit();
+      return 1;})()`);
+    await sleep(120);
+  }
+  const WIN = arg('win', '1') === '1';
+  /* Win it for real rather than poking the panel: matchflow intercepts
+     showResults and runs an eight-second victory sequence in front of it, so
+     the only way to photograph the sheet the player actually sees is to score
+     thirteen points and wait. */
+  console.log('  FORCE ' + JSON.stringify(await ev(`(async()=>{
+    const R=await import('/src/core/rules.js');
+    const I=window.__ISLAND__, st=I.state;
+    const wid=${WIN ? 0 : 1};
+    const w=st.players[wid];
+    w.knightsPlayed=3;
+    st.largestArmyHolder=wid; st.longestRoadHolder=wid;
+    for(const p of st.players){ p.hasLongestRoad=p.id===wid; p.hasLargestArmy=p.id===wid; }
+    let guard=0;
+    while(R.scoreOf(st,w) < 13 && guard++ < 40) w.vpCards++;
+    R.checkVictory(st);
+    return {winner:w.name, colour:w.color.key, vp:R.scoreOf(st,w), phase:st.phase};})()`, true)));
+  /* Drive the win timeline by hand. It is 8.85 seconds long and this scene
+     renders at about 1.5fps under SwiftShader with dt capped at 0.1 — so left
+     to the frame loop the reveal is a minute away, and the wait would look
+     like a hang rather than a sequence. */
+  for (let i = 0; i < 80; i++) {
+    await ev(`(()=>{const g=window.__ISLAND__.game;
+      for(let k=0;k<20;k++) g.flow.update(1/60);
+      return 1})()`);
+    await sleep(120);
+    const up = await ev(`(()=>{const n=document.querySelector('.results');
+      if(!n||n.classList.contains('hid'))return false;
+      return !!document.querySelector('.rs-banner svg');})()`);
+    if (up === true) break;
+  }
+  await sleep(900);
+  console.log('  RESULTS ' + JSON.stringify(await ev(`(()=>{
+    const b=document.querySelector('.rs-banner');
+    const r=b?b.getBoundingClientRect():null;
+    const svg=b?b.querySelector('svg'):null;
+    return {lost:!!(b&&b.classList.contains('lost')),
+      glyph:svg?svg.getAttribute('viewBox'):null,
+      title:(document.querySelector('.rs-title')||{}).textContent,
+      sub:(document.querySelector('.rs-sub')||{}).textContent,
+      points:[...document.querySelectorAll('.results *')]
+        .map(n=>(n.textContent||'').trim())
+        .filter(t=>/^\\+\\d+ Point/.test(t)).slice(0,4),
+      stillSaysVictoryPoints:/Victory Point/.test(document.querySelector('.results').textContent),
+      banner:r?{x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)}:null};})()`)));
+  await shot(`results-${WIN ? 'win' : 'lose'}-${TAG}`);
+
 /* The gear popup, which carries the second way home for the rest of the match
    — the map pad is only up while the map is. */
 } else if (STAGE === 'settings') {

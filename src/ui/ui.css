@@ -349,14 +349,50 @@
   background:radial-gradient(ellipse at 50% 22%,rgba(255,201,60,.20),transparent 62%),
              linear-gradient(180deg,#0b2444,#061529);
 }
+/* ---------------------------------------------------------- the medallion
+   Two states, because a rosette handed to the loser is a picture of somebody
+   else being congratulated.
+
+   WIN: a gold plinth holding the cup. Gold regardless of your own colour —
+   gold is the thing that means "this one won", and tinting the plinth blue
+   because you happen to be blue takes that away.
+   LOSE: the winner's colour, holding the winner's portrait. Still a proper
+   plate, still centred, still dropped in — losing is a result, not a fault —
+   but nothing on it is being given to you.
+
+   The keyline is a warm deep brown at partial opacity rather than near-black.
+   At 3px against gold, black reads as a sticker cut out and pasted on. */
 .rs-banner{
   position:absolute;left:50%;top:-8px;transform:translateX(-50%);line-height:0;
-  padding:12px 26px 14px;border-radius:0 0 22px 22px;
-  background:linear-gradient(180deg,var(--wl,#ffe79a),var(--wc,#ffc93c));
-  border:3px solid rgba(20,12,4,.6);border-top:0;
-  box-shadow:0 10px 26px rgba(0,0,0,.55),inset 0 -6px 12px rgba(0,0,0,.18);
+  padding:13px 27px 15px;border-radius:0 0 22px 22px;
+  /* DARK PLATE, GOLD RIM. The plate used to be filled with the winner's colour
+     and it swallowed the cup whole: gold metal on a gold rosette has nowhere
+     to be bright. A trophy is lit against something dark — that is the only
+     reason a trophy looks like metal and not like a yellow shape. */
+  background:
+    radial-gradient(78% 64% at 50% 14%,rgba(255,201,60,.24),rgba(255,201,60,0) 70%),
+    linear-gradient(180deg,#2a1c0c 0%,#160e06 58%,#0b0703 100%);
+  border:2.5px solid var(--gold,#ffc93c);border-top:0;
+  box-shadow:0 10px 26px rgba(0,0,0,.6),
+             0 0 34px rgba(255,201,60,.34),
+             inset 0 -8px 16px rgba(0,0,0,.5),
+             inset 0 0 0 1px rgba(255,231,154,.28);
   animation:bannerDrop .5s cubic-bezier(.2,1.3,.35,1);
 }
+/* Same plate, wearing the winner's colour instead of gold. The shape does not
+   change between winning and losing — only what is on it and what rims it. */
+.rs-banner.lost{
+  padding:12px 25px 14px;
+  /* No coloured wash behind the portrait. The winner's colour is already the
+     rim and the portrait's own ring; a third helping of it behind their face
+     turns the whole medallion into one flat blob of that colour. */
+  background:linear-gradient(180deg,#1b2635 0%,#0d141d 58%,#070b10 100%);
+  border-color:var(--wc,#2f8ffb);
+  box-shadow:0 10px 26px rgba(0,0,0,.6),
+             inset 0 -8px 16px rgba(0,0,0,.5),
+             inset 0 0 0 1px rgba(255,255,255,.16);
+}
+.rs-banner svg{display:block}
 @keyframes bannerDrop{from{transform:translateX(-50%) translateY(-70px)}to{transform:translateX(-50%)}}
 .rs-head{margin-top:74px;text-align:center}
 .rs-title{margin:0;font:800 34px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;

@@ -249,8 +249,11 @@ export function createPanels(root, state, game) {
   });
   let lastWinner = -1;
 
-  /** "+4" is a number. "+4 Victory Points" is an answer. */
-  const points = n => `+${n} Victory Point${n === 1 ? '' : 's'}`;
+  /** "+4" is a number. "+4 Points" is an answer.
+   *  Not "Victory Points": every figure on this screen is a victory point, so
+   *  the word was doing no work except making the longest chip on the row
+   *  longer still. */
+  const points = n => `+${n} Point${n === 1 ? '' : 's'}`;
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -262,11 +265,12 @@ export function createPanels(root, state, game) {
    *    +4 Victory Points."
    *
    * Each chip is now the source and the payment in words: a castle icon,
-   * "2 CITIES", "+4 Victory Points". The bare "+4" was the one number on the
-   * results screen with no unit attached to it, sitting next to a settlement
-   * count, a city count and a card count that were all also bare numbers — so
-   * the four of them looked like the same kind of figure and only one of them
-   * was.
+   * "2 CITIES", "+4 Points". The bare "+4" was the one number on the results
+   * screen with no unit attached to it, sitting next to a settlement count, a
+   * city count and a card count that were all also bare numbers — so the four
+   * of them looked like the same kind of figure and only one of them was.
+   * (It read "+4 Victory Points" for a while; the qualifier came back off,
+   * since nothing on this screen scores anything else.)
    */
   function breakdown(p) {
     const bits = [];
@@ -324,7 +328,24 @@ export function createPanels(root, state, game) {
       resBanner.style.setProperty('--wc', w.color.css);
       resBanner.style.setProperty('--wl', w.color.light);
     }
-    resBanner.innerHTML = icon('trophy', 64);
+    /* THE MEDALLION SAYS WHOSE ISLAND IT IS.
+     *
+     *   "Make this trophy not be a trophy if I lost, but if I win, make the
+     *    trophy show."
+     *
+     * It used to be the same cup either way, on a plate tinted with the
+     * WINNER's colour — so losing to Alex handed you a red rosette with a
+     * trophy in it, which is a picture of somebody being congratulated and
+     * that somebody was not you.
+     *
+     * Win and you get the cup, on gold. Lose and you get the winner's own
+     * portrait, on their colour: the same fact the line underneath states in
+     * words, said once in a picture. Nothing is being awarded to anybody who
+     * did not earn it. */
+    resBanner.innerHTML = iWon
+      ? icon('trophyBig', 64)
+      : avatar(w.color.css, w.color.light, 58);
+    toggle(resBanner, 'lost', !iWon);
     setText(resTitle, iWon ? 'Victory!' : 'Defeat');
     toggle(resultsSheet, 'lost', !iWon);
     setText(resSub, iWon
