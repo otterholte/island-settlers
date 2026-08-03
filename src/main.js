@@ -163,7 +163,12 @@ async function boot() {
   world.camera = gameCamera;
 
   const input = inputM.createInput(document.getElementById('app'));
-  const controller = ctrlM.createPlayerController(state, avatars[0], gameCamera, input, world);
+  /* Post-match roaming, held in a box rather than on `game` so the controller
+     can read it without closing over a binding that does not exist yet.
+     matchflow raises it when the review bar goes up — see hud-end.js. */
+  const roam = { on: false };
+  const controller = ctrlM.createPlayerController(state, avatars[0], gameCamera, input, world,
+    { roam: () => roam.on });
   const gathering = gatherM.createGathering(state, world);
   const bots = botM.createBots(state, world);
 
@@ -171,6 +176,13 @@ async function boot() {
   const game = {
     state, world, audio, effects, camera: gameCamera, input, avatars,
     economy: ecoM,
+    /** matchflow.setRoam -> the settler may walk a finished island. */
+    setRoam(on) { roam.on = !!on; return roam.on; },
+    get roaming() { return roam.on; },
+    /* Capture-rig hook. The frame loop drives this; a rig that wants to prove
+       "a real drag moved the settler" needs to step it on its own clock,
+       because a headless page renders at about 1.5fps and the loop with it. */
+    controller,
     requestBuild(kind) { return hud.requestBuild ? hud.requestBuild(kind) : null; },
     // Returns overview.open's own verdict: FALSE when there was nothing legal
     // to offer and the panel was deliberately left alone. Swallowing it meant

@@ -43,6 +43,22 @@ const RUN_THRESHOLD = 0.6;      // world units/sec before we call it running
 export function createPlayerController(state, settler, gameCamera, input, world, opts = {}) {
   if (world && typeof world.heightAt === 'function') useHeightSampler(world.heightAt);
 
+  /**
+   * `opts.roam` — is the settler allowed to move even though the match is over?
+   *
+   *   "When I'm reviewing the board after the game has ended, instead of having
+   *    me use my finger to swipe up and down left and right, just let me use
+   *    the normal invisible joystick and run around with my character."
+   *
+   * A finished match is frozen and stays frozen: nothing here gathers, builds,
+   * trades or scores after the last point lands. This unlocks the ONE thing
+   * that was never a rule — walking — so the review is a lap of the island you
+   * just played rather than a camera on a stick. `hud-end.js` raises it with
+   * the review bar and drops it the moment the bar goes; the server passes
+   * nothing, so a headless controller never roams.
+   */
+  const canRoam = typeof opts.roam === 'function' ? opts.roam : () => false;
+
   const pid = Number.isInteger(opts.pid) ? opts.pid : 0;
   const p = state && state.players ? state.players[pid] : null;
   if (p) {
@@ -116,7 +132,11 @@ export function createPlayerController(state, settler, gameCamera, input, world,
     if (!p) return;
     const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.1) : 1 / 60;
 
-    const locked = state.phase === 'over'
+    // The board map still stops the settler dead — it is a modal over the
+    // island and the stick under it belongs to the map. The end of the match
+    // does not, once the review bar has handed the island back (`opts.roam`).
+    const roaming = state.phase === 'over' && canRoam() === true;
+    const locked = (state.phase === 'over' && !roaming)
       || (gameCamera && gameCamera.isOverview === true);
     const dir = locked ? { x: 0, z: 0, mag: 0 } : readStick();
 
@@ -164,7 +184,11 @@ export function createPlayerController(state, settler, gameCamera, input, world,
     else if (p.action === 'run') p.action = 'idle';
 
     /* ---------------------------------------------------------- intent */
-    updateIntent();
+    // Nothing to pick up and nowhere to trade once it is over: a roaming
+    // settler that runs past the market must not raise a trade prompt on a
+    // match that has already been scored.
+    if (state.phase === 'over') { p.nearTarget = null; p.nearTrade = null; }
+    else updateIntent();
 
     /* ---------------------------------------------------------- camera */
     if (gameCamera) {

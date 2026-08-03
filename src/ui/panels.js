@@ -236,12 +236,48 @@ export function createPanels(root, state, game) {
     on: { click: () => hideResults() }
   }, el('span', { class: 'cb-ico', html: icon('close', 18) }));
 
+  /* TWO PANES, ONE AT A TIME ON A PHONE.
+   *
+   *   "Make there be two separate sections so you can tab between the match
+   *    report in full size and the points breakdown. Since right now the
+   *    individual players' points breakdowns are too tall, since they don't all
+   *    fit in one line."
+   *
+   * Both halves of that are the same problem. The standings and the report were
+   * side by side, so on a phone the standings got about two thirds of the width
+   * and every player's chips wrapped onto a second line — which made each row
+   * tall enough that the fourth player fell off the bottom — while the report
+   * got a 210px column it had to scroll inside.
+   *
+   * Tabbed, each one gets the whole sheet. The chips fit on one line, four rows
+   * fit on screen, and the report is readable without scrolling. On a desktop
+   * there is room for both and the tabs stand down — see the media block in
+   * ui.css. */
+  const resSide = el('div', { class: 'rs-side plate' },
+    el('h4', { text: 'Match Report' }), resStats);
+
+  let resTab = 'scores';
+  const tabBtn = (key, label) => button('rs-tab', {
+    'aria-label': label, on: { click: () => setResTab(key) }
+  }, el('span', { class: 'sb-lab', text: label }));
+  const tabScores = tabBtn('scores', 'Standings');
+  const tabReport = tabBtn('report', 'Match Report');
+  const resTabs = el('div', { class: 'rs-tabs' }, tabScores, tabReport);
+
+  function setResTab(key) {
+    resTab = key === 'report' ? 'report' : 'scores';
+    toggle(resultsSheet, 'tab-report', resTab === 'report');
+    toggle(tabScores, 'on', resTab === 'scores');
+    toggle(tabReport, 'on', resTab === 'report');
+  }
+
   const resultsSheet = el('div', { class: 'results hid' },
     resBanner, resX,
     el('div', { class: 'rs-head' }, resTitle, resSub),
-    el('div', { class: 'rs-body' }, resList,
-      el('div', { class: 'rs-side plate' }, el('h4', { text: 'Match Report' }), resStats)),
+    resTabs,
+    el('div', { class: 'rs-body' }, resList, resSide),
     el('div', { class: 'rs-foot' }, againBtn, boardBtn));
+  setResTab('scores');
   wrap.appendChild(resultsSheet);
 
   const endgame = createEndgame(root, state, game, {
@@ -249,11 +285,21 @@ export function createPanels(root, state, game) {
   });
   let lastWinner = -1;
 
-  /** "+4" is a number. "+4 Points" is an answer.
-   *  Not "Victory Points": every figure on this screen is a victory point, so
-   *  the word was doing no work except making the longest chip on the row
-   *  longer still. */
-  const points = n => `+${n} Point${n === 1 ? '' : 's'}`;
+  /* "+4" is a number, "+4 Points" is an answer — and "+4 🏆" is the same
+   * answer three characters long.
+   *
+   *   "Maybe instead of saying +__ points you say +__🏆, since the trophy is
+   *    showing the total points on the right side of the same section."
+   *
+   * Which is the argument that finishes the one this chip has been having with
+   * itself for three passes. It went from "+4" to "+4 Victory Points" because a
+   * bare number had no unit; the qualifier came off because nothing else on the
+   * screen scores; and the word can go too, because the cup at the end of the
+   * row already says what the unit is and says it in a picture. The word was
+   * the longest thing on the longest chip, and dropping it is most of why four
+   * players now fit on a phone. */
+  const CUP = icon('trophy', 11);
+  const points = n => `+${n}${CUP}`;
 
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
@@ -369,7 +415,7 @@ export function createPanels(root, state, game) {
             class: 'rs-bd',
             html: bits.length
               ? bits.map(b =>
-                `<i>${icon(b[2], 20)}<u>${b[0]}</u><em>${points(b[1])}</em></i>`).join('')
+                `<i>${icon(b[2], 20)}<u>${b[0]}</u><em class="pt">${points(b[1])}</em></i>`).join('')
               : '<i><u>No points scored</u></i>'
           }),
           el('span', { class: 'rs-tally', html: tally(p) })),

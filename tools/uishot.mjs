@@ -733,6 +733,166 @@ if (STAGE === 'home') {
         w:Math.round(r.width),h:Math.round(r.height)}:null};})()`)));
   await shot(`results-${WIN ? 'win' : 'lose'}-${TAG}`);
 
+  /* THE OTHER TAB. Two panes that were side by side and squeezed are one at a
+     time and full width now, so the check is that the switch works and that
+     what it switches to actually fits. */
+  const tabs = await ev(`(()=>{
+    const t=[...document.querySelectorAll('.btn.rs-tab')].map(b=>({
+      lab:(b.textContent||'').trim(), on:b.classList.contains('on'),
+      box:(r=>({w:Math.round(r.width),h:Math.round(r.height)}))(b.getBoundingClientRect())}));
+    const R=s=>{const n=document.querySelector(s);if(!n)return null;
+      const r=n.getBoundingClientRect();
+      return {y:Math.round(r.top),bottom:Math.round(r.bottom),
+        h:Math.round(r.height),shown:r.height>1};};
+    return {tabs:t, list:R('.rs-list'), side:R('.rs-side'),
+      rows:document.querySelectorAll('.rs-row').length,
+      foot:[...document.querySelectorAll('.rs-foot .btn')].map(b=>{
+        const r=b.getBoundingClientRect();
+        return {lab:(b.textContent||'').trim(),w:Math.round(r.width),h:Math.round(r.height)};}),
+      vh:innerHeight};})()`);
+  console.log('  TABS ' + JSON.stringify(tabs));
+  const rep = await ev(`(()=>{const b=[...document.querySelectorAll('.btn.rs-tab')]
+    .find(n=>/report/i.test(n.textContent||''));
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),
+      onTop:document.elementFromPoint(Math.round(r.left+r.width/2),
+        Math.round(r.top+r.height/2)).closest('.rs-tab')===b};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: rep.x, y: rep.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: rep.x, y: rep.y, button: 'left', clickCount: 1 });
+  await sleep(260);
+  const after = await ev(`(()=>{
+    const R=s=>{const n=document.querySelector(s);if(!n)return null;
+      const r=n.getBoundingClientRect();
+      return {y:Math.round(r.top),bottom:Math.round(r.bottom),
+        h:Math.round(r.height),shown:r.height>1};};
+    return {hit:${JSON.stringify(rep.onTop)},
+      list:R('.rs-list'), side:R('.rs-side'),
+      stats:document.querySelectorAll('.rs-stat').length,
+      statsFit:[...document.querySelectorAll('.rs-stat')]
+        .every(n=>n.getBoundingClientRect().bottom<=innerHeight+1)};})()`);
+  console.log('  REPORT ' + JSON.stringify(after));
+  console.log('  SWITCH ' + JSON.stringify({
+    tappedARealTab: after.hit,
+    standingsHidden: !after.list.shown,
+    reportFullWidthAndOnScreen: after.side.shown && after.statsFit,
+    neverBoth: !(after.list.shown && after.side.shown)
+  }));
+  await shot(`results-report-${TAG}`);
+
+  /* ------------------------------------------------------ walking it after
+   *
+   *   "When I'm reviewing the board after the game has ended, instead of having
+   *    me use my finger to swipe up and down left and right, just let me use
+   *    the normal invisible joystick and run around with my character."
+   *
+   * So the review has two modes now and they must not overlap: SEE THE BOARD
+   * lands on the walking one — settler live, free camera down — and BOARD VIEW
+   * swaps them. Both halves are pressed with real pointer events at real
+   * coordinates, and the drag is a REAL drag: press, six moves, hold. The
+   * settler is then stepped on this rig's own clock rather than the page's,
+   * because a headless frame loop runs at about 1.5fps and would give the
+   * gesture a twentieth of a second to prove itself.
+   */
+  const seeBoard = await ev(`(()=>{const b=[...document.querySelectorAll('.results .rs-foot .btn')]
+    .find(n=>/see the board/i.test(n.textContent||'')); if(!b) return null;
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  if (seeBoard) {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: seeBoard.x, y: seeBoard.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: seeBoard.x, y: seeBoard.y, button: 'left', clickCount: 1 });
+    await sleep(500);
+  }
+  const dock = await ev(`(()=>{const g=window.__ISLAND__.game;
+    const bar=document.querySelector('.endbar');
+    return {up:!!bar&&!bar.classList.contains('hid'),
+      hint:((document.querySelector('.eb-hint')||{}).textContent||'').trim(),
+      view:[...document.querySelectorAll('.endbar .btn')]
+        .map(b=>(b.textContent||'').trim()),
+      roaming:!!g.roaming, flowRoaming:!!(g.flow&&g.flow.roaming),
+      inputOn:!!(g.input&&g.input.enabled!==false),
+      freecam:!!(g.freecam&&g.freecam.armed),
+      overview:g.camera.isOverview===true, phase:window.__ISLAND__.state.phase};})()`);
+  console.log('  DOCK ' + JSON.stringify(dock));
+
+  /* A drag that starts well clear of the bar at the bottom and of the plate at
+     the top — the middle-left of the screen, where a thumb goes. */
+  const V = await ev('({w:innerWidth,h:innerHeight})');
+  const from = { x: Math.round(V.w * 0.28), y: Math.round(V.h * 0.44) };
+  const to = { x: Math.round(V.w * 0.44), y: Math.round(V.h * 0.30) };
+  const before = await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    return {x:+p.x.toFixed(3),z:+p.z.toFixed(3)};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1, buttons: 1 });
+  for (let i = 1; i <= 6; i++) {
+    await send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved', buttons: 1,
+      x: Math.round(from.x + (to.x - from.x) * i / 6),
+      y: Math.round(from.y + (to.y - from.y) * i / 6)
+    });
+  }
+  const walked = await ev(`(()=>{const I=window.__ISLAND__, g=I.game, p=I.state.players[0];
+    const s={x:+g.input.stick.x.toFixed(3),y:+g.input.stick.y.toFixed(3)};
+    for(let i=0;i<90;i++) g.controller.update(1/60);       // 1.5s of held stick
+    return {stick:s, moved:+Math.hypot(p.x-(${before.x}),p.z-(${before.z})).toFixed(2),
+      action:p.action, followed:+g.camera.isOverview};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', clickCount: 1, buttons: 0 });
+  console.log('  WALK ' + JSON.stringify(walked));
+  await sleep(400);
+  await shot(`results-walk-${TAG}`);
+
+  /* And the other half: BOARD VIEW puts the settler down and picks the camera
+     up. Pressed for real, on the bar. */
+  const bv = await ev(`(()=>{const b=[...document.querySelectorAll('.endbar .btn')]
+    .find(n=>/board view/i.test(n.textContent||'')); if(!b) return null;
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  let swapped = null;
+  if (bv) {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: bv.x, y: bv.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: bv.x, y: bv.y, button: 'left', clickCount: 1 });
+    await sleep(400);
+    const held = await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+      return {x:+p.x.toFixed(3),z:+p.z.toFixed(3)};})()`);
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1, buttons: 1 });
+    for (let i = 1; i <= 6; i++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', buttons: 1,
+        x: Math.round(from.x + (to.x - from.x) * i / 6),
+        y: Math.round(from.y + (to.y - from.y) * i / 6)
+      });
+    }
+    swapped = await ev(`(()=>{const I=window.__ISLAND__, g=I.game, p=I.state.players[0];
+      for(let i=0;i<90;i++) g.controller.update(1/60);
+      return {roaming:!!g.roaming, freecam:!!(g.freecam&&g.freecam.armed),
+        mode:g.freecam&&g.freecam.mode,
+        settlerMoved:+Math.hypot(p.x-(${held.x}),p.z-(${held.z})).toFixed(2),
+        label:[...document.querySelectorAll('.endbar .btn')]
+          .map(b=>(b.textContent||'').trim()).join('|'),
+        hint:((document.querySelector('.eb-hint')||{}).textContent||'').trim()};})()`);
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', clickCount: 1, buttons: 0 });
+  }
+  console.log('  BOARDVIEW ' + JSON.stringify(swapped));
+  console.log('  REVIEW ' + JSON.stringify({
+    landsOnTheWalk: dock.up && dock.roaming && !dock.freecam && !dock.overview,
+    aRealDragDrivesTheSettler: walked.stick.y > 0 && walked.moved > 1,
+    andItIsRunning: walked.action === 'run',
+    boardViewPutsItDown: !!swapped && swapped.roaming === false
+      && swapped.settlerMoved < 0.05,
+    boardViewTakesTheCamera: !!swapped && swapped.freecam === true
+      && swapped.mode === 'board',
+    neverBothDrivers: !(dock.roaming && dock.freecam)
+      && !!swapped && !(swapped.roaming && !swapped.freecam)
+  }));
+
 /* The gear popup, which carries the second way home for the rest of the match
    — the map pad is only up while the map is. */
 } else if (STAGE === 'settings') {

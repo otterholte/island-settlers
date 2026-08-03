@@ -94,6 +94,12 @@ Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
 | Build | Tap a build card, then tap a highlighted spot on the map and confirm | â€” |
 | Trade | Walk to the market or one of your unlocked docks, then tap the prompt | â€” |
 
+When the match ends and you put the scoreboard away, the island is yours to
+walk: the same joystick, the same keys, the same follow camera, with the match
+frozen underneath — nothing gathers, builds or scores. **BOARD VIEW** on the
+review bar swaps that for the whole island pulled back, where dragging, pinching
+and the wheel move the camera instead. **CLOSE VIEW** hands the settler back.
+
 The three action keys are side-switchable under the gear: **Buttons
 Left/Right**. The joystick needs no setting — it takes a drag from anywhere
 that is not already a control, so it cannot be on the wrong side. Together

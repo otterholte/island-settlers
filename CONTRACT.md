@@ -71,7 +71,7 @@ Presentation code reads `state` and consumes `drainEvents(state)` each frame.
 | `src/world/structures.js` | `buildStructures(scene, state) -> { syncFromState, spawnRoad, spawnSettlement, upgradeCity, setRobber, ghostRoad, ghostSettlement, clearGhost, update }` | Structures |
 | `src/world/market.js` | `buildMarket(scene)`, `buildPorts(scene, state)` | Structures |
 | `src/entities/settler.js` | `createSettler(colorHex, isHuman) -> { group, setPose, playChop, setCarry, celebrate }` | Character |
-| `src/entities/playerController.js` | `createPlayerController(state, settler, camera, input, world) -> { update(dt) }` | Character |
+| `src/entities/playerController.js` | `createPlayerController(state, settler, camera, input, world, { pid, roam }) -> { update(dt) }` | Character |
 | `src/systems/input.js` | `createInput(dom) -> { stick, tapped, actionPressed, update }` | Character |
 | `src/systems/camera.js` | `createGameCamera(renderer, scene) -> { camera, follow, setOverview, celebrate, shake, update, isOverview }` | Character |
 | `src/systems/gathering.js` | `createGathering(state, world) -> { update(dt) }` | Gameplay |

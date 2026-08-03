@@ -399,6 +399,16 @@
 .rs-sub{margin:3px 0 0;font:700 11px/1.2 var(--ff);letter-spacing:.14em;text-transform:uppercase;
   color:rgba(200,222,244,.86)}
 
+/* The tab strip. Hidden wherever both panes fit side by side — see the compact
+   block at the foot of this file, which is the only place it is shown. */
+.rs-tabs{display:none;gap:6px;justify-content:center;margin-top:5px}
+.btn.rs-tab{
+  min-height:34px;padding:0 14px;border-radius:11px;border-width:2px;
+  font-size:10px;letter-spacing:.14em;
+  --f1:#dbe6f4;--f2:#b4c4da;--f3:#96a9c3;--lip:#5d6d84;--fg:#1d2b3d;
+}
+.btn.rs-tab.on{--f1:#ffe79a;--f2:#ffc93c;--f3:#eaad20;--lip:#a8741a;--fg:#3a2208}
+
 .rs-body{flex:1 1 auto;display:flex;gap:11px;min-height:0;margin-top:6px}
 .rs-list{flex:1 1 auto;display:flex;flex-direction:column;gap:6px;overflow:auto;min-width:0}
 .rs-row{
@@ -424,6 +434,10 @@
 .rs-bd i{display:inline-flex;align-items:center;gap:5px;font-style:normal;
   padding:2px 7px 3px;border-radius:7px;background:rgba(0,0,0,.30);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+/* The score on a chip: a number and a cup, never a word. See `points()` in
+   panels.js for why the word went. */
+.rs-bd em.pt{display:inline-flex;align-items:center;gap:2px}
+.rs-bd em.pt svg{display:block;margin-top:-1px}
 .rs-bd em{font:800 9.5px/1 var(--ff);font-style:normal;letter-spacing:.05em;
   color:var(--gold-l);white-space:nowrap}
 .rs-bd u{font:700 9px/1 var(--ff);text-decoration:none;letter-spacing:.08em;
@@ -642,8 +656,54 @@
      work out how far off holding it they are. */
   .rr-stats i svg{width:16px;height:16px}
   .rr-stats i em{font-size:12px}
-  .rs-side{flex-basis:180px}
-  .rs-title{font-size:27px}
+  /* ================================================ the results, on a phone
+   *
+   *   "Can you make the victory section on the top middle to be smaller, it's
+   *    taking up too much space. Also make there be two separate sections so
+   *    you can tab between the match report in full size and the points
+   *    breakdown... We can also make the play again and see the board buttons
+   *    smaller."
+   *
+   * The header was a 64px medallion floating above a 34px headline and a
+   * subtitle — about a third of a 375px-tall screen spent saying a thing the
+   * cup on the winner's row already says. Halved, and the medallion tucked up
+   * so the sheet starts where the standings do.
+   *
+   * And the two panes stop competing: the tab strip appears, each pane gets the
+   * whole width, and only one is up at a time. That is what stops a player's
+   * chips wrapping to a second line — which was the real reason the fourth
+   * player fell off the bottom. */
+  /* The plate is sized by its padding and the glyph inside it, not by a box —
+     so shrink those two rather than pinning a width and fighting it. */
+  .rs-banner{padding:8px 18px 10px;border-radius:0 0 16px 16px;border-width:2px}
+  .rs-banner.lost{padding:7px 16px 9px}
+  .rs-banner svg{width:38px;height:38px}
+  .rs-head{margin-top:44px}
+  .rs-title{font-size:21px;letter-spacing:.1em}
+  .rs-sub{font-size:8.5px;margin-top:2px}
+
+  .rs-tabs{display:flex}
+  .btn.rs-tab{min-height:32px;padding:0 12px;font-size:9px}
+  .rs-body{margin-top:5px}
+  /* One pane at a time, each the full width of the sheet. */
+  .rs-side{flex:1 1 auto;min-width:0}
+  .results .rs-side{display:none}
+  .results.tab-report .rs-list{display:none}
+  .results.tab-report .rs-side{display:flex}
+  .rs-stat{padding:4px 7px}
+  .rs-stat span{font-size:11px}
+  .rs-stat b{font-size:15px}
+
+  /* The chips fit on one line now, so they can afford to be legible. */
+  .rs-row{padding:5px 8px;gap:8px}
+  .rs-bd{gap:4px}
+  .rs-bd i{padding:2px 6px 3px;gap:4px}
+  .rs-bd i svg{width:15px;height:15px}
+  .rs-vp b{font-size:18px}
+
+  /* Two buttons that were sized for a title screen, on a results sheet. */
+  .rs-foot .btn{min-height:42px;padding:0 16px;font-size:12px;gap:6px}
+  .rs-foot .btn .sb-ico svg{width:18px;height:18px}
   .dcard{flex-basis:108px;width:108px;min-height:140px}
   .hand{min-height:140px}
   /* Every pixel the trade sheet gives back here is a pixel the key legend in

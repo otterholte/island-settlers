@@ -464,6 +464,19 @@ export function createNetMatch(state, game, client) {
 
   function update(dt) {
     if (!active || !mirror) return;
+    /*
+     * A FINISHED MATCH IS NOBODY'S TO CORRECT.
+     *
+     * The review lets you walk the island you just played (see hud-end.js), and
+     * the server's copy of you stopped moving the moment it froze the match —
+     * so every frame of that walk is a "disagreement" the reconciler would drag
+     * you back out of, one settler-width at a time. It is not a disagreement:
+     * there is nothing left to be authoritative about. Input stops going up and
+     * corrections stop coming down; the rivals are still eased between the last
+     * snapshots so the island keeps whatever life it had. The one cost is that
+     * peers do not watch you stroll, which is a fair price for being able to.
+     */
+    if (state.phase === 'over') { interpolate(); return; }
     sendInput();
     reconcile(dt);
     interpolate();

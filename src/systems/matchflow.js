@@ -266,13 +266,48 @@ export function createMatchFlow(state, game) {
   }
 
   let inputLocked = false;
+  let roaming = false;
 
   function setInput(on) {
     inputLocked = !on;
+    // Any lock at all ends a roam. Every route out of the review — a replay,
+    // the results going back up, a restart in place — goes through here, so
+    // none of them can leave the settler holding a stick it no longer owns.
+    if (!on && roaming) markRoam(false);
     const inp = g.input;
     if (!inp) return;
     if (typeof inp.setEnabled === 'function') { try { inp.setEnabled(on); } catch (e) { warn(e); } }
     if (!on) holdStick();
+  }
+
+  /** The flag alone — no input side effects, so `setInput` can call it. */
+  function markRoam(on) {
+    roaming = !!on;
+    if (typeof g.setRoam === 'function') { try { g.setRoam(roaming); } catch (e) { warn(e); } }
+  }
+
+  /**
+   * Hand the settler back for the walk-around, or take it away again.
+   *
+   *   "When I'm reviewing the board after the game has ended, instead of having
+   *    me use my finger to swipe up and down left and right, just let me use
+   *    the normal invisible joystick and run around with my character."
+   *
+   * The match stays frozen — `freezeMatch` has already stopped the clock, the
+   * bots, the gathering and every rules call, and none of that is undone here.
+   * All this does is re-enable the stick and tell playerController that the
+   * usual `phase === 'over'` lock does not apply, which turns the review from a
+   * camera on rails into the island you just won, on foot. hud-end.js drives
+   * it off the review bar's view toggle.
+   */
+  function setRoam(on) {
+    const want = !!on && win.active && win.done;
+    if (want === roaming) return roaming;
+    // The flag first, so `setInput`'s own "a lock ends a roam" line is already
+    // a no-op by the time it runs — one owner for the flag, no recursion.
+    markRoam(want);
+    setInput(want);
+    return roaming;
   }
 
   /**
@@ -867,7 +902,9 @@ export function createMatchFlow(state, game) {
   /* ------------------------------------------------------------------ api */
 
   return {
-    update, begin, skipIntro, restartInPlace, setEndView, useDraft,
+    update, begin, skipIntro, restartInPlace, setEndView, useDraft, setRoam,
+    /** True while the finished island is the player's to walk around. */
+    get roaming() { return roaming; },
     /** hud-end.js calls this when the review bar goes up. See FLOOD_FADE_SEC. */
     clearVictoryFlood,
     /** True once the winner's colour is off the island for good. */

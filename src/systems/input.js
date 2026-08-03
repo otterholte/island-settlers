@@ -127,6 +127,8 @@ export function createInput(domRoot) {
     frame: 0,
     active: false,
     update, dispose, setEnabled, setKeyboardCapture,
+    /** Readable so a rig can prove the stick was actually handed back. */
+    get enabled() { return enabled; },
     get keyboardCaptured() { return keyCapture; }
   };
 

@@ -20,12 +20,15 @@
  *      44px+ button and every one of them has a keyboard route too (panels.js
  *      owns Enter/Escape).
  *
- *      The dock is also what hands the camera over. There is no settler to
- *      follow once the match is done, so raising it arms `systems/freecam.js`:
- *      from that moment the player can drag, pinch, orbit and walk the camera
- *      around the island they just played, in EITHER framing — the BOARD VIEW /
- *      CLOSE VIEW button now only chooses which preset the free camera starts
- *      from. Lowering the dock (a replay, or a restart) hands it straight back.
+ *      The dock is also what hands the island over, and the BOARD VIEW / CLOSE
+ *      VIEW button now chooses between two genuinely different sets of hands.
+ *      Walking is the default: the score comes down and you are standing on the
+ *      island you just played, with the ordinary invisible joystick and the
+ *      ordinary follow camera, free to run anywhere on it. Press BOARD VIEW and
+ *      the settler is put down and `systems/freecam.js` is armed instead — drag,
+ *      pinch, orbit and wheel over the whole island, which is the right verb
+ *      when there is nobody to follow. Lowering the dock (a replay, or a
+ *      restart) takes both away again.
  *
  * Owner: UI agent.
  */
@@ -115,10 +118,38 @@ export function createEndgame(root, state, game, hooks = {}) {
 
   /* -------------------------------------------------------------- the dock */
 
-  let board = true;
+  /*
+   * WHICH OF THE TWO REVIEWS YOU ARE IN — AND THE WALK IS THE DEFAULT NOW.
+   *
+   *   "When I'm reviewing the board after the game has ended, instead of having
+   *    me use my finger to swipe up and down left and right, just let me use
+   *    the normal invisible joystick and run around with my character."
+   *
+   * The free camera used to own BOTH framings, so the close view was a settler
+   * standing still with a camera being dragged around behind them — the one
+   * screen in the game where the controls the player had spent three minutes
+   * learning stopped working. They are two different reviews and they want two
+   * different sets of hands:
+   *
+   *   walking (default)  the ordinary third-person game. Drag anywhere to run,
+   *                      WASD, the camera follows the settler. The free camera
+   *                      is DISARMED, so nothing competes for the drag.
+   *   board view         the whole island, pulled back, nobody to follow —
+   *                      here dragging the view is the right verb, so the free
+   *                      camera is armed and the settler is put down again.
+   *
+   * `board` is false on the way in: dismissing the score drops you onto the
+   * island you just played, on foot.
+   */
+  let board = false;
 
-  const viewLab = el('span', { class: 'sb-lab', text: 'Close View' });
+  const viewLab = el('span', { class: 'sb-lab', text: 'Board View' });
   const viewIco = el('span', { class: 'sb-ico', html: icon('map', 20) });
+
+  /* The bar's one line of teaching, and it changes with the mode — each names
+     the gesture that does something in the mode you are actually in. */
+  const hintKey = el('b', { class: 'tc-key', text: 'Drag' });
+  const hintTxt = el('i', { text: 'to run' });
 
   /* The free camera. Built once, armed and disarmed with the dock — it adds no
      listeners of consequence while disarmed and never sees a key during play. */
@@ -136,10 +167,10 @@ export function createEndgame(root, state, game, hooks = {}) {
   function setView(next) {
     board = !!next;
     setText(viewLab, board ? 'Close View' : 'Board View');
+    setText(hintTxt, board ? 'to look around' : 'to run');
     // Keep the flow's own idea of the framing in step — it is what the capture
-    // rigs and the results panel read — then point the free camera at the
-    // matching preset. The free pose wins inside camera.js, so this is a
-    // "start from here", not a fight.
+    // rigs and the results panel read — then hand the island to whichever pair
+    // of hands the mode wants.
     const flow = game && game.flow;
     let told = false;
     if (flow && typeof flow.setEndView === 'function') {
@@ -149,8 +180,26 @@ export function createEndgame(root, state, game, hooks = {}) {
     if (!told && cam && typeof cam.setOverview === 'function') {
       try { cam.setOverview(board); } catch (e) { /* optional */ }
     }
-    const fc = cameraDriver();
-    if (fc) { try { fc.setMode(board ? 'board' : 'close'); } catch (e) { /* optional */ } }
+    // Exactly one driver at a time. Walking arms the settler and stands the
+    // free camera down; the board view does the reverse. Both are told in that
+    // order, so there is never a frame with two things pushing the view.
+    setWalk(!board);
+    const fc = freecam;
+    if (board) {
+      const d = cameraDriver();
+      if (d) { try { d.arm('board'); } catch (e) { /* optional */ } }
+    } else if (fc) {
+      try { fc.disarm(); } catch (e) { /* optional */ }
+    }
+  }
+
+  /** Hand the stick back (or take it away). matchflow owns the actual lock. */
+  function setWalk(on) {
+    const flow = game && game.flow;
+    if (flow && typeof flow.setRoam === 'function') {
+      try { return flow.setRoam(!!on); } catch (e) { /* the walk is a nicety */ }
+    }
+    return false;
   }
 
   const dock = el('div', { class: 'endbar hid', 'data-ui': '' },
@@ -163,10 +212,10 @@ export function createEndgame(root, state, game, hooks = {}) {
       el('span', { class: 'sb-lab', text: 'Results' })),
     button('blue', { on: { click: () => setView(!board) } }, viewIco, viewLab),
     // Two short words: at 667px this sits in a 92px box and anything longer
-    // breaks to three ragged lines beside a 46px button.
-    el('span', { class: 'eb-hint' },
-      el('b', { class: 'tc-key', text: 'Enter' }),
-      el('i', { text: 'for the score' })));
+    // breaks to three ragged lines beside a 46px button. It used to name the
+    // Enter key — the score is one button to its left, and the thing worth a
+    // line here is the gesture that changed.
+    el('span', { class: 'eb-hint' }, hintKey, hintTxt));
   root.appendChild(dock);
 
   /**
@@ -185,20 +234,21 @@ export function createEndgame(root, state, game, hooks = {}) {
    */
   function setDock(on) {
     toggle(dock, 'hid', !on);
-    if (on) { board = true; setText(viewLab, 'Close View'); }
     if (root && root.classList) toggle(root, 'endgame', !!on);
     if (on) {
       const flow = game && game.flow;
       if (flow && typeof flow.clearVictoryFlood === 'function') {
         try { flow.clearVictoryFlood(); } catch (e) { /* the flood is optional */ }
       }
+      // Straight onto the island, on foot. setView does the whole handover:
+      // the framing, the flow's idea of it, the stick and the free camera.
+      setView(false);
+      return;
     }
-    const fc = cameraDriver();
+    setWalk(false);
+    const fc = freecam;
     if (!fc) return;
-    try {
-      if (on) fc.arm('board');
-      else fc.disarm();
-    } catch (e) { /* the free camera is a nicety, never a dependency */ }
+    try { fc.disarm(); } catch (e) { /* the free camera is a nicety, never a dependency */ }
   }
 
   return {

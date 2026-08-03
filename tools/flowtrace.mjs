@@ -669,19 +669,33 @@ if (TRACE === 'camera') {
     R.checkVictory(st); return st.phase;})()`);
   // Run the whole win sequence out, then put the scoreboard away — which is
   // the only thing that ever hands the camera to the player.
+  /* THE SCOREBOARD NO LONGER ARMS THIS. Dismissing the score lands on the
+     WALKING review — settler live, invisible joystick, follow camera, free
+     camera deliberately down (see hud-end.js). The free camera is the OTHER
+     review, and BOARD VIEW is what asks for it, so that is what this presses.
+     `uishot --stage=results` owns the walking half and the never-both check;
+     everything below is about the camera the board view hands over. */
   const armed = await ev(`(()=>{
     const S=1/60, I=()=>window.__ISLAND__, R=window.__R__, g=I().game, st=I().state;
     for(let i=0;i<60*9;i++){ R.tickWorld(st,S); g.flow.update(S); I().world.props.update(S); }
     const btn=[...document.querySelectorAll('.results .rs-foot .btn')]
       .find(b=>/see the board/i.test(b.textContent||''));
     if(btn) btn.click(); else g.panels.hideResults();
+    const walk = { roaming: !!g.roaming, freecam: !!(g.freecam && g.freecam.armed) };
+    const bv=[...document.querySelectorAll('.endbar .btn')]
+      .find(b=>/board view/i.test(b.textContent||''));
+    if(bv) bv.click();
     for(let i=0;i<20;i++){ g.flow.update(S); g.camera.update(S, st, false); }
-    return { freecam: !!g.freecam && g.freecam.armed, mode: g.freecam && g.freecam.mode,
-      free: g.camera.freeLook, pad: !!document.querySelector('.fcam:not(.hid)'),
+    return { walk, freecam: !!g.freecam && g.freecam.armed, mode: g.freecam && g.freecam.mode,
+      free: g.camera.freeLook, roaming: !!g.roaming,
+      hint: !!document.querySelector('.fcam-hint:not(.hid)'),
       info: g.camera.freeInfo };})()`);
   say('after the scoreboard', armed);
-  check('the camera is handed to the player once the score is put away',
-    armed.freecam === true && armed.free === true && armed.pad === true);
+  check('the score comes down on the walking review, not on the camera',
+    armed.walk.roaming === true && armed.walk.freecam === false);
+  check('and BOARD VIEW hands the camera over instead',
+    armed.freecam === true && armed.free === true
+    && armed.mode === 'board' && armed.roaming === false && armed.hint === true);
 
   const rates = await ev(`({ ...window.__ISLAND__.game.freecam.rates,
     ...window.__ISLAND__.game.camera.freeRates })`);
