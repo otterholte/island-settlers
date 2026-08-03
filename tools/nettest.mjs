@@ -2,11 +2,20 @@
  * Island Settlers — end-to-end multiplayer acceptance.
  *
  *   node tools/nettest.mjs [--keep] [--port=8799] [--quiet]
+ *   node tools/nettest.mjs --remote=island-settlers-production.up.railway.app
  *
  * Boots the real server in a child process, opens two real websockets, signs
  * up two accounts, makes them friends, invites one to the other's lobby, plays
  * a whole match through the opening draft into live play, and checks that both
  * clients agree with the server about what happened.
+ *
+ * `--remote` runs the identical suite against a DEPLOYED server instead of a
+ * local one — the same checks, over wss, through whatever proxy is in front of
+ * it. That is the only way to find out whether a host actually holds a
+ * websocket open for four minutes, and whether the accounts volume is really
+ * mounted. It signs up two throwaway accounts with random names each run and
+ * does not touch anything else; the persistence check is skipped, since the
+ * live account count is not this test's to know.
  *
  * WHY IT DRIVES THE REAL CLIENT CODE
  * ----------------------------------
@@ -47,6 +56,12 @@ const has = k => process.argv.includes(`--${k}`);
 const PORT = Number(arg('port', 8799));
 const DATA = resolve(arg('data', '/tmp/island-nettest'));
 const QUIET = has('quiet');
+const REMOTE = arg('remote', '');
+/* Against a live server, names have to be unique per run or the second run
+   collides with the first one's accounts and every check after sign-up lies. */
+const TAG = REMOTE ? String(Math.floor(Math.random() * 1e6)).padStart(6, '0') : '';
+const NAME_A = REMOTE ? `t${TAG}a` : 'alice';
+const NAME_B = REMOTE ? `t${TAG}b` : 'bob';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 23);
 const log = (...a) => { if (!QUIET) console.log(' ', ...a); };
@@ -61,30 +76,37 @@ function check(name, ok, detail = '') {
 
 /* ================================================================== server */
 
-rmSync(DATA, { recursive: true, force: true });
-mkdirSync(DATA, { recursive: true });
+const HTTP = REMOTE ? `https://${REMOTE.replace(/^https?:\/\//, '').replace(/\/$/, '')}` : `http://127.0.0.1:${PORT}`;
+const WS = REMOTE ? HTTP.replace(/^https/, 'wss') + '/ws' : `ws://127.0.0.1:${PORT}/ws`;
 
-const server = spawn(process.execPath, [join(ROOT, 'server', 'index.mjs')], {
-  env: {
-    ...process.env,
-    PORT: String(PORT),
-    DATA,
-    SESSION_SECRET: 'nettest-secret-value-long-enough',
-    MAX_MATCHES: '4'
-  },
-  stdio: ['ignore', 'pipe', 'pipe']
-});
+let server = null;
 let serverLog = '';
-server.stdout.on('data', d => { serverLog += d; if (!QUIET) process.stdout.write('  [srv] ' + d); });
-server.stderr.on('data', d => { serverLog += d; process.stdout.write('  [srv!] ' + d); });
+if (!REMOTE) {
+  rmSync(DATA, { recursive: true, force: true });
+  mkdirSync(DATA, { recursive: true });
+  server = spawn(process.execPath, [join(ROOT, 'server', 'index.mjs')], {
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      DATA,
+      SESSION_SECRET: 'nettest-secret-value-long-enough',
+      MAX_MATCHES: '4'
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  server.stdout.on('data', d => { serverLog += d; if (!QUIET) process.stdout.write('  [srv] ' + d); });
+  server.stderr.on('data', d => { serverLog += d; process.stdout.write('  [srv!] ' + d); });
+} else {
+  console.log(`  testing the live server at ${HTTP}`);
+}
 
 async function waitForServer() {
   for (let i = 0; i < 80; i++) {
     try {
-      const r = await fetch(`http://127.0.0.1:${PORT}/health`);
+      const r = await fetch(`${HTTP}/health`);
       if (r.ok) return await r.json();
     } catch (e) { /* not up yet */ }
-    await sleep(150);
+    await sleep(REMOTE ? 400 : 150);
   }
   throw new Error('server never came up\n' + serverLog);
 }
@@ -95,7 +117,7 @@ async function waitForServer() {
 
 function connect(label) {
   return new Promise((res, rej) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+    const ws = new WebSocket(WS);
     let nextId = 1;
     const waiting = new Map();
     const pushes = [];
@@ -198,19 +220,19 @@ try {
   await B.req(REQ.HELLO, { version: PROTOCOL_VERSION });
 
   /* --- accounts ------------------------------------------------------ */
-  const regA = await A.req(REQ.REGISTER, { name: 'alice', pass: 'islandpass' });
-  const regB = await B.req(REQ.REGISTER, { name: 'bob', pass: 'islandpass' });
+  const regA = await A.req(REQ.REGISTER, { name: NAME_A, pass: 'islandpass' });
+  const regB = await B.req(REQ.REGISTER, { name: NAME_B, pass: 'islandpass' });
   check('05. two accounts register and get session tokens',
-    !!regA.token && !!regB.token && regA.user.name === 'alice',
-    `alice=${regA.user.id} bob=${regB.user.id}`);
+    !!regA.token && !!regB.token && regA.user.name === NAME_A,
+    `${NAME_A}=${regA.user.id} ${NAME_B}=${regB.user.id}`);
 
   let dupe = null;
-  try { await A.req(REQ.REGISTER, { name: 'ALICE', pass: 'somethingelse' }); }
+  try { await A.req(REQ.REGISTER, { name: NAME_A.toUpperCase(), pass: 'somethingelse' }); }
   catch (e) { dupe = e.code; }
   check('06. names are unique regardless of case', dupe === 'name.taken', `-> ${dupe}`);
 
   let shortPass = null;
-  try { await A.req(REQ.REGISTER, { name: 'carol', pass: 'abc' }); }
+  try { await A.req(REQ.REGISTER, { name: `${NAME_A}x`, pass: 'abc' }); }
   catch (e) { shortPass = e.code; }
   check('07. a short password is refused', shortPass === 'pass.bad');
 
@@ -241,16 +263,16 @@ try {
   check('10. adding a name that does not exist says so', noSuch === 'user.unknown');
 
   let self = null;
-  try { await A.req(REQ.FRIEND_ADD, { name: 'alice' }); }
+  try { await A.req(REQ.FRIEND_ADD, { name: NAME_A }); }
   catch (e) { self = e.code; }
   check('11. you cannot friend yourself', self === 'friend.self');
 
-  const sent = await A.req(REQ.FRIEND_ADD, { name: 'bob' });
+  const sent = await A.req(REQ.FRIEND_ADD, { name: NAME_B });
   check('12. a friend request is sent, not silently accepted', sent.status === 'sent');
 
   const bobsList = await B.next(PUSH.FRIENDS, 8000, m => m.incoming.length > 0);
   check('13. the request lands on the other side live',
-    bobsList.incoming.length === 1 && bobsList.incoming[0].name === 'alice');
+    bobsList.incoming.length === 1 && bobsList.incoming[0].name === NAME_A);
   check('14. an unanswered request grants nothing',
     bobsList.friends.length === 0);
 
@@ -258,7 +280,7 @@ try {
   const aliceList = await A.next(PUSH.FRIENDS, 8000, m => m.friends.length > 0);
   check('15. accepting makes the friendship mutual and shows presence',
     aliceList.friends.length === 1
-    && aliceList.friends[0].name === 'bob'
+    && aliceList.friends[0].name === NAME_B
     && aliceList.friends[0].online === true,
     `alice sees ${aliceList.friends.map(f => f.name + (f.online ? '(on)' : '(off)')).join()}`);
 
@@ -280,11 +302,11 @@ try {
   await A.req(REQ.ROOM_INVITE, { userId: regB.user.id });
   const invite = await B.next(PUSH.INVITE);
   check('18. the invite arrives with who sent it',
-    invite.roomId === roomId && invite.from.name === 'alice');
+    invite.roomId === roomId && invite.from.name === NAME_A);
 
   const joined = await B.req(REQ.ROOM_JOIN, { roomId });
   check('19. the invited friend takes the next seat',
-    joined.room.seats[1].kind === 'human' && joined.room.seats[1].name === 'bob',
+    joined.room.seats[1].kind === 'human' && joined.room.seats[1].name === NAME_B,
     `seats: ${joined.room.seats.map(s => s.kind).join()}`);
 
   let notHost = null;
@@ -484,15 +506,26 @@ try {
   /* --- leaving for good ---------------------------------------------- */
   await A.req(REQ.MATCH_LEAVE, {});
   await sleep(1500);
-  const stillGoing = await fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.json());
+  const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());
   check('38. leaving a match does not take the server with it',
     stillGoing.ok === true, `${stillGoing.matches} match(es) still running`);
 
   /* --- persistence --------------------------------------------------- */
-  const finalHealth = await fetch(`http://127.0.0.1:${PORT}/health`).then(r => r.json());
-  check('39. the accounts were written to disk',
-    finalHealth.users === 2 && finalHealth.store.writes > 0,
-    `${finalHealth.users} accounts, ${finalHealth.store.writes} writes`);
+  const finalHealth = await fetch(`${HTTP}/health`).then(r => r.json());
+  if (REMOTE) {
+    // On a live server the account count is not ours to predict, and whether
+    // the file survives a deploy is a property of the mount, not of this run.
+    // What CAN be checked is that the server said the path is on a volume and
+    // that it has actually written to it.
+    check('39. the accounts are on a volume that survives a deploy',
+      finalHealth.store.persists === true && finalHealth.store.writes > 0,
+      `${finalHealth.store.path} via ${finalHealth.store.from}, ` +
+      `${finalHealth.store.writes} writes, ${finalHealth.users} accounts`);
+  } else {
+    check('39. the accounts were written to disk',
+      finalHealth.users === 2 && finalHealth.store.writes > 0,
+      `${finalHealth.users} accounts, ${finalHealth.store.writes} writes`);
+  }
 
 } catch (e) {
   failed++;
@@ -506,7 +539,7 @@ try {
 try { A && A.close(); } catch (e) { /* fine */ }
 try { B && B.close(); } catch (e) { /* fine */ }
 await sleep(300);
-if (!has('keep')) {
+if (server && !has('keep')) {
   server.kill('SIGTERM');
   await sleep(400);
   server.kill('SIGKILL');

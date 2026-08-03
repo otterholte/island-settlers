@@ -37,11 +37,49 @@ const ROOT = resolve(HERE, '..');
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
-const DATA = resolve(process.env.DATA || join(HERE, 'data'));
 const SERVE_STATIC = process.env.STATIC === '1';
 const started = Date.now();
 
+/**
+ * Where the accounts live, and the one setting that silently ruins everything
+ * if it is wrong.
+ *
+ * The store is a file. If it is written somewhere that is not the mounted
+ * volume, it works perfectly — right up until the next deploy, when the
+ * container is replaced and every account, every friendship and every session
+ * goes with it. Nothing errors. Nobody finds out until somebody cannot sign in.
+ *
+ * So the volume is found rather than assumed. Railway publishes
+ * RAILWAY_VOLUME_MOUNT_PATH at runtime whatever path you picked in the
+ * dashboard, so honouring it means the mount cannot be mismatched by typing
+ * `/data` in one place and `/app/data` in another. An explicit DATA still wins
+ * — that is how fly.toml pins it — and a laptop with neither falls back to a
+ * folder next to this file.
+ *
+ * `/health` reports which of the three it used and whether that path is on a
+ * volume, because "are my accounts actually safe" should be answerable without
+ * a redeploy to find out.
+ */
+const VOLUME = process.env.RAILWAY_VOLUME_MOUNT_PATH || '';
+const DATA_SOURCE = process.env.DATA ? 'DATA'
+  : VOLUME ? 'RAILWAY_VOLUME_MOUNT_PATH'
+    : 'default';
+const DATA = resolve(process.env.DATA || VOLUME || join(HERE, 'data'));
+/** True when the data directory is inside a mount that survives a deploy. */
+const DATA_PERSISTS = DATA_SOURCE !== 'default'
+  && (!VOLUME || DATA === resolve(VOLUME) || DATA.startsWith(resolve(VOLUME) + '/'));
+
 const store = openStore(join(DATA, 'island.json'));
+
+/* Write once, at boot, before anybody has an account to lose.
+ *
+ * A volume that is mounted but not writable by the container user is a real
+ * and common way to deploy this — and without this line the first anybody
+ * would know is somebody signing up successfully and then not existing. The
+ * store logs a failure here loudly, at boot, next to the path it tried, and
+ * `/health` reports `writes: 0` forever after, which is the tell. */
+if (!store.stats.loaded) store.flush();
+
 const users = createUsers(store);
 const rooms = createRooms();
 const secret = sessionSecret();
@@ -120,7 +158,17 @@ const server = createServer((req, res) => {
       uptimeSec: Math.round((Date.now() - started) / 1000),
       ...hub.stats,
       matchCap: matches.max,
-      store: { loaded: store.stats.loaded, writes: store.stats.writes }
+      store: {
+        loaded: store.stats.loaded,
+        writes: store.stats.writes,
+        path: store.stats.path,
+        from: DATA_SOURCE,
+        // The answer to "will my accounts survive the next deploy". False on a
+        // host with no volume attached, which is a warning and not an error —
+        // it is exactly right on a laptop.
+        persists: DATA_PERSISTS,
+        volume: VOLUME || null
+      }
     });
   }
 
@@ -145,7 +193,12 @@ attachWebSocket(server, {
 server.listen(PORT, HOST, () => {
   console.log(`[server] Island Settlers multiplayer on http://${HOST}:${PORT}`);
   console.log(`[server] websocket  ws://${HOST}:${PORT}/ws   protocol v${PROTOCOL_VERSION}`);
-  console.log(`[server] data       ${store.stats.path}  (${users.count} accounts)`);
+  console.log(`[server] data       ${store.stats.path}  (${users.count} accounts, via ${DATA_SOURCE})`);
+  if (!DATA_PERSISTS) {
+    console.warn('[server] WARNING  that path is not on a mounted volume — accounts will be');
+    console.warn('[server]          lost on the next deploy. Attach one and either mount it');
+    console.warn('[server]          where DATA points, or unset DATA and let the platform say.');
+  }
   console.log(`[server] matches    up to ${matches.max} at once`);
   if (SERVE_STATIC) console.log(`[server] static     serving the game from ${ROOT}`);
 });

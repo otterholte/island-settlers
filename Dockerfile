@@ -16,10 +16,19 @@ RUN mkdir -p /data && chown -R node:node /data /app
 USER node
 
 ENV NODE_ENV=production
-ENV PORT=8080
-ENV DATA=/data
 
-EXPOSE 8080
+# NO PORT AND NO DATA BAKED IN, DELIBERATELY.
+#
+# Railway injects PORT at runtime and publishes RAILWAY_VOLUME_MOUNT_PATH for
+# whatever path the volume was actually mounted at. An ENV here would be a
+# second opinion about both, and the DATA one is the dangerous half: point it
+# at a path that is not the mount and the accounts file writes happily to the
+# container's own disk and disappears with it on the next deploy.
+#
+# server/index.mjs falls back to its own sensible defaults (8787, and a folder
+# beside itself) so `docker run` with no environment still works, and fly.toml
+# pins both explicitly because Fly does not publish either.
+EXPOSE 8787
 
 # No init system and no process manager: one process, and the platform's job
 # is to restart it. SIGTERM is handled in server/index.mjs, which flushes the
