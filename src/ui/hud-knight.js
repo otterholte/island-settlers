@@ -82,7 +82,7 @@ const CSS = `
   border:2px solid var(--brown,#5a3a1e);
   box-shadow:0 5px 0 rgba(90,58,30,.55),0 10px 20px rgba(0,0,0,.45),
              inset 0 2px 0 rgba(255,255,255,.72);
-  cursor:pointer;touch-action:manipulation;text-align:left;
+  cursor:pointer;touch-action:none;text-align:left;
   max-width:min(46vw,270px);
   opacity:0;transform:translateY(12px) scale(.94);
   transition:opacity .28s ease,transform .28s cubic-bezier(.2,1.2,.35,1);

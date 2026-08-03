@@ -67,7 +67,21 @@ export const OPTION_DEFAULTS = Object.freeze({
    * These are 'left' or 'right'. They live here rather than on `state` for the
    * same reason `knights` does — see the note at the top of this file. */
   stickSide: 'right',
-  buttonsSide: 'right'
+  buttonsSide: 'right',
+  /* HOW FAR THE BOARD MAP IS TILTED BACK, 0 (flat overhead) to 1 (as far as
+     it goes). Set with two fingers dragged up or down on the map itself, and
+     kept here so it survives the match:
+
+       "Let me use two fingers and drag up and down on the map view to
+        reposition my view so it's a bit more 3D, and have it save that view
+        the next time I open the map, even during the next game. That way if I
+        prefer it, I can keep that slightly 3D view and see all of the tiles a
+        bit easier on one mobile screen."
+
+     Which is the real reason it earns its place: tilting the board back
+     squashes it vertically, so a 375px-tall phone fits the whole island
+     without pinching. */
+  mapTilt: 0
 });
 
 const current = { ...OPTION_DEFAULTS };
@@ -148,9 +162,21 @@ export function buttonsSide() { return side(current.buttonsSide); }
 export function setStickSide(v) { return setOption('stickSide', side(v)); }
 export function setButtonsSide(v) { return setOption('buttonsSide', side(v)); }
 
+const TILT_MAX = 1;
+export function mapTilt() {
+  const v = Number(current.mapTilt);
+  return Number.isFinite(v) ? Math.min(TILT_MAX, Math.max(0, v)) : 0;
+}
+export function setMapTilt(v) {
+  const n = Number(v);
+  const clamped = Number.isFinite(n) ? Math.min(TILT_MAX, Math.max(0, n)) : 0;
+  return setOption('mapTilt', Math.round(clamped * 1000) / 1000);
+}
+
 export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
 export default {
   getOption, setOption, onOptionsChange,
-  knightsOn, setKnights, stickSide, buttonsSide, setStickSide, setButtonsSide
+  knightsOn, setKnights, stickSide, buttonsSide, setStickSide, setButtonsSide,
+  mapTilt, setMapTilt
 };

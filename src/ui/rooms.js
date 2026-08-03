@@ -31,12 +31,25 @@
  * A code cannot do that. Everyone typing the same five characters is, without
  * any further machinery, one room.
  *
- * THREE PANELS, ONE AT A TIME
- * ---------------------------
- *   connect   where the server is, if we cannot work it out or cannot reach it
+ * TWO PANELS, ONE AT A TIME
+ * -------------------------
  *   home      your name, CREATE A ROOM, and a box to type a code into
  *   lobby     the code in large letters, four seats, the settings, and a START
  *             everybody presses
+ *
+ * There used to be a third, behind a SERVER button: a text field for the
+ * websocket address.
+ *
+ *   "Remove the SERVER button entirely, the server should always be set,
+ *    there's no reason anyone would use a server other than the online one we
+ *    already have."
+ *
+ * Correct. `net/config.js` already knows the deployed address and already
+ * falls back to this page's own origin, which is what makes a locally-served
+ * copy work with no configuration — so the box could only ever be used to
+ * point the game at a server that does not exist. It was a developer's control
+ * wearing a player's clothes. The `?server=` query parameter is still there for
+ * testing a branch against a test deployment.
  *
  * NOTHING HERE OWNS ANY STATE
  * ---------------------------
@@ -53,7 +66,6 @@ import {
   PUSH, REQ, SEATS, CODE_LEN,
   nameProblem, cleanName, cleanCode, codeProblem, errText
 } from '../net/protocol.js';
-import { serverCandidates, savedServer, setServer, normalizeServer } from '../net/config.js';
 import { DIFFICULTY_ORDER, LEVELS } from '../systems/difficulty.js';
 import { PLAYER_COLORS } from '../core/constants.js';
 
@@ -122,39 +134,6 @@ export function createRooms(root, opts = {}) {
   }
 
   const meId = () => (client.user ? client.user.id : null);
-
-  /* ============================================================== the server
-     Shown when there is nowhere to connect to, or when connecting failed. */
-
-  function drawConnect() {
-    resetPanels();
-    setText(title, 'Where is your server?');
-    setText(sub, '');
-    const input = el('input', {
-      class: 'fr-input', type: 'text', spellcheck: 'false',
-      autocapitalize: 'off', autocomplete: 'off',
-      placeholder: 'island-settlers.up.railway.app',
-      value: savedServer() || ''
-    });
-    body.appendChild(el('p', { class: 'fr-copy', text:
-      'Multiplayer needs a small server of its own — the game files alone cannot '
-      + 'hold a room or pass moves between people. Paste its address here.' }));
-    body.appendChild(input);
-    body.appendChild(el('p', { class: 'fr-hint', text:
-      'Deploying one is in server/README.md. For a server on this machine, use localhost:8787.' }));
-
-    const save = button('green fr-go', { on: { click: () => {
-      const url = normalizeServer(input.value);
-      if (!url) { say('That does not look like an address.', 'bad'); return; }
-      setServer(url);
-      if (client.rediscover) client.rediscover();
-      say('');
-      client.connect(true);
-      go('home');
-    } } }, el('span', { class: 'sb-lab', text: 'Connect' }));
-    foot.appendChild(save);
-    setTimeout(() => { try { input.focus(); } catch (e) { /* fine */ } }, 60);
-  }
 
   /* ================================================================== home
    *
@@ -235,8 +214,6 @@ export function createRooms(root, opts = {}) {
     body.appendChild(el('div', { class: 'fr-joinrow' }, joinBtn));
 
     /* --- feet ------------------------------------------------------------ */
-    foot.appendChild(button('cream fr-small', { on: { click: () => go('connect') } },
-      el('span', { class: 'sb-lab', text: 'Server' })));
     foot.appendChild(button('green fr-go', { on: { click: () => makeRoom() } },
       el('span', { class: 'sb-lab', text: room ? 'Back to Your Room' : 'Create a Room' })));
   }
@@ -450,7 +427,6 @@ export function createRooms(root, opts = {}) {
 
   function draw() {
     if (!client) return;
-    if (panel === 'connect') return drawConnect();
     if (panel === 'lobby' && room) return drawLobby();
     if (panel === 'lobby' && !room) panel = 'home';
     return drawHome();
@@ -465,11 +441,9 @@ export function createRooms(root, opts = {}) {
     }[s] || s;
     setText(statusTxt, label);
     dot.className = 'fr-dot ' + (s === 'ready' ? 'ok' : s === 'failed' ? 'bad' : 'wait');
-    if (s === 'failed' && panel !== 'connect') {
-      const tried = (client.tried || []).join(', ');
-      say('Cannot reach the server — still trying.'
-        + (tried ? ` (tried ${tried})` : '')
-        + ' If it never comes up, SERVER lets you point it somewhere else.', 'bad');
+    if (s === 'failed') {
+      say('Cannot reach the server — still trying. Check your connection; '
+        + 'it comes back on its own.', 'bad');
     }
   }
 
@@ -505,12 +479,7 @@ export function createRooms(root, opts = {}) {
 
   function show() {
     toggle(node, 'hid', false);
-    // The address box is a last resort, not a greeting. There is somewhere to
-    // try in every case except a page opened off a file:// with no server
-    // compiled in — and the client walks the whole list before giving up, so
-    // an origin with no websocket on it costs a moment, not a question.
-    if (!serverCandidates().length) panel = 'connect';
-    else if (room) panel = 'lobby';
+    if (room) panel = 'lobby';
     else panel = 'home';
     paintStatus();
     draw();

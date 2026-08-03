@@ -249,7 +249,10 @@
    highlight and shadow, and one sheen crossing it. The width is driven from
    the inline script in index.html. */
 .bs-load{
-  left:50%;bottom:clamp(14px,6vh,32px);z-index:2;
+  /* `viewport-fit=cover` means the bottom of this box can be under a home
+     indicator. `--sab` is the inset ui-base.css publishes; the splash is the
+     one screen in the build that was never taught to read it. */
+  left:50%;bottom:calc(clamp(12px,5vh,28px) + var(--sab,0px));z-index:2;
   transform:translateX(-50%);
   display:flex;flex-direction:column;align-items:center;gap:clamp(6px,1.6vh,11px);
   animation:bsLoadIn .8s .2s cubic-bezier(.2,1.1,.35,1) both;
@@ -327,7 +330,10 @@
    Verified at 667x375. The scene keeps every layer; only the spacing gives. */
 @media (max-height:400px),(max-width:760px){
   .bs-fore{gap:3px}
-  .bs-load{margin-top:clamp(10px,3.4vh,22px)}
+  /* `margin-top` on a bottom-anchored absolute box does nothing at all;
+     this rule was dead for as long as it existed. The bar's clearance is its
+     `bottom`, and on a short phone it wants to be smaller, not larger. */
+  .bs-load{bottom:max(10px,calc(6px + var(--sab,0px)))}
   .bs-bar{width:min(280px,54vw);height:16px}
   .bs-tip span{letter-spacing:.22em;text-indent:.22em}
   .bs-isle{bottom:37%;height:24%}

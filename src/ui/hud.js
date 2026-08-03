@@ -50,7 +50,7 @@ const RES_ICON_PX = 28;
    switched off before the draft, because a How to Play that explains a mechanic
    the match does not have is worse than one that says nothing about it. */
 const HOW_TO_ALL = [
-  ['Move', 'Drag anywhere on the left half of the screen to run.'],
+  ['Move', 'Drag anywhere on your half of the screen to run — no need to find anything, the stick appears under your thumb. The gear says which half is yours.'],
   ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
   ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.'],
   ['Regions', 'Sweep a hex clean and the whole field rests, then comes back at once. The bars under the resource pill show what is still standing.'],
@@ -208,7 +208,24 @@ export function createHUD(root, state, game) {
   const btnBuild = mkCircle('hammer', 'Build', 'gold', () => {
     toggle(buildRow, 'hid', !buildRow.classList.contains('hid'));
   });
-  const btnCards = mkCircle('cards', 'Cards', 'cream', () => game.openCards());
+  /* THERE IS NO CARDS BUTTON.
+   *
+   *   "Remove the Cards button, I don't need it, since the build button lets
+   *    you buy a card, and it's always used right away. Plus on mobile it makes
+   *    the pause button cover the buttons for the types of things you can build
+   *    that currently show up in the bottom middle of the screen."
+   *
+   * Both halves are right. Every card in the deck already announces itself and
+   * carries its own control: a Knight raises the standing chip that opens the
+   * board (hud-knight.js), Road Building does the same and lays its two roads
+   * (hud-road.js), and a Victory Point scores the instant it is drawn. The
+   * panel behind this button was a list of cards you had already been told
+   * about, with a button to do the thing the chip on screen was already
+   * offering. `panels.openCards()` still exists and is still opened by the one
+   * caller that needs it — Road Building with no legal road left.
+   *
+   * And a rail of four 58px circles plus PAUSE is 300-odd pixels on a 667px
+   * phone, which is what pushed the pause key over the build cards. */
   const btnMap = mkCircle('map', 'Map', 'blue', () => game.openOverview('view'));
   /*
    * PAUSE.
@@ -234,7 +251,7 @@ export function createHUD(root, state, game) {
    */
   const btnPause = mkCircle('pause', 'Pause', 'ghost', () => togglePause());
   const br = el('div', { class: 'hud-br' },
-    btnPause.node, btnMap.node, btnCards.node, btnBuild.node);
+    btnPause.node, btnMap.node, btnBuild.node);
 
   /* --- bottom-left: NOTHING, deliberately ---------------------------------
    *
@@ -313,7 +330,7 @@ export function createHUD(root, state, game) {
       button('cbtn small ghost x', { 'aria-label': 'Close', on: { click: () => toggleSettings(false) } },
         mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
-    sideRow('Joystick', stickSide, setStickSide),
+    sideRow('Drag side', stickSide, setStickSide),
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     button('wide cream', { on: { click: () => toggle(howBody, 'hid', !howBody.classList.contains('hid')) } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
@@ -569,7 +586,6 @@ export function createHUD(root, state, game) {
     refreshAwards();
     refreshRanks();
     setBadge(btnBuild, buildBar.refresh());
-    setBadge(btnCards, me.cards.length);
     if (force) refreshRegions();
   }
 
@@ -703,6 +719,13 @@ export function createHUD(root, state, game) {
     // Safety net: if play started without a setupComplete event reaching us,
     // still reveal the controls rather than leaving the player with no HUD.
     if (state.phase === 'play' && hud.classList.contains('pre')) onPlayBegan();
+
+    /* The moment it is over, the bottom of the screen clears. Driven off the
+       phase rather than off the victory event, so it is also true for a match
+       that ran out the clock and for a client that joined a match already
+       won. See the .hud.won note in ui-hud.css. */
+    const over = state.phase === 'over';
+    if (over !== hud.classList.contains('won')) toggle(hud, 'won', over);
 
     // The map can be dismissed by its own close button, and the match ends on
     // its own clock. Either way the pause label follows the real state rather

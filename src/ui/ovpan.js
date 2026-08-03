@@ -63,6 +63,7 @@
 
 import { HEX_SIZE } from '../core/constants.js';
 import { BOUNDS } from '../board/layout.js';
+import { mapTilt, setMapTilt } from '../core/options.js';
 
 const STYLE_ID = 'ovpan-style';
 
@@ -73,6 +74,29 @@ const ZOOM_STEP = 1.22;
 const KEEP_IN = 0.14;
 /** Travel under which a pointer was a tap; overview.js owns taps. */
 const DRAG_SLOP = 4;
+
+/* ------------------------------------------------------------------ tilt
+ *
+ *   "Let me use two fingers and drag up and down on the map view to reposition
+ *    my view so it's a bit more 3D, and have it save that view the next time I
+ *    open the map, even during the next game."
+ *
+ * The map is a flat overhead projection, so "more 3D" is a vertical squash
+ * about the middle of the frame: the same board seen from a lower angle. That
+ * is not a decoration — it is the second half of the sentence. Squashed to
+ * 62% the whole island fits the height of a 375px phone with the tokens still
+ * legible, which is the "see all of the tiles without zooming" the request
+ * ends on.
+ *
+ * Two fingers already mean pinch here, and the two gestures separate cleanly:
+ * a pinch changes the DISTANCE between the fingers, a tilt moves both of them
+ * the same way. So the vertical travel of the midpoint drives the tilt and the
+ * change in separation drives the zoom, and doing both at once does both,
+ * which is what a hand actually does.
+ *
+ * Stored through core/options.js, so it is remembered between matches. */
+const TILT_MIN_KY = 0.55;      // fully tilted: the board at 55% height
+const TILT_PER_PX = 1 / 190;   // how far two fingers travel for the full range
 /** How long the HOME key stays armed after the first tap, in ms. */
 const ARM_MS = 4200;
 
@@ -107,13 +131,7 @@ const CSS = `
   font:800 8.5px/1.2 var(--ff,system-ui);letter-spacing:.13em;text-transform:uppercase;
   color:#fff2e2;opacity:1;transition:opacity .2s ease}
 .ovz-ask.off{opacity:0}
-.ovz-hint{position:absolute;display:flex;align-items:center;gap:6px;
-  padding:4px 9px 5px;border-radius:11px;pointer-events:none;z-index:6;
-  background:rgba(6,20,40,.78);border:1.5px solid rgba(255,201,60,.30);
-  font:700 8px/1.2 var(--ff,system-ui);letter-spacing:.12em;text-transform:uppercase;
-  color:rgba(206,226,246,.86);transition:opacity .3s ease}
-.ovz-hint.off{opacity:0}
-@media (max-height:400px){.ovz b{width:33px;height:30px}.ovz-hint{font-size:7px}
+@media (max-height:400px){.ovz b{width:33px;height:30px}
   .ovz b.ovz-home{margin-bottom:7px}.ovz-ask{font-size:7.5px}}
 `;
 
@@ -150,12 +168,29 @@ export function createOvPan(cv, proj, opts = {}) {
 
   /* `px`/`py` move the board CENTRE, in css px, away from where the fit-to-frame
      projection would have put it. Zoom multiplies the fit scale. */
-  const view = { zoom: 1, px: 0, py: 0 };
+  /* `tilt` is 0..1 and is read back from options on construction, which is the
+     whole of "have it save that view the next time I open the map". */
+  const view = { zoom: 1, px: 0, py: 0, tilt: mapTilt() };
+  /** Vertical squash factor the painter applies. 1 is flat overhead. */
+  const kyOf = t => 1 - (1 - TILT_MIN_KY) * Math.min(1, Math.max(0, t));
+  let tiltSaveT = 0;
+  function setTilt(t) {
+    const next = Math.min(1, Math.max(0, t));
+    if (Math.abs(next - view.tilt) < 1e-4) return false;
+    view.tilt = next;
+    proj.ky = kyOf(next);
+    // Written on a debounce: a two-finger drag would otherwise touch
+    // localStorage sixty times a second.
+    if (tiltSaveT) clearTimeout(tiltSaveT);
+    tiltSaveT = setTimeout(() => { tiltSaveT = 0; setMapTilt(view.tilt); }, 320);
+    return true;
+  }
+  proj.ky = kyOf(view.tilt);
   const base = { s: 1, ox: 0, oy: 0 };
   let gesturing = false;
   let moved = false;
   let touched = false;
-  const stats = { drags: 0, zooms: 0, resets: 0 };
+  const stats = { drags: 0, zooms: 0, resets: 0, tilts: 0 };
 
   /* ------------------------------------------------------------------ DOM */
   let pad = null, hint = null, homeKey = null, ask = null;
@@ -195,10 +230,16 @@ export function createOvPan(cv, proj, opts = {}) {
       host.appendChild(ask);
     }
 
-    hint = doc.createElement('div');
-    hint.className = 'ovz-hint';
-    hint.innerHTML = '<span>Drag to move</span><span>&middot;</span><span>Pinch to zoom</span>';
-    host.appendChild(hint);
+    /* NO HINT ALONG THE BOTTOM.
+     *
+     *   "I don't like that the sections on the top and bottom of the screen
+     *    are covering valuable real estate of where I want to see visually the
+     *    map."
+     *
+     * DRAG TO MOVE · PINCH TO ZOOM was a permanent caption across the bottom
+     * centre of the board telling a player two gestures they had already made
+     * by the time they read it. `hint` stays null and every use of it below is
+     * already guarded. */
   }
 
   function markTouched() {
@@ -284,6 +325,7 @@ export function createOvPan(cv, proj, opts = {}) {
     base.s = b.s; base.ox = b.ox; base.oy = b.oy;
     clampView();
     proj.s = base.s * view.zoom;
+    proj.ky = kyOf(view.tilt);
     const c = centre();
     proj.ox = c.x - BOUNDS.cx * proj.s;
     proj.oy = c.y - BOUNDS.cz * proj.s;
@@ -342,6 +384,8 @@ export function createOvPan(cv, proj, opts = {}) {
     return true;
   }
 
+  /* The tilt is NOT reset: it is a preference, not a pose, and the whole point
+     of storing it is that it survives everything including this. */
   function reset(byHand) {
     view.zoom = 1; view.px = 0; view.py = 0;
     if (byHand) stats.resets++;
@@ -351,6 +395,8 @@ export function createOvPan(cv, proj, opts = {}) {
   /* ------------------------------------------------------------- pointers */
   const live = new Map();
   let pinch = 0;
+  /** The two-finger midpoint's y last frame, or null when fewer than two. */
+  let mid = null;
   let travel = 0;
 
   const local = ev => {
@@ -367,6 +413,7 @@ export function createOvPan(cv, proj, opts = {}) {
     if (live.size === 2) {
       const [a, b] = [...live.values()];
       pinch = Math.hypot(a.x - b.x, a.y - b.y);
+      mid = (a.y + b.y) / 2;
     }
     if (cv.setPointerCapture) { try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* ok */ } }
   }
@@ -385,12 +432,29 @@ export function createOvPan(cv, proj, opts = {}) {
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
       if (pinch > 8 && d > 8) zoomAt(d / pinch, mx, my);
       pinch = d;
-      nudge(dx / 2, dy / 2);
+      /* Two fingers travelling the same way tilt; two fingers travelling apart
+         zoom. `dy` here is one finger's step, and both fingers contribute one
+         each per frame, so the midpoint moves by dy/2 — which is what drives
+         the tilt. Dragging DOWN tilts back, the way pulling a board towards you
+         would. */
+      if (mid !== null) {
+        const dmid = my - mid;
+        if (Math.abs(dmid) > 0.01) {
+          if (setTilt(view.tilt + dmid * TILT_PER_PX)) stats.tilts++;
+        }
+      }
+      mid = my;
+      /* VERTICAL IS THE TILT, AND ONLY THE TILT. Panning as well would mean
+         one gesture doing two things at once, and the board sliding out from
+         under the hand that is trying to tilt it. Two fingers still pan
+         sideways; one finger still pans in both. */
+      nudge(dx / 2, 0);
       moved = true;
       markTouched();
       if (ev.cancelable) ev.preventDefault();
       return;
     }
+    mid = null;
     if (travel < DRAG_SLOP) return;
     moved = true;
     markTouched();
@@ -401,7 +465,7 @@ export function createOvPan(cv, proj, opts = {}) {
 
   function onUp(ev) {
     live.delete(ev.pointerId);
-    if (live.size < 2) pinch = 0;
+    if (live.size < 2) { pinch = 0; mid = null; }
     if (!live.size) gesturing = false;
   }
 
@@ -455,6 +519,10 @@ export function createOvPan(cv, proj, opts = {}) {
 
   return {
     apply, reset, zoomAt, nudge,
+    /** 0 flat, 1 fully tilted. Read by the capture rig; set by two fingers. */
+    get tilt() { return view.tilt; },
+    setTilt,
+    get ky() { return proj.ky; },
     get gesturing() { return gesturing; },
     get moved() { return moved; },
     get zoom() { return view.zoom; },
@@ -468,6 +536,8 @@ export function createOvPan(cv, proj, opts = {}) {
         && c.y + halfH > f.y && c.y - halfH < f.y + f.h;
       return {
         zoom: +view.zoom.toFixed(3),
+        tilt: +view.tilt.toFixed(3),
+        ky: +proj.ky.toFixed(3),
         /** Live world->canvas scale, so a trace can find any hex on screen. */
         s: +c.s.toFixed(3),
         pan: [Math.round(view.px), Math.round(view.py)],

@@ -999,6 +999,95 @@ if (STAGE === 'home') {
      five: the picture would show the draft strip over a "view" reading and
      look like a bug that is not there. The measurement above is the evidence. */
 
+/* ------------------------------------------------------------- the tilt
+ *
+ *   "Let me use two fingers and drag up and down on the map view to reposition
+ *    my view so it's a bit more 3D, and have it save that view the next time I
+ *    open the map, even during the next game."
+ *
+ * Three claims and all three are checkable: two fingers dragged down tilt the
+ * board, the tilt survives a reload, and — the reason it was asked for — a
+ * tilted board FITS MORE ISLAND on the same screen. The last one is measured
+ * as the world-to-canvas scale before and after, because "I can see more
+ * without zooming" is a number, not an impression.
+ */
+} else if (STAGE === 'maptilt') {
+  const innerWidthGuess = W;
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  for (let i = 0; i < 60; i++) {
+    if (await ev('window.__ISLAND__.state.phase') === 'setup') break;
+    await sleep(250);
+  }
+  await sleep(1500);
+
+  const READ = `(()=>{
+    const ov=window.__ISLAND__.game.overview;
+    const p=ov.panInfo;
+    return {open:!!ov.isOpen, tilt:p.tilt, ky:p.ky, s:p.s,
+      frame:p.frame, tilts:p.tilts,
+      stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').mapTilt};})()`;
+  // Wait for the panel to have been laid out at least once: `panInfo` falls
+  // back to 800x400 with s=1 before the first measure, which would make the
+  // before/after comparison below a comparison with nothing.
+  let flat = await ev(READ);
+  for (let i = 0; i < 40 && (!flat || flat.frame[2] > innerWidthGuess); i++) {
+    await sleep(200);
+    flat = await ev(READ);
+  }
+  console.log('  FLAT ' + JSON.stringify(flat));
+  await shot(`maptilt-flat-${TAG}`);
+
+  /* Two real fingers, dragged down the canvas together. Dispatched as raw
+     touch points through the input domain so it goes through the same
+     pointerdown/pointermove path a thumb does — `pan.setTilt()` would prove
+     the painter and nothing about the gesture. */
+  const box = await ev(`(()=>{const c=document.querySelector('.ov-cv');
+    const r=c.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  const two = async (dy, type) => {
+    await send('Input.dispatchTouchEvent', {
+      type,
+      touchPoints: type === 'touchEnd' ? [] : [
+        { x: box.x - 60, y: box.y + dy, id: 1 },
+        { x: box.x + 60, y: box.y + dy, id: 2 }
+      ]
+    });
+  };
+  await two(-70, 'touchStart');
+  for (let i = -70; i <= 70; i += 14) { await two(i, 'touchMove'); await sleep(24); }
+  await two(70, 'touchEnd');
+  await sleep(500);
+
+  const tilted = await ev(READ);
+  console.log('  TILTED ' + JSON.stringify(tilted));
+  console.log('  GAINED ' + JSON.stringify({
+    tiltMoved: tilted.tilt > flat.tilt + 0.05,
+    squashed: tilted.ky < flat.ky - 0.05,
+    // The payoff: a tilted board is fitted at a LARGER world-to-canvas scale,
+    // so every hex and every token is bigger on the same screen.
+    biggerHexes: +(tilted.s / flat.s).toFixed(3),
+    gestureSeen: tilted.tilts > 0
+  }));
+  await shot(`maptilt-tilted-${TAG}`);
+
+  // And it is remembered. Reload the page and ask again.
+  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+  await sleep(2500);
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  for (let i = 0; i < 60; i++) {
+    if (await ev('window.__ISLAND__.state.phase') === 'setup') break;
+    await sleep(250);
+  }
+  await sleep(1500);
+  const after = await ev(READ);
+  console.log('  RELOADED ' + JSON.stringify(after));
+  console.log('  KEPT ' + JSON.stringify({
+    survivedAReload: Math.abs(after.tilt - tilted.tilt) < 0.02,
+    andANewMatch: after.ky < 0.999
+  }));
+
 } else if (STAGE === 'book') {
   // The book does not need the opening screen to be on screen — the TUTORIAL
   // button is pressed here, but going through the real button means waiting

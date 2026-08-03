@@ -28,7 +28,9 @@ async function boot() {
     canvas, antialias: true, powerPreference: 'high-performance', alpha: false
   });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
-  renderer.setSize(innerWidth, innerHeight, false);
+  // Provisional; `resize()` below re-measures off the canvas itself, which is
+  // the only number that cannot disagree with the CSS box.
+  renderer.setSize(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight, false);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -245,19 +247,83 @@ async function boot() {
     net = null;
   }
 
-  // ---------------------------------------------------------------- resize
+  /* ---------------------------------------------------------------- resize
+   *
+   *   "Sometimes, definitely after I play the game once and restart to play
+   *    again, the whole game is too zoomed in where I can't see all of the
+   *    elements on the screen I should be seeing."
+   *
+   * MEASURE THE CANVAS, NOT THE WINDOW. `setSize(w, h, false)` deliberately
+   * does not touch `canvas.style`, so the drawing buffer and the CSS box are
+   * two independent numbers — and they were being set from two different
+   * sources. The buffer came from `innerWidth/innerHeight`; the box is 100% of
+   * `#app`, which is `100dvh` with a `100vh` FALLBACK. On any engine that
+   * takes the fallback (older iOS Safari, and most in-app webviews — the
+   * Instagram and Discord browsers are how a shared game link usually gets
+   * opened) `100vh` is the URL-bar-hidden height, so the element is 60-90px
+   * taller than the visible page. The browser then stretches a short buffer to
+   * fill a tall box: everything is drawn too big, the camera's aspect is wrong
+   * by the same ratio, and the bottom row of the HUD is under the fold. Which
+   * is the report, in all three of its parts.
+   *
+   * `clientWidth/clientHeight` of the canvas is the box being painted into, by
+   * definition, so the two cannot disagree again.
+   *
+   * `--vh` is published for the CSS to use as its own fallback; ui-base.css
+   * prefers it over `100vh` for exactly the same reason.
+   */
+  const vv = globalThis.visualViewport || null;
   const resize = () => {
-    const w = innerWidth, h = innerHeight;
+    // The visual viewport is the only honest answer while a URL bar is
+    // sliding or a keyboard is up; innerHeight is the fallback.
+    const vh = Math.round((vv && vv.height) || innerHeight || 0);
+    if (vh > 0) document.documentElement.style.setProperty('--vh', (vh / 100) + 'px');
+    const w = canvas.clientWidth || innerWidth;
+    const h = canvas.clientHeight || vh || innerHeight;
     renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
+    camera.aspect = w / (h || 1);
     camera.updateProjectionMatrix();
     const gate = document.getElementById('rotate-gate');
     if (gate) gate.classList.toggle('show', h > w * 1.08);
   };
   addEventListener('resize', resize);
-  addEventListener('orientationchange', () => setTimeout(resize, 120));
+  // 300ms rather than 120: iOS reports the old size for longer than that after
+  // a rotation, and a resize that lands early is a resize that did nothing.
+  addEventListener('orientationchange', () => { setTimeout(resize, 120); setTimeout(resize, 320); });
+  /* Chrome Android fires `visualViewport.resize` and NOT `window.resize` when
+     the URL bar slides, so without this the renderer keeps a stale size for
+     the rest of the session. */
+  if (vv) {
+    vv.addEventListener('resize', resize);
+    vv.addEventListener('scroll', resize);
+  }
   resize();
+
+  /* A PAGE SCALE THAT SURVIVED A RELOAD.
+   *
+   * `game.restart()` and `leaveMatch()` are `location.reload()`, and a reload
+   * restores the browser's page scale and scroll offset. So a pinch picked up
+   * during one match comes back with the next one — including on the loading
+   * screen, which is exactly what "the loading screen is also a bit too zoomed
+   * in, it has a white bar at the top" describes: that bar is the browser's own
+   * chrome reappearing because the page is no longer at scale 1.
+   *
+   * `maximum-scale=1,user-scalable=no` has been ignored by iOS Safari since
+   * iOS 10 and by Chrome whenever Force-enable-zoom is on, so the meta tag
+   * cannot be trusted to prevent it. Scrolling back to the origin is the part
+   * that can be fixed from here; index.html blocks the gesture itself. */
+  if (vv) {
+    const unzoom = () => {
+      if (vv.scale > 1.01 || vv.offsetTop > 1 || vv.offsetLeft > 1) {
+        try { scrollTo(0, 0); } catch (e) { /* fine */ }
+      }
+    };
+    vv.addEventListener('resize', unzoom);
+    vv.addEventListener('scroll', unzoom);
+    addEventListener('focusout', () => { try { scrollTo(0, 0); } catch (e) { /* fine */ } });
+    unzoom();
+  }
 
   // ---------------------------------------------------------------- events
   const gatherSound = r =>

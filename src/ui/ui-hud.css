@@ -11,6 +11,20 @@
 .hud.pre .hud-bc,.hud.pre .hud-br{
   opacity:0;transform:translateY(26px);pointer-events:none}
 .hud-bc,.hud-br{transition:opacity .34s ease,transform .34s cubic-bezier(.2,.9,.3,1)}
+/* SOMEBODY HAS WON. Take the controls off the screen at once.
+ *
+ *   "When someone wins, hide the build buttons immediately so that I can see
+ *    the celebration in full size."
+ *
+ * The victory sequence pulls the camera out over the whole island and floods
+ * the winner's hexes with their colour, and a row of build cards across the
+ * bottom third of a phone is standing in front of it. They are also dead
+ * controls by then — the match is over and nothing can be bought. Same slide
+ * the pre-match state uses, at half the duration, because "immediately" is the
+ * word in the request. */
+.hud.won .hud-bc,.hud.won .hud-br{
+  opacity:0;transform:translateY(26px);pointer-events:none}
+.hud.won .hud-bc,.hud.won .hud-br{transition-duration:.16s}
 
 /* --- top-left: settings, clock, scoreboard ------------------------------- */
 .hud-tl{
@@ -221,7 +235,7 @@
   border:2px solid var(--brown);border-radius:13px;
   box-shadow:0 5px 0 #8b6a34,0 9px 16px rgba(0,0,0,.45),
              inset 0 2px 0 rgba(255,255,255,.6);
-  cursor:pointer;touch-action:manipulation;
+  cursor:pointer;touch-action:none;
   transition:transform .1s ease,box-shadow .1s ease,opacity .18s ease;
 }
 .bcard:active{transform:translateY(4px);
@@ -447,7 +461,7 @@
   background:var(--navy);
   border:1.5px solid rgba(255,255,255,.26);
   box-shadow:0 4px 14px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.16);
-  cursor:pointer;touch-action:manipulation;white-space:nowrap;
+  cursor:pointer;touch-action:none;white-space:nowrap;
   backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px);
 }
 /* the plate now clears 44px on its own, so the pad is only a small margin */
@@ -563,47 +577,57 @@
    never does. Every one of these selectors is scoped to `.hud` so it beats
    ui.css's older phone block, which is imported after this file. */
 @media (max-height:400px),(max-width:760px){
-  /* ------------------------------------------------- the awards, shrunk
+  /* ---------------------------------------------- the awards, a quarter size
    *
-   *   "The longest road and largest army needs to be much more minimal and
-   *    simple on mobile. It's way too big. Maybe just the bridge icon, your
-   *    number and the longest road number but with little to no labels. I want
-   *    the box it's on to be 1/3 to 1/4 of its current size."
+   *   "The counter on the left side of the screen that shows how long the
+   *    current longest road is, and how long my road is, and the same for the
+   *    largest army — that's the section that takes up way too much real
+   *    estate on mobile screens. Just the bridge icon, your number and the
+   *    longest road number, with little to no labels. I want the box it's on
+   *    to be 1/3 to 1/4 of its current size."
    *
-   * On a phone each award was a two-line block: a label, the holder's name, the
-   * holder's size, your count and how many more you need. Five facts, twice
-   * over, in the corner you glance at mid-run.
+   * The full-size readout is four facts per award over two lines: a label, the
+   * holder's name, the holder's length, yours, and a gold chip saying how many
+   * more you need. Five things, twice, in the corner of a 375px-tall screen.
    *
-   * What survives is the shape of the question — mine, then theirs — as
-   * `4 › 6` beside the icon, with the arrow doing the work the words did. The
-   * icon says which award; gold says you hold it. Everything else is on the
-   * results screen at the end, when there is time to read. The card goes from
-   * 196px wide and ~120 tall to 112x44: about a quarter of the area. */
-  .hud .scorecard{width:112px}
-  .hud .sc-vp{padding:3px 6px 4px;gap:4px}
-  .hud .sc-vp b{font-size:16px}
-  .hud .sc-vp .ico svg{width:15px;height:15px}
-  .hud .sc-goal{font-size:8px;margin:3px 2px 0 -1px}
+   * Here it is two CHIPS SIDE BY SIDE, each an icon and two numbers: yours,
+   * then the number to beat. Nothing else survives — no label, no holder's
+   * name, no "how many more", and no twelve-cell victory track. Every one of
+   * those is either derivable (the difference between two numbers on the same
+   * line) or already on screen (the standings name every player).
+   *
+   * 226x104 down to about 104x44: a fifth of the area it was, and it stopped
+   * being a panel and became a readout. */
+  .hud .scorecard{width:auto;max-width:118px;border-radius:10px}
+  .hud .sc-vp{padding:2px 6px 3px;gap:3px;border-bottom-width:0}
+  .hud .sc-vp b{font-size:15px;-webkit-text-stroke-width:1.6px}
+  .hud .sc-vp .ico svg{width:13px;height:13px}
+  .hud .sc-goal{font-size:7.5px;margin:2px 0 0 -1px}
   .hud .vp-track{display:none}
 
-  .hud .sc-awards{padding:3px 5px 4px;gap:2px}
-  .hud .aw-row{gap:4px}
-  .hud .aw-ico svg{width:14px;height:14px}
-  .hud .aw-body{flex-direction:row;align-items:center;gap:4px}
-  .hud .aw-lab,.hud .aw-holder,.hud .aw-need{display:none}
-  .hud .aw-top,.hud .aw-bot{gap:3px}
-  /* The full-size line stacks the leader's figure ABOVE your own, which laid
-     out side by side reads back to front: "— 1", the number to beat and then
-     yours, with the chevron dangling off the end pointing at nothing. Swap
-     them. The DOM order is right for the two-line layout and stays as it is. */
-  .hud .aw-top{order:2}
-  .hud .aw-bot{order:1}
-  /* Yours, then the number to beat, with a chevron between them. */
-  .hud .aw-mine{font-size:11px;letter-spacing:0;color:#eaf3ff;opacity:1;gap:0}
-  .hud .aw-you{display:none}
-  .hud .aw-mine::after{content:'\203A';margin-left:4px;opacity:.5}
-  .hud .aw-size{font-size:12px;margin-left:0}
+  /* Two chips in a row, not two lines in a column. */
+  .hud .sc-awards{flex-direction:row;gap:5px;padding:1px 6px 4px}
+  .hud .aw-row{gap:3px}
+  .hud .aw-ico svg{width:12px;height:12px}
+  .hud .aw-body{flex-direction:row;align-items:center;gap:3px}
+  .hud .aw-lab,.hud .aw-holder,.hud .aw-need,.hud .aw-you{display:none}
+  /* The full-size layout stacks the leader's figure ABOVE your own, which read
+     side by side is back to front — "— 1", the number to beat and then yours,
+     with the chevron dangling off the end pointing at nothing. Swap them. The
+     DOM order is right for the two-line version and is untouched. */
+  .hud .aw-top{order:2;gap:0}
+  .hud .aw-bot{order:1;gap:0}
+  .hud .aw-mine{font-size:10.5px;letter-spacing:0;color:#eaf3ff;opacity:1;
+    margin-left:0}
+  .hud .aw-mine::after{content:'\203A';margin:0 2px;opacity:.45;font-weight:800}
+  .hud .aw-size{font-size:11px;margin-left:0}
   .hud .aw-row.ours .aw-mine{color:var(--gold-l,#ffe79a)}
+
+  /* The clock is the same story: a chip that says 2:41 does not need to be
+     bigger than the score next to it. */
+  .hud .timechip{padding:3px 7px 4px;gap:4px;border-radius:9px}
+  .hud .timechip b{font-size:11px}
+  .hud .tl-row{gap:6px}
 
   .hud .resbar{height:44px;padding:0 3px}
   .hud .res{padding:0 5px 7px;gap:4px}

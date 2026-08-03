@@ -59,7 +59,16 @@ html,body{
    fallback for engines without `dvh`. */
 #app{
   position:fixed;left:0;top:0;right:0;
+  /* Three answers, worst first. `100vh` on a phone is the URL-BAR-HIDDEN
+     height, so on any engine without `dvh` this box is 60-90px taller than the
+     page you can actually see — the bottom row of the HUD goes under the fold,
+     the splash's loading bar goes with it, and the canvas gets stretched to
+     fill a box the renderer never measured. `--vh` is published by main.js
+     from `visualViewport.height`, which is the only number that is right while
+     a URL bar is sliding; `dvh` is the modern equivalent and wins where it
+     exists. */
   height:100vh;
+  height:calc(var(--vh,1vh) * 100);
   height:100dvh;
   overflow:hidden;touch-action:none;
 }
@@ -135,7 +144,15 @@ html,body{
   color:var(--fg,#3a2208);
   font:800 13px/1 var(--ff);letter-spacing:.10em;text-transform:uppercase;
   text-shadow:0 1px 0 rgba(255,255,255,.42);
-  cursor:pointer;touch-action:manipulation;
+  cursor:pointer;
+  /* `manipulation` still permits PINCH-ZOOM, and the build cards and the
+     action rail are the two things a thumb is most often near. Two fingers
+     landing on or beside one was a browser page-zoom — which survives the
+     reload that RESTART does, which is why the game came back zoomed in and
+     the loading screen came back with the browser's bar over it. None of
+     these controls needs a browser default: every one is driven by
+     pointerdown through ui/dom.js. */
+  touch-action:none;
   transition:transform .09s ease,box-shadow .09s ease,filter .14s ease,opacity .14s ease;
 }
 .btn:active,.btn.press{
@@ -168,7 +185,7 @@ html,body{
   background:radial-gradient(circle at 38% 26%,var(--f1,#ffe79a),var(--f2,#ffc93c) 52%,var(--f3,#e0a41c) 100%);
   box-shadow:0 5px 0 var(--lip,#a8741a),0 9px 16px rgba(0,0,0,.44),
              inset 0 3px 0 rgba(255,255,255,.55),inset 0 -6px 10px rgba(0,0,0,.18);
-  color:#3a2208;cursor:pointer;touch-action:manipulation;
+  color:#3a2208;cursor:pointer;touch-action:none;
   transition:transform .09s ease,box-shadow .09s ease,filter .14s;
 }
 .cbtn:active{transform:translateY(4px);

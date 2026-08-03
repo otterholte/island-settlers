@@ -383,7 +383,11 @@ export function createDraft(state, game, deps) {
         if (setupPlaceSettlement(state, pid, iid)) { ok = true; placed = iid; break; }
       }
       if (ok) {
-        announce(`${p.name} claims ${placeName(placed)}`, p.color.css);
+        /* NOT ANNOUNCED. "Maya claims the northern pasture" flashed across the
+           middle of the board six times in forty seconds, over the board it
+           was describing — "commentary no one cares about, and it goes by so
+           fast that it's just distracting". The piece appearing on the map IS
+           the announcement, and the pip strip says whose turn is next. */
         sfx('build');
         cam.shake(0.14);
         flourish(placed, p);
@@ -461,7 +465,7 @@ export function createDraft(state, game, deps) {
     const ok = setupPlaceSettlement(state, 0, iid);
     if (!ok) return false;
     const p = state.players[0];
-    announce(`You claim ${placeName(iid)}`, p.color.css);
+    // Your own pick is not narrated either: you just made it.
     sfx('build');
     flourish(iid, p);
     // Same board, same camera — only the caption changes while the road beat

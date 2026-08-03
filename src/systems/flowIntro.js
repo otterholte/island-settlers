@@ -680,6 +680,39 @@ export function buildIntro(state, onBegin) {
   const iOS = typeof navigator !== 'undefined'
     && /iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
 
+  /**
+   * Is this a device with a home screen to add anything to?
+   *
+   *   "Know if you're on mobile or desktop. If you're not on mobile — anything
+   *    larger than an iPad — don't show the add to homescreen button."
+   *
+   * Three questions, and it has to be all three rather than a user-agent
+   * string, because a Chromebook, a touchscreen laptop and an iPad Pro in
+   * landscape are all "touch device with a big screen" and only one of them
+   * has a home screen.
+   *
+   *   - A coarse pointer and no hover: a finger, not a mouse. Desktop Chrome
+   *     with a touchscreen still reports `hover: hover`.
+   *   - `maxTouchPoints`, as the fallback for engines with no pointer media
+   *     queries.
+   *   - And the size cap the request names. A 12.9" iPad Pro is 1366 CSS px on
+   *     its long edge, so 1400 is "an iPad or smaller" with a little room, and
+   *     it is measured on the LONG edge because this game is landscape-locked
+   *     and every phone is wide here.
+   */
+  const IPAD_MAX = 1400;
+  function handheld() {
+    const nav = typeof navigator !== 'undefined' ? navigator : null;
+    const mm = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
+    const coarse = mm ? mm('(pointer: coarse)').matches : false;
+    const noHover = mm ? mm('(hover: none)').matches : false;
+    const touch = !!(nav && (nav.maxTouchPoints > 0 || 'ontouchstart' in globalThis));
+    const w = globalThis.innerWidth || 0;
+    const h = globalThis.innerHeight || 0;
+    const long = Math.max(w, h);
+    return (coarse || noHover || touch) && long > 0 && long <= IPAD_MAX;
+  }
+
   const installLab = el('b', { text: 'Add to Home Screen' });
   const installSub = el('span', {
     class: 'mf-t-sub',
@@ -701,7 +734,7 @@ export function buildIntro(state, onBegin) {
 
   function paintInstall() {
     const box = globalThis.__INSTALL__ || null;
-    const can = !standalone() && (iOS || !!(box && box.evt));
+    const can = handheld() && !standalone() && (iOS || !!(box && box.evt));
     installBtn.classList.toggle('hid', !can);
   }
 
@@ -719,6 +752,9 @@ export function buildIntro(state, onBegin) {
 
   if (typeof globalThis.addEventListener === 'function') {
     globalThis.addEventListener('is-installable', paintInstall);
+    // A laptop that gets narrowed, or a tablet that rotates: re-ask rather
+    // than deciding once at boot.
+    globalThis.addEventListener('resize', paintInstall);
     globalThis.addEventListener('appinstalled', () => {
       if (globalThis.__INSTALL__) globalThis.__INSTALL__.evt = null;
       paintInstall();

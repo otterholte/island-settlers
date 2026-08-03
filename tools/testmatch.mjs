@@ -1694,11 +1694,22 @@ await test(18, 'Interface is usable at 667x375 and 960x444', async () => {
       // legitimately invisible. This check is about controls and layout being
       // reachable; a scrap of paper on its way down is neither.
       const decorative = n => !!(n.closest && n.closest('.ew-paper'));
+      /* AN ELEMENT MID-ANIMATION IS NOT A LAYOUT BUG.
+         Half the chrome in this game arrives by sliding in from off screen —
+         the victory banner drops from -64px, the build rail slides up from
+         +26px — so a capture that lands inside those 600ms photographs a
+         perfectly correct element outside the viewport and calls it broken.
+         What this check is for is where things COME TO REST. */
+      const moving = n => {
+        if (typeof n.getAnimations !== 'function') return false;
+        return n.getAnimations().some(a => a.playState === 'running');
+      };
       for (const n of document.querySelectorAll('#ui *')){
         const b=n.getBoundingClientRect();
         if (b.width<2||b.height<2) continue;
         if (!shown(n)) continue;
         if (decorative(n)) continue;
+        if (moving(n) || (n.parentElement && moving(n.parentElement))) continue;
         if (b.right>innerWidth+2||b.bottom>innerHeight+2||b.left<-2||b.top<-2)
           off.push({cls:String(n.className).slice(0,40),
             r:[Math.round(b.left),Math.round(b.top),Math.round(b.right),Math.round(b.bottom)]});

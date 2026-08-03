@@ -7,14 +7,26 @@
  * has to come from somewhere. In order of precedence:
  *
  *   1. ?server=wss://host/ws        in the URL — for testing a branch
- *   2. what the player typed        stored in localStorage, set from the
- *                                   friends screen when the default fails
- *   3. DEFAULT_SERVER below         edit this once after deploying
- *   4. this page's own origin       which is right whenever the server is
+ *   2. DEFAULT_SERVER below         edit this once after deploying
+ *   3. this page's own origin       which is right whenever the server is
  *                                   serving the game too (STATIC=1)
  *
- * The fourth case is what makes `STATIC=1 node server/index.mjs` work with no
+ * The third case is what makes `STATIC=1 node server/index.mjs` work with no
  * configuration at all, which is how you should try this locally.
+ *
+ * THERE IS NO LONGER A BOX TO TYPE ONE INTO.
+ *
+ *   "Remove the SERVER button entirely, the server should always be set,
+ *    there's no reason anyone would use a server other than the online one we
+ *    already have."
+ *
+ * So `savedServer`/`setServer` and the localStorage key behind them are gone.
+ * The query parameter stays, because pointing one tab at a test deployment is
+ * a thing a developer does and it costs a URL rather than a control on a
+ * screen every player sees. A stale address saved by an older build is
+ * deliberately ignored rather than migrated — there is no way to clear it any
+ * more, so honouring it would strand somebody on a server that no longer
+ * exists with no way back.
  *
  * Owner: net agent.
  */
@@ -23,10 +35,9 @@
  * THE LIVE SERVER.
  *
  * The websocket address is the deployment's https hostname with `wss://` in
- * front and `/ws` on the end. Change this line if the server ever moves; the
- * friends screen also has a box to type an address into, which overrides it
- * per browser and is how you would point one tab at a test deployment without
- * touching the build.
+ * front and `/ws` on the end. Change this line if the server ever moves; a
+ * `?server=` query parameter overrides it for one tab, which is how you would
+ * point at a test deployment without touching the build.
  *
  * Left empty, the game falls back to this page's own origin — which is what
  * makes `STATIC=1 node server/index.mjs` work locally with no configuration.
@@ -127,7 +138,6 @@ export function serverCandidates() {
   const out = [];
   const push = u => { const n = normalizeServer(u); if (n && !out.includes(n)) out.push(n); };
   push(fromQuery());          // an explicit ?server= always wins
-  push(savedServer());        // then whatever this browser was told to use
   if (servedLocally()) {
     push(fromOrigin());       // the page came off this machine; the server may be here
     push(DEFAULT_SERVER);
@@ -143,20 +153,13 @@ export function serverUrl() {
   return serverCandidates()[0] || null;
 }
 
-export function savedServer() {
+/** Clear a server address saved by an older build. There is no longer any way
+ *  to set one, so leaving it behind would strand somebody on a dead host with
+ *  no control to fix it — see the note at the top of this file. */
+(function forgetOldServer() {
   const s = store();
-  try { return (s && s.getItem(STORE_KEY)) || ''; } catch (e) { return ''; }
-}
-
-export function setServer(input) {
-  const url = normalizeServer(input);
-  const s = store();
-  try {
-    if (!url) { s && s.removeItem(STORE_KEY); return null; }
-    s && s.setItem(STORE_KEY, url);
-  } catch (e) { /* nothing to store into; the session still works */ }
-  return url;
-}
+  try { s && s.removeItem(STORE_KEY); } catch (e) { /* nothing to clear */ }
+})();
 
 /** True when there is nowhere at all to try — a page opened from a file://
  *  with no DEFAULT_SERVER compiled in. Only then is the address box the first
@@ -166,6 +169,6 @@ export function serverUnknown() {
 }
 
 export default {
-  DEFAULT_SERVER, serverUrl, serverCandidates, savedServer, setServer,
+  DEFAULT_SERVER, serverUrl, serverCandidates,
   normalizeServer, serverUnknown
 };

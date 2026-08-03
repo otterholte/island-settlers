@@ -76,10 +76,10 @@ const DRAFT_CSS = `
 /* The draft narration lives in this plate, and the board's height is measured
    off its bottom edge — so a headline that wraps to two lines shrinks the map.
    Both lines are capped and clipped to one line each. */
-.ov .ov-title{max-width:min(46vw,360px);text-align:center;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ov .ov-hint{max-width:min(50vw,400px);text-align:center;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Read by a screen reader, never painted. See the .ov-say note in overview.js
+   for why the plate these two used to live in is gone. */
+.ov .ov-say{position:absolute;width:1px;height:1px;overflow:hidden;
+  clip-path:inset(50%);white-space:nowrap;pointer-events:none}
 .ov .ov-dhead{font:800 8.5px/1 var(--ff);letter-spacing:.22em;text-transform:uppercase;
   color:rgba(255,231,154,.86);text-align:center;padding:1px 0 3px}
 .ov .ov-dsub{font:800 10.5px/1.15 var(--ff);letter-spacing:.09em;text-transform:uppercase;
@@ -113,10 +113,6 @@ const DRAFT_CSS = `
   box-shadow:0 0 0 2px rgba(255,201,60,.6);animation:ovNow 1.1s ease-in-out infinite}
 @keyframes ovNow{0%,100%{box-shadow:0 0 0 2px rgba(255,201,60,.6)}
   50%{box-shadow:0 0 0 3px rgba(255,201,60,1),0 0 12px rgba(255,201,60,.8)}}
-.ov .ov-dnote{margin-top:7px;padding:6px 8px 7px;border-radius:9px;
-  background:rgba(0,0,0,.34);box-shadow:inset 0 1px 0 rgba(255,255,255,.1);
-  font:700 9.5px/1.35 var(--ff);letter-spacing:.05em;
-  color:rgba(232,242,252,.92);text-align:center}
 .ov .ov-dtag{flex:0 0 auto;font:800 7.5px/1 var(--ff);letter-spacing:.14em;
   text-transform:uppercase;color:#3a2208;padding:3px 5px 4px;border-radius:6px;
   background:linear-gradient(180deg,#ffe79a,#ffc93c)}
@@ -141,20 +137,30 @@ const DRAFT_CSS = `
  *
  * The rail is still one tap away and still says everything it always did.
  */
-.ov .ov-strip{display:flex;align-items:center;gap:7px;margin-top:5px}
-.ov .ov-pips{display:flex;align-items:center;gap:5px}
-.ov .ov-pip{position:relative;display:flex;align-items:center;gap:3px;
-  padding:3px 5px 3px 4px;border-radius:9px;line-height:0;
+/* A column against the right edge, vertically centred: one pip per seat and
+   the key that opens the rail. Off the board, out of the way, and the only
+   thing between the player and the whole island. */
+.ov .ov-strip{position:absolute;right:var(--gR);top:50%;
+  transform:translateY(-50%);z-index:6;
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  padding:6px 5px;border-radius:13px;
+  background:linear-gradient(180deg,rgba(14,36,64,.86),rgba(6,18,36,.9));
+  border:1.5px solid rgba(255,201,60,.26);
+  box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.ov .ov-strip.hid{display:none}
+.ov .ov-pips{display:flex;flex-direction:column;align-items:center;gap:5px}
+.ov .ov-pip{position:relative;display:flex;flex-direction:column;align-items:center;
+  gap:1px;padding:3px 4px;border-radius:9px;line-height:0;
   background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);
   opacity:.5;transition:opacity .18s ease,box-shadow .18s ease,transform .18s ease}
 .ov .ov-pip.done{opacity:.78}
 .ov .ov-pip.me{opacity:.8;box-shadow:inset 0 0 0 1.5px rgba(255,201,60,.6)}
 /* Whose turn it is, and the whole point of the strip. Same gold pulse the rail
    pips use, so the two readings of the draft never disagree. */
-.ov .ov-pip.now{opacity:1;transform:translateY(-1px);
+.ov .ov-pip.now{opacity:1;transform:scale(1.06);
   background:rgba(255,201,60,.2);
   animation:ovNow 1.1s ease-in-out infinite}
-.ov .ov-pip b{font:800 10px/1 var(--ff);color:#eaf2fb;
+.ov .ov-pip b{font:800 9px/1 var(--ff);color:#eaf2fb;
   text-shadow:0 1px 2px rgba(0,0,0,.7)}
 .ov .ov-pip.me b{color:var(--gold-l,#ffe79a)}
 .ov .ov-pip svg{display:block}
@@ -173,8 +179,8 @@ const DRAFT_CSS = `
   .ov .ov-dr{padding:4px 5px 4px 10px}
   .ov .ov-dn{font-size:10.5px}
   .ov .ov-dp b{width:13px;height:13px;font-size:8px}
-  .ov .ov-strip{margin-top:4px;gap:6px}
-  .ov .ov-pip{padding:2px 4px 2px 3px}
+  .ov .ov-strip{gap:5px;padding:5px 4px}
+  .ov .ov-pip{padding:2px 3px}
 }
 `;
 
@@ -210,13 +216,32 @@ export function createOverview(root, state, game) {
   const rail = el('div', { class: 'ov-rail plate lift' });
 
   /* The strip that replaces the rail on a phone, and the key that brings the
-     rail back. Both live inside the title plate — see the .ov-strip note in
-     DRAFT_CSS for why that is the right parent and not just a convenient one. */
+     rail back. They live in their own column against the right edge — see the
+     .ov-strip note in DRAFT_CSS for why they are no longer over the board. */
   const pips = el('div', { class: 'ov-pips' });
   const railKey = button('ov-rk', {
     'aria-label': 'Show the player list',
     on: { click: () => setRail(!railOpen) }
   }, el('span', { html: LIST_GLYPH }));
+  /* THE STRIP LIVES ON THE RIGHT EDGE, NOT OVER THE BOARD.
+   *
+   *   "I don't like that the sections on the top and bottom of the screen are
+   *    covering valuable real estate of where I want to see visually the map.
+   *    Can we move them... can the top and bottom middle boxes be somewhere
+   *    else, like both minimal on the right side of the screen, but opens into
+   *    a full sidebar with the expand button. I definitely don't need the
+   *    boxes and the sidebar ever visible at the same time though, it's
+   *    redundant."
+   *
+   * So: a narrow column against the right edge holding one coloured pip per
+   * seat and the key that opens the rail — and the moment the rail is open the
+   * column hides, because the rail says everything the pips do and more. Two
+   * states, never both.
+   *
+   * The title plate that used to sit across the top centre is gone with it.
+   * The board's top padding was measured off that plate's bottom edge, so
+   * removing it is also most of "the map can start more zoomed in": there is
+   * simply more frame now. */
   const strip = el('div', { class: 'ov-strip' }, pips, railKey);
 
   const selLabel = el('span', { class: 'ov-sel', text: 'Pick a spot' });
@@ -226,10 +251,24 @@ export function createOverview(root, state, game) {
     el('span', { class: 'sb-lab', text: 'Confirm' }));
   const bar = el('div', { class: 'ov-bar plate lift hid' }, cancelBtn, selLabel, confirmBtn);
 
-  const wrap = el('div', { class: 'ov hid', 'data-ui': '' },
-    cv,
-    el('div', { class: 'ov-top plate' }, titleEl, hintEl, strip),
-    closeBtn, rail, bar);
+  /* NO TITLE PLATE AND NO SUB-LINE.
+   *
+   *   "The map when players are placing settlements does NOT need subtitles
+   *    (this goes for the computer version too). It's text no one is reading
+   *    and commentary no one cares about, and it goes by so fast that it's just
+   *    distracting."
+   *
+   * Both are gone from the layout. `titleEl` and `hintEl` are still written to
+   * — by this file, matchflow.js and netmatch.js, all of which have a name for
+   * what the panel is doing — and both are kept in the tree, off screen, as the
+   * panel's accessible name and description. The plate they used to sit in was
+   * a bar across the top centre of the board, which is the third of the screen
+   * a player most wants to see. The rail says whose turn it is; the pips say it
+   * without opening anything. */
+  const label = el('div', { class: 'ov-say' }, titleEl, hintEl);
+  const wrap = el('div', {
+    class: 'ov hid', 'data-ui': '', role: 'dialog', 'aria-label': 'Island map'
+  }, cv, label, strip, closeBtn, rail, bar);
   root.appendChild(wrap);
 
   const ctx = (cv.getContext && cv.getContext('2d')) || null;
@@ -245,7 +284,7 @@ export function createOverview(root, state, game) {
   let closeTimer = 0;
   let railRows = [];
   let railT = 0;
-  let lastW = 0, lastH = 0;
+  let lastW = 0, lastH = 0, lastDpr = 0;
 
   /* The rail starts CLOSED on a phone and open on a desktop, and once the
      player has touched the key their answer stands for the rest of the match.
@@ -259,7 +298,12 @@ export function createOverview(root, state, game) {
   let railOpen = !compact();
   let railChosen = false;
 
-  const proj = { s: 1, ox: 0, oy: 0, w: 0, h: 0, frame: { x: 0, y: 0, w: 0, h: 0 } };
+  const proj = {
+    s: 1, ox: 0, oy: 0, w: 0, h: 0,
+    /** Vertical squash, 1 flat. Owned by ovpan.js's two-finger tilt. */
+    ky: 1,
+    frame: { x: 0, y: 0, w: 0, h: 0 }
+  };
 
   const paint = ctx ? createPainter(ctx, proj) : null;
   const PX = x => x * proj.s + proj.ox;
@@ -289,14 +333,14 @@ export function createOverview(root, state, game) {
      blitted through the difference between this and the live one — one
      transformed drawImage, not nineteen gradient hexes a frame — and it re-bakes
      sharp the moment the gesture ends. */
-  let bgS = 1, bgOX = 0, bgOY = 0;
+  let bgS = 1, bgOX = 0, bgOY = 0, bgKY = 1, bgTilt = false;
 
   function boardKey() {
     let unlocked = 0;
     for (const p of state.players) unlocked += p.ports.size;
     return `${cv.width}x${cv.height}|${proj.s.toFixed(3)}|${proj.ox.toFixed(1)}|` +
       `${proj.oy.toFixed(1)}|${state.buildings.size}|${state.roadOwner.size}|` +
-      `${state.robberTile}|${unlocked}`;
+      `${state.robberTile}|${unlocked}|${(proj.ky || 1).toFixed(3)}`;
   }
 
   function bakeBoard() {
@@ -307,7 +351,17 @@ export function createOverview(root, state, game) {
     const dpr = cv.width / Math.max(1, proj.w);
     bgx.setTransform(dpr, 0, 0, dpr, 0, 0);
     bgx.clearRect(0, 0, proj.w, proj.h);
+    /* THE BAKE IS TILTED, NOT THE BLIT.
+     *
+     * The offscreen canvas is exactly the size of the visible one, and a
+     * tilted board is fitted at a LARGER world scale — so drawn flat it is
+     * half as tall again as the canvas it is being baked into, and the bottom
+     * two rows of hexes are clipped away before anything is blitted. Squashing
+     * on the way IN is the only order that works. */
+    // The water is not part of the board and is painted flat, edge to edge,
+    // so the tilted bake has no unfilled band above and below it.
     bgPaint.drawSea();
+    bgTilt = tiltIn(bgx);
     bgPaint.drawShelf();
     bgPaint.drawTiles();
     bgPaint.drawTokens();
@@ -315,7 +369,8 @@ export function createOverview(root, state, game) {
     bgPaint.drawRoads(state);
     bgPaint.drawBuildings(state);
     bgPaint.drawRobber(state);
-    bgS = proj.s; bgOX = proj.ox; bgOY = proj.oy;
+    if (bgTilt) bgx.restore();
+    bgS = proj.s; bgOX = proj.ox; bgOY = proj.oy; bgKY = proj.ky;
   }
 
   /* ------------------------------------------------------- rail visibility
@@ -337,6 +392,8 @@ export function createOverview(root, state, game) {
 
   function applyRail() {
     toggle(rail, 'hid', !railOpen);
+    // Never both. The strip is the rail, collapsed.
+    toggle(strip, 'hid', railOpen);
     toggle(railKey, 'on', railOpen);
     railKey.setAttribute('aria-label', railOpen ? 'Hide the player list' : 'Show the player list');
     railKey.setAttribute('aria-expanded', railOpen ? 'true' : 'false');
@@ -483,11 +540,15 @@ export function createOverview(root, state, game) {
       }));
     }
 
-    // The live commentary. ui.css hides `.ov-hint` entirely at 375px tall to
-    // buy the board height back, so the sub-line that says what is actually
-    // happening — "Eyeing the southern grainfields", "You are up next" — has
-    // to live somewhere that survives the short viewport. This is it.
-    if (d.note) rail.appendChild(el('div', { class: 'ov-dnote', text: d.note }));
+    /* THE LIVE COMMENTARY IS GONE.
+     *
+     *   "It's text no one is reading and commentary no one cares about, and it
+     *    goes by so fast that it's just distracting."
+     *
+     * It said things like "Eyeing the southern grainfields" and changed every
+     * couple of seconds through a draft that takes under a minute. The rail
+     * above it already names every seat, marks the one picking, and numbers
+     * the eight slots — which is the information; that was the flavour. */
   }
 
   function refreshRail() {
@@ -513,12 +574,16 @@ export function createOverview(root, state, game) {
     const w = cv.clientWidth || wrap.clientWidth || 800;
     const h = cv.clientHeight || wrap.clientHeight || 400;
     proj.w = w; proj.h = h;
-    if (ctx && (w !== lastW || h !== lastH)) {
-      const dpr = clamp(globalThis.devicePixelRatio || 1, 1, 2);
+    // The DPR is part of the cache key, not just the payload: a browser zoom
+    // or a window dragged between a Retina and a non-Retina display changes it
+    // without changing the CSS size, and the backing store then keeps the old
+    // scale until something else moves.
+    const dpr = clamp(globalThis.devicePixelRatio || 1, 1, 2);
+    if (ctx && (w !== lastW || h !== lastH || dpr !== lastDpr)) {
       cv.width = Math.max(1, Math.round(w * dpr));
       cv.height = Math.max(1, Math.round(h * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      lastW = w; lastH = h;
+      lastW = w; lastH = h; lastDpr = dpr;
     }
     // Matches the .ov-rail widths in ui.css (186px, 158px compact, 126px tiny).
     //
@@ -532,11 +597,20 @@ export function createOverview(root, state, game) {
     // the pip strip carries the reading. Nothing is lost by that trade, which
     // is why the phone default is closed.
     const railW = railOpen ? (w > 760 ? 186 : (w > 560 ? 158 : 126)) : 0;
+    /* Closed, the rail costs nothing but the pip column still stands on the
+       right edge, and the board must not run under it. Measured rather than
+       guessed — it is four pips tall and its width depends on whether the
+       scores are showing. */
+    let stripW = 0;
+    if (!railOpen && strip && strip.getBoundingClientRect) {
+      const sr = strip.getBoundingClientRect();
+      if (sr.width) stripW = Math.round(sr.width) + 12;
+    }
 
     // The framed map area: everything the board may occupy. The rail sits
     // outside it, so the frame never runs underneath the player list.
     const fx = 6;
-    const fr = railW ? railW + 26 : 6;
+    const fr = railW ? railW + 26 : Math.max(6, stripW);
     const f = proj.frame;
     f.x = fx; f.y = 6;
     f.w = Math.max(80, w - fx - fr);
@@ -547,16 +621,20 @@ export function createOverview(root, state, game) {
     // The two paddings are read off the real elements rather than guessed:
     // the dock tags hang off the coast and were sliding under the title plate
     // at 375px tall, where a guessed constant is always wrong by a few pixels.
-    let padT = 34;
-    let padB = mode === 'view' ? 14 : 54;
-    const padX = 16;
+    /* THE BOARD STARTS BIGGER, because there is less on top of it.
+     *
+     *   "That way the map can start more zoomed in."
+     *
+     * `padT` used to be measured off the bottom edge of the title plate, which
+     * meant a two-line headline shrank the island. There is no plate now, so
+     * the only thing to clear at the top is the close key in the corner — and
+     * that is a corner, not a band. 12 top, 10 bottom in view mode, and the
+     * side padding halved: the same island, drawn about a fifth larger. */
+    let padT = 12;
+    let padB = mode === 'view' ? 10 : 54;
+    const padX = 8;
     if (cv.getBoundingClientRect) {
       const base = cv.getBoundingClientRect();
-      const top = wrap.querySelector('.ov-top');
-      if (top && top.getBoundingClientRect) {
-        const r = top.getBoundingClientRect();
-        if (r.height) padT = Math.max(padT, r.bottom - base.top + 8 - f.y);
-      }
       if (mode !== 'view' && bar.getBoundingClientRect) {
         const r = bar.getBoundingClientRect();
         if (r.height) padB = Math.max(padB, (f.y + f.h) - (r.top - base.top) + 8);
@@ -566,11 +644,16 @@ export function createOverview(root, state, game) {
     const availH = Math.max(60, f.h - padT - padB);
     // Just enough slack for the dock tags that hang off the coast — any more
     // and the board starts floating in dead blue again.
-    const bw = BOUNDS.width + HEX_SIZE * 1.35;
-    const bd = BOUNDS.depth + HEX_SIZE * 1.35;
+    const bw = BOUNDS.width + HEX_SIZE * 1.1;
+    const bd = BOUNDS.depth + HEX_SIZE * 1.1;
     // The fit-to-frame projection, unchanged — where the board sits with no
     // gesture on it. ovpan.js takes it from here and writes the live `proj`.
-    const s = Math.min(availW / bw, availH / bd);
+    /* Fit against the TILTED height. Squashing the board to 55% and then
+       still fitting it as if it were flat would waste exactly the space the
+       tilt was asked for — the whole point is to see more of the island, not
+       the same amount of it lower down. */
+    const ky = proj.ky || 1;
+    const s = Math.min(availW / bw, availH / (bd * ky));
     pan.apply({
       s,
       ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
@@ -605,13 +688,46 @@ export function createOverview(root, state, game) {
   }
 
 
+  /* THE TILT, APPLIED ONCE, HERE.
+   *
+   * Everything the painters draw goes through `proj`, so a vertical squash
+   * could have been folded into their projection helpers — at the cost of
+   * touching every hex vertex, token radius, dock and road slab in ovmap.js
+   * and hoping none of them was missed. One canvas transform about the middle
+   * of the frame does the same thing to all of it, atomically.
+   *
+   * The two things that must NOT be squashed bracket it: the sea (a flat fill
+   * that has to reach the frame's edges however far the board is tilted) is
+   * painted first, and the frame itself (a rounded rectangle, not part of the
+   * board) is painted after. */
+  /* Squashed about the BOARD's own centre, not the frame's. The fit in
+     `measure()` places the island's middle at a known y and sizes it to the
+     available height; squashing about any other line moves that middle and
+     the arithmetic stops being true, which is a board that overflows the
+     bottom of the frame by however far the two centres disagreed. */
+  const tiltCentre = () => proj.oy + BOUNDS.cz * proj.s;
+
+  function tiltIn(c) {
+    const ky = proj.ky || 1;
+    if (ky >= 0.999) return false;
+    const cy = tiltCentre();
+    c.save();
+    c.translate(0, cy);
+    c.scale(1, ky);
+    c.translate(0, -cy);
+    return true;
+  }
+
   function draw(pulse) {
     if (!ctx) return;
     measure();
+    ctx.clearRect(0, 0, proj.w, proj.h);
     if (bgx) {
-      // Re-bake when the board is still; ride the last bake while it moves.
-      if (!pan.gesturing || !bgKey) bakeBoard();
-      ctx.clearRect(0, 0, proj.w, proj.h);
+      /* Re-bake when the board is still, and ALWAYS when the tilt has moved:
+         the ride-along blit is a uniform scale, which cannot express a change
+         in the squash, and the tilt is the one gesture where the thing being
+         changed is what you are looking at. */
+      if (!pan.gesturing || !bgKey || bgKY !== proj.ky) bakeBoard();
       // Water first: once the board has been dragged the bake no longer
       // reaches the frame edge, and what it leaves behind is open ocean.
       paint.fillSea();
@@ -623,6 +739,7 @@ export function createOverview(root, state, game) {
       ctx.restore();
     } else {
       paint.drawSea();
+      const t = tiltIn(ctx);
       paint.drawShelf();
       paint.drawTiles();
       paint.drawTokens();
@@ -630,15 +747,30 @@ export function createOverview(root, state, game) {
       paint.drawRoads(state);
       paint.drawBuildings(state);
       paint.drawRobber(state);
+      if (t) ctx.restore();
     }
+    // The live layer rides the same squash as the board it sits on; the frame
+    // is not part of the board and stays a rectangle.
+    const tilted = tiltIn(ctx);
     const v = snapshot(pulse);
     tg.drawSpotlight(v);
     tg.drawTargets(v);
     paint.drawSettlers(state);
+    if (tilted) ctx.restore();
     paint.drawFrame(proj.frame);
   }
 
-  /* -------------------------------------------------------------- picking */
+  /* -------------------------------------------------------------- picking
+     Everything below works in FLAT board space, so a screen point has to come
+     back out of the tilt before it is compared with anything. One place, and
+     it is the inverse of `tiltIn`. */
+  function unTilt(py) {
+    const ky = proj.ky || 1;
+    if (ky >= 0.999) return py;
+    const cy = tiltCentre();
+    return (py - cy) / ky + cy;
+  }
+
   function pick(px, py) {
     if (!targets.length) return null;
     // >= 44px across at 667x375, and nearest-wins beyond that, so a fat finger
@@ -692,7 +824,7 @@ export function createOverview(root, state, game) {
     // A drag that moved the board is not a choice of corner.
     if (pan.moved) return;
     const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
-    const hit = pick(e.clientX - r.left, e.clientY - r.top);
+    const hit = pick(e.clientX - r.left, unTilt(e.clientY - r.top));
     if (hit === null || hit === undefined) return;
     if (hit === sel) { commit(); return; }
     select(hit);
@@ -704,7 +836,7 @@ export function createOverview(root, state, game) {
     cv.addEventListener('pointermove', e => {
       if (!openFlag || !targets.length) { hover = null; return; }
       const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
-      hover = pick(e.clientX - r.left, e.clientY - r.top);
+      hover = pick(e.clientX - r.left, unTilt(e.clientY - r.top));
     });
     cv.addEventListener('pointerleave', () => { hover = null; });
   }

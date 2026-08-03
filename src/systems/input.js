@@ -4,12 +4,11 @@
  *   createInput(domRoot) ->
  *     { stick:{x,y}, tapped, actionPressed, mapPressed, update() }
  *
- * Mobile-first: a virtual joystick parked in a fixed corner — the one
- * `core/options.js` names — which the thumb grabs from anywhere within reach
- * of it and which springs back to centre on release. The joystick lives in the
- * DOM (cheap, crisp, no draw calls) and is inserted BEFORE #ui at a lower
- * z-index so HUD panels always paint over it. Everything is
- * pointer-events:none except the knob itself.
+ * Mobile-first: an invisible virtual joystick. Press anywhere on the half of
+ * the screen `core/options.js` names and a ring appears under your thumb; let
+ * go and it fades. The joystick lives in the DOM (cheap, crisp, no draw calls)
+ * and is inserted BEFORE #ui at a lower z-index so HUD panels always paint
+ * over it. Everything is pointer-events:none except the knob itself.
  *
  * Keyboard fallback for desktop / headless testing:
  *   WASD + arrows -> stick, Space -> actionPressed, Tab -> mapPressed.
@@ -37,30 +36,33 @@
 import { stickSide, onOptionsChange } from '../core/options.js';
 
 /**
- * THE PAD IS A PLACE, NOT A GESTURE.
+ * THE STICK IS A GESTURE, AND IT IS INVISIBLE UNTIL YOU MAKE IT.
  *
- *   "Have there be an actual joystick on the right side of the screen in the
- *    bottom right corner, maybe actually right above the map, cards, build
- *    buttons. I have some players who only have a right hand."
+ *   "I kind of like how it operated more before, where it was just generally
+ *    the left side of the screen and no visible joystick — it felt more
+ *    natural moving around. Can we do something similar but keep my toggles
+ *    letting me choose which side each thing is on?"
  *
- * It used to be invisible: press anywhere in the left 45% of the screen and a
- * ring appeared under your thumb. That is elegant on a two-handed grip and
- * useless to somebody playing with one hand, because the hand holding the
- * phone is the hand that has to reach everything — so the controls have to be
- * in one corner, and you have to be able to find them without looking.
+ * So both are true at once, and they were never actually in tension.
  *
- * So the ring is always drawn, parked above the action buttons on whichever
- * side `core/options.js` says, and the touch zone is a generous circle around
- * it rather than half the screen. Sitting on a fixed pad also means the game
- * can put the buttons on the OTHER side for anyone who wants the old
- * two-handed split — see `buttonsSide`.
+ * The pass before this replaced the invisible zone with a fixed, always-drawn
+ * pad, because a one-handed player has to be able to find the control without
+ * looking. But "findable without looking" is exactly what a WHOLE HALF OF THE
+ * SCREEN already is — more so than a 130px circle — and the thing that made
+ * one-handed play impossible was never the stick being invisible. It was the
+ * stick and the buttons being welded to opposite sides.
+ *
+ * That is what `stickSide` and `buttonsSide` fix, and they still do. The zone
+ * moves to whichever half the player chose; the ring materialises under the
+ * thumb inside it, and the origin follows the finger the way it used to, which
+ * is what "felt more natural" is describing. Both settings survive.
+ *
+ * The zone stops short of the far edge so a thumb reaching for a build card on
+ * the other side never grabs the stick instead.
  */
+/** How much of the screen, from the chosen edge inward, is the stick's. */
+const ZONE = 0.46;
 const RING_R = 66;          // css px — ring radius
-/** How far from the pad's centre a touch still grabs the stick. */
-const PAD_REACH = RING_R + 74;
-/** Where the pad's centre sits, from its own corner, in css px. */
-const PAD_INSET_X = 92;
-const PAD_INSET_Y = 118;
 const MAX_R = 52;           // knob travel
 const DEAD = 0.16;          // fraction of MAX_R ignored
 const TAP_MOVE = 14;
@@ -87,11 +89,6 @@ const CSS = `
   background:conic-gradient(from -90deg,rgba(120,205,255,.0),rgba(120,205,255,.30),rgba(120,205,255,.0));
   filter:blur(6px);opacity:.85}
 #js-ring.on{opacity:1;transform:scale(1)}
-/* Resting. Still there, still findable without looking, but not competing with
-   the board for attention — the whole point of a fixed pad is that you do not
-   have to see it to use it. */
-#js-ring.idle{opacity:.42}
-#js-knob.idle{opacity:.62;transform:scale(.88)}
 #js-knob{position:absolute;left:0;top:0;width:60px;height:60px;margin:-30px 0 0 -30px;
   border-radius:50%;pointer-events:auto;
   background:radial-gradient(circle at 36% 28%,#ffffff,#dbecff 34%,#7db2ea 72%,#2f6bb0 100%);
@@ -165,9 +162,8 @@ export function createInput(domRoot) {
   let curX = 0, curY = 0;
   let touchStick = false;
 
-  /* Where the pad lives this frame. Recomputed on resize and whenever the
-     side changes, so nothing here caches a stale corner. */
-  let padX = 0, padY = 0;
+  /* Which half of the screen belongs to the stick. Recomputed on resize and
+     whenever the setting changes, so nothing here caches a stale side. */
   let side = 'right';
 
   let tapId = null, tapX = 0, tapY = 0, tapT = 0;
@@ -187,24 +183,14 @@ export function createInput(domRoot) {
     return { left: 0, top: 0, width: w, height: h };
   };
 
-  /** Park the pad in its corner and draw it resting. */
+  /** Re-read which half is the stick's. Nothing to draw — it is invisible. */
   function layoutPad() {
-    const r = rect();
     side = stickSide();
-    padX = side === 'left' ? PAD_INSET_X : r.width - PAD_INSET_X;
-    padY = r.height - PAD_INSET_Y;
-    if (!stickId) restPad();
   }
 
-  /** The idle state: ring in its corner, knob centred in it. */
-  function restPad() {
-    if (!ring || !knob) return;
-    ring.style.left = padX + 'px';
-    ring.style.top = padY + 'px';
-    knob.style.left = padX + 'px';
-    knob.style.top = padY + 'px';
-    ring.classList.add('on', 'idle');
-    knob.classList.add('on', 'idle');
+  /** Is this point inside the stick's half of the screen? */
+  function inZone(lx, w) {
+    return side === 'left' ? lx < w * ZONE : lx > w * (1 - ZONE);
   }
 
   function placeRing(x, y) {
@@ -220,26 +206,24 @@ export function createInput(domRoot) {
     knob.style.top = y + 'px';
     knob.classList.add('on');
   }
-  /** Let go: the knob springs back to the middle of the pad, which stays. */
+  /** Let go and it is gone again. */
   function hideStick() {
-    restPad();
+    if (ring) ring.classList.remove('on');
+    if (knob) knob.classList.remove('on');
   }
 
   /**
-   * Grab the stick. The origin is the PAD, not the finger — that is what makes
-   * it a fixed control: the same thumb position always means the same
-   * direction, whatever part of the pad you happened to land on.
+   * Grab the stick. The origin is WHERE THE THUMB LANDED, which is the whole
+   * feel of it: you never reach for a control, the control appears where your
+   * hand already was.
    */
   function beginStick(id, lx, ly) {
     stickId = id;
     touchStick = true;
-    originX = padX; originY = padY;
-    curX = padX; curY = padY;
-    if (ring) ring.classList.remove('idle');
-    if (knob) knob.classList.remove('idle');
-    placeRing(padX, padY);
-    placeKnob(padX, padY);
-    moveStick(lx, ly);
+    originX = lx; originY = ly;
+    curX = lx; curY = ly;
+    placeRing(lx, ly);
+    placeKnob(lx, ly);
     api.active = true;
   }
 
@@ -248,10 +232,13 @@ export function createInput(domRoot) {
     let dy = ly - originY;
     const m = Math.hypot(dx, dy);
     if (m > MAX_R) {
-      // The ORIGIN NO LONGER MOVES. It used to slide after the finger so the
-      // stick never felt pinned, which is right for a ring that materialised
-      // under your thumb and wrong for one drawn in a fixed place: the pad
-      // would walk out of its corner and never come back.
+      // Drag past the edge and the ORIGIN FOLLOWS, so the stick never feels
+      // pinned and a long swipe keeps steering instead of saturating in a
+      // direction the thumb has already left.
+      const k = (m - MAX_R) / m;
+      originX += dx * k;
+      originY += dy * k;
+      placeRing(originX, originY);
       dx = (dx / m) * MAX_R;
       dy = (dy / m) * MAX_R;
     }
@@ -286,9 +273,9 @@ export function createInput(domRoot) {
     const lx = ev.clientX - r.left;
     const ly = ev.clientY - r.top;
 
-    // Inside the pad's reach, this is the stick. Everywhere else it is a tap,
+    // On the stick's half, this is the stick. Everywhere else it is a tap,
     // which is how the camera and the world still get their gestures.
-    if (Math.hypot(lx - padX, ly - padY) <= PAD_REACH) {
+    if (inZone(lx, r.width)) {
       if (stickId !== null) return;             // multi-touch safe
       beginStick(ev.pointerId, lx, ly);
       if (ev.cancelable) ev.preventDefault();

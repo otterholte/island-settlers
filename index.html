@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover,interactive-widget=resizes-content" />
 <meta name="theme-color" content="#0b2a4a" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
@@ -228,6 +228,53 @@
      dev server on 5173 has no business holding a cache anyway. Registered with
      an explicit relative scope so the Pages subpath is the scope and not the
      domain root. Failure is silent by design: the game does not need it. */
+  /* NO PINCH-ZOOMING THE GAME.
+     `maximum-scale=1,user-scalable=no` above has been ignored by iOS Safari
+     since iOS 10, and by Chrome whenever Force-enable-zoom is on. WebKit's
+     gesture events are the guard that still works, and they have to be
+     cancelled at the document — every one of them is a two-finger pinch, and
+     the only two-finger gesture this game wants is on the board map's own
+     canvas, which handles its own pointer events and never reaches here as a
+     `gesture*`.
+
+     This is the fix for "after I play the game once and restart, the whole
+     game is too zoomed in": a page scale acquired mid-match survives the
+     reload that RESTART is, and comes back on the loading screen with the
+     browser's own bar over the top of it. */
+  /* `--vh` BEFORE ANYTHING ELSE PARSES.
+     The splash is on screen for a couple of seconds before main.js exists, and
+     it is bottom-anchored inside #app. On an engine with no `dvh`, #app falls
+     back to `100vh` — the URL-bar-hidden height — and the loading bar is off
+     the bottom of the page for the whole of that. Publishing the real height
+     here costs three lines and is what "I can't see the full loading bar when
+     the game is first starting up" was asking for. main.js keeps it updated
+     from then on. */
+  (function () {
+    var vv = window.visualViewport;
+    function setVh() {
+      var h = (vv && vv.height) || window.innerHeight || 0;
+      if (h > 0) document.documentElement.style.setProperty('--vh', (h / 100) + 'px');
+    }
+    setVh();
+    window.addEventListener('resize', setVh);
+    window.addEventListener('orientationchange', function () { setTimeout(setVh, 200); });
+    if (vv) { vv.addEventListener('resize', setVh); vv.addEventListener('scroll', setVh); }
+  })();
+
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (t) {
+    document.addEventListener(t, function (e) { e.preventDefault(); }, { passive: false });
+  });
+  /* A double-tap is the other way in on iOS. Anything the game wants a
+     double-tap for handles its own pointer events. */
+  (function () {
+    var last = 0;
+    document.addEventListener('touchend', function (e) {
+      var now = Date.now();
+      if (now - last <= 320 && e.cancelable) e.preventDefault();
+      last = now;
+    }, { passive: false });
+  })();
+
   /* Chrome fires `beforeinstallprompt` once, early — often before the module
      graph has finished parsing — and if nobody calls preventDefault it puts up
      its own mini-infobar and then never offers again. Catch it here, at the top
