@@ -13,8 +13,8 @@
  *    elements cover the map's edges."
  *
  * So the board now moves. One finger drags it, two fingers pinch it, a wheel or
- * the +/- keys zoom it about wherever the pointer is, and a FIT button puts it
- * back. The clamp is the promise: the CENTRE of the board is never allowed
+ * the +/- keys zoom it about wherever the pointer is, and 0 puts it back. The
+ * clamp is the promise: the CENTRE of the board is never allowed
  * outside the middle three quarters of the map frame, at any zoom, so the island
  * can be pushed far enough to get a dock out from under a panel and never far
  * enough to be lost off the edge of the screen.
@@ -36,10 +36,19 @@
  *    screen work all the time and exit the game back to the home screen even
  *    when other players or bots are choosing their spots in the draft."
  *
- * So the house now does what it looks like, fit-to-frame took a corner-brackets
- * glyph, and the map pad is the one control that is up in EVERY overview mode
+ * So the house now does what it looks like, and the map pad is the one control
+ * that is up in EVERY overview mode
  * including `draft-watch` — which is exactly the moment the quote is about, when
  * the board is locked and there is otherwise no way out of the match.
+ *
+ * There is no FIT key under the +/- any more:
+ *
+ *   "I don't know what the icon/button is below the plus and minus on the left
+ *    side of the screen for the map view, remove it."
+ *
+ * Which is the answer by itself — a key whose owner cannot tell what it does is
+ * not earning a third of a pad on a phone. Fit-to-frame is still one keystroke
+ * away on 0, and zooming all the way out lands in the same place.
  *
  * It arms on the first tap and leaves on the second, within ARM_MS. A single
  * stray tap on a 38px key should not throw away a twenty-minute match, and a
@@ -116,10 +125,6 @@ const P = (d, w = 2.3, c = '#ffe0a0') =>
 const GLYPH = {
   plus: SV(P('M12 5.6v12.8M5.6 12h12.8')),
   minus: SV(P('M5.6 12h12.8')),
-  /* Corner brackets, the universal "fit to frame". The house that used to sit
-     here is now the HOME key, one row up, and it leaves the match. */
-  fit: SV(P('M4.6 9V4.6H9M15 4.6h4.4V9M19.4 15v4.4H15M9 19.4H4.6V15')
-    + P('M9.4 9.4h5.2v5.2H9.4z', 1.7)),
   home: SV(P('M4.4 11.4L12 4.6l7.6 6.8', 2.3, '#ffd9cc')
     + P('M6.8 10v9.4h10.4V10', 2, '#ffd9cc')),
   /* Armed: a door with an arrow going out of it. No going back from here. */
@@ -180,9 +185,6 @@ export function createOvPan(cv, proj, opts = {}) {
     }
     pad.appendChild(key(GLYPH.plus, 'Zoom in', () => zoomAt(ZOOM_STEP)));
     pad.appendChild(key(GLYPH.minus, 'Zoom out', () => zoomAt(1 / ZOOM_STEP)));
-    const fit = key(GLYPH.fit, 'Fit the board', () => reset(true));
-    fit.className = 'ovz-fit';
-    pad.appendChild(fit);
     host.appendChild(pad);
 
     if (onLeave) {
@@ -293,10 +295,10 @@ export function createOvPan(cv, proj, opts = {}) {
   function layout() {
     if (!pad) return;
     const f = frame();
-    // Measured, not counted: the pad is three keys without a HOME key and four
-    // with one, and the compact breakpoint shrinks every key. 112 is the
-    // three-key height and only stands in when the pad has not been laid out.
-    const padH = pad.offsetHeight || 112;
+    // Measured, not counted: the pad is two keys without a HOME key and three
+    // with one, and the compact breakpoint shrinks every key. 78 is the
+    // two-key height and only stands in when the pad has not been laid out.
+    const padH = pad.offsetHeight || 78;
     const left = Math.round(f.x + 12);
     const top = Math.round(f.y + f.h / 2 - padH / 2);
     pad.style.left = left + 'px';

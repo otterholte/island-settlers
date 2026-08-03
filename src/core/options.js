@@ -49,7 +49,25 @@ const STORE_KEY = 'island-settlers.options';
 
 export const OPTION_DEFAULTS = Object.freeze({
   /** Knight cards, the Knight, and Largest Army with them. */
-  knights: true
+  knights: true,
+
+  /* ------------------------------------------------------- reach
+   *
+   *   "Have there be an actual joystick on the right side of the screen in the
+   *    bottom right corner, maybe actually right above the map, cards, build
+   *    buttons. I have some players who only have a right hand. Also in the
+   *    settings, give them the option to switch that."
+   *
+   * Two independent sides rather than one four-way preset. Both on the right is
+   * the default and is the one-handed layout; both on the left is its mirror;
+   * and setting them differently gives the two-handed split the game used to
+   * force on everybody. Four arrangements out of two switches, and neither
+   * switch needs a word of explanation.
+   *
+   * These are 'left' or 'right'. They live here rather than on `state` for the
+   * same reason `knights` does — see the note at the top of this file. */
+  stickSide: 'right',
+  buttonsSide: 'right'
 });
 
 const current = { ...OPTION_DEFAULTS };
@@ -124,6 +142,15 @@ export function onOptionsChange(fn) {
 /** Are Knight cards, the Knight and Largest Army in play this match? */
 export function knightsOn() { return current.knights !== false; }
 
+const side = v => (v === 'left' ? 'left' : 'right');
+export function stickSide() { return side(current.stickSide); }
+export function buttonsSide() { return side(current.buttonsSide); }
+export function setStickSide(v) { return setOption('stickSide', side(v)); }
+export function setButtonsSide(v) { return setOption('buttonsSide', side(v)); }
+
 export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
-export default { getOption, setOption, onOptionsChange, knightsOn, setKnights };
+export default {
+  getOption, setOption, onOptionsChange,
+  knightsOn, setKnights, stickSide, buttonsSide, setStickSide, setButtonsSide
+};

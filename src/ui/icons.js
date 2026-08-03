@@ -607,4 +607,29 @@ export function avatar(css, light, size = 32) {
     `</svg>`;
 }
 
-export default { ICONS, icon, iconEl, iconCount, resIcon, RES_ICON, hasIcon, avatar };
+/**
+ * The smallest thing that still reads as a person: a head and a pair of
+ * shoulders, filled with one player's colour and carrying nothing else.
+ *
+ *   "Maybe just show the little icons shaped like users (a minimal shoulders
+ *    and head icon) and each is the colour of the other user."
+ *
+ * `avatar()` above is the portrait — face, hair, eyes, a smile, two rings —
+ * and it is beautiful at 30px and mud at 16. This is the same idea drawn for
+ * the size the map strip actually needs, where the only thing that has to
+ * survive is WHICH COLOUR. The light shade is a hairline outline so a dark
+ * player still separates from the sea behind it.
+ */
+export function personPip(css, light, size = 18) {
+  const s = Math.round(size);
+  return `<svg class="svg-ico person" viewBox="0 0 24 24" width="${s}" height="${s}" ` +
+    `aria-hidden="true" focusable="false">` +
+    `<circle cx="12" cy="7.6" r="4.5" fill="${css}" stroke="${light}" stroke-width="1.3"/>` +
+    `<path d="M3.5 21.2c.5-5.2 4-7.9 8.5-7.9s8 2.7 8.5 7.9z" fill="${css}" ` +
+    `stroke="${light}" stroke-width="1.3" stroke-linejoin="round"/>` +
+    `</svg>`;
+}
+
+export default {
+  ICONS, icon, iconEl, iconCount, resIcon, RES_ICON, hasIcon, avatar, personPip
+};

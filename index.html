@@ -7,7 +7,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Settlers" />
+<meta name="application-name" content="Settlers" />
+<meta name="description" content="A real-time island settling race. Run, gather, build, and take the island before three rivals do." />
 <title>Island Settlers</title>
+<!-- Installable. "Maybe make it a PWA I can save to my homescreen so I don't
+     see the URL bar for a start." Every path here is RELATIVE, because the
+     game is served from a project subpath on GitHub Pages and an absolute
+     "/manifest.webmanifest" would point at the root of the domain. -->
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <link rel="stylesheet" href="./src/ui/ui.css" />
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
@@ -210,6 +220,40 @@
     } else {
       setInterval(watch, 120);
     }
+  })();
+  </script>
+  <script>
+  /* Register the worker, and only ever from a secure context — a plain-http
+     LAN address is exactly where a half-registered worker goes wrong, and the
+     dev server on 5173 has no business holding a cache anyway. Registered with
+     an explicit relative scope so the Pages subpath is the scope and not the
+     domain root. Failure is silent by design: the game does not need it. */
+  /* Chrome fires `beforeinstallprompt` once, early — often before the module
+     graph has finished parsing — and if nobody calls preventDefault it puts up
+     its own mini-infobar and then never offers again. Catch it here, at the top
+     of the document, and park it; the opening screen's ADD TO HOME SCREEN chip
+     reads it off the window and is the thing that finally calls prompt(). */
+  window.__INSTALL__ = { evt: null };
+  window.addEventListener('beforeinstallprompt', function (e) {
+    if (e.preventDefault) e.preventDefault();
+    window.__INSTALL__.evt = e;
+    try { window.dispatchEvent(new Event('is-installable')); } catch (err) { /* ok */ }
+  });
+
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var ok = location.protocol === 'https:'
+      || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (!ok) return;
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(function (reg) {
+          window.__PWA__ = { scope: reg.scope };
+          // A worker that is waiting is a worker holding yesterday's build.
+          if (reg.waiting) reg.waiting.postMessage('skip-waiting');
+        })
+        .catch(function () { /* offline play is a bonus, never a requirement */ });
+    });
   })();
   </script>
   <script type="module" src="./src/main.js"></script>

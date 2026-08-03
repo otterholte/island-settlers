@@ -10,6 +10,10 @@ interfaces so parallel work integrates without merge pain.
 - **Never** add an npm dependency or fetch a remote asset. No CDN, no
   downloaded textures/models, no webfonts. Every asset is procedural:
   geometry built in code, textures painted to an offscreen `<canvas>`.
+- The four home-screen icons under `icons/` are the only binary files in the
+  build, and they are not an exception to the rule above: `tools/mkicons.mjs`
+  draws them in code and encodes the PNGs with `node:zlib`. Change the art
+  there and re-run it; never hand-edit or import a PNG.
 - Target: **landscape mobile web**, 60fps on a mid-range phone. Budget
   ~130k triangles visible, ≤ 90 draw calls total. Use `InstancedMesh` for
   anything repeated (trees, sheep, rocks, wheat, road segments, villagers).

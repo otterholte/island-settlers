@@ -48,15 +48,41 @@ landscape. The game will prompt you to rotate if you are in portrait.
 - **Windows:** `ipconfig` â†’ the IPv4 address of your wi-fi adapter
 - **Linux:** `hostname -I | awk '{print $1}'`
 
+### Install it to the home screen
+
+The game is a PWA: `manifest.webmanifest` plus a network-first service worker
+in `sw.js`. Installed, it runs with no address bar and starts in landscape.
+
+- **Android / Chrome:** the opening screen shows an **ADD TO HOME SCREEN**
+  chip as soon as the browser considers the site installable. Tapping it is
+  the browser's own install prompt.
+- **iOS / Safari:** Share ▸ Add to Home Screen. Safari has no programmatic
+  install, so the chip there is a label pointing at that menu.
+
+Both need **https** (or `localhost`) — the worker is not registered over a
+plain-http LAN address on purpose, so the dev server never holds a cache.
+The worker always tries the network first: there is no build step and no
+content hashing in any filename, so a cache-first worker would pin whichever
+version of the game a player first opened, forever. Offline it serves the last
+version played instead of a browser error.
+
+Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
+
 ### Controls
 
 | | Touch | Keyboard |
 |---|---|---|
-| Move | Drag anywhere on the left of the screen â€” a floating joystick appears under your thumb | `W A S D` / arrows |
+| Move | A joystick pad sits in the bottom corner, above the action buttons â€” put a thumb on it and drag | `W A S D` / arrows |
 | Gather | Walk up to a tree, clay pit, sheep, wheat stand or ore seam and stop â€” gathering starts automatically | `Space` |
 | Board map | Tap **MAP** | `Tab` |
 | Build | Tap a build card, then tap a highlighted spot on the map and confirm | â€” |
 | Trade | Walk to the market or one of your unlocked docks, then tap the prompt | â€” |
+
+Both clusters are side-switchable, independently, under the gear: **Joystick
+Left/Right** and **Buttons Left/Right**. The default puts them together in the
+bottom right; splitting them across the two corners, or moving both to the
+left, are the other three arrangements. It exists because a one-handed player
+should not have to reach across the screen.
 
 ---
 

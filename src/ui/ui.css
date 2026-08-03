@@ -589,7 +589,11 @@
   /* The gear and the clock stay side by side — together they are narrower than
      the scoreboard under them, so there is nothing to stack out of the way. */
   .tl-row{flex-direction:row;align-items:center;gap:8px}
-  .pop{top:calc(var(--gT) + 104px)}
+  /* Pushed down to clear the scoreboard — so its height has to come off the
+     same 104px, or the last button in it sits below the fold on a 375-tall
+     phone with no scrollbar to say so. See the .pop note in ui-hud.css. */
+  .pop{top:calc(var(--gT) + 104px);
+    max-height:calc(100dvh - var(--gT) - var(--gB) - 112px)}
 
   .resbar{height:42px;padding:0 3px}
   .res{padding:0 5px;gap:4px}

@@ -281,6 +281,35 @@ if (STAGE === 'home') {
   console.log('  INTRO ' + JSON.stringify(await ev(MEASURE_INTRO)));
   await shot(`home-${TAG}`);
 
+  /* ADD TO HOME SCREEN, forced up.
+   *
+   * The chip is correctly invisible here: `beforeinstallprompt` only fires
+   * when the browser has decided the site is installable, and a headless
+   * shell on http://127.0.0.1 with no engagement history never decides that.
+   * So there is no capture in which it appears by itself, and the thing worth
+   * checking — that it fits beside the wordmark on a 667x375 phone and does
+   * not collide with the title or the tutorial key opposite it — has to be
+   * asked for. Shown, measured, hidden again. */
+  console.log('  INSTALL ' + JSON.stringify(await ev(`(()=>{
+    const b=document.querySelector('.mf-inst');
+    if(!b)return {chip:null};
+    const hiddenByDefault=b.classList.contains('hid');
+    b.classList.remove('hid');
+    const r=b.getBoundingClientRect();
+    const t=document.querySelector('.mf-tut').getBoundingClientRect();
+    const ti=document.querySelector('.mf-i-title').getBoundingClientRect();
+    const hit=(a,c)=>!(a.right<c.left||c.right<a.left||a.bottom<c.top||c.bottom<a.top);
+    const out={hiddenByDefault,
+      box:{x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)},
+      onScreen:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,
+      clearsTutorial:!hit(r,t), clearsTitle:!hit(r,ti),
+      label:(b.textContent||'').trim()};
+    return out;})()`)));
+  await shot(`home-install-${TAG}`);
+  await ev(`(()=>{const b=document.querySelector('.mf-inst');
+    if(b)b.classList.add('hid'); return 1})()`);
+
 /* The opening screen's second view. PLAY no longer starts a match — it opens
    MATCH SETUP, a panel over the same board, and BEGIN THE DRAFT is in there.
    This stage checks the panel fits and that the two views really do swap. */
@@ -751,6 +780,206 @@ if (STAGE === 'home') {
         w:Math.round(r.width),h:Math.round(r.height)}:null,
       chipOnScreen:r?(r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight):false};})()`)));
   await shot(`leavedraft-${TAG}`);
+
+/* ---------------------------------------------------------------- mobile
+ *
+ *   "On the draft, hide the draft order popup on the right side of the screen
+ *    so the game can be full screen... Then you can have a button that opens or
+ *    closes the full pick order popup if users want but it defaults to closed."
+ *
+ * Three things have to be true at once and only one of them is visible in a
+ * screenshot: the rail is DOWN, the strip is up and reading the right seat, and
+ * the board actually took the space back. The third is the one that quietly
+ * fails — hiding a panel and leaving its 158px reserved in the frame looks
+ * identical until you measure. So the frame is measured before and after, and
+ * the key is pressed with a real pointer at real coordinates (the `friends`
+ * note above says why `element.click()` is not evidence of anything).
+ */
+} else if (STAGE === 'mobile') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  for (let i = 0; i < 60; i++) {
+    if (await ev('window.__ISLAND__.state.phase') === 'draft') break;
+    await sleep(250);
+  }
+  await sleep(1200);
+
+  const READ = `(()=>{
+    const ov=window.__ISLAND__.game.overview;
+    const rail=document.querySelector('.ov-rail');
+    const strip=document.querySelector('.ov-strip');
+    const key=document.querySelector('.ov-rk');
+    const pips=[...document.querySelectorAll('.ov-pip')];
+    const R=n=>{if(!n)return null;const r=n.getBoundingClientRect();
+      return {x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)};};
+    const f=ov.panInfo.frame;
+    return {phase:window.__ISLAND__.state.phase,
+      railUp:!!(rail&&!rail.classList.contains('hid')),
+      frameW:f[2],
+      strip:R(strip), key:R(key),
+      pips:pips.length,
+      nowAt:pips.findIndex(p=>p.classList.contains('now')),
+      mine:pips.findIndex(p=>p.classList.contains('me')),
+      colours:pips.map(p=>p.style.getPropertyValue('--c')),
+      padKeys:document.querySelectorAll('.ovz b').length,
+      fitKeys:document.querySelectorAll('.ovz-fit').length};})()`;
+
+  const closed = await ev(READ);
+  console.log('  CLOSED ' + JSON.stringify(closed));
+  await shot(`mobile-draft-${TAG}`);
+
+  // Press the list key the way a thumb does.
+  if (closed.key) {
+    const kx = closed.key.x + Math.round(closed.key.w / 2);
+    const ky = closed.key.y + Math.round(closed.key.h / 2);
+    console.log('  ONTOP ' + JSON.stringify(await ev(`(()=>{
+      const n=document.elementFromPoint(${kx},${ky});
+      return {tag:n?n.tagName:null,
+        isKey:!!(n&&n.closest&&n.closest('.ov-rk'))};})()`)));
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: kx, y: ky, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: kx, y: ky, button: 'left', clickCount: 1 });
+    await sleep(320);
+    const open = await ev(READ);
+    console.log('  OPENED ' + JSON.stringify(open));
+    console.log('  TRADE  ' + JSON.stringify({
+      railCameUp: open.railUp && !closed.railUp,
+      boardGaveBack: closed.frameW - open.frameW,
+      stripStillUp: !!open.strip
+    }));
+    await shot(`mobile-rail-${TAG}`);
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: kx, y: ky, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: kx, y: ky, button: 'left', clickCount: 1 });
+    await sleep(320);
+    console.log('  RECLOSED ' + JSON.stringify(await ev(READ)));
+  }
+
+  /* ------------------------------------------------------- the two sides
+   *
+   *   "I have some players who only have a right hand. Also in the settings,
+   *    give them the option to switch that... you can switch what side it is
+   *    on, or choose to have the 3 buttons and joystick on separate sides."
+   *
+   * Four arrangements out of two switches, so what is checked is that each
+   * switch moves ITS OWN cluster and not the other one. The pad is read off
+   * `#js-ring`, which is a live element and not a computed intention.
+   *
+   * The map is stood down for this: the settings popover is reachable from the
+   * gear at any time, but during the opening draft the board is a full-screen
+   * overlay that cannot be dismissed, and a real pointer would land on it. It
+   * goes straight back afterwards.
+   */
+  await ev(`(()=>{const o=document.querySelector('.ov'); o.dataset.was=o.style.display;
+    o.style.display='none'; return 1})()`);
+  const gear = await ev(`(()=>{const b=document.querySelector('.hud-tl .cbtn');
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  const press = async (x, y) => {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    await sleep(220);
+  };
+  await press(gear.x, gear.y);
+
+  const SIDES = `(()=>{
+    const C=n=>{const q=document.querySelector(n); if(!q)return null;
+      const r=q.getBoundingClientRect();
+      return Math.round(r.left+r.width/2);};
+    const rows=[...document.querySelectorAll('.side-row')].map(r=>({
+      lab:(r.querySelector('.side-lab').textContent||'').trim(),
+      on:(r.querySelector('.btn.seg.on')||{textContent:''}).textContent.trim()}));
+    return {rows, btnLeft:document.querySelector('.hud').classList.contains('btn-left'),
+      railX:C('.hud-br'), stickX:C('#js-ring'), w:innerWidth};})()`;
+  const seg = async (row, lab) => await ev(`(()=>{
+    const r=[...document.querySelectorAll('.side-row')]
+      .find(n=>n.querySelector('.side-lab').textContent.trim()==='${row}');
+    const b=[...r.querySelectorAll('.btn.seg')]
+      .find(n=>n.textContent.trim()==='${lab}');
+    const q=b.getBoundingClientRect();
+    return {x:Math.round(q.left+q.width/2),y:Math.round(q.top+q.height/2),
+      onTop:document.elementFromPoint(Math.round(q.left+q.width/2),
+        Math.round(q.top+q.height/2)).closest('.btn.seg')===b};})()`);
+
+  const before = await ev(SIDES);
+  console.log('  SIDES-RR ' + JSON.stringify(before));
+  let t = await seg('Buttons', 'Left');
+  console.log('  hit buttons/left ' + t.onTop);
+  await press(t.x, t.y);
+  const bl = await ev(SIDES);
+  console.log('  SIDES-LR ' + JSON.stringify(bl));
+  t = await seg('Joystick', 'Left');
+  await press(t.x, t.y);
+  const both = await ev(SIDES);
+  console.log('  SIDES-LL ' + JSON.stringify(both));
+  console.log('  SPLIT  ' + JSON.stringify({
+    buttonsMovedAlone: bl.railX < before.railX && bl.stickX === before.stickX,
+    stickMovedAfter: both.stickX < bl.stickX,
+    classFollows: bl.btnLeft === true && before.btnLeft === false
+  }));
+  await shot(`mobile-sides-${TAG}`);
+  // Put both switches back so the shot of the default layout is the default.
+  for (const r of ['Buttons', 'Joystick']) {
+    const q = await seg(r, 'Right');
+    await press(q.x, q.y);
+  }
+  console.log('  RESTORED ' + JSON.stringify(await ev(SIDES)));
+  await ev(`(()=>{document.querySelector('.pop.settings')
+    .classList.add('hid');
+    const o=document.querySelector('.ov'); o.style.display=o.dataset.was||'';
+    return 1})()`);
+
+  /* The PWA half of the same request, measured rather than assumed: the
+     manifest has to parse, be same-origin-relative, and name icons that
+     actually 200. */
+  console.log('  PWA ' + JSON.stringify(await ev(`(async()=>{
+    const link=document.querySelector('link[rel=manifest]');
+    if(!link)return {manifest:null};
+    const url=new URL(link.getAttribute('href'),location.href);
+    const m=await (await fetch(url)).json();
+    const icons=[];
+    for(const i of m.icons){
+      const r=await fetch(new URL(i.src,url));
+      icons.push({src:i.src,ok:r.ok,type:r.headers.get('content-type'),
+        purpose:i.purpose});
+    }
+    const sw=await fetch(new URL('./sw.js',location.href));
+    return {name:m.name,display:m.display,override:m.display_override,
+      orientation:m.orientation,startUrl:m.start_url,scope:m.scope,
+      relative:!String(m.start_url).startsWith('/'),
+      icons, swOk:sw.ok,
+      appleTouch:!!document.querySelector('link[rel=apple-touch-icon]'),
+      themeColour:(document.querySelector('meta[name=theme-color]')||{}).content};})()`,
+  true)));
+
+  /* "Same goes for the players box on the standard map view." Re-dressed in
+     place into plain view mode: the rail is still down, and off the draft each
+     pip carries the one number the rail led with — the score. Last, because it
+     re-dresses the panel the draft is using. */
+  await ev(`(()=>{window.__ISLAND__.game.overview.open('view');return 1})()`);
+  // A beat for the panel to be laid out again: `measure()` reads clientWidth,
+  // and a canvas that was display:none one frame ago reports 0 and falls back
+  // to its 800px default. Nothing to do with the game — the rig hid it.
+  await sleep(400);
+  console.log('  VIEW ' + JSON.stringify(await ev(`(()=>{
+    const ov=window.__ISLAND__.game.overview;
+    const rail=document.querySelector('.ov-rail');
+    const pips=[...document.querySelectorAll('.ov-pip')];
+    return {mode:ov.mode, railUp:!!(rail&&!rail.classList.contains('hid')),
+      frameW:ov.panInfo.frame[2],
+      pips:pips.length,
+      scores:pips.map(p=>{const b=p.querySelector('b');
+        return b?b.textContent:null;}),
+      person:pips.every(p=>!!p.querySelector('svg.person'))};})()`)));
+  /* No screenshot for this one on purpose. matchflow.js re-dresses the panel
+     back into draft mode within about a tenth of a second, and a capture takes
+     five: the picture would show the draft strip over a "view" reading and
+     look like a bug that is not there. The measurement above is the evidence. */
 
 } else if (STAGE === 'book') {
   // The book does not need the opening screen to be on screen — the TUTORIAL

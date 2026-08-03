@@ -53,7 +53,7 @@ import {
   placeRoad, placeSettlement, upgradeCity, playKnight, scoreOf
 } from '../core/rules.js';
 import { el, button, toggle, setText, clamp, onTap } from './dom.js';
-import { icon, avatar } from './icons.js';
+import { icon, avatar, personPip } from './icons.js';
 import { createPainter, pipRadius } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
@@ -120,12 +120,69 @@ const DRAFT_CSS = `
 .ov .ov-dtag{flex:0 0 auto;font:800 7.5px/1 var(--ff);letter-spacing:.14em;
   text-transform:uppercase;color:#3a2208;padding:3px 5px 4px;border-radius:6px;
   background:linear-gradient(180deg,#ffe79a,#ffc93c)}
+
+/* ---------------------------------------------------------- the pip strip
+ *
+ *   "On the draft, hide the draft order popup on the right side of the screen
+ *    so the game can be full screen. Maybe just show the little icons shaped
+ *    like users, and each is the colour of the other user, and it's within the
+ *    normal box where the map is, so those icons highlight in order to show
+ *    you whose turn it is for picking places. Then you can have a button that
+ *    opens or closes the full pick order popup if users want, but it defaults
+ *    to closed. Same goes for the players box on the standard map view."
+ *
+ * The rail was 186px of a 667px-wide phone — better than a quarter of the map,
+ * standing there to say four names. The strip is the same information at the
+ * size the answer actually needs: one coloured person per seat, in draft
+ * order, and the one that is lit is the one picking. It rides INSIDE the title
+ * plate, so it is inside the map box the player named, and so the board's top
+ * padding — measured off that plate's bottom edge — already accounts for it
+ * without a second measurement.
+ *
+ * The rail is still one tap away and still says everything it always did.
+ */
+.ov .ov-strip{display:flex;align-items:center;gap:7px;margin-top:5px}
+.ov .ov-pips{display:flex;align-items:center;gap:5px}
+.ov .ov-pip{position:relative;display:flex;align-items:center;gap:3px;
+  padding:3px 5px 3px 4px;border-radius:9px;line-height:0;
+  background:rgba(0,0,0,.28);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1);
+  opacity:.5;transition:opacity .18s ease,box-shadow .18s ease,transform .18s ease}
+.ov .ov-pip.done{opacity:.78}
+.ov .ov-pip.me{opacity:.8;box-shadow:inset 0 0 0 1.5px rgba(255,201,60,.6)}
+/* Whose turn it is, and the whole point of the strip. Same gold pulse the rail
+   pips use, so the two readings of the draft never disagree. */
+.ov .ov-pip.now{opacity:1;transform:translateY(-1px);
+  background:rgba(255,201,60,.2);
+  animation:ovNow 1.1s ease-in-out infinite}
+.ov .ov-pip b{font:800 10px/1 var(--ff);color:#eaf2fb;
+  text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.ov .ov-pip.me b{color:var(--gold-l,#ffe79a)}
+.ov .ov-pip svg{display:block}
+/* The way back to the full list. Deliberately quiet — it is an option, not an
+   instruction — and it goes gold while the rail is up so the key doubles as
+   the answer to "what is that panel and how do I get rid of it". */
+.ov .ov-rk{min-width:26px;min-height:26px;width:26px;height:26px;padding:0;
+  border-radius:8px;border:1.5px solid rgba(255,201,60,.34);
+  background:linear-gradient(180deg,rgba(20,48,84,.94),rgba(7,22,44,.94));
+  box-shadow:0 2px 6px rgba(0,0,0,.45);line-height:0}
+.ov .ov-rk:active{transform:translateY(2px);box-shadow:0 1px 3px rgba(0,0,0,.45)}
+.ov .ov-rk.on{border-color:rgba(255,201,60,.9);
+  background:linear-gradient(180deg,rgba(255,201,60,.28),rgba(120,80,10,.5))}
+.ov .ov-rk svg{display:block}
 @media (max-height:400px){
   .ov .ov-dr{padding:4px 5px 4px 10px}
   .ov .ov-dn{font-size:10.5px}
   .ov .ov-dp b{width:13px;height:13px;font-size:8px}
+  .ov .ov-strip{margin-top:4px;gap:6px}
+  .ov .ov-pip{padding:2px 4px 2px 3px}
 }
 `;
+
+/* Three stacked lines: "the list". */
+const LIST_GLYPH =
+  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">' +
+  '<path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="#ffe0a0" stroke-width="2.2" ' +
+  'stroke-linecap="round"/></svg>';
 
 function injectDraftStyle(doc) {
   if (!doc || !doc.head || !doc.createElement) return;
@@ -152,6 +209,16 @@ export function createOverview(root, state, game) {
 
   const rail = el('div', { class: 'ov-rail plate lift' });
 
+  /* The strip that replaces the rail on a phone, and the key that brings the
+     rail back. Both live inside the title plate — see the .ov-strip note in
+     DRAFT_CSS for why that is the right parent and not just a convenient one. */
+  const pips = el('div', { class: 'ov-pips' });
+  const railKey = button('ov-rk', {
+    'aria-label': 'Show the player list',
+    on: { click: () => setRail(!railOpen) }
+  }, el('span', { html: LIST_GLYPH }));
+  const strip = el('div', { class: 'ov-strip' }, pips, railKey);
+
   const selLabel = el('span', { class: 'ov-sel', text: 'Pick a spot' });
   const cancelBtn = button('stone', { on: { click: () => cancel() } }, 'Cancel');
   const confirmBtn = button('green off', { on: { click: () => commit() } },
@@ -161,7 +228,7 @@ export function createOverview(root, state, game) {
 
   const wrap = el('div', { class: 'ov hid', 'data-ui': '' },
     cv,
-    el('div', { class: 'ov-top plate' }, titleEl, hintEl),
+    el('div', { class: 'ov-top plate' }, titleEl, hintEl, strip),
     closeBtn, rail, bar);
   root.appendChild(wrap);
 
@@ -179,6 +246,18 @@ export function createOverview(root, state, game) {
   let railRows = [];
   let railT = 0;
   let lastW = 0, lastH = 0;
+
+  /* The rail starts CLOSED on a phone and open on a desktop, and once the
+     player has touched the key their answer stands for the rest of the match.
+     760/400 is the same threshold ui-hud.css calls compact, so the map and the
+     HUD agree about what a small screen is. */
+  const compact = () => {
+    const w = globalThis.innerWidth || wrap.clientWidth || 1024;
+    const h = globalThis.innerHeight || wrap.clientHeight || 768;
+    return w <= 760 || h <= 400;
+  };
+  let railOpen = !compact();
+  let railChosen = false;
 
   const proj = { s: 1, ox: 0, oy: 0, w: 0, h: 0, frame: { x: 0, y: 0, w: 0, h: 0 } };
 
@@ -237,6 +316,83 @@ export function createOverview(root, state, game) {
     bgPaint.drawBuildings(state);
     bgPaint.drawRobber(state);
     bgS = proj.s; bgOX = proj.ox; bgOY = proj.oy;
+  }
+
+  /* ------------------------------------------------------- rail visibility
+   *
+   * `measure()` reserves the rail's width out of the map frame only when the
+   * rail is up, so closing it does not leave a 186px column of dead sea — the
+   * board is re-fitted into the whole panel on the very next frame. That is
+   * the "so the game can be full screen" half of the request; the strip is the
+   * other half.
+   */
+  function setRail(open) {
+    railOpen = !!open;
+    railChosen = true;
+    applyRail();
+    // The frame changed shape under the board: re-fit now rather than waiting
+    // for a resize that may never come.
+    measure();
+  }
+
+  function applyRail() {
+    toggle(rail, 'hid', !railOpen);
+    toggle(railKey, 'on', railOpen);
+    railKey.setAttribute('aria-label', railOpen ? 'Hide the player list' : 'Show the player list');
+    railKey.setAttribute('aria-expanded', railOpen ? 'true' : 'false');
+  }
+
+  /* ------------------------------------------------------------ the strip
+   * Rebuilt whole whenever its reading changes, which is at most five nodes
+   * four times a second — cheaper than the bookkeeping to update it in place.
+   */
+  let pipSig = '';
+  function buildPips(d) {
+    const order = d
+      ? (Array.isArray(d.order) && d.order.length ? d.order : (state.setupOrder || []))
+      : null;
+    const idx = d && Number.isFinite(d.index) ? d.index : 0;
+
+    // Draft order during the draft, seating order otherwise. Each seat once.
+    let seats = [];
+    if (order && order.length) {
+      for (const pid of order) if (seats.indexOf(pid) < 0) seats.push(pid);
+    } else {
+      seats = state.players.map(p => p.id);
+    }
+
+    const sig = seats.join(',') + '|' + (d
+      ? `d${idx}.${d.pid}`
+      : 'v' + state.players.map(p => scoreOf(state, p)).join('.'));
+    if (sig === pipSig) return;
+    pipSig = sig;
+
+    while (pips.firstChild) pips.removeChild(pips.firstChild);
+    for (const pid of seats) {
+      const p = state.players[pid];
+      if (!p) continue;
+      let cls = 'ov-pip' + (pid === 0 ? ' me' : '');
+      let badge = null;
+      if (d) {
+        if (pid === d.pid) cls += ' now';
+        else {
+          let last = -1;
+          for (let i = 0; i < order.length; i++) if (order[i] === pid) last = i;
+          if (last >= 0 && last < idx) cls += ' done';
+        }
+      } else {
+        // Off the draft there is no "now", so the one number worth carrying is
+        // the score — the rail's whole headline, in one glyph's worth of space.
+        badge = el('b', { text: String(scoreOf(state, p)) });
+      }
+      pips.appendChild(el('span', {
+        class: cls,
+        title: pid === 0 ? 'You' : p.name,
+        style: { '--c': p.color.css, '--cl': p.color.light }
+      },
+        el('span', { html: personPip(p.color.css, p.color.light, 18) }),
+        badge));
+    }
   }
 
   /* ------------------------------------------------------------ rail rows */
@@ -371,7 +527,11 @@ export function createOverview(root, state, game) {
     // game should still show me the full scores and board" — and a pause that
     // drops the scores on a phone is half a feature. It gets narrower instead
     // of going away; the board keeps the rest.
-    const railW = w > 760 ? 186 : (w > 560 ? 158 : 126);
+    //
+    // Closed, it costs nothing: the frame runs the full width of the panel and
+    // the pip strip carries the reading. Nothing is lost by that trade, which
+    // is why the phone default is closed.
+    const railW = railOpen ? (w > 760 ? 186 : (w > 560 ? 158 : 126)) : 0;
 
     // The framed map area: everything the board may occupy. The rail sits
     // outside it, so the frame never runs underneath the player list.
@@ -416,7 +576,7 @@ export function createOverview(root, state, game) {
       ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
       oy: f.y + padT + availH / 2 - BOUNDS.cz * s
     });
-    toggle(rail, 'hid', false);
+    applyRail();
   }
 
   /* ------------------------------------------------------------ placement
@@ -635,6 +795,12 @@ export function createOverview(root, state, game) {
     select(null);
     if (opts.draft) buildDraftRail(opts.draft);
     else { buildRail(); refreshRail(); }
+    // The strip reads the same source as the rail and is up whether or not the
+    // rail is. A player who has not touched the key gets the current viewport's
+    // answer every time the map opens, so rotating a phone is not a trap.
+    if (!railChosen) railOpen = !compact();
+    pipSig = '';
+    buildPips(opts.draft || null);
 
     openFlag = true;
     closeTimer = 0;
@@ -718,7 +884,7 @@ export function createOverview(root, state, game) {
     }
     hoverPulse += d;
     railT += d;
-    if (railT > 0.25) { railT = 0; refreshRail(); }
+    if (railT > 0.25) { railT = 0; refreshRail(); buildPips(opts.draft || null); }
     draw(hoverPulse);
   }
 

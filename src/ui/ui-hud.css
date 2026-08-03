@@ -369,11 +369,23 @@
 @keyframes bcReady{0%{transform:translateY(0) scale(1)}
   35%{transform:translateY(-6px) scale(1.05)}100%{transform:translateY(0) scale(1)}}
 
-/* --- bottom-right ------------------------------------------------------- */
+/* --- the action rail -----------------------------------------------------
+   Bottom right by default, and bottom LEFT for anyone who has moved it there.
+
+     "In the settings, give them the option to switch that, so the default is
+      having the buttons and the joystick on one side, but you can switch what
+      side it is on, or choose to have the 3 buttons and joystick on separate
+      sides."
+
+   The joystick answers to the same pair of settings from systems/input.js, so
+   both-right, both-left and either split all fall out of two switches. The
+   row also reverses when it moves, so the button nearest the screen edge is
+   the same button either way. */
 .hud-br{
   position:absolute;right:var(--gR);bottom:var(--gB);
   display:flex;align-items:flex-end;gap:10px;
 }
+.hud.btn-left .hud-br{right:auto;left:var(--gL);flex-direction:row-reverse}
 
 /* --- bottom-left: EMPTY --------------------------------------------------
    The ground-report chip and the toast stack above it are both gone:
@@ -501,9 +513,16 @@
 }
 
 /* --- settings pop --------------------------------------------------------- */
+/* The height is the distance from the popover's own top edge to the bottom
+   gutter, not a share of the viewport: 74vh was fine until the two control-side
+   rows pushed the box past 266px, at which point a 375-tall phone had the LEAVE
+   MATCH button three pixels below the fold with no scrollbar to hint at it (the
+   game hides them all — see ui-base.css). It scrolls instead of overflowing. */
 .pop{
   position:absolute;left:var(--gL);top:calc(var(--gT) + 56px);
-  width:238px;max-height:74vh;overflow:auto;padding:9px;
+  width:238px;
+  max-height:min(74vh,calc(100dvh - var(--gT) - var(--gB) - 64px));
+  overflow:auto;padding:9px;
   display:flex;flex-direction:column;gap:7px;
   border-radius:16px;
   animation:popIn .18s ease-out;
@@ -512,6 +531,27 @@
 .pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .pop-title{font:800 12px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;color:var(--gold-l)}
 .pop .sb-ico{line-height:0}
+
+/* Two switches, one per hand. See the .hud-br note above for why this is a pair
+   of sides rather than a single four-way preset. Laid out as a label and a
+   segmented pair so the current side reads at a glance without opening
+   anything, and sized so both halves clear the 44px touch minimum. */
+.side-row{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:4px 5px 4px 10px;border-radius:12px;
+  background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.1)}
+.side-lab{font:800 9.5px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
+  color:rgba(224,236,248,.84)}
+.side-seg{display:flex;gap:3px;padding:3px;border-radius:11px;background:rgba(0,0,0,.3)}
+.side-seg .btn.seg{
+  min-height:38px;min-width:52px;padding:0 10px;border:0;border-radius:9px;
+  background:transparent;box-shadow:none;text-shadow:none;
+  font-size:10.5px;letter-spacing:.12em;color:rgba(224,236,248,.62)}
+.side-seg .btn.seg:active{transform:none;box-shadow:none}
+.side-seg .btn.seg.on{
+  background:linear-gradient(180deg,#ffe79a,#f0b12c);
+  color:#3a2208;text-shadow:0 1px 0 rgba(255,255,255,.42);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.55),0 2px 6px rgba(0,0,0,.35)}
+
 .how{display:flex;flex-direction:column;gap:6px;padding:8px 10px;border-radius:11px;
   background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
 .how p{margin:0;display:flex;flex-direction:column;gap:2px}
@@ -523,13 +563,47 @@
    never does. Every one of these selectors is scoped to `.hud` so it beats
    ui.css's older phone block, which is imported after this file. */
 @media (max-height:400px),(max-width:760px){
-  .hud .scorecard{width:196px}
-  .hud .sc-vp{padding:5px 8px 6px;gap:5px}
-  .hud .sc-vp b{font-size:20px}
-  .hud .aw-size{font-size:14px}
-  .hud .sc-awards{padding:5px 7px 6px}
-  .hud .vp-track i{width:3px;height:7px}
-  .hud .vp-track i.goal{width:4px;height:10px}
+  /* ------------------------------------------------- the awards, shrunk
+   *
+   *   "The longest road and largest army needs to be much more minimal and
+   *    simple on mobile. It's way too big. Maybe just the bridge icon, your
+   *    number and the longest road number but with little to no labels. I want
+   *    the box it's on to be 1/3 to 1/4 of its current size."
+   *
+   * On a phone each award was a two-line block: a label, the holder's name, the
+   * holder's size, your count and how many more you need. Five facts, twice
+   * over, in the corner you glance at mid-run.
+   *
+   * What survives is the shape of the question — mine, then theirs — as
+   * `4 › 6` beside the icon, with the arrow doing the work the words did. The
+   * icon says which award; gold says you hold it. Everything else is on the
+   * results screen at the end, when there is time to read. The card goes from
+   * 196px wide and ~120 tall to 112x44: about a quarter of the area. */
+  .hud .scorecard{width:112px}
+  .hud .sc-vp{padding:3px 6px 4px;gap:4px}
+  .hud .sc-vp b{font-size:16px}
+  .hud .sc-vp .ico svg{width:15px;height:15px}
+  .hud .sc-goal{font-size:8px;margin:3px 2px 0 -1px}
+  .hud .vp-track{display:none}
+
+  .hud .sc-awards{padding:3px 5px 4px;gap:2px}
+  .hud .aw-row{gap:4px}
+  .hud .aw-ico svg{width:14px;height:14px}
+  .hud .aw-body{flex-direction:row;align-items:center;gap:4px}
+  .hud .aw-lab,.hud .aw-holder,.hud .aw-need{display:none}
+  .hud .aw-top,.hud .aw-bot{gap:3px}
+  /* The full-size line stacks the leader's figure ABOVE your own, which laid
+     out side by side reads back to front: "— 1", the number to beat and then
+     yours, with the chevron dangling off the end pointing at nothing. Swap
+     them. The DOM order is right for the two-line layout and stays as it is. */
+  .hud .aw-top{order:2}
+  .hud .aw-bot{order:1}
+  /* Yours, then the number to beat, with a chevron between them. */
+  .hud .aw-mine{font-size:11px;letter-spacing:0;color:#eaf3ff;opacity:1;gap:0}
+  .hud .aw-you{display:none}
+  .hud .aw-mine::after{content:'\203A';margin-left:4px;opacity:.5}
+  .hud .aw-size{font-size:12px;margin-left:0}
+  .hud .aw-row.ours .aw-mine{color:var(--gold-l,#ffe79a)}
 
   .hud .resbar{height:44px;padding:0 3px}
   .hud .res{padding:0 5px 7px;gap:4px}

@@ -411,6 +411,26 @@ export const INTRO_CSS = `
 .mf-tut .mf-t-sub{font:700 clamp(6.6px,1.05vw,8.4px)/1.15 var(--ff);letter-spacing:.11em;
   text-transform:uppercase;color:#7a5228;text-shadow:none;white-space:nowrap}
 
+/* The install chip, opposite the tutorial. Quiet by design and hidden outright
+   until there is something to install — see the askInstall() note below. */
+.btn.mf-inst{
+  position:absolute;left:clamp(10px,2.4vw,22px);top:clamp(10px,2.4vh,20px);
+  min-height:clamp(42px,9vh,48px);padding:0 clamp(11px,2.2vw,16px);
+  border-radius:14px;border-width:2px;gap:8px;
+  --f1:#eef4fc;--f2:#cfdcec;--f3:#b6c7dc;--lip:#6d7d92;--fg:#22344a;
+  box-shadow:0 5px 0 var(--lip),0 9px 16px rgba(0,0,0,.45),
+             inset 0 2px 0 rgba(255,255,255,.7);
+}
+.mf-inst:active{transform:translateY(5px);
+  box-shadow:0 0 0 var(--lip),0 3px 7px rgba(0,0,0,.4),
+             inset 0 2px 0 rgba(255,255,255,.6)}
+.mf-inst .mf-inst-i{line-height:0;flex:0 0 auto;opacity:.8}
+.mf-inst .mf-inst-t{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
+.mf-inst b{font:800 clamp(10px,1.7vw,12.5px)/1 var(--ff);letter-spacing:.13em;
+  text-transform:uppercase}
+.mf-inst .mf-t-sub{font:700 clamp(6.4px,1vw,8px)/1.15 var(--ff);letter-spacing:.1em;
+  text-transform:uppercase;color:#5b6b80;text-shadow:none;white-space:nowrap}
+
 .mf-i-hint{font:700 clamp(8px,1.3vw,10px)/1.3 var(--ff);letter-spacing:.14em;
   text-transform:uppercase;color:rgba(206,228,250,.72);text-align:center;
   text-shadow:0 1px 3px rgba(0,0,0,.8)}
@@ -427,6 +447,7 @@ export const INTRO_CSS = `
   .mf-c-av svg{width:28px;height:28px}
   .mf-play{min-height:48px}
   .mf-tut{min-height:44px;padding:0 12px}
+  .mf-inst{min-height:40px;padding:0 10px;gap:6px}
   /* Still a 46px tap target at 667x375 — the guideline floor, not a whisker
      under it. The blurb is what gives, not the button. Four of these at 667
      wide come to 4x116.7 + 3x8 of gap = 491px inside a 647px content box. */
@@ -637,6 +658,74 @@ export function buildIntro(state, onBegin) {
     el('b', { class: 'mf-t-lab', text: 'Tutorial' }),
     el('span', { class: 'mf-t-sub', text: 'New here? Start with this' }));
 
+  /*
+   * ADD TO HOME SCREEN.
+   *
+   *   "Maybe make it a PWA I can save to my homescreen so I don't see the URL
+   *    bar for a start."
+   *
+   * The manifest and the service worker make the game installable; this is the
+   * part that tells a player it is. Chrome fires `beforeinstallprompt` and
+   * then waits to be asked — index.html catches it before any module has
+   * parsed, because it can arrive that early, and parks it on the window.
+   *
+   * The chip only exists when there is something to install: it is hidden when
+   * the event never came (an unsupported browser, or a site not served over
+   * https), and hidden again the moment the game is already running installed,
+   * where it would be an invitation to do a thing that is already done.
+   *
+   * iOS never fires the event and has no programmatic install at all, so there
+   * the chip says where the button actually is: Share, then Add to Home Screen.
+   */
+  const iOS = typeof navigator !== 'undefined'
+    && /iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
+
+  const installLab = el('b', { text: 'Add to Home Screen' });
+  const installSub = el('span', {
+    class: 'mf-t-sub',
+    text: iOS ? 'Share ▸ Add to Home Screen' : 'Full screen, no address bar'
+  });
+  const installBtn = button('cream mf-inst hid', {
+    'aria-label': 'Install Island Settlers to your home screen',
+    on: { click: () => askInstall() }
+  }, el('span', { class: 'mf-inst-i', html: icon('home', 15) }),
+    el('div', { class: 'mf-inst-t' }, installLab, installSub));
+
+  function standalone() {
+    if (typeof globalThis.matchMedia === 'function'
+      && globalThis.matchMedia('(display-mode: standalone)').matches) return true;
+    if (typeof globalThis.matchMedia === 'function'
+      && globalThis.matchMedia('(display-mode: fullscreen)').matches) return true;
+    return !!(typeof navigator !== 'undefined' && navigator.standalone);
+  }
+
+  function paintInstall() {
+    const box = globalThis.__INSTALL__ || null;
+    const can = !standalone() && (iOS || !!(box && box.evt));
+    installBtn.classList.toggle('hid', !can);
+  }
+
+  async function askInstall() {
+    const box = globalThis.__INSTALL__ || null;
+    if (!box || !box.evt) return;          // iOS: the chip is a label, not a button
+    const ev = box.evt;
+    box.evt = null;
+    try {
+      ev.prompt();
+      await ev.userChoice;
+    } catch (e) { /* dismissed, or the browser changed its mind */ }
+    paintInstall();
+  }
+
+  if (typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('is-installable', paintInstall);
+    globalThis.addEventListener('appinstalled', () => {
+      if (globalThis.__INSTALL__) globalThis.__INSTALL__.evt = null;
+      paintInstall();
+    });
+  }
+  paintInstall();
+
   const startBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
@@ -657,7 +746,7 @@ export function buildIntro(state, onBegin) {
     el('div', { class: 'mf-i-hint' },
       el('b', { text: 'Claim two corners' }),
       ' · gather from the land you touch · build roads, settlements and cities'),
-    tutBtn);
+    tutBtn, installBtn);
 
   /* --------------------------------------------------------------- screen 2 */
   const setupView = el('div', { class: 'mf-view mf-setup hid' },

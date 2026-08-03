@@ -29,7 +29,9 @@ import {
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
-import { knightsOn } from '../core/options.js';
+import {
+  knightsOn, stickSide, buttonsSide, setStickSide, setButtonsSide
+} from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
@@ -113,7 +115,12 @@ export function createHUD(root, state, game) {
   function awardRow(ico, label) {
     const holder = el('b', { class: 'aw-holder', text: '—' });
     const size = el('em', { class: 'aw-size', text: '0' });
-    const mine = el('span', { class: 'aw-mine', text: 'you 0' });
+    /* "you" and the number are separate elements so the phone layout can drop
+       the word and keep the figure — see the compact block in ui-hud.css,
+       where each award collapses to `4 > 6` beside its icon. */
+    const mineN = el('b', { text: '0' });
+    const mine = el('span', { class: 'aw-mine' },
+      el('u', { class: 'aw-you', text: 'you' }), mineN);
     const need = el('span', { class: 'aw-need', text: '' });
     const row = el('div', { class: 'aw-row' },
       el('span', { class: 'aw-ico', html: icon(ico, 18) }),
@@ -121,7 +128,7 @@ export function createHUD(root, state, game) {
         el('span', { class: 'aw-top' },
           el('span', { class: 'aw-lab', text: label }), size),
         el('span', { class: 'aw-bot' }, holder, mine, need)));
-    return { row, holder, size, mine, need, last: '' };
+    return { row, holder, size, mine, mineN, need, last: '' };
   }
   const awRoad = awardRow('road', 'Longest Road');
   const awArmy = awardRow('knight', 'Largest Army');
@@ -269,12 +276,45 @@ export function createHUD(root, state, game) {
   const howBody = el('div', { class: 'how hid' },
     HOW_TO.map(([t, d]) => el('p', {}, el('b', { text: t }), el('span', { text: d }))));
 
+  /* --- where the controls live --------------------------------------------
+   *
+   *   "In the settings, give them the option to switch that, so the default is
+   *    having the buttons and the joystick on one side, but you can switch what
+   *    side it is on, or choose to have the 3 buttons and joystick on separate
+   *    sides."
+   *
+   * Two independent switches rather than one four-way preset, because that is
+   * what the sentence describes: both-right, both-left, and either split fall
+   * out of them. The stick half is read by systems/input.js, which lays its pad
+   * out again whenever an option changes; the button half is this file's, and
+   * it is one class on the HUD root.
+   */
+  function sideRow(label, get, set) {
+    const keys = ['left', 'right'];
+    const btns = keys.map(v => button('seg', {
+      on: { click: () => { set(v); paint(); } }
+    }, el('span', { text: v === 'left' ? 'Left' : 'Right' })));
+    function paint() {
+      const cur = get();
+      btns.forEach((b, i) => toggle(b, 'on', keys[i] === cur));
+    }
+    paint();
+    return el('div', { class: 'side-row' },
+      el('span', { class: 'side-lab', text: label }),
+      el('div', { class: 'side-seg' }, btns));
+  }
+
+  function applyButtonSide() { toggle(hud, 'btn-left', buttonsSide() === 'left'); }
+  applyButtonSide();
+
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     el('div', { class: 'pop-head' },
       el('span', { class: 'pop-title', text: 'Settings' }),
       button('cbtn small ghost x', { 'aria-label': 'Close', on: { click: () => toggleSettings(false) } },
         mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
+    sideRow('Joystick', stickSide, setStickSide),
+    sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     button('wide cream', { on: { click: () => toggle(howBody, 'hid', !howBody.classList.contains('hid')) } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
       el('span', { class: 'sb-lab', text: 'How to Play' })),
@@ -567,7 +607,7 @@ export function createHUD(root, state, game) {
       setText(aw.holder, 'Open');
       aw.holder.style.setProperty('--c', 'rgba(233,243,255,.55)');
     }
-    setText(aw.mine, `you ${mine}`);
+    setText(aw.mineN, String(mine));
     // The player already holding it does not need to be told how to take it.
     setText(aw.need, holderId === 0 ? '' : `+${need} ${unit}${need === 1 ? '' : 's'}`);
     toggle(aw.need, 'hid', holderId === 0);
@@ -588,7 +628,7 @@ export function createHUD(root, state, game) {
         setText(awArmy.size, '—');
         setText(awArmy.holder, 'Knights off');
         awArmy.holder.style.setProperty('--c', 'rgba(233,243,255,.5)');
-        setText(awArmy.mine, 'not in play');
+        setText(awArmy.mineN, '—');
         setText(awArmy.need, '');
         toggle(awArmy.need, 'hid', true);
       }
