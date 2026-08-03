@@ -245,3 +245,42 @@
   .btn.fr-alt{min-height:38px}
   .btn.fr-tiny{min-height:32px;min-width:32px}
 }
+
+/* ------------------------------------------------------------ everybody in
+   START is a vote. Until the last human has cast it the button says who it is
+   waiting for, and the seats say who has and has not. */
+.fr-tally{
+  display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;
+  padding:7px 11px 8px;border-radius:11px;
+  background:rgba(255,201,60,.10);
+  border:1.5px solid rgba(255,201,60,.34);
+}
+.fr-tally.all{background:rgba(95,208,122,.12);border-color:rgba(95,208,122,.45)}
+.fr-tally b{
+  font:800 clamp(9px,1.4vw,11.5px)/1 var(--ff);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--gold-l,#ffe79a);
+}
+.fr-tally.all b{color:#d7f7de}
+.fr-tally span{
+  font:700 clamp(7.5px,1.1vw,9.5px)/1 var(--ff);letter-spacing:.1em;
+  text-transform:uppercase;color:rgba(206,226,246,.66);
+}
+
+/* A seat that has said yes. The green rail is the same language the friends
+   list uses for "online" — it reads before any of the words do. */
+.fr-seat.set{background:rgba(95,208,122,.12);border-color:rgba(95,208,122,.42)}
+.fr-seat.set .fr-srole{color:#a8e9b8}
+.fr-seat.set.me{border-color:rgba(255,201,60,.85)}
+
+/* Pressed, and now waiting. Deliberately NOT the green go button any more:
+   your part is done and the thing on screen is a status, not an invitation. */
+.btn.fr-go.fr-waiting{
+  --f1:#f0dfb6;--f2:#d8c493;--f3:#bda874;--lip:#7d6c48;--fg:#3f2a12;
+  animation:frWait 1.8s ease-in-out infinite;
+}
+@keyframes frWait{0%,100%{filter:brightness(1)}50%{filter:brightness(1.14)}}
+.fr-cancel{
+  flex:0 0 100%;text-align:right;padding-top:2px;
+  font:700 clamp(7px,1vw,8.6px)/1 var(--ff);letter-spacing:.12em;
+  text-transform:uppercase;color:rgba(180,204,230,.5);
+}

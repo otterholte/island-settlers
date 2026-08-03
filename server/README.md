@@ -157,14 +157,14 @@ snapshots a second.
 ## Testing it
 
 ```sh
-node tools/nettest.mjs          # 39 checks: sign-up, friends, invites, a match
+node tools/nettest.mjs          # 43 checks: sign-up, friends, invites, a match
 node tools/nettest.mjs --keep   # leave the server running afterwards
 ```
 
 It boots a real server, opens two real websockets, and plays a real match
 through the real client mirror. Nothing is stubbed.
 
-And the same 39 checks against a **deployed** server, over wss, through
+And the same 43 checks against a **deployed** server, over wss, through
 whatever proxy is in front of it:
 
 ```sh

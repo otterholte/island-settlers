@@ -149,19 +149,24 @@ export function createRooms() {
     }
     room.touchedAt = Date.now();
 
-    const humans = room.seats.filter(s => s.kind === 'human');
-    if (!humans.length) {
+    const left = room.seats.filter(s => s.kind === 'human');
+    if (!left.length) {
       rooms.delete(room.id);
       return { room, dissolved: true };
     }
-    if (room.hostId === userId) room.hostId = humans[0].userId;
+    if (room.hostId === userId) room.hostId = left[0].userId;
     return { room, dissolved: false };
   }
 
   function setSettings(room, patch) {
     if (!room || room.state === 'playing') return false;
+    const before = `${room.settings.difficulty}/${room.settings.knights}`;
     if (typeof patch.difficulty === 'string') room.settings.difficulty = patch.difficulty;
     if (typeof patch.knights === 'boolean') room.settings.knights = patch.knights;
+    // CHANGING THE GAME UNREADIES EVERYONE. You said yes to Medium with
+    // Knights; the host quietly moving it to Expert should ask you again
+    // rather than carry your agreement over to a different match.
+    if (`${room.settings.difficulty}/${room.settings.knights}` !== before) clearReady(room);
     room.touchedAt = Date.now();
     return true;
   }
@@ -172,6 +177,37 @@ export function createRooms() {
     seat.ready = !!ready;
     room.touchedAt = Date.now();
     return true;
+  }
+
+  /* ------------------------------------------------------- everybody in
+   *
+   *   "Make sure that both players have to start the game for it to actually
+   *    start. If one person presses start, then it shows as waiting for the
+   *    other player."
+   *
+   * So START is not a host power any more, it is a vote, and the match begins
+   * on the last vote rather than on anybody's say-so. A lobby of one human and
+   * three bots therefore still starts the instant that one person presses it,
+   * which is the same rule and not a special case: there is nobody else to
+   * wait for.
+   */
+  function humans(room) {
+    return room ? room.seats.filter(s => s.kind === 'human') : [];
+  }
+
+  function readyCount(room) {
+    return humans(room).filter(s => s.ready).length;
+  }
+
+  function allReady(room) {
+    const h = humans(room);
+    return h.length > 0 && h.every(s => s.ready);
+  }
+
+  /** Nobody stays ready for a game other than the one they agreed to. */
+  function clearReady(room) {
+    if (!room) return;
+    for (const s of room.seats) s.ready = false;
   }
 
   function invite(room, userId) {
@@ -239,7 +275,11 @@ export function createRooms() {
       seats: room.seats.map(s => ({
         pid: s.pid, kind: s.kind, userId: s.userId, name: s.name,
         color: s.color, ready: s.ready, state: s.state
-      }))
+      })),
+      // So the lobby can say "1 of 2 ready" without counting seats itself,
+      // and so it agrees with the server about when the match will begin.
+      ready: readyCount(room),
+      humans: humans(room).length
     };
   }
 
@@ -255,7 +295,8 @@ export function createRooms() {
 
   return {
     create, get, forUser, join, leave, seatOf,
-    setSettings, setReady, invite, isInvited,
+    setSettings, setReady, allReady, readyCount, clearReady, humans,
+    invite, isInvited,
     roster, beginMatch, endMatch, members, publicRoom, sweep,
     get size() { return rooms.size; },
     all: () => [...rooms.values()]

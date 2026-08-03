@@ -456,6 +456,61 @@ if (STAGE === 'home') {
       h:r?Math.round(r.height):0};})()`)));
   await shot(`lobby-${TAG}`);
 
+  /* A SECOND PLAYER, AND THE WAIT.
+     START is a vote now, so the state worth photographing is the one in the
+     middle: somebody has pressed it and the match has not begun. Driven from
+     a second websocket in the page, which is the only way to have two people
+     in one lobby from one browser. */
+  console.log('  JOIN ' + JSON.stringify(await ev(`(async()=>{
+    const P=await import('/src/net/protocol.js');
+    const room=document.querySelector('.fr-sub').textContent.match(/Code (\\w+)/)[1];
+    // A second account on its own socket, invited into this lobby.
+    const me=(await import('/src/net/client.js')).netClient();
+    const other=new WebSocket(me.url);
+    await new Promise(r=>other.addEventListener('open',r,{once:true}));
+    let id=0; const wait=new Map();
+    other.addEventListener('message',e=>{const m=JSON.parse(e.data);
+      if(m.i!==undefined&&wait.has(m.i)){wait.get(m.i)(m);wait.delete(m.i);}});
+    const req=(t,b={})=>new Promise(ok=>{const i=++id;wait.set(i,ok);
+      other.send(JSON.stringify({i,t,...b}));});
+    await req(P.REQ.HELLO,{version:P.PROTOCOL_VERSION});
+    const name='pal'+Math.floor(Math.random()*99999);
+    await req(P.REQ.REGISTER,{name,pass:'islandpass'});
+    await req(P.REQ.FRIEND_ADD,{name:me.user.name});
+    window.__other={req,P,name};
+    return name;})()`, true)));
+  // Accept from this side, then invite and have them join.
+  console.log('  PAIR ' + JSON.stringify(await ev(`(async()=>{
+    const c=(await import('/src/net/client.js')).netClient();
+    const P=await import('/src/net/protocol.js');
+    const list=await c.req(P.REQ.FRIEND_LIST,{});
+    const inc=list.incoming[0];
+    if(!inc) return 'no request arrived';
+    await c.req(P.REQ.FRIEND_ACCEPT,{id:inc.id});
+    await c.req(P.REQ.ROOM_INVITE,{userId:inc.id});
+    const room=document.querySelector('.fr-sub').textContent.match(/Code (\\w+)/)[1];
+    await window.__other.req(window.__other.P.REQ.ROOM_JOIN,{roomId:room});
+    return {invited:inc.name, room};})()`, true)));
+  await sleep(900);
+  console.log('  TWO  ' + JSON.stringify(await ev(`(()=>{
+    return {seats:[...document.querySelectorAll('.fr-seat')].map(s=>
+      (s.querySelector('.fr-sname')||{}).textContent+':'+(s.querySelector('.fr-srole')||{}).textContent),
+      tally:(document.querySelector('.fr-tally')||{}).textContent,
+      start:(document.querySelector('.fr-foot .fr-go')||{}).textContent};})()`)));
+  await shot(`lobby-two-${TAG}`);
+
+  // Press START here only. The match must NOT begin.
+  await ev(`(()=>{document.querySelector('.fr-foot .fr-go').click();return 1})()`);
+  await sleep(900);
+  console.log('  HALF ' + JSON.stringify(await ev(`(()=>{
+    return {tally:(document.querySelector('.fr-tally')||{}).textContent,
+      start:(document.querySelector('.fr-foot .fr-go')||{}).textContent,
+      cancel:!!document.querySelector('.fr-cancel'),
+      seatsReady:[...document.querySelectorAll('.fr-seat.set')].length,
+      note:(document.querySelector('.fr-note:not(.hid)')||{}).textContent,
+      stillInLobby:!!document.querySelector('.fr-seats')};})()`)));
+  await shot(`lobby-waiting-${TAG}`);
+
 /* THE HANDOFF. The riskiest path in the whole multiplayer build: pressing
    START parks the match in sessionStorage and reloads the page, and main.js
    has to deal THAT island before it builds a single mesh. If this works, a

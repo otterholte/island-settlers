@@ -313,22 +313,45 @@ export function createHub(deps) {
         return reply(peer, i, { room: rooms.publicRoom(room) });
       }
 
-      case REQ.ROOM_READY: {
-        const room = rooms.forUser(me.id);
-        if (!room) return fail(peer, i, E.NO_ROOM);
-        rooms.setReady(room, me.id, !!msg.ready);
-        pushRoom(room);
-        return reply(peer, i, {});
-      }
-
+      /* START IS A VOTE, NOT A COMMAND.
+       *
+       *   "Make sure that both players have to start the game for it to
+       *    actually start. If one person presses start, then it shows as
+       *    waiting for the other player."
+       *
+       * Both requests do the same thing, because they are the same thing: mark
+       * this seat ready, tell the table, and begin the moment the last human
+       * has said yes. There is no host override — a lobby of one human and
+       * three bots starts on that one press, which is not a special case, it is
+       * the same rule with nobody left to wait for.
+       */
+      case REQ.ROOM_READY:
       case REQ.ROOM_START: {
         const room = rooms.forUser(me.id);
         if (!room) return fail(peer, i, E.NO_ROOM);
-        if (room.hostId !== me.id) return fail(peer, i, E.NOT_HOST);
         if (room.state === 'playing') return fail(peer, i, E.ROOM_BUSY);
-        const started = startMatch(room);
-        if (started.error) return fail(peer, i, started.error);
-        return reply(peer, i, { matchId: started.matchId });
+        // ROOM_START always means yes; ROOM_READY carries the flag, so the
+        // same button can take it back.
+        const want = t === REQ.ROOM_START ? true : !!msg.ready;
+        if (!rooms.setReady(room, me.id, want)) return fail(peer, i, E.NO_ROOM);
+        // Read the roster BEFORE trying to start: beginMatch clears every
+        // ready flag on its way out, so asking afterwards reports that the
+        // whole table is waiting for itself.
+        const waitingFor = rooms.humans(room).filter(s => !s.ready).map(s => s.name);
+        const began = maybeStart(room);
+        if (began && began.error) {
+          // Could not start after all — un-ready everyone rather than leave a
+          // lobby that looks like it is about to go and never does.
+          rooms.clearReady(room);
+          pushRoom(room);
+          return fail(peer, i, began.error);
+        }
+        if (!began) pushRoom(room);
+        return reply(peer, i, {
+          ready: want,
+          waitingFor,
+          started: !!(began && began.matchId)
+        });
       }
 
       /* -------------------------------------------------------- match */
@@ -374,6 +397,18 @@ export function createHub(deps) {
     if (!info) return null;
     const pid = info.byUser.get(userId);
     return pid === undefined ? null : { matchId: room.matchId, pid, room };
+  }
+
+  /**
+   * Begin, if and only if every human in the room has said yes.
+   *
+   * Returns null when there is still somebody to wait for — which is the
+   * normal outcome and not a failure — the start result otherwise.
+   */
+  function maybeStart(room) {
+    if (!room || room.state === 'playing') return null;
+    if (!rooms.allReady(room)) return null;
+    return startMatch(room);
   }
 
   function startMatch(room) {
@@ -494,7 +529,11 @@ export function createHub(deps) {
       if (pid !== undefined) matches.peer(room.matchId, pid, 'bot');
     }
     const r = rooms.leave(userId);
-    if (r && !r.dissolved) pushRoom(r.room);
+    if (r && !r.dissolved) {
+      // The people still in the lobby may all have been ready already, waiting
+      // on the person who just walked out. Do not strand them.
+      if (!maybeStart(r.room)) pushRoom(r.room);
+    }
     pushPresence(userId);
   }
 

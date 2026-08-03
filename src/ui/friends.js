@@ -1,7 +1,7 @@
 /**
  * Island Settlers — sign in, friends, invites, lobby.
  *
- *   createFriends(root, { client, onClose, onStart }) ->
+ *   createFriends(root, { client, onClose }) ->
  *     { node, show, hide, refresh, destroy }
  *
  * The third view of the opening screen, and the only part of the game that
@@ -12,7 +12,7 @@
  *   connect   where the server is, if we cannot work it out or cannot reach it
  *   signin    name and password, register or sign in — the same form for both
  *   friends   who you know, who is online, who has asked to know you
- *   lobby     four seats, the two settings, and START
+ *   lobby     four seats, the two settings, and a START everybody presses
  *
  * They are one at a time on purpose. This screen sits over a live 3D island
  * with a drifting camera, and the whole reason the match settings moved into a
@@ -42,7 +42,6 @@ for (const c of PLAYER_COLORS) COLOR[c.key] = c;
 export function createFriends(root, opts = {}) {
   const client = opts.client;
   const onClose = typeof opts.onClose === 'function' ? opts.onClose : () => {};
-  const onStart = typeof opts.onStart === 'function' ? opts.onStart : () => {};
 
   let panel = 'signin';
   let friends = { friends: [], incoming: [], outgoing: [] };
@@ -359,6 +358,13 @@ export function createFriends(root, opts = {}) {
     if (!room) { go('friends'); return; }
     const meId = client.user ? client.user.id : null;
     const host = room.hostId === meId;
+    const mine = room.seats.find(s => s.userId === meId);
+    const iAmReady = !!(mine && mine.ready);
+    const humans = room.seats.filter(s => s.kind === 'human').length;
+    const readyN = room.seats.filter(s => s.kind === 'human' && s.ready).length;
+    const waiting = room.seats
+      .filter(s => s.kind === 'human' && !s.ready && s.userId !== meId)
+      .map(s => s.name);
     setText(title, 'Lobby');
     setText(sub, `Code ${room.id}${host ? ' · you are the host' : ''}`);
 
@@ -375,8 +381,10 @@ export function createFriends(root, opts = {}) {
         el('b', { class: 'fr-sname', text: s.kind === 'human' ? s.name : 'Open' }),
         el('span', { class: 'fr-srole', text:
           s.kind === 'human'
-            ? (s.userId === room.hostId ? 'Host' : 'Ready to play')
+            ? (s.ready ? 'Ready' : 'Not ready yet')
+            + (s.userId === room.hostId ? ' · Host' : '')
             : 'A bot will take this seat' }));
+      if (s.kind === 'human') toggle(cell, 'set', !!s.ready);
       if (host && s.kind === 'human' && s.userId !== meId) {
         cell.appendChild(button('cream fr-tiny fr-drop', {
           'aria-label': `Remove ${s.name}`,
@@ -386,6 +394,22 @@ export function createFriends(root, opts = {}) {
       seats.appendChild(cell);
     }
     body.appendChild(seats);
+
+    /* Who still has to press, right under the seats. It lived down by the
+       button and the body scrolls, so on a 444-tall screen the one line that
+       explains why nothing is happening was below the fold. */
+    if (humans > 1) {
+      // Counts EVERYONE outstanding, including you: it read "0 of 2 ready ·
+      // waiting for Pal" when the person who had not pressed was the reader.
+      const outstanding = room.seats
+        .filter(s => s.kind === 'human' && !s.ready)
+        .map(s => (s.userId === meId ? 'you' : s.name));
+      body.appendChild(el('div', { class: 'fr-tally' + (readyN === humans ? ' all' : '') },
+        el('b', { text: `${readyN} of ${humans} ready` }),
+        el('span', { text: outstanding.length
+          ? `Waiting for ${outstanding.join(' and ')}`
+          : 'Starting…' })));
+    }
 
     /* --- the settings, host only ----------------------------------------- */
     const row = el('div', { class: 'fr-set' });
@@ -436,16 +460,50 @@ export function createFriends(root, opts = {}) {
       }
     }
 
+    /* --- everybody has to say yes -------------------------------------------
+     *
+     *   "Make sure that both players have to start the game for it to actually
+     *    start. If one person presses start, then it shows as waiting for the
+     *    other player."
+     *
+     * So START is not the host's button any more, it is everybody's, and the
+     * server begins on the last press rather than the first. Pressing it again
+     * takes it back — changing your mind before a twenty-minute match should
+     * cost one tap, not a walk out of the lobby.
+     *
+     * On your own with three bots this reads exactly the same and starts
+     * immediately, because there is nobody left to wait for. */
     /* --- feet -------------------------------------------------------------- */
     foot.appendChild(button('cream fr-alt', { on: { click: () => leaveRoom() } },
       el('span', { class: 'sb-lab', text: 'Leave' })));
     foot.appendChild(button('cream fr-alt', { on: { click: () => go('friends') } },
       el('span', { class: 'sb-lab', text: 'Friends' })));
-    const startBtn = button('green fr-go' + (host ? '' : ' off'), {
-      disabled: host ? undefined : 'disabled',
-      on: { click: () => start() }
-    }, el('span', { class: 'sb-lab', text: host ? 'Start the Match' : 'Waiting for the host' }));
-    foot.appendChild(startBtn);
+
+    const label = iAmReady
+      ? (waiting.length
+        ? `Waiting for ${waiting.length === 1 ? waiting[0] : `${waiting.length} others`}`
+        : 'Starting…')
+      : 'Start the Match';
+    foot.appendChild(button('green fr-go' + (iAmReady ? ' fr-waiting' : ''), {
+      'aria-pressed': iAmReady ? 'true' : 'false',
+      on: { click: () => setReady(!iAmReady) }
+    }, el('span', { class: 'sb-lab', text: label })));
+
+    if (iAmReady && waiting.length) {
+      foot.appendChild(el('span', { class: 'fr-cancel', text: 'Tap again to cancel' }));
+    }
+  }
+
+  async function setReady(ready) {
+    try {
+      const r = await client.req(REQ.ROOM_READY, { ready });
+      if (r.started) { say('Dealing the island…', 'good'); setBusy(true); return; }
+      say(ready && r.waitingFor && r.waitingFor.length
+        ? `Waiting for ${r.waitingFor.join(' and ')} to start.`
+        : '', ready ? 'good' : 'info');
+    } catch (e) {
+      say(e.message, 'bad');
+    }
   }
 
   async function setSetting(patch) {
@@ -474,17 +532,7 @@ export function createFriends(root, opts = {}) {
     go('friends');
   }
 
-  async function start() {
-    setBusy(true);
-    say('Dealing the island…', 'good');
-    try {
-      await client.req(REQ.ROOM_START, {});
-      onStart();
-    } catch (e) {
-      say(e.message, 'bad');
-      setBusy(false);
-    }
-  }
+
 
   /* ================================================================ routing */
 

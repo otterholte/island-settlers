@@ -313,10 +313,10 @@ export function createFlowUI(root, state, game) {
         ]);
         friends = createFriends(layer, {
           client: netClient(),
-          onClose: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); },
-          // START does not draw anything: the server answers with a match and
-          // netmatch.js parks it and reloads the page into the right island.
-          onStart: () => { /* the reload is the transition */ }
+          // START does not draw anything: the server begins the match once the
+          // last player has pressed it, and netmatch.js parks it and reloads
+          // the page into the right island.
+          onClose: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); }
         });
         toggle(intro, 'mf-hid', true);
         friends.show();

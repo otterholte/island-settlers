@@ -375,18 +375,35 @@ try {
   A.onPush = pump(A);
   B.onPush = pump(B);
 
-  await A.req(REQ.ROOM_START, {});
+  /* --- START IS A VOTE ------------------------------------------------
+     One press must not start a two-person match. This is the whole of the
+     request and the easiest thing in the world to regress, so it is checked
+     from both sides: nothing happens on the first press, and the match begins
+     on the second without anybody pressing anything else. */
+  const voteA = await A.req(REQ.ROOM_START, {});
+  check('22. one player pressing START does not start the match',
+    voteA.started === false && voteA.waitingFor.includes(NAME_B),
+    `alice is ready; waiting for ${JSON.stringify(voteA.waitingFor)}`);
+
+  const soloBegin = await A.next(PUSH.MATCH_BEGIN, 2500).catch(() => null);
+  check('23. and no match begins while somebody has not said yes',
+    soloBegin === null, 'nothing arrived in 2.5s');
+
+  const voteB = await B.req(REQ.ROOM_START, {});
   const beginA = await A.next(PUSH.MATCH_BEGIN);
   const beginB = await B.next(PUSH.MATCH_BEGIN);
+  check('24. the match starts the moment the last player is ready',
+    voteB.started === true && voteB.waitingFor.length === 0,
+    'bob was the last vote');
   net.beginA = beginA;
   net.beginB = beginB;
-  check('22. both clients are told to start the same match',
+  check('25. both clients are told to start the same match',
     beginA.matchId === beginB.matchId && beginA.seed === beginB.seed,
     `seed ${beginA.seed}`);
-  check('23. each client is told which seat is theirs, and they differ',
+  check('26. each client is told which seat is theirs, and they differ',
     beginA.yourPid !== beginB.yourPid,
     `alice pid ${beginA.yourPid}, bob pid ${beginB.yourPid}`);
-  check('24. the two empty seats became bots',
+  check('27. the two empty seats became bots',
     beginA.seats.filter(s => s.kind === 'bot').length === 2
     && beginA.seats.filter(s => s.kind === 'human').length === 2,
     beginA.seats.map(s => `${s.pid}:${s.kind}`).join(' '));
@@ -400,11 +417,11 @@ try {
     yourPid: beginA.yourPid, roster: beginA.seats, order: beginA.order
   });
   const totalItems = [...itemsByTile.values()].reduce((n, l) => n + l.length, 0);
-  check('25. the seed alone deals the board and its whole item field',
+  check('28. the seed alone deals the board and its whole item field',
     tiles.length === 19 && totalItems > 300,
     `19 hexes, ${totalItems} item positions, fingerprint ${boardFingerprint.slice(0, 24)}...`);
 
-  check('26. you are seat 0 locally whatever seat the server dealt you',
+  check('29. you are seat 0 locally whatever seat the server dealt you',
     mirror.toLocal(beginA.yourPid) === 0
     && mirror.toServer(0) === beginA.yourPid
     && state.players[0].color.key === beginA.seats[beginA.yourPid].color,
@@ -422,12 +439,12 @@ try {
   }
 
   await Promise.race([draftDone, sleep(50000)]);
-  check('27. the opening draft completes with eight settlements and eight roads',
+  check('30. the opening draft completes with eight settlements and eight roads',
     state.buildings.size === 8 && state.roadOwner.size === 8,
     `${state.buildings.size} settlements, ${state.roadOwner.size} roads`);
 
   const go = A.seen.go || await A.next(PUSH.MATCH_GO, 12000);
-  check('28. the countdown to play is announced to the table', !!go, `in ${go && go.in}ms`);
+  check('31. the countdown to play is announced to the table', !!go, `in ${go && go.in}ms`);
 
   /* --- play ---------------------------------------------------------- */
   const snapsBefore = A.seen.snap;
@@ -441,24 +458,24 @@ try {
   clearInterval(drive);
 
   const snaps = A.seen.snap - snapsBefore;
-  check('29. snapshots arrive at about the advertised rate',
+  check('32. snapshots arrive at about the advertised rate',
     snaps > 120 && snaps < 260, `${snaps} in 9s (want ~180)`);
 
   const me = state.players[0];
-  check('30. your settler actually moved when you pushed the stick',
+  check('33. your settler actually moved when you pushed the stick',
     Number.isFinite(me.x) && Number.isFinite(me.z)
     && (Math.abs(me.x) + Math.abs(me.z)) > 0,
     `at ${me.x.toFixed(1)}, ${me.z.toFixed(1)} facing ${me.facing.toFixed(2)}`);
 
   const gainedEvents = evLog.filter(e => e.type === 'gained');
   const totalGathered = state.players.reduce((n, p) => n + (p.stats ? p.stats.gathered : 0), 0);
-  check('31. resources are gathered on contact and streamed to both clients',
+  check('34. resources are gathered on contact and streamed to both clients',
     gainedEvents.length > 0 && totalGathered > 0,
     `${gainedEvents.length} pickups seen, ${totalGathered} counted`);
 
   const mirroredRes = state.players.map(p =>
     p.res.wood + p.res.brick + p.res.wool + p.res.wheat + p.res.ore);
-  check('32. the mirrored board agrees with the server about everyone\'s goods',
+  check('35. the mirrored board agrees with the server about everyone\'s goods',
     mirroredRes.every(v => Number.isFinite(v) && v >= 0),
     `packs: ${mirroredRes.join(' / ')}`);
 
@@ -467,7 +484,7 @@ try {
   try {
     await A.req(REQ.MATCH_ACT, { kind: ACT.BUILD_SETTLEMENT, id: 999 });
   } catch (e) { refused = e.code; }
-  check('33. the server refuses a move that is not legal', refused === 'move.illegal',
+  check('36. the server refuses a move that is not legal', refused === 'move.illegal',
     `-> ${refused}`);
 
   /* --- trading from the wrong place ---------------------------------- */
@@ -475,7 +492,7 @@ try {
   try {
     await A.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give: 'wood', get: 'ore' });
   } catch (e) { noTrade = e.code; }
-  check('34. you cannot trade without standing at a post', noTrade === 'move.illegal',
+  check('37. you cannot trade without standing at a post', noTrade === 'move.illegal',
     'proximity is checked on the server, not taken on trust');
 
   /* --- somebody drops ------------------------------------------------ */
@@ -486,12 +503,12 @@ try {
   // A gets told that a seat changed hands.
   const peerMsg = await A.next(PUSH.MATCH_PEER, 8000).catch(() => null);
   peer.seen = !!peerMsg;
-  check('35. the table is told when a player drops out', peer.seen && peerMsg.state === 'gone',
+  check('38. the table is told when a player drops out', peer.seen && peerMsg.state === 'gone',
     `seat ${bobPid} -> ${peerMsg && peerMsg.state}`);
 
   const beforeReconnect = A.seen.snap;
   await sleep(2000);
-  check('36. the match keeps running for everyone still in it',
+  check('39. the match keeps running for everyone still in it',
     A.seen.snap > beforeReconnect, `${A.seen.snap - beforeReconnect} more snapshots`);
 
   /* --- reconnect ----------------------------------------------------- */
@@ -499,7 +516,7 @@ try {
   await B.req(REQ.HELLO, { version: PROTOCOL_VERSION });
   await B.req(REQ.RESUME, { token: regB.token });
   const backIn = await B.next(PUSH.MATCH_BEGIN, 8000).catch(() => null);
-  check('37. reconnecting puts you back in your own seat',
+  check('40. reconnecting puts you back in your own seat',
     !!backIn && backIn.yourPid === bobPid && backIn.resumed === true,
     `back at seat ${backIn && backIn.yourPid}`);
 
@@ -507,7 +524,7 @@ try {
   await A.req(REQ.MATCH_LEAVE, {});
   await sleep(1500);
   const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());
-  check('38. leaving a match does not take the server with it',
+  check('41. leaving a match does not take the server with it',
     stillGoing.ok === true, `${stillGoing.matches} match(es) still running`);
 
   /* --- persistence --------------------------------------------------- */
@@ -517,12 +534,12 @@ try {
     // the file survives a deploy is a property of the mount, not of this run.
     // What CAN be checked is that the server said the path is on a volume and
     // that it has actually written to it.
-    check('39. the accounts are on a volume that survives a deploy',
+    check('42. the accounts are on a volume that survives a deploy',
       finalHealth.store.persists === true && finalHealth.store.writes > 0,
       `${finalHealth.store.path} via ${finalHealth.store.from}, ` +
       `${finalHealth.store.writes} writes, ${finalHealth.users} accounts`);
   } else {
-    check('39. the accounts were written to disk',
+    check('43. the accounts were written to disk',
       finalHealth.users === 2 && finalHealth.store.writes > 0,
       `${finalHealth.users} accounts, ${finalHealth.store.writes} writes`);
   }
