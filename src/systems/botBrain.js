@@ -58,6 +58,31 @@ function rateOf(tileId) { return tileRateFor(tiles[tileId].pips); }
 // heuristics keep their feel: a 5-pip hex rates ~1.2 items/s, a 1-pip hex ~0.33.
 const RATE_TO_SCORE = 5.5;
 
+/* ------------------------------------------------- opening-draft weights
+ *
+ *   "Trying to get a healthy mix of resources — hopefully touching one hex
+ *    with every resource so you don't have to go to the trading post as often
+ *    would be a better strategy. I just had it pick for me and it picked a
+ *    port and two total different types of resources, instead of all 5."
+ *
+ * These are big numbers on purpose. Everything else in the corner score is
+ * production rate, which runs to a hundred points and more, so any structural
+ * preference expressed in ones and twos is arithmetically invisible — which is
+ * exactly what the old ones were. Calibrated against the real spread of corner
+ * scores on a dealt board: the fourth and fifth resource are each worth about
+ * as much as a two-pip difference in production, which is the trade the
+ * sentence above is asking for and not more than it.
+ *
+ * COVER is indexed by how many DIFFERENT resources you would hold after taking
+ * the corner, across both settlements. The steps get bigger as they go, because
+ * the fifth resource is the one that stops you walking to the market at all.
+ */
+const COVER = [0, 0, 10, 30, 54, 82];
+/** Taking a third workable hex rather than a coast-and-dock corner. */
+const THIRD_HEX = 16;
+/** What a two-hex corner gives up beyond the production already charged for. */
+const COASTAL_SETUP = 7;
+
 /* ===================================================== strategic personality */
 
 /** Per-strategy appetite for each resource, folded into placement scoring. */
@@ -163,7 +188,8 @@ export function productionOf(state, pid) {
  * shorter walk, so it is worth a fraction. Then diversity, scarcity of what it
  * supplies, port access, minus crowding.
  */
-export function intersectionScore(state, pid, iid, prod, aff, owned = null) {
+export function intersectionScore(state, pid, iid, prod, aff, owned = null, ctx = null) {
+  const setup = !!(ctx && ctx.setup);
   const n = intersections[iid];
   const mine = owned || ownedTiles(state, pid);
   let s = 0;
@@ -183,12 +209,39 @@ export function intersectionScore(state, pid, iid, prod, aff, owned = null) {
   }
   s += kinds.size * 2.4;
   s += fresh * 1.6;
-  if (n.tiles.length < 3) s -= 1.8;          // coastal corners work fewer hexes
+
+  /* A CORNER WITH TWO HEXES IS NOT A CORNER WITH THREE.
+   *
+   *   "It's almost always better to be placed on sections that have 3 hexes
+   *    instead of two and a port."
+   *
+   * Right, and the old −1.8 said so in a whisper. The rate term above is worth
+   * a hundred points and this was worth under two, so in practice the draft was
+   * "most pips wins" and a rich two-hex corner beat a balanced three-hex one
+   * every time. The missing hex costs its production, which the rate already
+   * charges for — this is the rest of the bill: a third fewer corners to expand
+   * into, a third less chance of covering a resource you lack, and a hex that
+   * can never be a city's third region. In the opening, where these two corners
+   * ARE the economy, that is worth a lot more than a rounding error. */
+  if (n.tiles.length < 3) s -= setup ? COASTAL_SETUP : 1.8;
 
   const pt = n.port;
   if (pt !== null && pt !== undefined) {
     const port = ports[pt];
-    s += port.kind === 'generic' ? 2.2 : (kinds.has(port.resource) ? 3.8 : 1.3);
+    /* AND A PORT IS NOT WORTH A HEX — least of all in the draft.
+     *
+     * A dock is a way of turning a surplus you already have into something
+     * else. In the opening there is no surplus: you own nothing, you produce
+     * nothing, and the first thing a 3:1 does for you is nothing at all. It
+     * pays later, and by then you can build a settlement onto it. Mid-match
+     * the old numbers stand; in setup the generic dock is worth nothing and a
+     * 2:1 is worth something only when it matches a resource this corner
+     * actually works. */
+    if (setup) {
+      s += port.kind === 'generic' ? 0 : (kinds.has(port.resource) ? 2.0 : 0);
+    } else {
+      s += port.kind === 'generic' ? 2.2 : (kinds.has(port.resource) ? 3.8 : 1.3);
+    }
   }
 
   let rivals = 0;
@@ -702,7 +755,7 @@ export function chooseSetupSettlement(state, pid, rand = Math.random, opts = {})
   let best = legal[0], bestS = -Infinity;
   for (const iid of legal) {
     const n = intersections[iid];
-    let s = intersectionScore(state, pid, iid, prod, aff, owned);
+    let s = intersectionScore(state, pid, iid, prod, aff, owned, { setup: true });
     // Raw supply rate dominates the opening — the single biggest lever.
     let rate = 0, novel = 0;
     for (const tid of n.tiles) {
@@ -712,7 +765,21 @@ export function chooseSetupSettlement(state, pid, rand = Math.random, opts = {})
       if (!have.has(t.resource)) novel++;
     }
     s += rate * RATE_TO_SCORE * 1.5;
-    s += novel * 3.2;                     // cover five resources, not two
+
+    /* WHAT THE PAIR COVERS, not what this corner adds. `novel * 3.2` counted
+       new resources one at a time and was swamped by the rate; this asks the
+       question the player asked — how many of the five would I hold if I took
+       this — and prices the answer on the same scale as production. */
+    const after = new Set(have);
+    for (const tid of n.tiles) {
+      const t = tiles[tid];
+      if (t.resource) after.add(t.resource);
+    }
+    s += COVER[Math.min(5, after.size)];
+    if (n.tiles.length >= 3) s += THIRD_HEX;
+    // Kept, small, as the tie-break between two corners that cover the same
+    // set: prefer the one carrying more of it.
+    s += novel * 1.2;
     // Second pick: spread out rather than double up on one region.
     for (const o of own) {
       const d = Math.hypot(intersections[o].x - n.x, intersections[o].z - n.z);

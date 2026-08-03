@@ -42,6 +42,7 @@ import {
 
 import { chooseSetupSettlement, chooseSetupRoad } from './bots.js';
 import { autoDraft } from '../core/options.js';
+// `reviewing` holds the stage machine while the finished board is on screen.
 import { difficultyParams } from './difficulty.js';
 
 /* ------------------------------------------------------------------ timing */
@@ -145,6 +146,7 @@ export function createDraft(state, game, deps) {
   let boardUp = false;
   let hold = 0;                  // post-placement beat, shared by bots and human
   let done = false;
+  let reviewing = false;         // the finished board is up, waiting on the player
 
   /**
    * The last road has just gone down. The single view change of the whole
@@ -207,6 +209,7 @@ export function createDraft(state, game, deps) {
   function begin() {
     hold = 0;
     done = false;
+    reviewing = false;
     step.key = '';
     step.phase = 'beat';
     step.pid = -1;
@@ -216,6 +219,21 @@ export function createDraft(state, game, deps) {
     cam.setActive(true);
     cam.overview(true);
     cam.snap(BOUNDS.cx, BOUNDS.cz);
+
+    /* NOBODY WATCHES A DRAFT THEY ARE NOT IN.
+     *
+     *   "Instead of still having me watch the draft happen I should just
+     *    automatically see all of the locations that were chosen on the map
+     *    overview, and just press start game as another button on the map
+     *    screen once I've reviewed the board — giving me time to create my own
+     *    plan of attack once the game starts."
+     *
+     * So with the setting on there is no draft to watch: all sixteen pieces go
+     * down at once, and what the player gets instead is the finished board and
+     * as long as they want to look at it. Which is the better version of the
+     * request — the minute they were trying not to spend is gone, and the
+     * planning time they actually wanted is theirs to end. */
+    if (autoDraft()) { runWholeDraft(); return; }
 
     boardUp = showBoard('draft-watch', { title: 'Opening Draft', hint: seatLine() });
 
@@ -228,10 +246,53 @@ export function createDraft(state, game, deps) {
     toast(seatLine(), 'info');
   }
 
+  /**
+   * Place the whole opening in one go, then hand the board over for review.
+   *
+   * Every seat is drafted by the same chooser the rivals use — seat 0 with the
+   * difficulty's opening randomness switched off, see `brainOpts` — so this is
+   * the same draft that would have played out over the next minute, without
+   * the minute. The guard is a hard iteration cap rather than a `while`: a
+   * chooser that somehow returns nothing must not spin the tab.
+   */
+  function runWholeDraft() {
+    for (let i = 0; i < 40 && state.phase === 'setup'; i++) {
+      const pid = setupCurrentPlayer(state);
+      if (pid < 0) { forceAdvance(); continue; }
+      if (state.setupNeed === 'road') {
+        const eid = safeRoadChoice(pid, state.setupAnchor);
+        if (eid < 0 || !setupPlaceRoad(state, pid, eid)) forceAdvance();
+      } else {
+        const iid = safeSettlementChoice(pid);
+        if (iid < 0 || !setupPlaceSettlement(state, pid, iid)) forceAdvance();
+      }
+    }
+    openReview();
+  }
+
+  /** The finished board, and one button. The match starts when they say so. */
+  function openReview() {
+    reviewing = true;
+    boardUp = showBoard('draft-watch', {
+      title: 'The Island',
+      hint: 'Every settlement is placed — start when you are ready',
+      cancellable: false,
+      action: { label: 'Start the Match', onPress: () => { reviewing = false; finish(); } }
+    });
+    if (!boardUp) { reviewing = false; finish(); return; }
+    ui.setDraft({
+      index: 8, pid: 0,
+      status: 'The Island',
+      sub: 'Every settlement is placed',
+      tip: 'Take as long as you like — the clock starts when you do.'
+    });
+    announce('Your Island', state.players[0].color.css);
+  }
+
   function reset() {
     step.key = ''; step.pid = -1; step.human = false; step.opened = false;
     step.phase = 'beat'; step.target = -1; step.t = 0; step.idle = 0;
-    hold = 0; boardUp = false; done = true;
+    hold = 0; boardUp = false; done = true; reviewing = false;
   }
 
   /* ------------------------------------------------------------ the picks */
@@ -561,6 +622,10 @@ export function createDraft(state, game, deps) {
       if (hold > 0) return false;
     }
 
+    // The board is placed and the player is looking at it. Nothing advances
+    // until they press the button — that wait IS the feature.
+    if (reviewing) return false;
+
     // Backstop: the draft ended somewhere this module did not see it happen.
     if (state.phase !== 'setup') { done = true; return true; }
 
@@ -589,7 +654,13 @@ export function createDraft(state, game, deps) {
 
   return {
     begin, update, reset,
-    get holding() { return hold > 0 && !done; },
+    /* `holding` is what matchflow's phase watchdog asks before it decides the
+       draft finished without it and yanks the player into play. The landing
+       beat used it; the review screen needs it for the same reason and for
+       longer: the eighth road flips `state.phase` to 'play' the instant it
+       lands, so without this the board would be torn down under somebody who
+       has been given it to look at. */
+    get holding() { return (hold > 0 || reviewing) && !done; },
     get done() { return done; },
     get boardUp() { return boardUp; },
     get pid() { return step.pid; }

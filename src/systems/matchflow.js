@@ -754,11 +754,18 @@ export function createMatchFlow(state, game) {
     // opening chrome down instead of leaving the intro card floating over live
     // gameplay, and hand control to the player.
     //
-    // The `draft.holding` exemption is the draft's own landing beat: the last
+    // The `draft.holding` exemption is the draft asking for time: the last
     // road has just gone down and flipped the phase, and the draft still owes
-    // the player half a second of looking at it before the view changes once.
+    // the player something before the view changes. That used to be half a
+    // second of watching the piece land — and it was scoped to `stage ===
+    // 'draft'`, which was true for the landing beat and false for the other
+    // case that now exists. With the opening picked for you the whole draft
+    // resolves inside `draft.begin()`, which runs during `draftIntro`, so the
+    // phase flips a stage early and the board the player was handed to look at
+    // was torn down under them on the next tick. A draft that says it is
+    // holding is holding, whatever the machine is calling this moment.
     if (state.phase === 'play' && stage !== 'play' && stage !== 'handoff'
-        && !(stage === 'draft' && draft.holding)) {
+        && !draft.holding) {
       ui.hideIntro();
       enterPlay(true);
       return;
@@ -869,6 +876,8 @@ export function createMatchFlow(state, game) {
     get floodFading() { return fade.active; },
     get endView() { return win.board ? 'board' : 'close'; },
     get stage() { return stage; },
+    /** Capture-rig hook: is the draft asking the machine to wait? */
+    get draftHolding() { return !!(draft && draft.holding); },
     get elapsed() { return elapsed; },
     get isWinSequence() { return win.active; },
     /**

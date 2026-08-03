@@ -1151,26 +1151,73 @@ if (STAGE === 'home') {
   true)));
   await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
 
-  let out = null;
-  for (let i = 0; i < 60; i++) {
-    /* Pump the stage machine rather than waiting on the wall clock. Under
-       SwiftShader this scene renders at a few frames a second, so a draft that
-       takes half a minute of game time takes several of real time — and the
-       thing being tested is the draft, not the software rasteriser. */
+  /* THE WHOLE DRAFT LANDS AT ONCE, and then the board waits.
+   *   "Instead of still having me watch the draft happen I should just
+   *    automatically see all of the locations that were chosen on the map
+   *    overview, and just press start game as another button on the map screen
+   *    once I've reviewed the board."
+   * So the assertion is in two halves and the second is the point: everything
+   * is placed, and NOTHING has started. */
+  await sleep(1200);
+  const READY = `(()=>{const I=window.__ISLAND__;
+    const act=document.querySelector('.ov-act');
+    const r=act?act.getBoundingClientRect():null;
+    return {phase:I.state.phase, b:I.state.buildings.size, r:I.state.roadOwner.size,
+      mine:I.state.players[0].settlements.size,
+      myRoads:[...I.state.roadOwner.values()].filter(v=>v===0).length,
+      mapUp:!!(I.game.overview&&I.game.overview.isOpen),
+      stage:(I.game.flow||{}).stage,
+      holding:!!(I.game.flow&&I.game.flow.draftHolding),
+      button:act&&!act.classList.contains('hid')?(act.textContent||'').trim():null,
+      box:r?{w:Math.round(r.width),h:Math.round(r.height)}:null,
+      clock:+I.state.time.toFixed(2)};})()`;
+  let out = await ev(READY);
+  console.log('  PLACED ' + JSON.stringify(out));
+
+  // Give it several seconds of game time with nobody touching anything. The
+  // match must still not have begun.
+  await ev(`(()=>{const g=window.__ISLAND__.game;
+    for(let k=0;k<600;k++){g.flow.update(1/60);if(g.bots.update)g.bots.update(1/60);}
+    return 1})()`);
+  await sleep(200);
+  const waited = await ev(READY);
+  console.log('  WAITED ' + JSON.stringify(waited));
+  console.log('  REVIEW ' + JSON.stringify({
+    everythingPlaced: out.b === 8 && out.r === 8,
+    twoCornersTwoRoads: out.mine === 2 && out.myRoads === 2,
+    boardIsUp: out.mapUp,
+    oneButtonOnIt: !!out.button,
+    // The eighth road flips `state.phase` to 'play' the moment it lands, so
+    // "has it started" is not a question about the phase — it is whether the
+    // board is still up and the stage machine is still holding.
+    andItWaits: waited.mapUp && waited.stage !== 'play'
+  }));
+  await shot(`autodraft-review-${TAG}`);
+
+  // Press it the way a thumb does.
+  const btn = await ev(`(()=>{const b=document.querySelector('.ov-act');
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2),
+      onTop:document.elementFromPoint(Math.round(r.left+r.width/2),
+        Math.round(r.top+r.height/2)).closest('.ov-act')===b};})()`);
+  console.log('  PRESS ' + JSON.stringify(btn));
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: btn.x, y: btn.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: btn.x, y: btn.y, button: 'left', clickCount: 1 });
+  await sleep(300);
+  for (let i = 0; i < 20; i++) {
     await ev(`(()=>{const g=window.__ISLAND__.game;
-      for(let k=0;k<300;k++){g.flow.update(1/60);if(g.bots.update)g.bots.update(1/60);}
+      for(let k=0;k<120;k++){g.flow.update(1/60);if(g.bots.update)g.bots.update(1/60);}
       return 1})()`);
-    await sleep(60);
-    out = await ev(`(()=>{const I=window.__ISLAND__;
-      return {phase:I.state.phase, b:I.state.buildings.size, r:I.state.roadOwner.size,
-        mine:I.state.players[0].settlements.size,
-        myRoads:[...I.state.roadOwner.values()].filter(v=>v===0).length};})()`);
-    if (out && out.phase === 'play') break;
+    out = await ev(READY);
+    if (out.phase === 'play') break;
+    await sleep(40);
   }
-  console.log('  DRAFTED ' + JSON.stringify(out));
+  console.log('  STARTED ' + JSON.stringify(out));
   console.log('  HANDSOFF ' + JSON.stringify({
-    finishedWithNoInput: !!out && out.phase === 'play' && out.b === 8 && out.r === 8,
-    twoCornersTwoRoads: !!out && out.mine === 2 && out.myRoads === 2
+    startsOnlyWhenPressed: out.phase === 'play',
+    twoCornersTwoRoads: out.mine === 2 && out.myRoads === 2
   }));
 
   /* AND THEY ARE NOT SCRAPPY. Pip total is the board's own measure of how much

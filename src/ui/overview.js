@@ -249,7 +249,28 @@ export function createOverview(root, state, game) {
   const confirmBtn = button('green off', { on: { click: () => commit() } },
     el('span', { class: 'sb-ico', html: icon('check', 18) }),
     el('span', { class: 'sb-lab', text: 'Confirm' }));
-  const bar = el('div', { class: 'ov-bar plate lift hid' }, cancelBtn, selLabel, confirmBtn);
+  /* ONE BUTTON, WHEN THE PANEL IS NOT ASKING A QUESTION.
+   *
+   *   "Instead of still having me watch the draft happen I should just
+   *    automatically see all of the locations that were chosen on the map
+   *    overview, and just press start game as another button on the map screen
+   *    once I've reviewed the board — giving me time to create my own plan of
+   *    attack once the game starts."
+   *
+   * The confirm bar exists to commit a placement, so it carries a Cancel, a
+   * running label and a Confirm. A review screen has nothing to cancel and
+   * nothing to confirm; it has one thing to do. `opts.action` puts that one
+   * thing here and stands the other three down. */
+  const actionBtn = button('green big ov-act hid', { on: { click: () => fireAction() } },
+    el('span', { class: 'sb-lab', text: 'Start' }));
+  const bar = el('div', { class: 'ov-bar plate lift hid' },
+    cancelBtn, selLabel, confirmBtn, actionBtn);
+
+  let action = null;
+  function fireAction() {
+    const fn = action;
+    if (typeof fn === 'function') { action = null; fn(); }
+  }
 
   /* NO TITLE PLATE AND NO SUB-LINE.
    *
@@ -631,11 +652,11 @@ export function createOverview(root, state, game) {
      * that is a corner, not a band. 12 top, 10 bottom in view mode, and the
      * side padding halved: the same island, drawn about a fifth larger. */
     let padT = 12;
-    let padB = mode === 'view' ? 10 : 54;
+    let padB = (mode === 'view' && bar.classList.contains('hid')) ? 10 : 54;
     const padX = 8;
     if (cv.getBoundingClientRect) {
       const base = cv.getBoundingClientRect();
-      if (mode !== 'view' && bar.getBoundingClientRect) {
+      if (!bar.classList.contains('hid') && bar.getBoundingClientRect) {
         const r = bar.getBoundingClientRect();
         if (r.height) padB = Math.max(padB, (f.y + f.h) - (r.top - base.top) + 8);
       }
@@ -928,10 +949,19 @@ export function createOverview(root, state, game) {
     const info = MODE_INFO[mode];
     setText(titleEl, opts.title || info.title);
     setText(hintEl, opts.hint || info.hint);
-    const barred = mode !== 'view' && mode !== 'draft-watch';
+    /* An action turns the bar into a single button in ANY mode, including the
+       two that normally have no bar at all. */
+    action = opts.action && typeof opts.action.onPress === 'function'
+      ? opts.action.onPress : null;
+    const acting = !!action;
+    if (acting) setText(actionBtn.querySelector('.sb-lab'), opts.action.label || 'Start');
+    const barred = (mode !== 'view' && mode !== 'draft-watch') || acting;
     toggle(bar, 'hid', !barred);
+    toggle(actionBtn, 'hid', !acting);
+    toggle(confirmBtn, 'hid', acting);
+    toggle(selLabel, 'hid', acting);
     toggle(closeBtn, 'hid', mode !== 'view' && opts.cancellable === false);
-    toggle(cancelBtn, 'hid', opts.cancellable === false);
+    toggle(cancelBtn, 'hid', acting || opts.cancellable === false);
     select(null);
     if (opts.draft) buildDraftRail(opts.draft);
     else { buildRail(); refreshRail(); }

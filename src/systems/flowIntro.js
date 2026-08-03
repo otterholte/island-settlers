@@ -33,7 +33,7 @@
  */
 
 import { VICTORY_POINTS } from '../core/constants.js';
-import { el, button } from '../ui/dom.js';
+import { el, button, setText } from '../ui/dom.js';
 import { icon, avatar } from '../ui/icons.js';
 import {
   DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
@@ -227,10 +227,11 @@ export const INTRO_CSS = `
   --f1:#e7e0cd;--f2:#cfc4a8;--f3:#b6a988;--lip:#7d6c48;--fg:#3f2a12}
 
 @media (max-height:500px),(max-width:1023px){
-  .mf-panel{width:min(500px,94vw)}
+  .mf-panel{width:min(540px,95vw)}
   .mf-p-head{padding:6px 12px 5px}
-  .mf-p-body{gap:5px;padding:7px 10px}
-  .mf-p-foot{padding:6px 12px 8px;gap:10px}
+  .mf-p-body{gap:11px;padding:10px 10px 12px}
+  .mf-p-row{gap:5px}
+  .mf-p-foot{padding:7px 12px 9px;gap:10px}
   .mf-panel .mf-play{min-height:42px}
   .mf-back{min-height:40px}
   /* Specificity, not order: the un-nested compact rule for .btn.mf-diff loses
@@ -452,11 +453,22 @@ export const INTRO_CSS = `
      under it. The blurb is what gives, not the button. Four of these at 667
      wide come to 4x116.7 + 3x8 of gap = 491px inside a 647px content box. */
   .btn.mf-diff{min-height:46px;width:clamp(96px,17.5vw,124px);padding:4px 6px 5px}
-  .btn.mf-switch{width:clamp(56px,10vw,64px);height:30px;min-height:30px}
-  .btn.mf-switch::after{width:20px;height:20px;top:3px;left:3px}
-  .btn.mf-switch.on::after{transform:translateX(calc(clamp(56px,10vw,64px) - 30px))}
-  .mf-raid-state{font-size:11px;letter-spacing:.12em}
-  .mf-i-dnote{font-size:7px;margin-top:1px}
+  /* ROOM TO BREATHE, AND TEXT YOU CAN ACTUALLY READ.
+   *
+   *   "The buttons and text here are too squished vertically and the smallest
+   *    text is too small to read."
+   *
+   * Both true, and both were the compact block's doing: the switches were
+   * pinned to a 30px track — under the 36px anything a thumb touches is
+   * supposed to clear — and the caption under each one was set at SEVEN
+   * PIXELS. Seven. That is not small type, it is a texture. The panel has the
+   * room: it was measuring 275px tall inside a 375px viewport, so this spends
+   * some of the eighty it was leaving empty. */
+  .btn.mf-switch{width:clamp(62px,11vw,72px);height:38px;min-height:38px}
+  .btn.mf-switch::after{width:26px;height:26px;top:5px;left:5px}
+  .btn.mf-switch.on::after{transform:translateX(calc(clamp(62px,11vw,72px) - 36px))}
+  .mf-raid-state{font-size:12px;letter-spacing:.1em}
+  .mf-i-dnote{font-size:10px;line-height:1.3;margin-top:3px}
   .btn.mf-diff .mf-d-sub{font-size:6.6px;line-height:1.15}
   .mf-i-diff{gap:2px}
   .mf-i-cta{gap:10px;margin-top:4px}
@@ -579,23 +591,33 @@ export function buildIntro(state, onBegin) {
    * of match do I want — and it is stored per device rather than per match, so
    * it holds online too without anybody else having to agree to it. */
   const autoNote = el('div', { class: 'mf-i-dnote' });
-  const autoState = el('b', { class: 'mf-raid-state', text: 'Off' });
+  const autoState = el('b', { class: 'mf-raid-state', text: 'I pick' });
   const autoSwitch = button('mf-switch', {
     role: 'switch',
     'aria-label': 'Pick my opening for me — the bot claims your two corners and roads',
     on: { click: () => pickAuto(!autoDraft()) }
   });
 
+  /* ON and OFF said nothing, and neither did the word OPENING above them.
+   *
+   *   "I don't think the word Opening makes a lot of sense. Make it more
+   *    clear."
+   *
+   * A switch labelled with a noun makes the reader work out which way round it
+   * is. This one answers the question instead — WHO PICKS MY SPOTS, and the
+   * two answers are "I pick" and "Pick for me". Nothing to infer. */
   function paintAuto() {
     const cur = autoDraft();
     autoSwitch.classList.toggle('on', cur);
     autoSwitch.setAttribute('aria-checked', cur ? 'true' : 'false');
     autoState.classList.toggle('on', cur);
-    autoState.textContent = cur ? 'On' : 'Off';
+    autoState.textContent = cur ? 'Pick for me' : 'I pick';
     autoNote.textContent = cur
-      ? 'A strong opening is claimed for you · straight into the match'
-      : 'You claim your own two corners and two roads';
+      ? 'Strong spots are claimed for you — look the board over, then start'
+      : 'You claim your own two corners and two roads in the draft';
     autoNote.classList.toggle('off', !cur);
+    setText(startBtn.querySelector('.sb-lab'),
+      cur ? 'Continue' : 'Begin the Draft');
   }
 
   function pickAuto(on) {
@@ -629,7 +651,6 @@ export function buildIntro(state, onBegin) {
   }
 
   paintRaid();
-  paintAuto();
 
   /* ======================================================== the two screens
    *
@@ -809,6 +830,10 @@ export function buildIntro(state, onBegin) {
   const startBtn = button('green huge mf-play', { on: { click: () => onBegin() } },
     el('span', { class: 'sb-lab', text: 'Begin the Draft' }));
 
+  // After `startBtn` exists: paintAuto writes its label, because the button
+  // says what the switch above it means — Begin the Draft, or Continue.
+  paintAuto();
+
   const backBtn = button('cream mf-back', {
     'aria-label': 'Back to the home screen',
     on: { click: () => show('home') }
@@ -842,7 +867,7 @@ export function buildIntro(state, onBegin) {
           el('div', { class: 'mf-i-raid' }, raidSwitch, raidState),
           raidNote),
         el('div', { class: 'mf-p-row' },
-          el('div', { class: 'mf-i-dlab', text: 'Opening' }),
+          el('div', { class: 'mf-i-dlab', text: 'Who picks my spots' }),
           el('div', { class: 'mf-i-raid' }, autoSwitch, autoState),
           autoNote)),
       el('div', { class: 'mf-p-foot' }, backBtn, startBtn)));
