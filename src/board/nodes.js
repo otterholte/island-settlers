@@ -63,12 +63,13 @@
  *   restored   { tile }
  *
  * -----------------------------------------------------------------------------
- * Deterministic: the field is built from the board `layout.js` has already
- * dealt by the time this module runs, so a given layout seed always produces
- * the same scatter. Never mutate positions — if the board is re-dealt at
- * runtime, `refreshFieldsFromBoard()` (registered on `onBoardChanged`) re-tags
- * every item's resource and kind and leaves the positions and ids alone, so
- * anything holding an item reference stays valid.
+ * Deterministic, and it has to be: a given board seed must produce the same
+ * field in every browser and in the match worker, because the network replays
+ * a pickup by ITEM ID and nothing else. The scatter is therefore seeded off
+ * each hex's number token, and `refreshFieldsFromBoard()` (registered on
+ * `onBoardChanged`) lays the whole field again whenever the board is re-dealt.
+ * Positions move; ids, indices and object identity do not, so anything holding
+ * an item reference stays valid across a re-deal.
  */
 
 import { tiles, onBoardChanged } from './layout.js';
@@ -143,23 +144,29 @@ function scatterField(rng, count) {
 export const items = [];
 export const itemsByTile = new Map();
 
-tiles.forEach((tile, ti) => {
-  if (!tile.resource) return;
+/**
+ * Lay one hex's field out, in place.
+ *
+ * THE SEED IS THE TILE'S NUMBER TOKEN, and that is the whole point: two
+ * machines holding the same board hold the same numbers, so they scatter the
+ * same 32 items to the same coordinates. It is also why this has to be re-run
+ * when the board is re-dealt — see `relayField` below for the bug that lived
+ * here for as long as multiplayer did.
+ *
+ * `pool` is the existing item objects for the tile when there are some, so ids,
+ * indices and anything holding a reference survive a re-deal untouched. Only
+ * the geometry moves.
+ */
+function layTile(tile, ti, pool) {
   const rng = mulberry32(90210 + ti * 7717 + tile.number * 313);
   const pts = scatterField(rng, TILE_ITEM_POOL);
-  const list = [];
+  const kind = ITEM_KIND[tile.terrain];
+  const list = pool || [];
   pts.forEach((p, i) => {
-    const it = {
-      id: items.length,
+    const it = list[i] || {
+      id: -1,                       // assigned by the caller that first builds
       tile: tile.id,
       index: i,
-      resource: tile.resource,
-      kind: ITEM_KIND[tile.terrain],
-      x: tile.x + p.lx,
-      z: tile.z + p.lz,
-      rot: rng() * Math.PI * 2,
-      scale: 0.86 + rng() * 0.36,
-      variant: Math.floor(rng() * 3),
       enabled: true,
       collected: false,
       available: true,
@@ -167,9 +174,23 @@ tiles.forEach((tile, ti) => {
       takenAt: 0,
       legacyNode: -1
     };
-    items.push(it);
-    list.push(it);
+    it.resource = tile.resource;
+    it.kind = kind;
+    it.x = tile.x + p.lx;
+    it.z = tile.z + p.lz;
+    it.rot = rng() * Math.PI * 2;
+    it.scale = 0.86 + rng() * 0.36;
+    it.variant = Math.floor(rng() * 3);
+    if (!list[i]) list[i] = it;
   });
+  return list;
+}
+
+tiles.forEach((tile, ti) => {
+  if (!tile.resource) return;
+  const list = [];
+  layTile(tile, ti, list);
+  for (const it of list) { it.id = items.length; items.push(it); }
   itemsByTile.set(tile.id, list);
 });
 
@@ -179,12 +200,17 @@ const CELL = 6.0;
 const grid = new Map();
 const cellKey = (x, z) => `${Math.floor(x / CELL)}:${Math.floor(z / CELL)}`;
 
-for (const it of items) {
-  const k = cellKey(it.x, it.z);
-  let bucket = grid.get(k);
-  if (!bucket) { bucket = []; grid.set(k, bucket); }
-  bucket.push(it);
+/** Rebuilt whenever the field moves — a stale bucket is a pickup that misses. */
+function rebuildGrid() {
+  grid.clear();
+  for (const it of items) {
+    const k = cellKey(it.x, it.z);
+    let bucket = grid.get(k);
+    if (!bucket) { bucket = []; grid.set(k, bucket); }
+    bucket.push(it);
+  }
 }
+rebuildGrid();
 
 /**
  * Every item within `r` of a point. Pass `out` to reuse an array — the pickup
@@ -396,26 +422,36 @@ function legacyPoints(rng, count, inset = 0.62, minSep = 0.34) {
 
 export const nodes = [];
 
-tiles.forEach((tile, ti) => {
-  if (!tile.resource) return;
+/** The same in-place re-lay as `layTile`, for the deprecated prop anchors. */
+function layNodes(tile, ti, pool) {
   const rng = mulberry32(1337 + ti * 9176 + tile.number * 131);
   const pts = legacyPoints(rng, NODES_PER_TILE);
-  pts.forEach((p) => {
-    nodes.push({
-      id: nodes.length,
+  const kind = ITEM_KIND[tile.terrain];
+  const list = pool || [];
+  pts.forEach((p, i) => {
+    const n = list[i] || {
+      id: -1,
       tile: tile.id,
-      resource: tile.resource,
-      kind: ITEM_KIND[tile.terrain],
-      x: tile.x + p.lx,
-      z: tile.z + p.lz,
-      rot: rng() * Math.PI * 2,
-      scale: 0.85 + rng() * 0.4,
-      variant: Math.floor(rng() * 3),
       remaining: NODE_CAPACITY,
       regrowAt: 0,
       justRegrew: false
-    });
+    };
+    n.resource = tile.resource;
+    n.kind = kind;
+    n.x = tile.x + p.lx;
+    n.z = tile.z + p.lz;
+    n.rot = rng() * Math.PI * 2;
+    n.scale = 0.85 + rng() * 0.4;
+    n.variant = Math.floor(rng() * 3);
+    if (!list[i]) list[i] = n;
   });
+  return list;
+}
+
+tiles.forEach((tile, ti) => {
+  if (!tile.resource) return;
+  const list = layNodes(tile, ti, null);
+  for (const n of list) { n.id = nodes.length; nodes.push(n); }
 });
 
 export const nodesByTile = (() => {
@@ -428,16 +464,19 @@ export const nodesByTile = (() => {
 })();
 
 // Each real item points at the legacy node nearest to it, so the old harvest
-// FX still fire on roughly the right prop.
-for (const it of items) {
-  const list = nodesByTile.get(it.tile) || [];
-  let best = -1, bd = Infinity;
-  for (const n of list) {
-    const d = (n.x - it.x) * (n.x - it.x) + (n.z - it.z) * (n.z - it.z);
-    if (d < bd) { bd = d; best = n.id; }
+// FX still fire on roughly the right prop. Re-run whenever either list moves.
+function linkLegacy() {
+  for (const it of items) {
+    const list = nodesByTile.get(it.tile) || [];
+    let best = -1, bd = Infinity;
+    for (const n of list) {
+      const d = (n.x - it.x) * (n.x - it.x) + (n.z - it.z) * (n.z - it.z);
+      if (d < bd) { bd = d; best = n.id; }
+    }
+    it.legacyNode = best;
   }
-  it.legacyNode = best;
 }
+linkLegacy();
 
 /** Mirror the hex's fill fraction onto the deprecated node list. */
 function syncLegacy(tileId) {
@@ -488,31 +527,52 @@ restoreAll();
 /* ==================================================== board re-deal support */
 
 /**
- * Re-point the item field at a freshly shuffled board.
+ * Re-lay the whole item field onto a freshly shuffled board.
  *
- * The desert is always the centre hex, so the set of tiles that carry an item
- * pool never changes and neither do the scatter positions, item ids or legacy
- * node links. All that moves is what each item *is* — a hex that was pasture
- * and is now forest keeps its 24 slots and starts growing trees in them — plus
- * the item counts and regen timers, which `tileItemCount` / `tileRegenSeconds`
- * already read live off `tile.pips`.
+ * THIS USED TO ONLY RE-TAG, and that was the bug that broke multiplayer.
+ *
+ *   "It was clear it wasn't the same game — the roads and settlements were in
+ *    different locations, and when one user built a road the other player
+ *    didn't see it at all."
+ *
+ * The scatter is seeded off `tile.number` (see `layTile`), and every process
+ * — every browser, and the match worker — deals a RANDOM board at module load
+ * before anybody asks it for a specific one. So the positions were derived
+ * from that throwaway board and then never recomputed: same terrain, same
+ * numbers, same docks, and a completely different field of 576 trees, sheep
+ * and ore on every screen. Running one seed in three processes gave three
+ * different scatter hashes against one identical terrain hash.
+ *
+ * Which is worse than cosmetic. `mirror.js` replays a pickup by item id, so
+ * one machine's item 412 was another machine's item 412 standing thirty metres
+ * away: props vanished where nobody had been and stayed standing where someone
+ * had just run through.
+ *
+ * So the field is laid again from the new numbers, the spatial grid is rebuilt
+ * (a stale bucket is a pickup that misses), and the legacy prop links are
+ * re-pointed. Item ids, indices, tile membership and object identity all
+ * survive, so anything holding a reference stays valid — only geometry moves.
  *
  * Registered on `onBoardChanged` below, so `layout.reshuffle()` is all a caller
  * has to do. Safe to call directly too.
  */
 export function refreshFieldsFromBoard() {
-  for (const tile of tiles) {
+  tiles.forEach((tile, ti) => {
+    if (!tile.resource) return;
     const pool = itemsByTile.get(tile.id);
-    if (!pool) continue;
-    const kind = ITEM_KIND[tile.terrain];
-    for (const it of pool) { it.resource = tile.resource; it.kind = kind; }
+    if (pool) layTile(tile, ti, pool);
+    const anchors = nodesByTile.get(tile.id);
+    if (anchors) layNodes(tile, ti, anchors);
+  });
+  // A hex that lost its resource entirely (the desert moving, if it ever does)
+  // still has to stop claiming to grow something.
+  for (const tile of tiles) {
+    if (tile.resource) continue;
+    for (const it of itemsByTile.get(tile.id) || []) { it.resource = null; it.kind = null; }
+    for (const n of nodesByTile.get(tile.id) || []) { n.resource = null; n.kind = null; }
   }
-  for (const n of nodes) {
-    const t = tiles[n.tile];
-    if (!t) continue;
-    n.resource = t.resource;
-    n.kind = ITEM_KIND[t.terrain];
-  }
+  rebuildGrid();
+  linkLegacy();
   resetNodes();
   return items.length;
 }

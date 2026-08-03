@@ -1,57 +1,56 @@
 /**
  * Island Settlers — the hub.
  *
- *   createHub({ users, rooms, matches, secret }) -> { attach(peer), stats }
+ *   createHub({ players, rooms, matches }) -> { attach(peer), stats }
  *
  * Everything a connected client can do, and the only file that knows a socket
- * and a game exist at the same time. Accounts live in users.mjs, lobbies in
+ * and a game exist at the same time. Identity lives in players.mjs, lobbies in
  * rooms.mjs, the simulation in a worker; this routes between them and decides
  * who is allowed to ask for what.
  *
- * ONE CONNECTION, ONE SESSION
- * ---------------------------
- * A peer arrives anonymous. It may only call `hello`, `register`, `login` and
- * `resume` until it has a user; everything else answers `auth.required`. Sign
- * in twice from two tabs and the older connection is closed rather than
- * shadowed, because two live sockets for one account means presence, invites
- * and a seat in a match all have two possible answers.
+ * ONE CALL TO GET IN
+ * ------------------
+ * A peer arrives anonymous and may only call `hello` and `ping`; everything
+ * else answers `hello.required`. `hello` carries a device id and a name and
+ * that is the whole of it — there is no account, no password and no token. The
+ * accounts this replaced are described in players.mjs; the short version is
+ * that they were an obstacle between four friends and a game, and every one of
+ * their failure modes was silent.
  *
- * PRESENCE IS DERIVED, NEVER STORED
- * ---------------------------------
- * "Online" is `live.has(userId)` — a fact about sockets, not a field in the
- * store. Nothing needs cleaning up after a crash, because a process that is
- * not running has no live sockets and therefore nobody is online. The store
- * only ever holds what should survive a restart.
+ * Two sockets claiming the same device: the older one is closed rather than
+ * shadowed, because two live sockets for one player means a seat in a match has
+ * two possible answers. The old tab is told why.
  *
- * THE RATE LIMIT IS ON THE PASSWORD PATH ONLY
- * -------------------------------------------
+ * THE RATE LIMIT IS ON THE DOOR
+ * -----------------------------
  * Movement and match actions arrive up to thirty times a second by design, and
- * a limiter on those is a limiter on playing the game. What actually needs one
- * is the handful of calls where an attacker's cost per try is a single frame:
- * sign-in and sign-up. Those are counted per IP.
+ * a limiter on those is a limiter on playing the game. What needs one is the
+ * one call whose cost per try is a single frame and whose reward is somebody
+ * else's lobby: joining by code. Counted per IP.
  *
  * Owner: net agent.
  */
 
 import {
   PROTOCOL_VERSION, REQ, PUSH, OK, ERR, E,
-  publicUser, nameProblem, passProblem
+  publicUser, nameProblem, cleanName, codeProblem
 } from '../src/net/protocol.js';
-import { makeToken, readToken } from './auth.mjs';
 
-/** Sign-in attempts allowed per IP per window. */
-const AUTH_TRIES = 12;
-const AUTH_WINDOW_MS = 60000;
+/** Room-code guesses allowed per IP per window. Five characters out of a
+ *  31-letter alphabet is 28.6 million codes; at this rate a determined guesser
+ *  needs about four thousand years per open lobby. */
+const JOIN_TRIES = 20;
+const JOIN_WINDOW_MS = 60000;
 /** Anything at all, per connection, per second. A generous ceiling that only
  *  a broken or malicious client will ever touch. */
 const MSG_PER_SEC = 120;
 
 export function createHub(deps) {
-  const { users, rooms, matches, secret } = deps;
+  const { players, rooms, matches } = deps;
 
   const live = new Map();       // userId -> peer
-  const byPeer = new Set();     // every attached peer, authed or not
-  const authHits = new Map();   // ip -> { n, until }
+  const byPeer = new Set();     // every attached peer, greeted or not
+  const joinHits = new Map();   // ip -> { n, until }
 
   /* ---------------------------------------------------------------- send */
 
@@ -59,46 +58,6 @@ export function createHub(deps) {
     const peer = live.get(userId);
     if (peer) peer.send(msg);
     return !!peer;
-  }
-
-  function isOnline(id) { return live.has(id); }
-
-  function inMatch(id) {
-    const room = rooms.forUser(id);
-    return !!(room && room.state === 'playing');
-  }
-
-  /** The friends payload. Sent on sign-in and re-sent, whole, on every change.
-   *  A delta protocol for a list that is at most a couple of hundred entries
-   *  and changes a few times an hour would be more code and more bugs than the
-   *  bytes are worth. */
-  function friendsPayload(id) {
-    return {
-      t: PUSH.FRIENDS,
-      friends: users.friendIds(id).map(fid => {
-        const u = users.byId(fid);
-        return u ? publicUser(u, { online: isOnline(fid), inMatch: inMatch(fid) }) : null;
-      }).filter(Boolean),
-      incoming: users.incoming(id).map(r => {
-        const u = users.byId(r.from);
-        return u ? publicUser(u, { at: r.at }) : null;
-      }).filter(Boolean),
-      outgoing: users.outgoing(id).map(r => {
-        const u = users.byId(r.id);
-        return u ? publicUser(u, { at: r.at }) : null;
-      }).filter(Boolean)
-    };
-  }
-
-  function pushFriends(id) {
-    if (!isOnline(id)) return;
-    toUser(id, friendsPayload(id));
-  }
-
-  /** Tell this user's friends that something about them changed. */
-  function pushPresence(id) {
-    const payload = { t: PUSH.PRESENCE, userId: id, online: isOnline(id), inMatch: inMatch(id) };
-    for (const fid of users.friendIds(id)) toUser(fid, payload);
   }
 
   function pushRoom(room) {
@@ -119,33 +78,60 @@ export function createHub(deps) {
     peer.send({ i, t: ERR, code, ...(extra || {}) });
   }
 
-  function rateOk(ip) {
+  function joinRateOk(ip) {
     const now = Date.now();
-    let hit = authHits.get(ip);
-    if (!hit || now > hit.until) { hit = { n: 0, until: now + AUTH_WINDOW_MS }; authHits.set(ip, hit); }
+    let hit = joinHits.get(ip);
+    if (!hit || now > hit.until) { hit = { n: 0, until: now + JOIN_WINDOW_MS }; joinHits.set(ip, hit); }
     hit.n++;
-    return hit.n <= AUTH_TRIES;
+    return hit.n <= JOIN_TRIES;
   }
 
-  function signIn(peer, user) {
-    // One socket per account. The old tab is told why rather than just going
-    // quiet, so somebody who opened the game twice understands what happened.
-    const old = live.get(user.id);
-    if (old && old !== peer) {
-      old.send({ t: PUSH.KICKED, reason: 'signed-in-elsewhere' });
-      old.data.userId = null;
-      old.close(1000, 'signed in elsewhere');
+  /**
+   * `hello` is the whole session. Same device id, same player, same seat.
+   *
+   * Everything after the identity lookup is what `signIn` used to do: claim the
+   * socket, hand back the room you were in, and put you behind your settler if
+   * the match you were in is still running. That last one is the reason the
+   * reload between the lobby and the first frame of the match is survivable.
+   */
+  function greet(peer, msg, i) {
+    if (msg.version !== PROTOCOL_VERSION) {
+      return fail(peer, i, E.VERSION, { server: PROTOCOL_VERSION });
     }
-    peer.data.userId = user.id;
-    live.set(user.id, peer);
-    users.touch(user.id);
-    pushPresence(user.id);
-    peer.send(friendsPayload(user.id));
-    const room = rooms.forUser(user.id);
-    if (room) peer.send({ t: PUSH.ROOM, room: rooms.publicRoom(room) });
-    // Somebody who reloaded mid-match gets their settler back rather than a
-    // lobby. Their seat was held, not vacated — see detach().
-    if (room && room.state === 'playing') resumeSeat(user.id);
+    const r = players.session(msg.device, msg.name);
+    if (r.error) return fail(peer, i, r.error);
+    const me = r.player;
+
+    // One socket per device. The old tab is told why rather than just going
+    // quiet, so somebody who opened the game twice understands what happened.
+    const old = live.get(me.id);
+    if (old && old !== peer) {
+      old.send({ t: PUSH.KICKED, reason: 'opened-elsewhere' });
+      old.data.userId = null;
+      old.close(1000, 'opened elsewhere');
+    }
+    peer.data.userId = me.id;
+    live.set(me.id, peer);
+
+    reply(peer, i, {
+      version: PROTOCOL_VERSION,
+      you: publicUser(me),
+      device: me.device,
+      players: players.count,
+      rooms: rooms.size
+    });
+
+    const room = rooms.forUser(me.id);
+    if (room) {
+      // The name may have changed since the seat was taken.
+      const seat = rooms.seatOf(room, me.id);
+      if (seat && seat.name !== me.name) { seat.name = me.name; }
+      peer.send({ t: PUSH.ROOM, room: rooms.publicRoom(room) });
+      pushRoom(room);
+      // Somebody who reloaded mid-match gets their settler back rather than a
+      // lobby. Their seat was held, not vacated — see detach().
+      if (room.state === 'playing') resumeSeat(me.id);
+    }
   }
 
   function handle(peer, msg) {
@@ -153,141 +139,68 @@ export function createHub(deps) {
     const t = msg.t;
 
     /* --- open to anyone -------------------------------------------- */
-    if (t === REQ.HELLO) {
-      if (msg.version !== PROTOCOL_VERSION) {
-        return fail(peer, i, E.VERSION, { server: PROTOCOL_VERSION });
-      }
-      return reply(peer, i, { version: PROTOCOL_VERSION, users: users.count });
-    }
+    if (t === REQ.HELLO) return greet(peer, msg, i);
     if (t === REQ.PING) return reply(peer, i, { c: msg.c });
 
-    if (t === REQ.REGISTER || t === REQ.LOGIN) {
-      if (!rateOk(peer.remote)) return fail(peer, i, E.RATE);
-      const nameErr = nameProblem(msg.name);
-      if (nameErr) return fail(peer, i, nameErr);
-      const passErr = passProblem(msg.pass);
-      if (passErr) return fail(peer, i, passErr);
-      const r = t === REQ.REGISTER
-        ? users.register(msg.name, msg.pass)
-        : users.login(msg.name, msg.pass);
-      if (r.error) return fail(peer, i, r.error);
-      signIn(peer, r.user);
-      return reply(peer, i, {
-        token: makeToken(secret, r.user.id),
-        user: publicUser(r.user)
-      });
-    }
-
-    if (t === REQ.RESUME) {
-      const id = readToken(secret, msg.token);
-      const user = id && users.byId(id);
-      if (!user) return fail(peer, i, E.BAD_LOGIN);
-      signIn(peer, user);
-      // A fresh token on every resume, so somebody who plays weekly is never
-      // signed out by an expiry they had no way to see coming.
-      return reply(peer, i, {
-        token: makeToken(secret, user.id),
-        user: publicUser(user)
-      });
-    }
-
     /* --- everything below needs a session -------------------------- */
-    const me = users.byId(peer.data.userId);
+    const me = players.byId(peer.data.userId);
     if (!me) return fail(peer, i, E.UNAUTHED);
+    players.touch(me.id);
 
     switch (t) {
-      case REQ.LOGOUT: {
-        detach(peer, 'logout');
-        peer.data.userId = null;
-        return reply(peer, i, {});
-      }
-
-      /* ------------------------------------------------------ friends */
-      case REQ.FRIEND_LIST:
-        return reply(peer, i, friendsPayload(me.id));
-
-      case REQ.FRIEND_ADD: {
-        const r = users.requestFriend(me.id, msg.name);
+      /* --------------------------------------------------------- name */
+      case REQ.SET_NAME: {
+        const r = players.rename(me.id, msg.name);
         if (r.error) return fail(peer, i, r.error);
-        pushFriends(me.id);
-        pushFriends(r.user.id);
-        if (r.status === 'accepted') { pushPresence(me.id); pushPresence(r.user.id); }
-        return reply(peer, i, { status: r.status, user: publicUser(r.user) });
+        const room = rooms.forUser(me.id);
+        const seat = room && rooms.seatOf(room, me.id);
+        if (seat) { seat.name = r.player.name; pushRoom(room); }
+        return reply(peer, i, { you: publicUser(r.player) });
       }
 
-      case REQ.FRIEND_ACCEPT: {
-        const r = users.acceptFriend(me.id, String(msg.id || ''));
-        if (r.error) return fail(peer, i, r.error);
-        pushFriends(me.id);
-        pushFriends(msg.id);
-        pushPresence(me.id);
-        pushPresence(msg.id);
-        return reply(peer, i, {});
-      }
-
-      case REQ.FRIEND_DECLINE: {
-        const r = users.declineFriend(me.id, String(msg.id || ''));
-        if (r.error) return fail(peer, i, r.error);
-        pushFriends(me.id);
-        pushFriends(msg.id);
-        return reply(peer, i, {});
-      }
-
-      case REQ.FRIEND_REMOVE: {
-        users.removeFriend(me.id, String(msg.id || ''));
-        pushFriends(me.id);
-        pushFriends(msg.id);
-        return reply(peer, i, {});
-      }
-
-      /* -------------------------------------------------------- lobby */
+      /* -------------------------------------------------------- rooms */
       case REQ.ROOM_CREATE: {
         const existing = rooms.forUser(me.id);
         if (existing && existing.state === 'playing') return fail(peer, i, E.ROOM_BUSY);
         if (existing) leaveRoom(me.id);
         const room = rooms.create(me);
         pushRoom(room);
-        pushPresence(me.id);
         return reply(peer, i, { room: rooms.publicRoom(room) });
       }
 
+      /* THE CODE IS THE PERMISSION.
+       *
+       *   "Just say whoever put in that room code while the lobby was open is
+       *    added to the game."
+       *
+       * Two questions and no third: does this code name a room, and is that
+       * room still in the lobby. There is nothing to be invited to and nobody
+       * to accept you. */
       case REQ.ROOM_JOIN: {
-        const room = rooms.get(msg.roomId);
-        if (!room) return fail(peer, i, E.NO_ROOM);
-        if (room.state === 'playing') return fail(peer, i, E.ROOM_BUSY);
-        // Invite only. The room id is short and readable on purpose, so it is
-        // a handle rather than a secret — being invited is the permission.
-        if (!rooms.isInvited(room, me.id) && room.hostId !== me.id
-            && !rooms.seatOf(room, me.id)) {
-          return fail(peer, i, E.NOT_FRIEND);
+        const bad = codeProblem(msg.code);
+        if (bad) return fail(peer, i, bad);
+        const room = rooms.get(msg.code);
+        // Rate-limited on the MISS, not the hit: somebody typing their friend's
+        // code wrong twice is not an attacker, and somebody walking the code
+        // space never gets a hit to spend their budget on.
+        if (!room) {
+          if (!joinRateOk(peer.remote)) return fail(peer, i, E.RATE);
+          return fail(peer, i, E.NO_ROOM);
+        }
+        if (room.state === 'playing') {
+          // Unless it is the room you are already in — a reload mid-match must
+          // not be told the door is shut on its own match.
+          if (!rooms.seatOf(room, me.id)) return fail(peer, i, E.ROOM_BUSY);
         }
         const r = rooms.join(room, me);
         if (r.error) return fail(peer, i, r.error === 'room.full' ? E.ROOM_FULL : E.NO_ROOM);
         pushRoom(room);
-        pushPresence(me.id);
         return reply(peer, i, { room: rooms.publicRoom(room) });
       }
 
       case REQ.ROOM_LEAVE: {
         leaveRoom(me.id);
         peer.send({ t: PUSH.ROOM, room: null });
-        return reply(peer, i, {});
-      }
-
-      case REQ.ROOM_INVITE: {
-        const room = rooms.forUser(me.id);
-        if (!room) return fail(peer, i, E.NO_ROOM);
-        if (room.state === 'playing') return fail(peer, i, E.ROOM_BUSY);
-        const targetId = String(msg.userId || '');
-        if (!users.areFriends(me.id, targetId)) return fail(peer, i, E.NOT_FRIEND);
-        if (room.seats.every(s => s.kind !== 'empty')) return fail(peer, i, E.ROOM_FULL);
-        rooms.invite(room, targetId);
-        toUser(targetId, {
-          t: PUSH.INVITE,
-          roomId: room.id,
-          from: publicUser(me),
-          settings: { ...room.settings }
-        });
         return reply(peer, i, {});
       }
 
@@ -426,10 +339,14 @@ export function createHub(deps) {
     }
     const byUser = new Map();
     for (const s of roster) if (s.userId) byUser.set(s.userId, s.pid);
-    matchOf.set(started.matchId, { roomId: room.id, roster, byUser, seed });
+    matchOf.set(started.matchId, {
+      roomId: room.id, roster, byUser, seed,
+      difficulty: room.settings.difficulty,
+      knights: room.settings.knights,
+      order: null                        // filled in by the worker's `begin`
+    });
     rooms.beginMatch(room, started.matchId);
     pushRoom(room);
-    for (const uid of rooms.members(room)) pushPresence(uid);
     return { matchId: started.matchId };
   }
 
@@ -451,6 +368,10 @@ export function createHub(deps) {
     }
 
     if (msg.t === 'begin') {
+      // Remembered so a reconnect can be told the SAME thing — see resumeSeat.
+      info.order = msg.order;
+      if (msg.difficulty) info.difficulty = msg.difficulty;
+      if (typeof msg.knights === 'boolean') info.knights = msg.knights;
       // Each client is told which seat is theirs; everything else is the same
       // message for everyone, which is what makes it one broadcast.
       for (const [userId, pid] of info.byUser) {
@@ -482,14 +403,10 @@ export function createHub(deps) {
 
     if (msg.t === 'over') {
       const room = rooms.get(info.roomId);
-      for (const [userId, pid] of info.byUser) {
-        users.noteResult(userId, msg.winner === pid);
-      }
       broadcast(info, { ...msg, t: type });
       if (room) {
         rooms.endMatch(room);
         pushRoom(room);
-        for (const uid of rooms.members(room)) pushPresence(uid);
       }
       return;
     }
@@ -512,7 +429,6 @@ export function createHub(deps) {
     if (room && room.state === 'playing') {
       rooms.endMatch(room);
       pushRoom(room);
-      for (const uid of rooms.members(room)) pushPresence(uid);
     }
   }
 
@@ -534,7 +450,6 @@ export function createHub(deps) {
       // on the person who just walked out. Do not strand them.
       if (!maybeStart(r.room)) pushRoom(r.room);
     }
-    pushPresence(userId);
   }
 
   function detach(peer, why) {
@@ -553,12 +468,19 @@ export function createHub(deps) {
       if (pid !== undefined) matches.peer(room.matchId, pid, 'gone');
     }
     if (room) pushRoom(room);
-    pushPresence(userId);
   }
 
   /* When a dropped player comes back and their seat is still theirs, put them
-     back behind it. `signIn` re-sends the room; this puts the settler back
-     under their control and tells the table. */
+     back behind it. `greet` re-sends the room; this puts the settler back
+     under their control and tells the table.
+   *
+   * THIS MESSAGE MUST CARRY EVERYTHING THE FIRST ONE DID. It used to send the
+   * seed, the roster and the seat and stop there — no draft order, no
+   * difficulty, no knights flag. The client parks it and reloads, and on the
+   * way back up `mirror.js` skips the order (so it keeps its own locally
+   * generated one) and `main.js` reads `knights !== false` off a field that
+   * was not there and forces Knights ON. A reconnecting player therefore came
+   * back into a subtly different match from the one everyone else was in. */
   function resumeSeat(userId) {
     const seat = matchSeat(userId);
     if (!seat) return;
@@ -570,6 +492,9 @@ export function createHub(deps) {
         matchId: seat.matchId,
         seed: info.seed,
         seats: info.roster,
+        order: info.order,
+        difficulty: info.difficulty,
+        knights: info.knights,
         yourPid: seat.pid,
         resumed: true
       });
@@ -610,7 +535,7 @@ export function createHub(deps) {
         online: live.size,
         rooms: rooms.size,
         matches: matches.size,
-        users: users.count
+        players: players.count
       };
     }
   };

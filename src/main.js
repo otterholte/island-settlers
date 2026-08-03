@@ -51,17 +51,40 @@ async function boot() {
   try {
     const net = await load('./net/netmatch.js', null);
     joining = net && net.pendingMatch ? net.pendingMatch() : null;
-    if (joining) {
+  } catch (e) {
+    console.warn('[boot] no networked match to join —', e && e.message);
+    joining = null;
+  }
+
+  /* THREE SEPARATE FAILURES, NOT ONE.
+   *
+   * These used to share a try, and the two cheap imports at the bottom could
+   * therefore throw away a board that had already been dealt correctly: one
+   * catch, `joining = null`, and a client sitting on exactly the right island
+   * with the net layer never started, playing three local bots on it. The
+   * board landing and the options landing are different-sized problems and get
+   * different answers. */
+  if (joining) {
+    try {
       const { reshuffle } = await import('./board/layout.js');
       reshuffle(joining.seed >>> 0);
+    } catch (e) {
+      // Fatal to the handoff: without the seed this page is a different island
+      // from everybody else's, which is worse than not joining at all.
+      console.error('[boot] could not deal the served island —', e && e.message);
+      joining = null;
+    }
+  }
+  if (joining) {
+    try {
       const opt = await import('./core/options.js');
       if (opt && opt.setKnights) opt.setKnights(joining.knights !== false);
       const diff = await import('./systems/difficulty.js');
       if (diff && diff.setDifficulty && joining.difficulty) diff.setDifficulty(joining.difficulty);
+    } catch (e) {
+      // Cosmetic by comparison — the server is authoritative about both. Play.
+      console.warn('[boot] match options did not apply —', e && e.message);
     }
-  } catch (e) {
-    console.warn('[boot] no networked match to join —', e && e.message);
-    joining = null;
   }
 
   const state = createMatch({ seed: joining ? (joining.seed >>> 0) : ((Math.random() * 1e9) | 0) });

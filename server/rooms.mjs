@@ -3,8 +3,23 @@
  *
  *   createRooms() -> { create, get, forUser, join, leave, ... }
  *
- * A room is four seats, a host, two settings and a state. It exists from the
- * moment somebody presses PLAY WITH FRIENDS until the last person leaves.
+ * A room is a five-character CODE, four seats, a host, two settings and a
+ * state. It exists from the moment somebody presses CREATE A ROOM until the
+ * last person leaves.
+ *
+ * THE CODE IS THE PERMISSION
+ * --------------------------
+ *   "I'd rather just switch to a create a room and use a room code, since it's
+ *    not just 1 on 1 and sometimes there's 3 or even four friends playing
+ *    together. Remove adding friends, remove accepting players, just say
+ *    whoever put in that room code while the lobby was open is added."
+ *
+ * There is no invite list and nothing to accept. `join` asks two questions —
+ * does this code name a room, and is that room still in the lobby — and the
+ * answer to both being yes is the whole of the access control. Which is the
+ * right model for four friends in a group chat, and it is also what makes it
+ * impossible to end up in the situation the old friends screen made easy:
+ * everybody typing the same five characters is, unambiguously, one room.
  *
  * SEATS ARE STABLE, MEMBERSHIP IS NOT
  * -----------------------------------
@@ -32,8 +47,8 @@
  * Owner: net agent.
  */
 
-import { randomBytes } from 'node:crypto';
-import { SEATS } from '../src/net/protocol.js';
+import { randomInt } from 'node:crypto';
+import { SEATS, CODE_LEN, CODE_ALPHABET, cleanCode } from '../src/net/protocol.js';
 
 /** The four colours, in the order `core/constants.js` declares them. Kept as
  *  plain strings here so the server never imports the game's constants for a
@@ -48,16 +63,28 @@ export function createRooms() {
   const rooms = new Map();      // roomId -> room
   const userRoom = new Map();   // userId -> roomId
 
-  function newId() {
-    // Six base32-ish characters. Short enough to read out loud, and rooms are
-    // invite-only anyway so it is a handle, not a secret.
-    return randomBytes(4).toString('base64url').replace(/[-_]/g, '').slice(0, 6).toUpperCase();
+  /**
+   * Five characters, and the code IS the door.
+   *
+   *   "Just say whoever put in that room code while the lobby was open is added
+   *    to the game. For the game room, it should only be 5 characters long."
+   *
+   * `randomInt` rather than `Math.random` because this is now the only thing
+   * standing between a stranger and somebody's game: 33.5 million codes is
+   * plenty of room to guess into, but only if the codes are not predictable
+   * from each other. The alphabet has no I, L, O, 0 or 1 in it — see the note
+   * in protocol.js about reading a code down a phone line.
+   */
+  function newCode() {
+    let s = '';
+    for (let i = 0; i < CODE_LEN; i++) s += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+    return s;
   }
 
   function create(host) {
     leave(host.id);
-    let id = newId();
-    while (rooms.has(id)) id = newId();
+    let id = newCode();
+    while (rooms.has(id)) id = newCode();
     const room = {
       id,
       hostId: host.id,
@@ -74,16 +101,17 @@ export function createRooms() {
         color: COLORS[pid],
         ready: false,
         state: 'live'           // 'live' | 'gone' | 'bot'
-      })),
-      invited: new Map()        // userId -> invitedAt
+      }))
     };
     rooms.set(id, room);
     sit(room, host);
     return room;
   }
 
-  function get(id) {
-    return rooms.get(String(id || '').toUpperCase()) || null;
+  /** Codes are normalised the same way the client normalises them, so a code
+   *  pasted with a space or typed in lower case still opens the door. */
+  function get(code) {
+    return rooms.get(cleanCode(code)) || null;
   }
 
   function forUser(userId) {
@@ -123,7 +151,6 @@ export function createRooms() {
     if (mine && mine.id !== room.id) leave(user.id);
     const seat = sit(room, user);
     if (!seat) return { error: 'room.full' };
-    room.invited.delete(user.id);
     return { room, seat };
   }
 
@@ -210,16 +237,6 @@ export function createRooms() {
     for (const s of room.seats) s.ready = false;
   }
 
-  function invite(room, userId) {
-    if (!room) return false;
-    room.invited.set(userId, Date.now());
-    return true;
-  }
-
-  function isInvited(room, userId) {
-    return !!room && room.invited.has(userId);
-  }
-
   /**
    * Freeze the roster the match will be built from.
    *
@@ -269,6 +286,8 @@ export function createRooms() {
     if (!room) return null;
     return {
       id: room.id,
+      code: room.id,             // the id IS the code; named both ways so the
+                                 // lobby can read `room.code` and mean it
       hostId: room.hostId,
       state: room.state,
       settings: { ...room.settings },
@@ -296,7 +315,6 @@ export function createRooms() {
   return {
     create, get, forUser, join, leave, seatOf,
     setSettings, setReady, allReady, readyCount, clearReady, humans,
-    invite, isInvited,
     roster, beginMatch, endMatch, members, publicRoom, sweep,
     get size() { return rooms.size; },
     all: () => [...rooms.values()]

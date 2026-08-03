@@ -14,10 +14,10 @@
  * ---------------------------------------------------------------------------
  * Every frame is JSON. Two flavours:
  *
- *   REQUEST / REPLY   client -> { i: 7, t: 'login', name, pass }
+ *   REQUEST / REPLY   client -> { i: 7, t: 'room.join', code: 'K4XPT' }
  *                     server -> { i: 7, t: 'ok', ... }  or  { i: 7, t: 'err', code, message }
  *
- *   PUSH              server -> { t: 'friends', friends: [...] }      (no `i`)
+ *   PUSH              server -> { t: 'room', room: {...} }            (no `i`)
  *
  * `i` is a client-chosen request id. The server echoes it and never invents
  * one. Anything without an `i` is unsolicited and the client routes it by `t`.
@@ -29,8 +29,24 @@
  * entirely, so every HTTP call would be cross-origin and would need CORS
  * preflights, credentials rules and a second auth path for the socket anyway.
  * A websocket is not subject to CORS, carries the session for its whole life,
- * and is already required for the match. So EVERYTHING goes down it, including
- * sign-in. One connection, one code path, one place session state lives.
+ * and is already required for the match. So EVERYTHING goes down it. One
+ * connection, one code path, one place session state lives.
+ *
+ * ---------------------------------------------------------------------------
+ * There are no accounts
+ * ---------------------------------------------------------------------------
+ *   "Remove adding friends, remove accepting players, just say whoever put in
+ *    that room code while the lobby was open is added to the game. But users
+ *    can still add their name and it stays saved locally on the device."
+ *
+ * So the identity is a random id the browser generates once and keeps in
+ * localStorage, and a display name the player typed on their own machine. Both
+ * ride along on `hello`. The server holds them for as long as the process runs
+ * and persists nothing: there is no password to get wrong, no token to expire,
+ * no session secret to misconfigure, and a redeploy cannot silently sign
+ * anybody out of a match, because there was never anything to sign in to.
+ *
+ * The device id is what makes a reload work. Same id, same seat.
  *
  * ---------------------------------------------------------------------------
  * How a match stays in sync
@@ -38,10 +54,18 @@
  * The server is authoritative and the client is a renderer with an opinion.
  *
  *   THE BOARD IS A SEED. `board/layout.js`'s reshuffle(seed) is deterministic,
- *   and `board/nodes.js` scatters its item field from tile id and number. So
- *   the server sends ONE NUMBER and both ends deal a byte-identical island
- *   down to which blade of wheat is at which coordinate. Nothing about the
- *   terrain, the tokens, the docks or the ~300 pickups is ever on the wire.
+ *   and `board/nodes.js` re-lays its item field from tile id and number every
+ *   time the board changes. So the server sends ONE NUMBER and both ends deal
+ *   a byte-identical island down to which blade of wheat is at which
+ *   coordinate. Nothing about the terrain, the tokens, the docks or the 576
+ *   pickups is ever on the wire.
+ *
+ *   That "every time the board changes" was a lie for the whole first version
+ *   of multiplayer — the field was laid once, at module load, from a throwaway
+ *   random board, and never recomputed. Same terrain, different trees on every
+ *   screen, and a pickup replayed by item id landed thirty metres from where it
+ *   happened. `tools/boardsync.mjs` now proves the claim in separate processes
+ *   rather than trusting this paragraph.
  *
  *   MUTATIONS ARE EVENTS. The server runs the real `core/rules.js` and streams
  *   the events it emits. The client replays each one through the same rules
@@ -59,7 +83,7 @@
 /** Bumped whenever a message changes shape. A mismatch refuses the connection
  *  rather than half-working: an old tab against a new server is a bug report
  *  nobody can read. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /* ===================================================================== rates
    The simulation runs at 60Hz on the server because that is what the game is
@@ -89,29 +113,25 @@ export const RECONNECT_GRACE_SEC = 45;
 /* ================================================================== requests
    Client -> server. Every one of these gets exactly one reply. */
 export const REQ = {
-  /* --- session ------------------------------------------------------- */
-  HELLO: 'hello',            // { version } -> { version, motd }
-  REGISTER: 'register',      // { name, pass } -> { token, user }
-  LOGIN: 'login',            // { name, pass } -> { token, user }
-  RESUME: 'resume',          // { token } -> { token, user }
-  LOGOUT: 'logout',          // {} -> {}
+  /* --- session -------------------------------------------------------
+     ONE CALL. `hello` carries the device id and the name the player typed
+     on their own machine, and that IS the session — there is no account to
+     register, no password to get wrong and no token to expire. Send it again
+     with the same device id after a reload and you are back in your room, and
+     back behind your settler if the match is still running. */
+  HELLO: 'hello',            // { version, device, name } -> { version, you }
+  SET_NAME: 'name.set',      // { name } -> { you }
 
-  /* --- friends ------------------------------------------------------- */
-  FRIEND_ADD: 'friend.add',        // { name } -> { pending }
-  FRIEND_ACCEPT: 'friend.accept',  // { id } -> {}
-  FRIEND_DECLINE: 'friend.decline',// { id } -> {}
-  FRIEND_REMOVE: 'friend.remove',  // { id } -> {}
-  FRIEND_LIST: 'friend.list',      // {} -> { friends, incoming, outgoing }
-
-  /* --- lobby --------------------------------------------------------- */
+  /* --- rooms ---------------------------------------------------------
+     A room is a five-character code, and the code is the whole permission
+     model: whoever types it while the lobby is open is in. */
   ROOM_CREATE: 'room.create',      // {} -> { room }
-  ROOM_JOIN: 'room.join',          // { roomId } -> { room }
+  ROOM_JOIN: 'room.join',          // { code } -> { room }
   ROOM_LEAVE: 'room.leave',        // {} -> {}
-  ROOM_INVITE: 'room.invite',      // { userId } -> {}
   ROOM_KICK: 'room.kick',          // { userId } -> {}   (host only)
   ROOM_SETTINGS: 'room.settings',  // { difficulty, knights } -> { room }  (host only)
   ROOM_READY: 'room.ready',        // { ready } -> {}
-  ROOM_START: 'room.start',        // {} -> {}   (host only)
+  ROOM_START: 'room.start',        // {} -> {}   — the same vote as ROOM_READY
 
   /* --- match --------------------------------------------------------- */
   MATCH_INPUT: 'm.in',             // { dx, dz, seq }        — fire and forget
@@ -124,10 +144,6 @@ export const REQ = {
 /* ================================================================== pushes
    Server -> client, unsolicited. */
 export const PUSH = {
-  FRIENDS: 'friends',        // { friends, incoming, outgoing }
-  PRESENCE: 'presence',      // { userId, online, inMatch }
-  INVITE: 'invite',          // { roomId, from: { id, name } }
-  INVITE_GONE: 'invite.gone',// { roomId }
   ROOM: 'room',              // { room } | { room: null } when you have left
   KICKED: 'kicked',          // { reason }
 
@@ -153,21 +169,14 @@ export const ERR = 'err';
 export const E = {
   VERSION: 'version.mismatch',
   BAD_REQUEST: 'bad.request',
-  UNAUTHED: 'auth.required',
-  BAD_LOGIN: 'auth.bad',
-  NAME_TAKEN: 'name.taken',
+  UNAUTHED: 'hello.required',
   NAME_BAD: 'name.bad',
-  PASS_BAD: 'pass.bad',
+  CODE_BAD: 'code.bad',
   RATE: 'rate.limited',
-  NO_USER: 'user.unknown',
-  SELF: 'friend.self',
-  ALREADY: 'friend.already',
-  NOT_FRIEND: 'friend.none',
   NO_ROOM: 'room.unknown',
   ROOM_FULL: 'room.full',
   ROOM_BUSY: 'room.playing',
   NOT_HOST: 'room.nothost',
-  IN_ROOM: 'room.already',
   NO_MATCH: 'match.none',
   ILLEGAL: 'move.illegal',
   NOT_YOUR_TURN: 'move.notyours',
@@ -179,21 +188,14 @@ export const E = {
 export const E_TEXT = {
   [E.VERSION]: 'This page is out of date — reload to get the new version.',
   [E.BAD_REQUEST]: 'That request did not make sense.',
-  [E.UNAUTHED]: 'Sign in first.',
-  [E.BAD_LOGIN]: 'That name and password do not match.',
-  [E.NAME_TAKEN]: 'Somebody already has that name.',
-  [E.NAME_BAD]: 'Names are 3 to 16 letters, numbers, dots, dashes or underscores.',
-  [E.PASS_BAD]: 'Passwords need at least 6 characters.',
+  [E.UNAUTHED]: 'Not connected yet — one moment.',
+  [E.NAME_BAD]: 'Names are 2 to 14 letters, numbers, spaces, dots, dashes or underscores.',
+  [E.CODE_BAD]: 'A room code is five letters and numbers.',
   [E.RATE]: 'Too many tries — wait a moment.',
-  [E.NO_USER]: 'No player by that name.',
-  [E.SELF]: 'You cannot add yourself.',
-  [E.ALREADY]: 'You two are already friends.',
-  [E.NOT_FRIEND]: 'You can only invite friends.',
-  [E.NO_ROOM]: 'That lobby is gone.',
-  [E.ROOM_FULL]: 'That lobby is full.',
+  [E.NO_ROOM]: 'No room with that code. Check it and try again.',
+  [E.ROOM_FULL]: 'That room is full — it seats four.',
   [E.ROOM_BUSY]: 'That match has already started.',
-  [E.NOT_HOST]: 'Only the host can do that.',
-  [E.IN_ROOM]: 'You are already in a lobby.',
+  [E.NOT_HOST]: 'Only the player who made the room can do that.',
   [E.NO_MATCH]: 'You are not in a match.',
   [E.ILLEGAL]: 'You cannot do that there.',
   [E.NOT_YOUR_TURN]: 'Not your turn yet.',
@@ -205,16 +207,18 @@ export function errText(code) {
 }
 
 /* =================================================================== limits */
-export const NAME_MIN = 3;
-export const NAME_MAX = 16;
-export const PASS_MIN = 6;
-export const PASS_MAX = 128;
+export const NAME_MIN = 2;
+export const NAME_MAX = 14;
 export const SEATS = 4;
 
-const NAME_RE = /^[A-Za-z0-9._-]+$/;
+const NAME_RE = /^[A-Za-z0-9 ._-]+$/;
 
 /** The one place a name is judged. Both ends call it, so the browser can grey
- *  out the button for the same reason the server would refuse. */
+ *  out the button for the same reason the server would refuse.
+ *
+ *  Names are NOT unique any more and are not checked against anything: there
+ *  are no accounts, a name is a label on a seat, and two friends called Sam in
+ *  one room is their problem and not the server's. */
 export function nameProblem(name) {
   const n = String(name == null ? '' : name).trim();
   if (n.length < NAME_MIN || n.length > NAME_MAX) return E.NAME_BAD;
@@ -222,15 +226,46 @@ export function nameProblem(name) {
   return null;
 }
 
-export function passProblem(pass) {
-  const p = String(pass == null ? '' : pass);
-  if (p.length < PASS_MIN || p.length > PASS_MAX) return E.PASS_BAD;
-  return null;
+/** Trimmed, collapsed, capped — what actually gets stored and shown. */
+export function cleanName(name) {
+  return String(name == null ? '' : name).trim().replace(/\s+/g, ' ').slice(0, NAME_MAX);
 }
 
-/** Names are compared case-insensitively but displayed as typed. */
-export function nameKey(name) {
-  return String(name == null ? '' : name).trim().toLowerCase();
+/* ================================================================ room codes
+ *
+ *   "I'd rather just switch to a create a room and use a room code... whoever
+ *    put in that room code while the lobby was open is added to the game.
+ *    Finally, for the game room, it should only be 5 characters long."
+ *
+ * Five characters out of a 32-letter alphabet is 33.5 million rooms, which is
+ * far more than a game with a handful of lobbies at a time will ever need — the
+ * length is chosen for the person reading it down a phone line, not for the
+ * key space.
+ *
+ * I, L, O, 0 and 1 are not in the alphabet, because a code is something one
+ * friend reads out and another types, and "is that an oh or a zero" is the
+ * failure this costs five letters to make impossible. They are never generated,
+ * so they can only ever arrive as a typo.
+ *
+ * Both ends normalise the same way: uppercase, and throw away anything that is
+ * not a letter or a digit — so spaces, dashes and a pasted "code: ABCDE" all
+ * work without the player having to know they were tidied up.
+ */
+export const CODE_LEN = 5;
+export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+export function cleanCode(code) {
+  return String(code == null ? '' : code)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, CODE_LEN);
+}
+
+export function codeProblem(code) {
+  const c = cleanCode(code);
+  if (c.length !== CODE_LEN) return E.CODE_BAD;
+  for (const ch of c) if (!CODE_ALPHABET.includes(ch)) return E.CODE_BAD;
+  return null;
 }
 
 /* ================================================================ match acts
@@ -348,6 +383,17 @@ export function publicUser(u, extra = {}) {
   return { id: u.id, name: u.name, ...extra };
 }
 
+/** Four random characters out of the readable alphabet, plus one more. Kept
+ *  here rather than in the server so both ends agree on what a code looks
+ *  like — the client validates a typed one against exactly this. */
+export function makeCode(rand = Math.random) {
+  let s = '';
+  for (let i = 0; i < CODE_LEN; i++) {
+    s += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length) % CODE_ALPHABET.length];
+  }
+  return s;
+}
+
 export function publicSeat(seat) {
   return {
     pid: seat.pid,
@@ -363,8 +409,8 @@ export default {
   PROTOCOL_VERSION, SIM_HZ, SNAPSHOT_HZ, INPUT_HZ, INTERP_DELAY_MS,
   HEARTBEAT_MS, DEAD_MS, DRAFT_PICK_SEC, RECONNECT_GRACE_SEC,
   REQ, PUSH, ACT, OK, ERR, E, E_TEXT, errText,
-  NAME_MIN, NAME_MAX, PASS_MIN, PASS_MAX, SEATS,
-  nameProblem, passProblem, nameKey,
+  NAME_MIN, NAME_MAX, SEATS, CODE_LEN, CODE_ALPHABET,
+  nameProblem, cleanName, cleanCode, codeProblem, makeCode,
   SNAP_STRIDE, ACTIONS, actionIndex, actionName, POS_Q,
   packSeats, readSeat, packInput, inputToStick,
   publicUser, publicSeat

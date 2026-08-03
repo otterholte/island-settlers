@@ -4,18 +4,29 @@
  *   node tools/nettest.mjs [--keep] [--port=8799] [--quiet]
  *   node tools/nettest.mjs --remote=island-settlers-production.up.railway.app
  *
- * Boots the real server in a child process, opens two real websockets, signs
- * up two accounts, makes them friends, invites one to the other's lobby, plays
- * a whole match through the opening draft into live play, and checks that both
- * clients agree with the server about what happened.
+ * Boots the real server in a child process, opens two real websockets, makes a
+ * room, joins it with the five-character code, plays a whole match through the
+ * opening draft into live play, and checks that both clients agree with the
+ * server AND WITH EACH OTHER about what happened.
  *
  * `--remote` runs the identical suite against a DEPLOYED server instead of a
  * local one — the same checks, over wss, through whatever proxy is in front of
  * it. That is the only way to find out whether a host actually holds a
- * websocket open for four minutes, and whether the accounts volume is really
- * mounted. It signs up two throwaway accounts with random names each run and
- * does not touch anything else; the persistence check is skipped, since the
- * live account count is not this test's to know.
+ * websocket open for four minutes. It uses throwaway device ids each run and
+ * touches nothing else.
+ *
+ * WHAT IT IS LOOKING FOR NOW
+ * --------------------------
+ *   "It was clear it wasn't the same game — they were playing at the same
+ *    time, but the roads and settlements were in different locations, and when
+ *    one user built a road the other player didn't see it at all."
+ *
+ * Two failures wearing one coat. The first was the old friends screen letting
+ * two people each host their own lobby and each start their own match, so the
+ * check that matters is now `both clients are in ONE match`: same matchId,
+ * same seed, different seat. The second was the item field being re-tagged but
+ * never re-laid on a reshuffle — `tools/boardsync.mjs` owns that one, because
+ * it only shows up across separate processes and this file is one.
  *
  * WHY IT DRIVES THE REAL CLIENT CODE
  * ----------------------------------
@@ -27,9 +38,12 @@
  * THE ONE THING IT CANNOT DO
  * --------------------------
  * Hold two boards. `board/layout.js` is a module singleton — one island per
- * module registry — so both simulated clients share one mirrored board. That
- * is fine for what this proves (two real sockets, one real server, one real
- * worker) and it is exactly why the SERVER puts each match in its own worker.
+ * module registry — so the two simulated clients share one island. They do NOT
+ * share a mirror: each gets its own `createMatch` state and its own
+ * `createMirror`, fed only by its own socket, which is what lets the last
+ * checks compare what the two of them independently believe is on the board.
+ * The old version fed one mirror from both sockets and therefore could not
+ * have caught a desync if there had been one.
  *
  * Owner: net agent.
  */
@@ -43,7 +57,9 @@ import { createMatch, legalSettlements, legalRoads, scoreOf } from '../src/core/
 import { reshuffle, tiles } from '../src/board/layout.js';
 import { itemsByTile } from '../src/board/nodes.js';
 import { createMirror } from '../src/net/mirror.js';
-import { REQ, PUSH, OK, ERR, ACT, PROTOCOL_VERSION } from '../src/net/protocol.js';
+import {
+  REQ, PUSH, OK, ERR, ACT, PROTOCOL_VERSION, CODE_LEN, CODE_ALPHABET
+} from '../src/net/protocol.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
@@ -57,11 +73,14 @@ const PORT = Number(arg('port', 8799));
 const DATA = resolve(arg('data', '/tmp/island-nettest'));
 const QUIET = has('quiet');
 const REMOTE = arg('remote', '');
-/* Against a live server, names have to be unique per run or the second run
-   collides with the first one's accounts and every check after sign-up lies. */
-const TAG = REMOTE ? String(Math.floor(Math.random() * 1e6)).padStart(6, '0') : '';
-const NAME_A = REMOTE ? `t${TAG}a` : 'alice';
-const NAME_B = REMOTE ? `t${TAG}b` : 'bob';
+/* Device ids are per RUN, not per suite: a second run against a live server
+   must not walk back into the first run's seat. Names are just labels now and
+   do not have to be unique at all. */
+const TAG = String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
+const DEV_A = `nettest-a-${TAG}`;
+const DEV_B = `nettest-b-${TAG}`;
+const NAME_A = 'Alice';
+const NAME_B = 'Bob';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const stamp = () => new Date().toISOString().slice(11, 23);
 const log = (...a) => { if (!QUIET) console.log(' ', ...a); };
@@ -88,8 +107,6 @@ if (!REMOTE) {
     env: {
       ...process.env,
       PORT: String(PORT),
-      DATA,
-      SESSION_SECRET: 'nettest-secret-value-long-enough',
       MAX_MATCHES: '4'
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -141,10 +158,10 @@ function connect(label) {
       /**
        * Wait for the next push of a given type, or throw.
        *
-       * `pred` matters more than it looks. Signing in already delivers a
-       * FRIENDS push, so "wait for FRIENDS" after sending a friend request
-       * hands back the empty one that arrived at sign-up and reports that the
-       * request never landed. The predicate says which FRIENDS is meant.
+       * `pred` matters more than it looks. `hello` already delivers a ROOM
+       * push if you were in one, so "wait for ROOM" after a join can hand back
+       * a stale one and report that the join never landed. The predicate says
+       * which ROOM is meant.
        */
       next(type, ms = 15000, pred = null) {
         const ok0 = m => m.t === type && (!pred || pred(m));
@@ -208,114 +225,112 @@ try {
   B = await connect('bob');
   check('02. two websockets connect', !!A && !!B);
 
-  const hello = await A.req(REQ.HELLO, { version: PROTOCOL_VERSION });
-  check('03. handshake agrees on the protocol version',
-    hello.t === OK && hello.version === PROTOCOL_VERSION);
+  const hello = await A.req(REQ.HELLO, {
+    version: PROTOCOL_VERSION, device: DEV_A, name: NAME_A
+  });
+  check('03. one call gets you in — no account, no password',
+    hello.t === OK && hello.version === PROTOCOL_VERSION
+    && !!hello.you && hello.you.name === NAME_A,
+    `you=${hello.you && hello.you.id}`);
+  const meA = hello.you;
 
   /* --- version guard ------------------------------------------------- */
   let versionRefused = false;
-  try { await B.req(REQ.HELLO, { version: PROTOCOL_VERSION + 99 }); }
-  catch (e) { versionRefused = e.code === 'version.mismatch'; }
+  try {
+    await B.req(REQ.HELLO, { version: PROTOCOL_VERSION + 99, device: DEV_B, name: NAME_B });
+  } catch (e) { versionRefused = e.code === 'version.mismatch'; }
   check('04. a stale client is refused rather than half-served', versionRefused);
-  await B.req(REQ.HELLO, { version: PROTOCOL_VERSION });
 
-  /* --- accounts ------------------------------------------------------ */
-  const regA = await A.req(REQ.REGISTER, { name: NAME_A, pass: 'islandpass' });
-  const regB = await B.req(REQ.REGISTER, { name: NAME_B, pass: 'islandpass' });
-  check('05. two accounts register and get session tokens',
-    !!regA.token && !!regB.token && regA.user.name === NAME_A,
-    `${NAME_A}=${regA.user.id} ${NAME_B}=${regB.user.id}`);
+  const helloB = await B.req(REQ.HELLO, {
+    version: PROTOCOL_VERSION, device: DEV_B, name: NAME_B
+  });
+  const meB = helloB.you;
+  check('05. two devices are two players', !!meB && meB.id !== meA.id);
 
-  let dupe = null;
-  try { await A.req(REQ.REGISTER, { name: NAME_A.toUpperCase(), pass: 'somethingelse' }); }
-  catch (e) { dupe = e.code; }
-  check('06. names are unique regardless of case', dupe === 'name.taken', `-> ${dupe}`);
+  /* --- the name is the player's, and it is theirs to change ---------- */
+  let badName = null;
+  try { await A.req(REQ.SET_NAME, { name: 'x' }); } catch (e) { badName = e.code; }
+  check('06. a one-character name is refused', badName === 'name.bad', `-> ${badName}`);
 
-  let shortPass = null;
-  try { await A.req(REQ.REGISTER, { name: `${NAME_A}x`, pass: 'abc' }); }
-  catch (e) { shortPass = e.code; }
-  check('07. a short password is refused', shortPass === 'pass.bad');
+  const renamed = await A.req(REQ.SET_NAME, { name: '  Alice  Ann  ' });
+  check('07. a name is tidied rather than rejected',
+    renamed.you.name === 'Alice Ann', `-> "${renamed.you.name}"`);
+  await A.req(REQ.SET_NAME, { name: NAME_A });
 
-  /* --- resume -------------------------------------------------------- */
+  /* --- coming back --------------------------------------------------- */
   const C = await connect('alice-again');
-  await C.req(REQ.HELLO, { version: PROTOCOL_VERSION });
-  const resumed = await C.req(REQ.RESUME, { token: regA.token });
-  check('08. a saved token signs you back in without a password',
-    resumed.user && resumed.user.id === regA.user.id);
-  let badToken = null;
-  try { await C.req(REQ.RESUME, { token: regA.token.slice(0, -3) + 'xxx' }); }
-  catch (e) { badToken = e.code; }
-  check('09. a tampered token is refused', badToken === 'auth.bad');
-  // Signing in twice closes the older socket; A is now the dead one.
-  await sleep(200);
+  const back = await C.req(REQ.HELLO, {
+    version: PROTOCOL_VERSION, device: DEV_A, name: NAME_A
+  });
+  check('08. the same device id is the same player, with nothing to type',
+    back.you && back.you.id === meA.id);
+
+  const other = await connect('a-stranger');
+  const strange = await other.req(REQ.HELLO, {
+    version: PROTOCOL_VERSION, device: `${DEV_A}-not`, name: NAME_A
+  });
+  check('09. the same NAME on a different device is a different player',
+    strange.you.id !== meA.id, 'names are labels, not identities');
+  other.close();
+
+  // Two sockets for one device: the older is closed rather than shadowed.
+  await sleep(250);
   C.close();
   await sleep(200);
-
-  // Reconnect A properly for the rest of the run.
   A = await connect('alice');
-  await A.req(REQ.HELLO, { version: PROTOCOL_VERSION });
-  await A.req(REQ.RESUME, { token: regA.token });
+  await A.req(REQ.HELLO, { version: PROTOCOL_VERSION, device: DEV_A, name: NAME_A });
 
-  /* --- friends ------------------------------------------------------- */
-  let noSuch = null;
-  try { await A.req(REQ.FRIEND_ADD, { name: 'nobody' }); }
-  catch (e) { noSuch = e.code; }
-  check('10. adding a name that does not exist says so', noSuch === 'user.unknown');
+  /* --- rooms ----------------------------------------------------------
+   *
+   *   "Switch to a create a room and use a room code... whoever put in that
+   *    room code while the lobby was open is added to the game. For the game
+   *    room, it should only be 5 characters long."
+   */
+  let noSuchRoom = null;
+  try { await B.req(REQ.ROOM_JOIN, { code: 'ZZZZZ' }); }
+  catch (e) { noSuchRoom = e.code; }
+  check('10. a code nobody made says so', noSuchRoom === 'room.unknown', `-> ${noSuchRoom}`);
 
-  let self = null;
-  try { await A.req(REQ.FRIEND_ADD, { name: NAME_A }); }
-  catch (e) { self = e.code; }
-  check('11. you cannot friend yourself', self === 'friend.self');
+  let shortCode = null;
+  try { await B.req(REQ.ROOM_JOIN, { code: 'AB' }); }
+  catch (e) { shortCode = e.code; }
+  check('11. a code of the wrong length is refused before it is looked up',
+    shortCode === 'code.bad');
 
-  const sent = await A.req(REQ.FRIEND_ADD, { name: NAME_B });
-  check('12. a friend request is sent, not silently accepted', sent.status === 'sent');
-
-  const bobsList = await B.next(PUSH.FRIENDS, 8000, m => m.incoming.length > 0);
-  check('13. the request lands on the other side live',
-    bobsList.incoming.length === 1 && bobsList.incoming[0].name === NAME_A);
-  check('14. an unanswered request grants nothing',
-    bobsList.friends.length === 0);
-
-  await B.req(REQ.FRIEND_ACCEPT, { id: regA.user.id });
-  const aliceList = await A.next(PUSH.FRIENDS, 8000, m => m.friends.length > 0);
-  check('15. accepting makes the friendship mutual and shows presence',
-    aliceList.friends.length === 1
-    && aliceList.friends[0].name === NAME_B
-    && aliceList.friends[0].online === true,
-    `alice sees ${aliceList.friends.map(f => f.name + (f.online ? '(on)' : '(off)')).join()}`);
-
-  /* --- lobby --------------------------------------------------------- */
   const made = await A.req(REQ.ROOM_CREATE, {});
-  const roomId = made.room.id;
-  check('16. a lobby opens with the host seated and three seats free',
+  const code = made.room.code;
+  check('12. a room opens with the host seated and three seats free',
     made.room.seats.filter(s => s.kind === 'human').length === 1
     && made.room.seats.filter(s => s.kind === 'empty').length === 3
-    && made.room.hostId === regA.user.id,
-    `room ${roomId}`);
+    && made.room.hostId === meA.id,
+    `code ${code}`);
 
-  let uninvited = null;
-  try { await B.req(REQ.ROOM_JOIN, { roomId }); }
-  catch (e) { uninvited = e.code; }
-  check('17. a lobby is invite-only even if you know the code',
-    uninvited === 'friend.none', `-> ${uninvited}`);
+  check('13. the code is five characters, and none of them are ambiguous',
+    typeof code === 'string' && code.length === CODE_LEN
+    && [...code].every(ch => CODE_ALPHABET.includes(ch)),
+    `${code} (no I, L, O, 0 or 1)`);
 
-  await A.req(REQ.ROOM_INVITE, { userId: regB.user.id });
-  const invite = await B.next(PUSH.INVITE);
-  check('18. the invite arrives with who sent it',
-    invite.roomId === roomId && invite.from.name === NAME_A);
-
-  const joined = await B.req(REQ.ROOM_JOIN, { roomId });
-  check('19. the invited friend takes the next seat',
-    joined.room.seats[1].kind === 'human' && joined.room.seats[1].name === NAME_B,
+  /* THE HEADLINE. No invite, nobody to accept, no friendship: the code is the
+     whole of the permission, and typing it lands you in the SAME room. */
+  const joined = await B.req(REQ.ROOM_JOIN, { code: code.toLowerCase() });
+  check('14. typing the code gets you in — invited by nobody, accepted by nobody',
+    joined.room.code === code
+    && joined.room.seats[1].kind === 'human' && joined.room.seats[1].name === NAME_B,
     `seats: ${joined.room.seats.map(s => s.kind).join()}`);
+
+  const sawJoin = await A.next(PUSH.ROOM, 8000, m => m.room
+    && m.room.seats.filter(s => s.kind === 'human').length === 2);
+  check('15. the room tells everybody already in it',
+    !!sawJoin && sawJoin.room.humans === 2);
 
   let notHost = null;
   try { await B.req(REQ.ROOM_SETTINGS, { difficulty: 'easy' }); }
   catch (e) { notHost = e.code; }
-  check('20. only the host may change the settings', notHost === 'room.nothost');
+  check('16. only the player who made the room may change the settings',
+    notHost === 'room.nothost');
 
   const settings = await A.req(REQ.ROOM_SETTINGS, { difficulty: 'hard', knights: true });
-  check('21. the host sets difficulty and Knights for everyone',
+  check('17. the host sets difficulty and Knights for everyone',
     settings.room.settings.difficulty === 'hard' && settings.room.settings.knights === true);
 
   /* --- the match -----------------------------------------------------
@@ -333,16 +348,18 @@ try {
     // Not knowing your own seat yet is exactly as much a reason to hold the
     // message as not having a board yet. Dropping it here is what made the
     // first run sit out the whole pick clock.
-    if (!begin || !net.mirror) { net.queue.push([who, msg]); return; }
+    if (!begin || !(who === A ? net.mirrorA : net.mirrorB)) { net.queue.push([who, msg]); return; }
     if (msg.pid !== begin.yourPid) return;
     placePick(who, msg);
   }
 
   async function placePick(who, msg) {
-    const localPid = net.mirror.toLocal(msg.pid);
+    const m = who === A ? net.mirrorA : net.mirrorB;
+    const st = who === A ? net.stateA : net.stateB;
+    const localPid = m.toLocal(msg.pid);
     const legal = msg.need === 'road'
-      ? legalRoads(net.state, localPid, true, msg.anchor)
-      : legalSettlements(net.state, localPid, true);
+      ? legalRoads(st, localPid, true, msg.anchor)
+      : legalSettlements(st, localPid, true);
     if (!legal.length) { log(`${who.label}: nothing legal for ${msg.need}`); return; }
     await sleep(90);          // a beat of thinking, like a person
     try {
@@ -353,21 +370,26 @@ try {
     } catch (e) { log(`${who.label} draft pick refused: ${e.message}`); }
   }
 
-  /* ONLY ONE CLIENT FEEDS THE MIRROR.
-     Both sockets receive the same event stream, and there is one shared board
-     in this process because `board/layout.js` is a module singleton. Applying
-     both streams to it double-counts every build, which walks the draft cursor
-     forward twice per road and hands the next player a set of legal spots
-     computed against a board a whole turn ahead of the server's. In a browser
-     this cannot happen — each client is its own process with its own island —
-     which is exactly why the server puts each match in its own worker. */
+  /* EACH CLIENT FEEDS ITS OWN MIRROR, AND THEY ARE COMPARED AT THE END.
+   *
+   * This used to apply only alice's stream, to one shared mirror, because two
+   * streams into one board double-counts every build. That is true — and it
+   * also meant the test could not have caught the reported bug if it tried:
+   * "when one user built a road the other player didn't see it at all" is
+   * precisely a claim about the SECOND client's board, and there was not one.
+   *
+   * `createMatch` returns a fresh state object, so two states and two mirrors
+   * do not collide. The island underneath them is one module singleton and is
+   * therefore literally shared, which is fine: that half of the claim belongs
+   * to `tools/boardsync.mjs`, which spawns real separate processes for it. */
   const pump = who => msg => {
-    if (who === A && msg.t === PUSH.MATCH_EV && net.mirror) {
-      evLog.push(...msg.evs);
-      net.mirror.applyEvents(msg.evs);
+    const m = who === A ? net.mirrorA : net.mirrorB;
+    if (msg.t === PUSH.MATCH_EV) {
+      if (who === A) evLog.push(...msg.evs);
+      else net.bobEvents += msg.evs.length;
+      if (m) m.applyEvents(msg.evs);
     }
-    if (who === A && msg.t === PUSH.MATCH_SNAP && net.mirror) net.mirror.applySnapshot(msg);
-    if (who === B && msg.t === PUSH.MATCH_EV) net.bobEvents += msg.evs.length;
+    if (msg.t === PUSH.MATCH_SNAP && m) m.applySnapshot(msg);
     draftAnswer(who, msg);
   };
   net.bobEvents = 0;
@@ -381,29 +403,29 @@ try {
      from both sides: nothing happens on the first press, and the match begins
      on the second without anybody pressing anything else. */
   const voteA = await A.req(REQ.ROOM_START, {});
-  check('22. one player pressing START does not start the match',
+  check('18. one player pressing START does not start the match',
     voteA.started === false && voteA.waitingFor.includes(NAME_B),
     `alice is ready; waiting for ${JSON.stringify(voteA.waitingFor)}`);
 
   const soloBegin = await A.next(PUSH.MATCH_BEGIN, 2500).catch(() => null);
-  check('23. and no match begins while somebody has not said yes',
+  check('19. and no match begins while somebody has not said yes',
     soloBegin === null, 'nothing arrived in 2.5s');
 
   const voteB = await B.req(REQ.ROOM_START, {});
   const beginA = await A.next(PUSH.MATCH_BEGIN);
   const beginB = await B.next(PUSH.MATCH_BEGIN);
-  check('24. the match starts the moment the last player is ready',
+  check('20. the match starts the moment the last player is ready',
     voteB.started === true && voteB.waitingFor.length === 0,
     'bob was the last vote');
   net.beginA = beginA;
   net.beginB = beginB;
-  check('25. both clients are told to start the same match',
+  check('21. both clients are told to start the same match',
     beginA.matchId === beginB.matchId && beginA.seed === beginB.seed,
     `seed ${beginA.seed}`);
-  check('26. each client is told which seat is theirs, and they differ',
+  check('22. each client is told which seat is theirs, and they differ',
     beginA.yourPid !== beginB.yourPid,
     `alice pid ${beginA.yourPid}, bob pid ${beginB.yourPid}`);
-  check('27. the two empty seats became bots',
+  check('23. the two empty seats became bots',
     beginA.seats.filter(s => s.kind === 'bot').length === 2
     && beginA.seats.filter(s => s.kind === 'human').length === 2,
     beginA.seats.map(s => `${s.pid}:${s.kind}`).join(' '));
@@ -416,12 +438,17 @@ try {
   const mirror = createMirror(state, {
     yourPid: beginA.yourPid, roster: beginA.seats, order: beginA.order
   });
+  // Bob's own board, from bob's own begin message and bob's own seat.
+  const stateB = createMatch({ seed: beginB.seed >>> 0 });
+  const mirrorB = createMirror(stateB, {
+    yourPid: beginB.yourPid, roster: beginB.seats, order: beginB.order
+  });
   const totalItems = [...itemsByTile.values()].reduce((n, l) => n + l.length, 0);
-  check('28. the seed alone deals the board and its whole item field',
+  check('24. the seed alone deals the board and its whole item field',
     tiles.length === 19 && totalItems > 300,
     `19 hexes, ${totalItems} item positions, fingerprint ${boardFingerprint.slice(0, 24)}...`);
 
-  check('29. you are seat 0 locally whatever seat the server dealt you',
+  check('25. you are seat 0 locally whatever seat the server dealt you',
     mirror.toLocal(beginA.yourPid) === 0
     && mirror.toServer(0) === beginA.yourPid
     && state.players[0].color.key === beginA.seats[beginA.yourPid].color,
@@ -431,20 +458,51 @@ try {
      Hand the mirror to the pumps and replay anything that arrived while the
      board was being dealt. */
   const draftDone = new Promise(done => { net.done = done; });
-  net.mirror = mirror;
-  net.state = state;
+  net.mirrorA = mirror; net.stateA = state;
+  net.mirrorB = mirrorB; net.stateB = stateB;
   for (const [who, msg] of net.queue.splice(0)) {
     const begin = who === A ? net.beginA : net.beginB;
     if (begin && msg.pid === begin.yourPid) placePick(who, msg);
   }
 
   await Promise.race([draftDone, sleep(50000)]);
-  check('30. the opening draft completes with eight settlements and eight roads',
+  check('26. the opening draft completes with eight settlements and eight roads',
     state.buildings.size === 8 && state.roadOwner.size === 8,
     `${state.buildings.size} settlements, ${state.roadOwner.size} roads`);
 
+  /* THE BUG, CHECKED FROM BOTH SIDES.
+   *
+   *   "When one user built a road the other player didn't see it at all."
+   *
+   * Bob's board is built only from bob's socket. If a single build event went
+   * to one client and not the other, or landed on a different edge, these two
+   * maps disagree. */
+  // A beat for the tail of the stream. `done` fires on alice's view of the
+  // last message, and bob's copy of it is a packet behind at worst.
+  await sleep(600);
+  const roadsA = [...state.roadOwner.entries()].sort((x, y) => x[0] - y[0]);
+  const roadsB = [...stateB.roadOwner.entries()].sort((x, y) => x[0] - y[0]);
+  const bldA = [...state.buildings.keys()].sort((x, y) => x - y);
+  const bldB = [...stateB.buildings.keys()].sort((x, y) => x - y);
+  check('27. both players see the same eight roads on the same eight edges',
+    roadsA.length === 8 && roadsB.length === 8
+    && roadsA.every(([id], i) => roadsB[i][0] === id),
+    `alice ${roadsA.map(r => r[0]).join(',')} | bob ${roadsB.map(r => r[0]).join(',')}`);
+  check('28. and the same eight settlements on the same eight corners',
+    bldA.length === 8 && bldB.length === 8 && bldA.every((id, i) => bldB[i] === id),
+    `corners ${bldA.join(',')}`);
+  /* Seats are permuted per client — you are always local 0 — so the OWNERS
+     have to be compared through the two mirrors rather than as raw numbers.
+     A road that is alice's on alice's screen and bob's on bob's screen is a
+     desync that matching edge ids alone would not catch. */
+  const ownerMismatch = roadsA.filter(([id, localOwner], i) =>
+    !roadsB[i] || mirror.toServer(localOwner) !== mirrorB.toServer(roadsB[i][1]));
+  check('29. and they agree about whose road is whose',
+    ownerMismatch.length === 0,
+    `${roadsA.length} roads, ${ownerMismatch.length} disputed`);
+
   const go = A.seen.go || await A.next(PUSH.MATCH_GO, 12000);
-  check('31. the countdown to play is announced to the table', !!go, `in ${go && go.in}ms`);
+  check('30. the countdown to play is announced to the table', !!go, `in ${go && go.in}ms`);
 
   /* --- play ---------------------------------------------------------- */
   const snapsBefore = A.seen.snap;
@@ -458,24 +516,24 @@ try {
   clearInterval(drive);
 
   const snaps = A.seen.snap - snapsBefore;
-  check('32. snapshots arrive at about the advertised rate',
+  check('31. snapshots arrive at about the advertised rate',
     snaps > 120 && snaps < 260, `${snaps} in 9s (want ~180)`);
 
   const me = state.players[0];
-  check('33. your settler actually moved when you pushed the stick',
+  check('32. your settler actually moved when you pushed the stick',
     Number.isFinite(me.x) && Number.isFinite(me.z)
     && (Math.abs(me.x) + Math.abs(me.z)) > 0,
     `at ${me.x.toFixed(1)}, ${me.z.toFixed(1)} facing ${me.facing.toFixed(2)}`);
 
   const gainedEvents = evLog.filter(e => e.type === 'gained');
   const totalGathered = state.players.reduce((n, p) => n + (p.stats ? p.stats.gathered : 0), 0);
-  check('34. resources are gathered on contact and streamed to both clients',
+  check('33. resources are gathered on contact and streamed to both clients',
     gainedEvents.length > 0 && totalGathered > 0,
     `${gainedEvents.length} pickups seen, ${totalGathered} counted`);
 
   const mirroredRes = state.players.map(p =>
     p.res.wood + p.res.brick + p.res.wool + p.res.wheat + p.res.ore);
-  check('35. the mirrored board agrees with the server about everyone\'s goods',
+  check('34. the mirrored board agrees with the server about everyone\'s goods',
     mirroredRes.every(v => Number.isFinite(v) && v >= 0),
     `packs: ${mirroredRes.join(' / ')}`);
 
@@ -484,7 +542,7 @@ try {
   try {
     await A.req(REQ.MATCH_ACT, { kind: ACT.BUILD_SETTLEMENT, id: 999 });
   } catch (e) { refused = e.code; }
-  check('36. the server refuses a move that is not legal', refused === 'move.illegal',
+  check('35. the server refuses a move that is not legal', refused === 'move.illegal',
     `-> ${refused}`);
 
   /* --- trading from the wrong place ---------------------------------- */
@@ -492,7 +550,7 @@ try {
   try {
     await A.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give: 'wood', get: 'ore' });
   } catch (e) { noTrade = e.code; }
-  check('37. you cannot trade without standing at a post', noTrade === 'move.illegal',
+  check('36. you cannot trade without standing at a post', noTrade === 'move.illegal',
     'proximity is checked on the server, not taken on trust');
 
   /* --- somebody drops ------------------------------------------------ */
@@ -503,22 +561,32 @@ try {
   // A gets told that a seat changed hands.
   const peerMsg = await A.next(PUSH.MATCH_PEER, 8000).catch(() => null);
   peer.seen = !!peerMsg;
-  check('38. the table is told when a player drops out', peer.seen && peerMsg.state === 'gone',
+  check('37. the table is told when a player drops out', peer.seen && peerMsg.state === 'gone',
     `seat ${bobPid} -> ${peerMsg && peerMsg.state}`);
 
   const beforeReconnect = A.seen.snap;
   await sleep(2000);
-  check('39. the match keeps running for everyone still in it',
+  check('38. the match keeps running for everyone still in it',
     A.seen.snap > beforeReconnect, `${A.seen.snap - beforeReconnect} more snapshots`);
 
   /* --- reconnect ----------------------------------------------------- */
   B = await connect('bob-back');
-  await B.req(REQ.HELLO, { version: PROTOCOL_VERSION });
-  await B.req(REQ.RESUME, { token: regB.token });
+  await B.req(REQ.HELLO, { version: PROTOCOL_VERSION, device: DEV_B, name: NAME_B });
   const backIn = await B.next(PUSH.MATCH_BEGIN, 8000).catch(() => null);
-  check('40. reconnecting puts you back in your own seat',
+  check('39. reconnecting with the same device puts you back in your own seat',
     !!backIn && backIn.yourPid === bobPid && backIn.resumed === true,
-    `back at seat ${backIn && backIn.yourPid}`);
+    `back at seat ${backIn && backIn.yourPid}, no password typed`);
+
+  /* The resume message used to be a SHORT one — seed, roster, seat — and the
+     client parks it and reloads the page off it. Without the order it keeps
+     its own locally generated draft order; without `knights` it reads
+     `undefined !== false` and turns Knights on in a match that had them off.
+     A reconnecting player came back into a subtly different game. */
+  check('40. and is told everything the first begin told them',
+    !!backIn && Array.isArray(backIn.order) && backIn.order.length === 8
+    && typeof backIn.knights === 'boolean' && !!backIn.difficulty,
+    `order ${backIn && (backIn.order || []).join('')}, ` +
+    `${backIn && backIn.difficulty}, knights ${backIn && backIn.knights}`);
 
   /* --- leaving for good ---------------------------------------------- */
   await A.req(REQ.MATCH_LEAVE, {});
@@ -527,22 +595,17 @@ try {
   check('41. leaving a match does not take the server with it',
     stillGoing.ok === true, `${stillGoing.matches} match(es) still running`);
 
-  /* --- persistence --------------------------------------------------- */
+  /* --- nothing was written anywhere ----------------------------------
+     The accounts file, its volume, the boot-time write probe and the
+     root-then-drop-privileges dance that made the volume writable are all
+     gone with the accounts. What is left should be exactly this: a process
+     holding some players and some rooms in memory, and no disk at all. */
   const finalHealth = await fetch(`${HTTP}/health`).then(r => r.json());
-  if (REMOTE) {
-    // On a live server the account count is not ours to predict, and whether
-    // the file survives a deploy is a property of the mount, not of this run.
-    // What CAN be checked is that the server said the path is on a volume and
-    // that it has actually written to it.
-    check('42. the accounts are on a volume that survives a deploy',
-      finalHealth.store.persists === true && finalHealth.store.writes > 0,
-      `${finalHealth.store.path} via ${finalHealth.store.from}, ` +
-      `${finalHealth.store.writes} writes, ${finalHealth.users} accounts`);
-  } else {
-    check('43. the accounts were written to disk',
-      finalHealth.users === 2 && finalHealth.store.writes > 0,
-      `${finalHealth.users} accounts, ${finalHealth.store.writes} writes`);
-  }
+  check('42. the server keeps its state in memory and reports no store',
+    finalHealth.ok === true && finalHealth.store === undefined
+    && typeof finalHealth.openRooms === 'number',
+    `${finalHealth.players} players, ${finalHealth.rooms} rooms, ` +
+    `${finalHealth.openRooms} of them open`);
 
 } catch (e) {
   failed++;

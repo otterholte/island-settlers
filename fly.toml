@@ -1,13 +1,14 @@
 # Island Settlers — Fly.io deployment for the multiplayer server.
 #
 #   fly launch --no-deploy --copy-config     # once, to claim the app name
-#   fly volumes create island_data --size 1  # once, 1GB is enormous for this
-#   fly secrets set SESSION_SECRET="$(openssl rand -base64 32)"
 #   fly deploy
+#
+# No volume and no secrets. The server holds rooms and players in memory and
+# writes nothing, so there is nothing to persist and nothing to configure.
 #
 # Change `app` to whatever name you claimed, then put the matching websocket
 # address into DEFAULT_SERVER in src/net/config.js — or just type it into the
-# box on the friends screen the first time you sign in.
+# box behind SERVER on the multiplayer screen.
 
 app = "island-settlers"
 primary_region = "iad"
@@ -17,18 +18,10 @@ primary_region = "iad"
 
 [env]
   PORT = "8080"
-  DATA = "/data"
   # Six concurrent matches on a 256MB machine. Each one is a worker thread
   # holding its own island and item field — about 40MB — so this number and
   # the memory below move together.
   MAX_MATCHES = "6"
-
-# Accounts and the friend graph are one JSON file, so they need somewhere that
-# survives a deploy. Without this every restart is a fresh server and everyone
-# has to sign up again.
-[mounts]
-  source = "island_data"
-  destination = "/data"
 
 [http_service]
   internal_port = 8080
@@ -49,11 +42,10 @@ primary_region = "iad"
     soft_limit = 200
     hard_limit = 400
 
-# ONE MACHINE, ON PURPOSE. The store is a file on a volume and rooms live in
-# memory, so two machines would be two separate games where friends can see
-# each other on one and not the other. Scaling past this means moving the store
-# and the room registry out of the process — see the note at the top of
-# server/store.mjs.
+# ONE MACHINE, ON PURPOSE. Rooms live in memory, so two machines would be two
+# separate games: a code made on one would not exist on the other, which is
+# precisely the failure this whole screen was rewritten to make impossible.
+# Scaling past this means moving the room registry out of the process.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "512mb"

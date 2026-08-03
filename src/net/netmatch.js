@@ -32,7 +32,7 @@
  * Owner: net agent.
  */
 
-import { reshuffle } from '../board/layout.js';
+import { reshuffle, BOUNDS } from '../board/layout.js';
 import { PLAYER_SPEED } from '../core/constants.js';
 import { createMirror } from './mirror.js';
 import { REQ, PUSH, ACT, INPUT_HZ, INTERP_DELAY_MS, errText } from './protocol.js';
@@ -224,7 +224,9 @@ export function createNetMatch(state, game, client) {
     draftState.need = msg.need;
     draftState.anchor = Number.isInteger(msg.anchor) ? msg.anchor : -1;
     draftState.deadline = msg.deadline || 0;
-    if (msg.need === 'done') { draftState.done = true; closePick(); return; }
+    if (msg.need === 'done') { draftState.done = true; draftState.open = false; return; }
+    // Yours: targets and a confirm. Anybody else's: the same board, re-dressed
+    // to say whose turn it is. Never nothing — that was the bug.
     if (draftState.pid === 0 && msg.need !== 'loading') openPick(msg);
     else closePick();
     notify('draft', { ...draftState });
@@ -238,10 +240,29 @@ export function createNetMatch(state, game, client) {
   });
 
   on(PUSH.MATCH_END, msg => {
-    // The match is gone — finished and reclaimed, or the server restarted.
+    /* The match is gone — finished and reclaimed, or the server restarted.
+     *
+     * SAY SO. `stand_down` un-gates the local bots, hands the rules back to
+     * `economy.js` and re-enables the local world tick, so a server that goes
+     * away mid-match used to drop the player into a single-player game against
+     * three bots, on the same island, mid-score, without a word. It looks
+     * exactly like multiplayer right up until you notice nobody else's roads
+     * are appearing — which is not a thing anyone should have to notice.
+     *
+     * A finished match is different and is left alone: `m.over` arrives first
+     * and the results screen is already up, and yanking somebody off their own
+     * victory screen would be its own bug. */
+    const wasPlaying = active && !ended && state.phase !== 'over';
     stand_down();
     clearPendingMatch();
     notify('end', msg);
+    if (!wasPlaying) return;
+    const hud = game.hud;
+    if (hud && typeof hud.announce === 'function') {
+      hud.announce(msg && msg.reason === 'over' ? 'Match Over' : 'Match Ended', '#f5342a');
+    }
+    // Home, rather than a fake single-player match nobody asked for.
+    if (typeof game.leaveMatch === 'function') setTimeout(() => game.leaveMatch(), 1400);
   });
 
   on(PUSH.MATCH_PEER, msg => {
@@ -258,9 +279,64 @@ export function createNetMatch(state, game, client) {
     if (p) p.freeRoads = msg.left | 0;
   });
 
+  /* ------------------------------------------------------- watching the draft
+   *
+   *   "On mobile it was showing the second player as only seeing the close up
+   *    of the board until it was their turn to pick, instead of showing the
+   *    full map view and where other players were placing their roads and
+   *    settlements."
+   *
+   * Exactly right, and it was one missing line. `matchflow` asks whichever
+   * draft object is installed to `begin()`, and the LOCAL one (flowDraft.js)
+   * puts the camera overhead and opens the board map in `draft-watch` for the
+   * whole draft, re-dressing it on every pick. The networked one set a boolean
+   * called `boardUp` that nothing read, and the only thing in this file that
+   * ever opened the map was the branch for your OWN turn. So everybody watched
+   * the 3D close-up until their name came up — and whoever drew the last seat
+   * watched six other picks happen somewhere off screen.
+   *
+   * `showWatch` is the missing half. The board goes up when the draft begins
+   * and STAYS up: `overview.open` is idempotent while already open, so calling
+   * it again per turn re-dresses the title, the note and the pick-order strip
+   * without the panel ever closing or the camera moving.
+   */
+
+  function draftInfo(note) {
+    return {
+      index: state.setupIndex | 0,
+      order: state.setupOrder || [],
+      pid: draftState.pid,
+      note: note || ''
+    };
+  }
+
+  /** Whose turn it is, in words, for the strip and the title plate. */
+  function turnLine() {
+    if (draftState.pid < 0) return 'Watching the board';
+    if (draftState.pid === 0) return 'Your pick';
+    const p = state.players[draftState.pid];
+    const who = p ? p.name : 'A rival';
+    return draftState.need === 'road' ? `${who} is laying a road` : `${who} is choosing a corner`;
+  }
+
+  function showWatch() {
+    if (!game.openOverview) return false;
+    const line = turnLine();
+    const opened = game.openOverview('draft-watch', {
+      setup: true,
+      cancellable: false,
+      keepOpen: true,
+      title: 'Opening Draft',
+      hint: line,
+      draft: draftInfo(line)
+    });
+    draftState.boardUp = opened !== false;
+    return draftState.boardUp;
+  }
+
   /* --------------------------------------------------------------- picks
-     The player's own draft turn. The board is already up in `draft-watch`;
-     this hands it a set of targets and a confirm that goes to the server. */
+     The player's own draft turn. The board is up in `draft-watch`; this hands
+     it a set of targets and a confirm that goes to the server. */
 
   function openPick(msg) {
     if (!game.openOverview) return;
@@ -272,6 +348,9 @@ export function createNetMatch(state, game, client) {
       keepOpen: true,
       title: wantRoad ? 'Your Road' : 'Your Corner',
       hint: wantRoad ? 'Run a road off your new settlement' : 'Claim a corner',
+      // The same pick-order strip the watch view carries, so the panel does
+      // not lose track of the draft the moment it becomes yours.
+      draft: draftInfo(wantRoad ? 'Your road' : 'Your corner'),
       onConfirm: id => {
         // Optimistic: the panel closes and the server's build event puts the
         // piece down a moment later. Refusing here would mean holding the map
@@ -283,8 +362,18 @@ export function createNetMatch(state, game, client) {
     draftState.open = opened !== false;
   }
 
+  /**
+   * Your turn is over, or it was never yours.
+   *
+   * This used to set a boolean and nothing else — which left the panel from
+   * your own pick standing there with the title "Your Road" and no targets on
+   * it while somebody else picked. `openPick` passes `keepOpen`, so
+   * `overview.commit` deliberately does not close the panel after a placement;
+   * something has to take it back to the watch view, and this is that.
+   */
   function closePick() {
     draftState.open = false;
+    if (!draftState.done) showWatch();
   }
 
   /* --------------------------------------------------------------- input
@@ -451,7 +540,15 @@ export function createNetMatch(state, game, client) {
   /* ---------------------------------------------- the draft, for matchflow */
 
   const draft = {
-    begin() { draftState.boardUp = true; },
+    /* The board goes up for EVERYBODY, for the whole draft — not just for the
+       player whose turn it is. See the showWatch note above. */
+    begin() {
+      const cam = game.camera;
+      if (cam && typeof cam.setActive === 'function') cam.setActive(true);
+      if (cam && typeof cam.overview === 'function') cam.overview(true);
+      if (cam && typeof cam.snap === 'function') cam.snap(BOUNDS.cx, BOUNDS.cz);
+      showWatch();
+    },
     update() { return draftState.done; },
     reset() { draftState.boardUp = false; draftState.open = false; },
     get holding() { return draftState.open; },

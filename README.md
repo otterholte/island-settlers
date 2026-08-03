@@ -48,6 +48,21 @@ landscape. The game will prompt you to rotate if you are in portrait.
 - **Windows:** `ipconfig` â†’ the IPv4 address of your wi-fi adapter
 - **Linux:** `hostname -I | awk '{print $1}'`
 
+### Playing with friends
+
+Press **PLAY WITH FRIENDS**, type your name once — it is saved on your device
+and never asked for again — and either **CREATE A ROOM** or type somebody
+else's five-character code and press **JOIN**.
+
+There are no accounts, no passwords, no friends list and nothing to accept.
+Whoever types the code while the room is open is in, up to four of you; empty
+seats become bots at the room's difficulty. Everybody presses **START** and the
+match begins on the last press.
+
+Multiplayer needs the small server in `server/` — see `server/README.md`. The
+game finds it automatically when both are served from the same address, and the
+**SERVER** button on that screen is there for when they are not.
+
 ### Install it to the home screen
 
 The game is a PWA: `manifest.webmanifest` plus a network-first service worker
@@ -120,9 +135,12 @@ across 60 simulated matches.
 
 ```bash
 node tools/verify.mjs                            # board graph + rules structural checks
+node tools/boardsync.mjs                         # one seed, separate processes, same island
 node tools/simulate.mjs --matches=60 --gathersys # headless bot-vs-bot pacing + balance
+node tools/nettest.mjs                           # a real server, two sockets, a whole match
 node tools/testmatch.mjs                         # drives the real game in headless Chrome
 node tools/shoot.mjs --stage=play --w=960 --h=444 # capture real screenshots
+node tools/mkicons.mjs                           # redraw the home-screen icons
 ```
 
 `testmatch.mjs` and `shoot.mjs` need a Chrome binary; set `--chrome=/path/to/chrome`

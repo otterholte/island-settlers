@@ -613,20 +613,20 @@ export function buildIntro(state, onBegin) {
     el('span', { class: 'mf-p-sub', text: 'You against three rivals' }));
 
   /*
-   * PLAY WITH FRIENDS is on the screen and is honestly labelled as not ready.
+   * PLAY WITH FRIENDS, which is now one code and no ceremony.
    *
-   * It is a real feature being built next, and it needs a real backend — the
-   * game is a static site with no server, no accounts and no network code, so
-   * a friends list and an invite have nowhere to live yet. A button that
-   * silently did nothing would be worse than no button; a button that says
-   * what it is waiting for is the honest version of "it is coming".
+   * The sub-line used to read "Invite people you added", which described a
+   * friends list, a request, an acceptance and an invite — four steps between
+   * two people and a game, and the four steps were where it broke. It is a
+   * five-character room code now, so the button can say the thing that is
+   * actually true and the whole screen behind it is a name and a code.
    */
   const friendsBtn = button('cream huge mf-friends', {
-    'aria-label': 'Play with friends — sign in, add friends and invite them',
+    'aria-label': 'Play with friends — make a room, or type a room code',
     on: { click: () => askForFriends() }
   },
     el('span', { class: 'sb-lab', text: 'Play with Friends' }),
-    el('span', { class: 'mf-p-sub', text: 'Invite people you added' }));
+    el('span', { class: 'mf-p-sub', text: 'Share a room code' }));
 
   const friendsNote = el('div', { class: 'mf-i-note hid', text: '' });
   let noteT = 0;

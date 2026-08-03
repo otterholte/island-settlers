@@ -3,17 +3,28 @@
  *
  *   createClient() -> { connect, close, req, fire, on, off, status, user, ... }
  *
- * One websocket, request/reply on top of it, automatic reconnection, and a
- * signed-in identity that survives all of that. Everything above this file —
- * the friends screen, the lobby, the match — talks in promises and events and
- * never learns that a socket dropped.
+ * One websocket, request/reply on top of it, automatic reconnection, and an
+ * identity that survives all of that. Everything above this file — the room
+ * screen, the lobby, the match — talks in promises and events and never learns
+ * that a socket dropped.
  *
- * THE SESSION IS THE TOKEN, AND IT LIVES HERE
- * -------------------------------------------
- * Sign in once and the server hands back a token; it goes in localStorage and
- * comes back out on the next visit. Reconnecting re-sends it before anything
- * else, so a dropped socket costs a round trip and not a password prompt. The
- * same idiom as `core/options.js` and `systems/difficulty.js`: a module
+ * THE IDENTITY IS A DEVICE ID AND A NAME, AND BOTH LIVE HERE
+ * ---------------------------------------------------------
+ *   "Users can still add their name and it stays saved locally on the device."
+ *
+ * So there is no sign-in. The first time this file runs it invents a random
+ * device id and keeps it in localStorage; the name is whatever the player last
+ * typed, kept beside it. Both go up on `hello`, which is the entire handshake:
+ * one round trip, no password, no token, nothing that can expire.
+ *
+ * That is also what makes a reconnect free. The old build re-sent a signed
+ * token, and when the server's session secret changed — which it did on every
+ * redeploy, because it was generated at boot and never configured — the resume
+ * failed silently, the client reported `ready` with no user, and a player who
+ * reloaded mid-match sat on a loading screen forever. A device id cannot
+ * expire and the server cannot refuse it.
+ *
+ * Same idiom as `core/options.js` and `systems/difficulty.js`: a module
  * singleton with a listener set, guarded storage, and defaults that work when
  * there is no storage at all.
  *
@@ -30,11 +41,12 @@
  */
 
 import {
-  PROTOCOL_VERSION, REQ, OK, ERR, E, errText, HEARTBEAT_MS
+  PROTOCOL_VERSION, REQ, OK, ERR, E, errText, HEARTBEAT_MS,
+  cleanName, nameProblem
 } from './protocol.js';
 import { serverCandidates } from './config.js';
 
-const TOKEN_KEY = 'island-settlers.token';
+const DEVICE_KEY = 'island-settlers.device';
 const NAME_KEY = 'island-settlers.name';
 
 /** Reconnect delays, in ms. The last is repeated forever. */
@@ -63,12 +75,43 @@ function write(key, value) {
   } catch (e) { /* private mode; the session still works for this tab */ }
 }
 
+/**
+ * This browser's handle, invented once and kept forever.
+ *
+ * Not a secret and not an account — it is the answer to "is this the same
+ * person who was sitting in seat 2 ninety seconds ago", which is a question the
+ * server has to be able to answer across a page reload, because the match
+ * begins with one. `crypto.randomUUID` where it exists, and a plain random
+ * string where it does not (older iOS Safari, and any non-https origin, where
+ * `crypto` is present but `randomUUID` is not).
+ */
+function deviceId() {
+  let d = read(DEVICE_KEY);
+  if (d && d.length >= 8) return d;
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') d = c.randomUUID();
+  else d = 'd' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  d = d.replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 64);
+  write(DEVICE_KEY, d);
+  return d;
+}
+
+/** What to call yourself before you have said. Not shown as a prompt — it is
+ *  a real, usable name, so somebody who never touches the field still plays. */
+const DEFAULT_NAME = 'Settler';
+
 export function createClient() {
   let ws = null;
   let url = null;
   let status = 'offline';     // offline | dialling | open | ready | failed
   let user = null;
-  let token = read(TOKEN_KEY);
+  const device = deviceId();
+  const stored = cleanName(read(NAME_KEY));
+  /** Has this player ever actually said what to call them? The room screen
+   *  leaves its field blank when they have not, so they see a placeholder
+   *  rather than a name they never picked. */
+  let named = !!stored && !nameProblem(stored);
+  let myName = named ? stored : DEFAULT_NAME;
   let attempt = 0;
   let retry = 0;
   let wantOpen = false;
@@ -150,25 +193,24 @@ export function createClient() {
       candidateAt = 0;
       setStatus('open');
       try {
-        // The version check is first and is fatal: a client that speaks a
-        // different protocol should be told to reload, not be allowed to make
-        // half-working requests until something confusing happens.
-        await rawReq(REQ.HELLO, { version: PROTOCOL_VERSION });
+        /* ONE ROUND TRIP AND YOU ARE IN.
+         *
+         * The version check is fatal on purpose: a client that speaks a
+         * different protocol should be told to reload, not be allowed to make
+         * half-working requests until something confusing happens.
+         *
+         * Everything else about the session rides on the same message, so
+         * there is no window in which the socket is `ready` and the server
+         * does not know who is on it — which is what used to strand a
+         * reconnecting player between a failed resume and a lobby. */
+        const r = await rawReq(REQ.HELLO, {
+          version: PROTOCOL_VERSION, device, name: myName
+        });
+        adoptSession(r);
       } catch (e) {
         setStatus('failed', e.code === E.VERSION ? 'stale-page' : 'handshake');
         close();
         return;
-      }
-      if (token) {
-        try {
-          const r = await rawReq(REQ.RESUME, { token });
-          adoptSession(r);
-        } catch (e) {
-          // An expired or revoked token is not an error to shout about; it
-          // just means the sign-in form.
-          token = ''; write(TOKEN_KEY, '');
-          user = null;
-        }
       }
       setStatus('ready');
     };
@@ -309,28 +351,34 @@ export function createClient() {
   /* ------------------------------------------------------------ session */
 
   function adoptSession(r) {
-    if (r && r.token) { token = r.token; write(TOKEN_KEY, token); }
-    if (r && r.user) {
-      user = r.user;
-      write(NAME_KEY, user.name);
+    if (r && r.you) {
+      user = r.you;
+      myName = user.name;
+      write(NAME_KEY, myName);
     }
-    emit('session', { user, token });
+    emit('session', { user, name: myName });
     return user;
   }
 
-  async function register(name, pass) {
-    return adoptSession(await req(REQ.REGISTER, { name, pass }));
-  }
-
-  async function login(name, pass) {
-    return adoptSession(await req(REQ.LOGIN, { name, pass }));
-  }
-
-  async function logout() {
-    try { await req(REQ.LOGOUT, {}); } catch (e) { /* going anyway */ }
-    token = ''; user = null;
-    write(TOKEN_KEY, '');
-    emit('session', { user: null, token: '' });
+  /**
+   * Change your name.
+   *
+   * Saved locally FIRST and unconditionally, because that is what was asked
+   * for — "it stays saved locally on the device" — and because a player who
+   * types their name while the server is asleep should still be called that
+   * when it wakes up. The server is told if it is listening; if it is not, the
+   * next `hello` carries the new name anyway.
+   */
+  async function setName(name) {
+    const nice = cleanName(name);
+    const bad = nameProblem(nice);
+    if (bad) { const e = new Error(errText(bad)); e.code = bad; throw e; }
+    myName = nice;
+    named = true;
+    write(NAME_KEY, nice);
+    emit('session', { user, name: myName });
+    if (status !== 'ready') return { id: user && user.id, name: nice };
+    return adoptSession(await req(REQ.SET_NAME, { name: nice }));
   }
 
   /* Round-trip time, sampled rather than continuous. Shown on the lobby so a
@@ -351,22 +399,19 @@ export function createClient() {
 
   return {
     connect, close, req, fire, on, off,
-    register, login, logout, measurePing,
+    setName, measurePing,
     get status() { return status; },
     get user() { return user; },
-    get token() { return token; },
-    get lastName() { return read(NAME_KEY); },
+    get device() { return device; },
+    /** The name this device plays under, whether or not a server has heard it
+     *  yet. The room screen reads this to fill its field on first paint. */
+    get name() { return myName; },
+    /** False until the player has typed one — see DEFAULT_NAME. */
+    get named() { return named; },
     get error() { return lastError; },
     get url() { return url; },
     get ping() { return ping; },
     get signedIn() { return !!user; },
-    /** Forget the saved token without telling the server — used when the
-     *  address changes, since a token from one server means nothing to another. */
-    forget() {
-      token = ''; user = null;
-      write(TOKEN_KEY, '');
-      emit('session', { user: null, token: '' });
-    },
     /** Start the search again from the top — used when the address changes. */
     rediscover() {
       everConnected = false;

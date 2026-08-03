@@ -429,6 +429,9 @@ if (STAGE === 'home') {
     await send('Input.dispatchMouseEvent',
       { type: 'mouseReleased', x: field.x, y: field.y, button: 'left', clickCount: 1 });
     await sleep(200);
+    // Empty it first: the name field can legitimately arrive pre-filled from
+    // this device's last visit, and typing into that measures nothing.
+    await ev(`(()=>{const n=document.querySelector('.fr-input');n.value='';return 1})()`);
     for (const ch of ['o', 't', 't', 'e', 'r', 'w', 'a', 's', 'd', ' ', '1']) {
       const code = ch === ' ' ? 'Space' : 'Key' + ch.toUpperCase();
       await send('Input.dispatchKeyEvent',
@@ -447,27 +450,21 @@ if (STAGE === 'home') {
     await ev(`(()=>{const n=document.querySelector('.fr-input'); n.value=''; return 1})()`);
   }
 
-  // Sign up, so the friends list itself can be photographed too.
-  const who = 'shot' + Math.floor(Math.random() * 100000);
-  console.log('  SIGNUP ' + JSON.stringify(await ev(`(async()=>{
+  /* The name is saved on the device, so the check is that it comes back.
+     Typed with real keystrokes above; read out of localStorage here. */
+  console.log('  NAME ' + JSON.stringify(await ev(`(async()=>{
     const c=(await import('/src/net/client.js')).netClient();
-    try{ const u=await c.register('${who}','islandpass'); return u&&u.name; }
-    catch(e){ return 'ERR ' + (e.code||e.message); }})()`, true)));
-  await sleep(700);
-  console.log('  LIST ' + JSON.stringify(await ev(`(()=>{
-    return {title:(document.querySelector('.fr-title')||{}).textContent,
-      sub:(document.querySelector('.fr-sub')||{}).textContent,
-      rows:document.querySelectorAll('.fr-row').length,
-      addBox:!!document.querySelector('.fr-add'),
-      buttons:[...document.querySelectorAll('.fr-foot .btn')]
-        .map(b=>(b.textContent||'').trim())};})()`)));
-  await shot(`friends-list-${TAG}`);
+    await c.setName('Otter');
+    return {client:c.name, stored:localStorage.getItem('island-settlers.name'),
+      device:(localStorage.getItem('island-settlers.device')||'').slice(0,8)+'…',
+      user:c.user&&c.user.name};})()`, true)));
+  await shot(`rooms-home-${TAG}`);
 
-  // ...and open a lobby, which is the screen with the seats in it.
-  console.log('  LOBBY ' + JSON.stringify(await ev(`(async()=>{
+  // ...and make a room, which is the screen with the code and the seats.
+  console.log('  ROOM ' + JSON.stringify(await ev(`(async()=>{
     const btns=[...document.querySelectorAll('.fr-foot .btn')];
-    const open=btns.find(b=>/lobby/i.test(b.textContent||''));
-    if(!open)return 'no lobby button';
+    const open=btns.find(b=>/create a room/i.test(b.textContent||''));
+    if(!open)return 'no create button';
     open.click(); return 'clicked';})()`, true)));
   await sleep(900);
   console.log('  SEATS ' + JSON.stringify(await ev(`(()=>{
@@ -476,8 +473,9 @@ if (STAGE === 'home') {
       name:(s.querySelector('.fr-sname')||{}).textContent}));
     const panel=document.querySelector('.fr-panel');
     const r=panel?panel.getBoundingClientRect():null;
+    const code=(document.querySelector('.fr-codeval')||{}).textContent||'';
     return {title:(document.querySelector('.fr-title')||{}).textContent,
-      sub:(document.querySelector('.fr-sub')||{}).textContent,
+      code, codeLen:code.length,
       seats,
       diff:[...document.querySelectorAll('.btn.fr-d')]
         .map(b=>(b.textContent||'').trim()+(b.classList.contains('on')?'*':'')),
@@ -492,8 +490,8 @@ if (STAGE === 'home') {
      in one lobby from one browser. */
   console.log('  JOIN ' + JSON.stringify(await ev(`(async()=>{
     const P=await import('/src/net/protocol.js');
-    const room=document.querySelector('.fr-sub').textContent.match(/Code (\\w+)/)[1];
-    // A second account on its own socket, invited into this lobby.
+    // The code, read off the screen exactly the way a friend reads it.
+    const code=(document.querySelector('.fr-codeval')||{}).textContent.trim();
     const me=(await import('/src/net/client.js')).netClient();
     const other=new WebSocket(me.url);
     await new Promise(r=>other.addEventListener('open',r,{once:true}));
@@ -502,24 +500,15 @@ if (STAGE === 'home') {
       if(m.i!==undefined&&wait.has(m.i)){wait.get(m.i)(m);wait.delete(m.i);}});
     const req=(t,b={})=>new Promise(ok=>{const i=++id;wait.set(i,ok);
       other.send(JSON.stringify({i,t,...b}));});
-    await req(P.REQ.HELLO,{version:P.PROTOCOL_VERSION});
-    const name='pal'+Math.floor(Math.random()*99999);
-    await req(P.REQ.REGISTER,{name,pass:'islandpass'});
-    await req(P.REQ.FRIEND_ADD,{name:me.user.name});
-    window.__other={req,P,name};
-    return name;})()`, true)));
-  // Accept from this side, then invite and have them join.
-  console.log('  PAIR ' + JSON.stringify(await ev(`(async()=>{
-    const c=(await import('/src/net/client.js')).netClient();
-    const P=await import('/src/net/protocol.js');
-    const list=await c.req(P.REQ.FRIEND_LIST,{});
-    const inc=list.incoming[0];
-    if(!inc) return 'no request arrived';
-    await c.req(P.REQ.FRIEND_ACCEPT,{id:inc.id});
-    await c.req(P.REQ.ROOM_INVITE,{userId:inc.id});
-    const room=document.querySelector('.fr-sub').textContent.match(/Code (\\w+)/)[1];
-    await window.__other.req(window.__other.P.REQ.ROOM_JOIN,{roomId:room});
-    return {invited:inc.name, room};})()`, true)));
+    const name='Pal';
+    await req(P.REQ.HELLO,{version:P.PROTOCOL_VERSION,
+      device:'uishot-pal-'+Math.floor(Math.random()*1e9),name});
+    window.__other={req,P,name,code};
+    /* NO FRIENDSHIP, NO INVITE, NOTHING TO ACCEPT. This is the whole change:
+       a stranger with the five characters is in. */
+    const r=await req(P.REQ.ROOM_JOIN,{code});
+    return {code, joined:r.t==='ok', seats:r.room&&r.room.seats.map(s=>s.kind).join(),
+      err:r.code||null};})()`, true)));
   await sleep(900);
   console.log('  TWO  ' + JSON.stringify(await ev(`(()=>{
     return {seats:[...document.querySelectorAll('.fr-seat')].map(s=>
@@ -547,13 +536,13 @@ if (STAGE === 'home') {
 } else if (STAGE === 'netmatch') {
   await waitIntro();
   await sleep(300);
-  const who = 'net' + Math.floor(Math.random() * 100000);
-  console.log('  SIGNUP ' + JSON.stringify(await ev(`(async()=>{
+  const who = 'Net' + Math.floor(Math.random() * 1000);
+  console.log('  HELLO ' + JSON.stringify(await ev(`(async()=>{
     const c=(await import('/src/net/client.js')).netClient();
+    await c.setName('${who}');
     c.connect(true);
     for(let i=0;i<40 && c.status!=='ready';i++) await new Promise(r=>setTimeout(r,150));
-    try{ const u=await c.register('${who}','islandpass'); return u&&u.name; }
-    catch(e){ return 'ERR ' + (e.code||e.message); }})()`, true)));
+    return {status:c.status, name:c.name, user:c.user&&c.user.name};})()`, true)));
 
   console.log('  START ' + JSON.stringify(await ev(`(async()=>{
     const c=(await import('/src/net/client.js')).netClient();
@@ -586,6 +575,7 @@ if (STAGE === 'home') {
   }
   console.log('  REJOINED ' + JSON.stringify(back));
   await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+  const watch = { n: 0, mine: 0, mineOpen: 0, theirs: 0, theirsOpen: 0, title: null };
 
   // Let the load-in pause run out and the draft play itself: three of the four
   // seats are bots, and the fourth auto-places if the browser says nothing.
@@ -619,11 +609,39 @@ if (STAGE === 'home') {
         me:[+I.state.players[0].x.toFixed(1),+I.state.players[0].z.toFixed(1)],
         t:+I.state.time.toFixed(1)};})()`);
     if (i === 3 || i === 12 || i === 30) console.log(`  t+${i}s ` + JSON.stringify(now2));
+    /* THE BOARD MUST BE UP WHILE SOMEBODY ELSE IS PICKING.
+     *
+     *   "On mobile it was showing the second player as only seeing the close
+     *    up of the board until it was their turn to pick, instead of showing
+     *    the full map view and where other players were placing."
+     *
+     * So the interesting sample is the one taken when `pid !== 0`: a
+     * networked client used to have nothing on screen at all then. Recorded
+     * every tick and reported once, because which tick lands on somebody
+     * else's turn depends on the shuffle. */
+    if (now2 && now2.pid >= 0 && now2.phase !== 'play') {
+      watch.n++;
+      if (now2.pid === 0) { watch.mine++; if (now2.open) watch.mineOpen++; }
+      else { watch.theirs++; if (now2.open) watch.theirsOpen++; }
+      if (!watch.title && now2.pid !== 0) {
+        watch.title = await ev(`(()=>{
+          const t=document.querySelector('.ov-title'), h=document.querySelector('.ov-hint');
+          const pips=[...document.querySelectorAll('.ov-pip')];
+          return {title:t?t.textContent:null, hint:h?h.textContent:null,
+            pips:pips.length, lit:pips.findIndex(p=>p.classList.contains('now'))};})()`);
+      }
+    }
     if (now2 && now2.b >= 8 && now2.r >= 8 && now2.phase === 'play') {
       console.log('  DRAFTED ' + JSON.stringify(now2));
       break;
     }
   }
+  console.log('  WATCH ' + JSON.stringify(watch));
+  console.log('  DRAFTVIEW ' + JSON.stringify({
+    boardUpOnOthersTurns: watch.theirs > 0 && watch.theirsOpen === watch.theirs,
+    boardUpOnYourTurns: watch.mine === 0 || watch.mineOpen === watch.mine,
+    samples: `${watch.theirsOpen}/${watch.theirs} rival, ${watch.mineOpen}/${watch.mine} yours`
+  }));
   await sleep(2500);
   console.log('  PLAYING ' + JSON.stringify(await ev(`(()=>{
     const I=window.__ISLAND__; const n=I.game.net;

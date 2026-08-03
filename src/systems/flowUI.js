@@ -307,11 +307,11 @@ export function createFlowUI(root, state, game) {
       if (friendsLoading) return;
       friendsLoading = true;
       try {
-        const [{ createFriends }, { netClient }] = await Promise.all([
-          import('../ui/friends.js'),
+        const [{ createRooms }, { netClient }] = await Promise.all([
+          import('../ui/rooms.js'),
           import('../net/client.js')
         ]);
-        friends = createFriends(layer, {
+        friends = createRooms(layer, {
           client: netClient(),
           // START does not draw anything: the server begins the match once the
           // last player has pressed it, and netmatch.js parks it and reloads
@@ -321,7 +321,7 @@ export function createFlowUI(root, state, game) {
         toggle(intro, 'mf-hid', true);
         friends.show();
       } catch (err) {
-        if (typeof console !== 'undefined') console.warn('[flow] friends screen —', err.message);
+        if (typeof console !== 'undefined') console.warn('[flow] room screen —', err.message);
         if (built.nudgeFriends) {
           built.nudgeFriends('Multiplayer could not load — check your connection and reload.');
         }
