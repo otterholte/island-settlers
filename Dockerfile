@@ -8,12 +8,20 @@
 # rules.js the browser does — so the whole repo is copied, not just server/.
 FROM node:22-alpine
 
-# Runs unprivileged. The node image already provides the `node` user; the data
-# directory has to belong to it or the first account written is the last.
+# STARTS AS ROOT AND DOES NOT STAY THERE.
+#
+# `USER node` here looks like the careful choice and is the wrong one: a
+# platform hands a container its volume owned by root, so a process that is
+# already unprivileged cannot write to the one directory it exists to write to.
+# On the first Railway deploy that showed up as a server that ran perfectly and
+# recorded zero writes — every account would have vanished at the next deploy.
+#
+# So server/index.mjs claims the data directory and calls setgid/setuid itself,
+# before it opens a socket. Nothing that touches the network runs as root. See
+# claimDataAndDropPrivileges() there; RUN_AS overrides who it becomes.
 WORKDIR /app
 COPY . .
-RUN mkdir -p /data && chown -R node:node /data /app
-USER node
+RUN chown -R node:node /app
 
 ENV NODE_ENV=production
 

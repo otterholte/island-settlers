@@ -75,11 +75,13 @@ export function openStore(path) {
     }
   }
 
-  const stats = { loaded, saves: 0, writes: 0, lastWrite: 0, path: file };
+  const stats = { loaded, saves: 0, writes: 0, lastWrite: 0, lastError: null, path: file };
 
   let timer = null;
   let firstDirtyAt = 0;
 
+  /** Returns whether the bytes actually landed. The boot probe in index.mjs
+   *  depends on this being the truth rather than a best effort. */
   function writeNow() {
     if (timer) { clearTimeout(timer); timer = null; }
     firstDirtyAt = 0;
@@ -89,8 +91,12 @@ export function openStore(path) {
       renameSync(tmp, file);
       stats.writes++;
       stats.lastWrite = Date.now();
+      stats.lastError = null;
+      return true;
     } catch (e) {
-      console.error('[store] write failed:', e && e.message);
+      stats.lastError = (e && e.message) || String(e);
+      console.error('[store] write failed:', stats.lastError, '-', file);
+      return false;
     }
   }
 

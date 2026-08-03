@@ -19,6 +19,7 @@
 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
+import { mkdirSync, chownSync, existsSync, readFileSync } from 'node:fs';
 import { resolve, join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -69,16 +70,105 @@ const DATA = resolve(process.env.DATA || VOLUME || join(HERE, 'data'));
 const DATA_PERSISTS = DATA_SOURCE !== 'default'
   && (!VOLUME || DATA === resolve(VOLUME) || DATA.startsWith(resolve(VOLUME) + '/'));
 
+/**
+ * Take the volume, then stop being root.
+ *
+ * A platform that hands a container a volume mounts it owned by root. A
+ * container that sensibly runs as an unprivileged user therefore cannot write
+ * to the one directory it exists to write to — and the failure is quiet: the
+ * server starts, serves, signs people up, and loses every account at the next
+ * deploy. That is exactly what happened on the first Railway deploy, and the
+ * boot-time write below is what caught it.
+ *
+ * So the process starts as root, claims the data directory, and immediately
+ * drops to `node` before it opens a socket or reads a byte of input. Nothing
+ * that touches the network ever runs with privileges.
+ *
+ * Dependency-free on purpose: `su-exec` or `gosu` is the usual answer and both
+ * are a package to install. Node can do it with two builtins.
+ */
+function claimDataAndDropPrivileges() {
+  const out = { started: 'unknown', dropped: false, chowned: false, as: null };
+  if (typeof process.getuid !== 'function') return out;   // Windows
+  out.started = process.getuid() === 0 ? 'root' : String(process.getuid());
+  if (process.getuid() !== 0) return out;
+
+  const owner = process.env.RUN_AS || 'node';
+  const ids = idsFor(owner);
+  if (!ids) {
+    // A bare Linux box being run by root, with no such user. Dropping to a uid
+    // that does not exist would work and would be a strange thing to have done
+    // on purpose, so this stays as it is and says so once.
+    console.warn(`[server] running as root — no '${owner}' user to drop to`);
+    return out;
+  }
+  out.as = `${owner}(${ids.uid}:${ids.gid})`;
+
+  try {
+    mkdirSync(DATA, { recursive: true });
+  } catch (e) {
+    console.error('[server] could not create', DATA, '-', e.message);
+  }
+  // NUMBERS, NOT NAMES. `process.setuid` takes either; `fs.chownSync` throws on
+  // a string, and it throws AFTER the directory exists — so the mount stays
+  // root-owned, the boot write fails, and the only symptom is a server that
+  // works until the next deploy. Resolved through /etc/passwd once, up front.
+  for (const target of [DATA, join(DATA, 'island.json')]) {
+    try {
+      if (!existsSync(target)) continue;
+      chownSync(target, ids.uid, ids.gid);
+      out.chowned = true;
+    } catch (e) {
+      console.error('[server] could not take', target, '-', e.message);
+    }
+  }
+  try {
+    // Group first: setuid drops the ability to change the group afterwards.
+    process.setgid(ids.gid);
+    process.setuid(ids.uid);
+    out.dropped = true;
+  } catch (e) {
+    console.warn(`[server] staying root — could not become ${owner}: ${e.message}`);
+  }
+  return out;
+}
+
+/**
+ * Look a user up in /etc/passwd, or null if there is no such user.
+ *
+ * Node has no getpwnam and the file is three colons and a number. Reading it
+ * is less code than any way of avoiding reading it.
+ */
+function idsFor(name) {
+  try {
+    const line = readFileSync('/etc/passwd', 'utf8')
+      .split('\n').find(l => l.startsWith(name + ':'));
+    if (!line) return null;
+    const f = line.split(':');
+    const uid = Number(f[2]), gid = Number(f[3]);
+    if (!Number.isFinite(uid) || !Number.isFinite(gid)) return null;
+    return { uid, gid };
+  } catch (e) {
+    return null;
+  }
+}
+
+const PRIV = claimDataAndDropPrivileges();
+
 const store = openStore(join(DATA, 'island.json'));
 
-/* Write once, at boot, before anybody has an account to lose.
+/* PROVE THE DISK WORKS, AT BOOT, EVERY TIME.
  *
  * A volume that is mounted but not writable by the container user is a real
- * and common way to deploy this — and without this line the first anybody
- * would know is somebody signing up successfully and then not existing. The
- * store logs a failure here loudly, at boot, next to the path it tried, and
- * `/health` reports `writes: 0` forever after, which is the tell. */
-if (!store.stats.loaded) store.flush();
+ * and common way to deploy this, and without a probe the first anybody would
+ * know is somebody signing up successfully and then not existing.
+ *
+ * Unconditional, not "only when the file is missing": a server that loaded an
+ * existing file and has had no sign-ups yet also reports zero writes, so a
+ * zero write count on its own cannot tell a healthy idle server apart from a
+ * broken one. Writing once at boot makes the answer unambiguous, and it costs
+ * one small file write per restart. */
+const DATA_WRITABLE = store.flush();
 
 const users = createUsers(store);
 const rooms = createRooms();
@@ -167,7 +257,18 @@ const server = createServer((req, res) => {
         // host with no volume attached, which is a warning and not an error —
         // it is exactly right on a laptop.
         persists: DATA_PERSISTS,
+        writable: DATA_WRITABLE,
         volume: VOLUME || null
+      },
+      /* Who the process is, and whether it had to take the volume to get
+         there. `writes: 0` with `persists: true` means the mount is there and
+         cannot be written to — which is what this exists to tell apart. */
+      user: {
+        startedAs: PRIV.started,
+        now: PRIV.as,
+        droppedPrivileges: PRIV.dropped,
+        tookVolume: PRIV.chowned,
+        uid: typeof process.getuid === 'function' ? process.getuid() : null
       }
     });
   }
@@ -194,6 +295,14 @@ server.listen(PORT, HOST, () => {
   console.log(`[server] Island Settlers multiplayer on http://${HOST}:${PORT}`);
   console.log(`[server] websocket  ws://${HOST}:${PORT}/ws   protocol v${PROTOCOL_VERSION}`);
   console.log(`[server] data       ${store.stats.path}  (${users.count} accounts, via ${DATA_SOURCE})`);
+  console.log(`[server] user       started as ${PRIV.started}` +
+    (PRIV.dropped ? `, dropped to ${PRIV.as}` : '') +
+    (PRIV.chowned ? ', took the volume' : ''));
+  if (!DATA_WRITABLE) {
+    console.error('[server] WARNING  the accounts file could not be written at boot.');
+    console.error(`[server]          Nothing will persist. Check that ${store.stats.path}`);
+    console.error('[server]          is writable by this process.');
+  }
   if (!DATA_PERSISTS) {
     console.warn('[server] WARNING  that path is not on a mounted volume — accounts will be');
     console.warn('[server]          lost on the next deploy. Attach one and either mount it');
