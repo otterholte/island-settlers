@@ -32,7 +32,7 @@
 import { el, button, setText, toggle, clear } from './dom.js';
 import { icon } from './icons.js';
 import { PUSH, REQ, nameProblem, passProblem, errText, SEATS } from '../net/protocol.js';
-import { serverUrl, savedServer, setServer, normalizeServer } from '../net/config.js';
+import { serverCandidates, savedServer, setServer, normalizeServer } from '../net/config.js';
 import { DIFFICULTY_ORDER, LEVELS } from '../systems/difficulty.js';
 import { PLAYER_COLORS } from '../core/constants.js';
 
@@ -66,7 +66,19 @@ export function createFriends(root, opts = {}) {
   const foot = el('div', { class: 'fr-foot' });
   const note = el('div', { class: 'fr-note hid' });
 
-  const node = el('div', { class: 'fr-wrap hid' },
+  /* `data-ui` IS NOT DECORATION. IT IS WHY THIS SCREEN CAN BE TOUCHED.
+   *
+   * ui-base.css carries `#ui *{pointer-events:none}` and turns it back on with
+   * `#ui [data-ui],#ui [data-ui] *{pointer-events:auto}`. The first selector is
+   * more specific than any plain class, so a `pointer-events:auto` in
+   * friends.css loses to it and every control in here is inert — the panel
+   * draws perfectly, the buttons highlight on hover, and not one click lands.
+   *
+   * It shipped that way, because the capture rig pressed buttons with
+   * `element.click()`, which does not hit-test. Layout was proven; touching it
+   * never was. The first person to actually try to sign in could not put a
+   * cursor in the name field. */
+  const node = el('div', { class: 'fr-wrap hid', 'data-ui': '' },
     el('div', { class: 'fr-panel' },
       el('div', { class: 'fr-head' }, title, sub, closeBtn),
       body, note, foot));
@@ -123,6 +135,7 @@ export function createFriends(root, opts = {}) {
       if (!url) { say('That does not look like an address.', 'bad'); return; }
       setServer(url);
       client.forget();
+      if (client.rediscover) client.rediscover();
       say('');
       client.connect(true);
       go('signin');
@@ -500,7 +513,10 @@ export function createFriends(root, opts = {}) {
     setText(statusTxt, label);
     dot.className = 'fr-dot ' + (s === 'ready' ? 'ok' : s === 'failed' ? 'bad' : 'wait');
     if (s === 'failed' && panel !== 'connect') {
-      say('Cannot reach the server. Check the address, or try again in a moment.', 'bad');
+      const tried = (client.tried || []).join(', ');
+      say('Cannot reach the server — still trying.'
+        + (tried ? ` (tried ${tried})` : '')
+        + ' If it never comes up, SERVER lets you point it somewhere else.', 'bad');
     }
   }
 
@@ -556,7 +572,11 @@ export function createFriends(root, opts = {}) {
 
   function show() {
     toggle(node, 'hid', false);
-    if (!serverUrl()) panel = 'connect';
+    // The address box is a last resort, not a greeting. There is somewhere to
+    // try in every case except a page opened off a file:// with no server
+    // compiled in — and the client walks the whole list before giving up, so
+    // an origin with no websocket on it costs a moment, not a question.
+    if (!serverCandidates().length) panel = 'connect';
     else if (!client.signedIn) panel = 'signin';
     else if (room) panel = 'lobby';
     else panel = 'friends';

@@ -376,6 +376,48 @@ if (STAGE === 'home') {
       scrollH:document.documentElement.scrollHeight};})()`)));
   await shot(`friends-${TAG}`);
 
+  /* CAN IT ACTUALLY BE TOUCHED?
+   *
+   * `element.click()` does not hit-test, so every earlier check of this screen
+   * passed while not one real click could land: ui-base.css turns pointer
+   * events off for everything under #ui and back on only inside [data-ui], and
+   * the panel did not have the attribute. It looked right, it measured right,
+   * and nobody could put a cursor in the name field.
+   *
+   * So this presses it the way a thumb does — a real mouse event at real
+   * coordinates, then real keystrokes, including the four letters the joystick
+   * claims and the space bar. */
+  const field = await ev(`(()=>{const n=document.querySelector('.fr-input');
+    if(!n)return null; const r=n.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  if (field) {
+    console.log('  ONTOP ' + JSON.stringify(await ev(`(()=>{
+      const el2=document.elementFromPoint(${field.x},${field.y});
+      return {tag:el2?el2.tagName:null, cls:el2?String(el2.className):null,
+        insidePanel:!!(el2&&el2.closest&&el2.closest('.fr-wrap'))};})()`)));
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: field.x, y: field.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: field.x, y: field.y, button: 'left', clickCount: 1 });
+    await sleep(200);
+    for (const ch of ['o', 't', 't', 'e', 'r', 'w', 'a', 's', 'd', ' ', '1']) {
+      const code = ch === ' ' ? 'Space' : 'Key' + ch.toUpperCase();
+      await send('Input.dispatchKeyEvent',
+        { type: 'keyDown', text: ch, unmodifiedText: ch, key: ch, code });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch, code });
+    }
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab' });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab' });
+    await sleep(200);
+    console.log('  TOUCH ' + JSON.stringify(await ev(`(()=>{
+      const n=document.querySelector('.fr-input');
+      const a=document.activeElement;
+      return {typed:n.value, wasdSurvived:n.value==='otterwasd 1',
+        tabbedTo:a?a.placeholder:null};})()`)));
+    // Leave the field as it was found.
+    await ev(`(()=>{const n=document.querySelector('.fr-input'); n.value=''; return 1})()`);
+  }
+
   // Sign up, so the friends list itself can be photographed too.
   const who = 'shot' + Math.floor(Math.random() * 100000);
   console.log('  SIGNUP ' + JSON.stringify(await ev(`(async()=>{

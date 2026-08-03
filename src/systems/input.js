@@ -266,9 +266,36 @@ export function createInput(domRoot) {
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
   ]);
 
+  /**
+   * Is somebody typing into a field right now?
+   *
+   * If they are, every key is theirs and none of them are movement. This has
+   * to be checked BEFORE the preventDefault calls below, not after: those run
+   * unconditionally, so W, A, S, D, the arrows, Space and Tab were being eaten
+   * out of every text input on the page. A name box that silently refuses four
+   * of the commonest letters in English, the space bar, and the key you use to
+   * reach the next field is not a name box.
+   *
+   * There was nothing to type into when this file was written. There is now —
+   * the sign-in form on the friends screen.
+   */
+  function isTyping(ev) {
+    const t = ev.target;
+    if (!t || t.nodeType !== 1) return false;
+    if (t.isContentEditable) return true;
+    const tag = (t.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (tag !== 'INPUT') return false;
+    // Checkboxes and buttons are controls, not text — Space belongs to them
+    // as a press, and the game may still want the rest.
+    const type = (t.getAttribute('type') || 'text').toLowerCase();
+    return !['checkbox', 'radio', 'button', 'submit', 'reset', 'range'].includes(type);
+  }
+
   function onKeyDown(ev) {
     const code = ev.code || ev.key;
     if (!code) return;
+    if (isTyping(ev)) return;
     if (code === 'Space' || code === 'Tab') { if (ev.preventDefault) ev.preventDefault(); }
     if (MOVE_KEYS.has(code) && ev.preventDefault) ev.preventDefault();
     // A panel owns the keyboard: the key is eaten here (so the browser does
@@ -282,6 +309,9 @@ export function createInput(domRoot) {
 
   function onKeyUp(ev) {
     const code = ev.code || ev.key;
+    // Released keys are cleared even while typing. A key that went down before
+    // the field was focused must still be able to come back up, or the settler
+    // walks into the sea for as long as the form is open.
     if (code) keys.delete(code);
   }
 

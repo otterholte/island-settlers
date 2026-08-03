@@ -32,7 +32,7 @@
 import {
   PROTOCOL_VERSION, REQ, OK, ERR, E, errText, HEARTBEAT_MS
 } from './protocol.js';
-import { serverUrl } from './config.js';
+import { serverCandidates } from './config.js';
 
 const TOKEN_KEY = 'island-settlers.token';
 const NAME_KEY = 'island-settlers.name';
@@ -73,6 +73,12 @@ export function createClient() {
   let retry = 0;
   let wantOpen = false;
   let lastError = null;
+  /* Addresses still worth trying this round, and where we are in them. The
+     list is rebuilt each time we run off the end, so a server that comes back
+     later is found without a reload. */
+  let candidates = [];
+  let candidateAt = 0;
+  let everConnected = false;
 
   let nextId = 1;
   const waiting = new Map();
@@ -117,7 +123,11 @@ export function createClient() {
   function connect(force) {
     wantOpen = true;
     if (ws && (ws.readyState === 0 || ws.readyState === 1) && !force) return;
-    url = serverUrl();
+    if (!candidates.length || candidateAt >= candidates.length) {
+      candidates = serverCandidates();
+      candidateAt = 0;
+    }
+    url = candidates[candidateAt] || null;
     if (!url) { setStatus('failed', 'no-server'); return; }
     if (typeof WebSocket !== 'function') { setStatus('failed', 'no-websocket'); return; }
 
@@ -133,6 +143,11 @@ export function createClient() {
 
     ws.onopen = async () => {
       attempt = 0;
+      everConnected = true;
+      // This one answered. Stop shopping — every later reconnect goes straight
+      // back here rather than walking the list again.
+      candidates = [url];
+      candidateAt = 0;
       setStatus('open');
       try {
         // The version check is first and is fatal: a client that speaks a
@@ -195,6 +210,16 @@ export function createClient() {
       }
       waiting.clear();
       if (!wantOpen) { setStatus('offline'); return; }
+      /* Never reached this one. Try the next address before backing off — a
+         page served from a laptop whose origin has no websocket on it should
+         land on the deployed server in a few hundred milliseconds, not ask
+         the player where their server is. */
+      if (!everConnected && candidateAt + 1 < candidates.length) {
+        candidateAt++;
+        setStatus('dialling');
+        setTimeout(() => connect(true), 60);
+        return;
+      }
       setStatus(wasReady ? 'dialling' : 'failed', wasReady ? null : lastError);
       scheduleRetry();
     };
@@ -202,6 +227,9 @@ export function createClient() {
 
   function scheduleRetry() {
     if (!wantOpen) return;
+    // A fresh sweep next time: something that was down may be up.
+    candidateAt = 0;
+    candidates = [];
     const base = BACKOFF[Math.min(attempt, BACKOFF.length - 1)];
     attempt++;
     // Jitter, so that four clients knocked off by the same server restart do
@@ -338,7 +366,14 @@ export function createClient() {
       token = ''; user = null;
       write(TOKEN_KEY, '');
       emit('session', { user: null, token: '' });
-    }
+    },
+    /** Start the search again from the top — used when the address changes. */
+    rediscover() {
+      everConnected = false;
+      candidates = [];
+      candidateAt = 0;
+    },
+    get tried() { return candidates.slice(0, candidateAt + 1); }
   };
 }
 

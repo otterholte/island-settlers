@@ -106,23 +106,41 @@ function servedLocally() {
 }
 
 /**
- * THE ORIGIN WINS WHEN THE ORIGIN IS LOCAL, and that ordering is the whole
- * point of this function.
+ * EVERY address worth trying, best first.
  *
- * With a live server in DEFAULT_SERVER, `STATIC=1 node server/index.mjs` on a
- * laptop would otherwise serve you the game and then send you off to the
- * internet to play it — so every local test would be testing production, and
- * a change to the server could not be tried before it was deployed. If the
- * page came from localhost or off the wifi, the multiplayer is there too.
+ * A list rather than a single answer, because the single answer was wrong in
+ * both directions. Preferring the deployed server broke local development —
+ * `STATIC=1 node server/index.mjs` would serve you the game and then send you
+ * to production to play it, so no server change could be tried before it was
+ * deployed. Preferring the page's own origin broke every other local setup:
+ * open the game from a plain static server, or a dev server on another port,
+ * and the origin has no websocket on it, so the friends screen asked the
+ * player to go and find out their server's address. Nobody should ever be
+ * asked that.
+ *
+ * So the client tries them in turn and keeps the one that answers. Local
+ * origins come first when the page is local, because that is the case where
+ * the origin genuinely is the server; the deployment is right behind it as the
+ * fallback that makes the question unnecessary.
  */
-export function serverUrl() {
+export function serverCandidates() {
+  const out = [];
+  const push = u => { const n = normalizeServer(u); if (n && !out.includes(n)) out.push(n); };
+  push(fromQuery());          // an explicit ?server= always wins
+  push(savedServer());        // then whatever this browser was told to use
   if (servedLocally()) {
-    return fromQuery() || normalizeServer(savedServer()) || fromOrigin();
+    push(fromOrigin());       // the page came off this machine; the server may be here
+    push(DEFAULT_SERVER);
+  } else {
+    push(DEFAULT_SERVER);
+    push(fromOrigin());       // and the origin, in case the server serves the game
   }
-  return fromQuery()
-    || normalizeServer(savedServer())
-    || normalizeServer(DEFAULT_SERVER)
-    || fromOrigin();
+  return out;
+}
+
+/** The one to try first. Kept for callers that only want an address to show. */
+export function serverUrl() {
+  return serverCandidates()[0] || null;
 }
 
 export function savedServer() {
@@ -140,10 +158,14 @@ export function setServer(input) {
   return url;
 }
 
-/** True when nobody has told us where the server is and there is no sensible
- *  guess — the friends screen shows its address box on this. */
+/** True when there is nowhere at all to try — a page opened from a file://
+ *  with no DEFAULT_SERVER compiled in. Only then is the address box the first
+ *  thing anybody sees. */
 export function serverUnknown() {
-  return !serverUrl();
+  return serverCandidates().length === 0;
 }
 
-export default { DEFAULT_SERVER, serverUrl, savedServer, setServer, normalizeServer, serverUnknown };
+export default {
+  DEFAULT_SERVER, serverUrl, serverCandidates, savedServer, setServer,
+  normalizeServer, serverUnknown
+};
