@@ -472,7 +472,7 @@ export function createDraft(state, game, deps) {
           index: state.setupIndex, pid,
           status: p ? p.name : '', sub: 'lays the first road', tip: picksLeftLine()
         });
-        sfx('build', { gain: 0.6 });
+        sfx('build', { gain: 0.6, mine: pid === 0 });
         cam.shake(0.08);
       }
     } else {
@@ -487,7 +487,10 @@ export function createDraft(state, game, deps) {
            was describing — "commentary no one cares about, and it goes by so
            fast that it's just distracting". The piece appearing on the map IS
            the announcement, and the pip strip says whose turn is next. */
-        sfx('build');
+        /* Eight settlements and eight roads go down in the opening and only
+           two of them are yours. The sound is the announcement — see the note
+           just above — but the buzz is only for your own. */
+        sfx('build', { mine: pid === 0 });
         cam.shake(0.14);
         flourish(placed, p);
       }

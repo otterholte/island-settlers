@@ -1583,6 +1583,85 @@ if (STAGE === 'home') {
  * away with WEBGL_lose_context, gives it back, and checks the game is still
  * running and still drawing afterwards.
  */
+} else if (STAGE === 'haptics') {
+  /*
+   * WHAT IS ALLOWED TO BUZZ SOMEBODY'S HAND.
+   *
+   *   "Remove the haptic feedback for hexes that I'm not on. Like if I can't
+   *    collect resources I don't need my phone to buzz when a hex that I'm not
+   *    built on and can't receive resources from is out of resources, or when
+   *    it resets."
+   *
+   * The gate used to be DISTANCE — anything audible within about thirty units
+   * reached the hand — so eighteen hexes running dry and growing back on their
+   * own clocks buzzed all match, most of them somebody else's.
+   *
+   * Counting `navigator.vibrate` is the only honest way to test this: the
+   * question is not what the code intends, it is how many times the phone is
+   * actually asked to move. So the platform call is replaced with a counter and
+   * each case is played for real through the same functions the game calls.
+   *
+   * The 55ms cooldown inside haptics.js means two buzzes closer together than
+   * that count as one, which would let a failure hide — hence the pause between
+   * cases, and hence the control case in the middle proving the counter works.
+   */
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await sleep(1200);
+
+  await ev(`(()=>{
+    window.__BUZZ__=[];
+    navigator.vibrate=function(p){ window.__BUZZ__.push(p); return true; };
+    return typeof navigator.vibrate;})()`);
+
+  /* Each case: a label, the thing the game does, and whether a hand should
+     know about it. Run one at a time with the cooldown allowed to lapse. */
+  const CASES = [
+    ['a hex you own nothing on running dry',
+     `I.world.audio.sfx('deny',{gain:0.45,at:{x:t.x,z:t.z}})`, false],
+    ['the same hex growing back',
+     `I.world.audio.sfx('upgrade',{gain:0.6,at:{x:t.x,z:t.z}})`, false],
+    ['the sparkle a hex throws when it refills',
+     `I.game.effects.burst(t.x,t.z,'wood')`, false],
+    ['a rival laying a road across the island',
+     `I.game.audio.sfx('build',{mine:false})`, false],
+    ['a Knight dropped on a hex that is nothing to do with you',
+     `I.game.effects.shockwave(0)`, false],
+    ['YOUR OWN build',
+     `I.game.audio.sfx('build',{mine:true})`, true],
+    ['YOUR OWN trade being refused',
+     `I.game.audio.sfx('deny',{mine:true})`, true],
+    ['YOUR OWN pickup',
+     `I.game.effects.burst(p.x,p.z,'wood',{mine:true})`, true],
+    ['a Knight that took from YOU',
+     `I.game.effects.shockwave(0,{mine:true})`, true]
+  ];
+
+  const out = [];
+  for (const [label, expr, want] of CASES) {
+    await sleep(320);                         // outlast the 55ms cooldown
+    const n = await ev(`(()=>{
+      const I=window.__ISLAND__;
+      const p=I.state.players[0];
+      const t={x:p.x+2,z:p.z+2};
+      const before=window.__BUZZ__.length;
+      try { ${expr}; } catch(e) { return {err:String(e.message||e)}; }
+      return {buzzed: window.__BUZZ__.length - before};})()`);
+    out.push({ label, want, got: n && n.buzzed, err: n && n.err });
+  }
+  for (const r of out) {
+    console.log(`  ${r.want ? 'BUZZ ' : 'quiet'} ${r.got === (r.want ? 1 : 0) ? 'ok  ' : 'BAD '} ${r.label}`
+      + (r.err ? `  [${r.err}]` : `  (${r.got})`));
+  }
+  const silent = out.filter(r => !r.want);
+  const felt = out.filter(r => r.want);
+  console.log('  HAPTICS ' + JSON.stringify({
+    theIslandsOwnBusinessNeverReachesTheHand: silent.every(r => r.got === 0),
+    andTheThingsYouDidStillDo: felt.every(r => r.got === 1),
+    quietCases: silent.length, buzzingCases: felt.length,
+    counts: out.map(r => r.got)
+  }));
+
 } else if (STAGE === 'perf') {
   await waitIntro();
   await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);

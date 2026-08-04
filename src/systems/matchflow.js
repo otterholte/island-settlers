@@ -651,7 +651,9 @@ export function createMatchFlow(state, game) {
         : `${w.name} reached ${scoreOf(state, w)} points`, 'good');
     }
     cam.shake(0.6);
-    sfx('horn');
+    /* The end of the match you are in — one buzz, once, and it is yours by
+       definition. Everything smaller than this asks first; see audio.js. */
+    sfx('horn', { mine: true });
   }
 
   /* ------------------------------------------------------------- the flood */
@@ -846,7 +848,7 @@ export function createMatchFlow(state, game) {
       const w = state.players[win.wid];
       if (realCelebrate) realCelebrate(w);
       cam.shake(0.4);
-      sfx('horn', { gain: 0.9 });
+      sfx('horn', { gain: 0.9, mine: true });
     }
 
     // 4. release the orbit and go back to the whole island. The orbit is

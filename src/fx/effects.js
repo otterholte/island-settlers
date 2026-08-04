@@ -185,7 +185,21 @@ export function createEffects(scene, opts) {
   })();
 
   /* ------------------------------------------------------- listener helper */
-  /** Is this world point close to the human settler? Gates haptics. */
+  /**
+   * Is this world point close to the human settler?
+   *
+   * This used to gate haptics on its own, and being NEAR a thing turned out to
+   * be a poor reason to buzz somebody's hand:
+   *
+   *   "If I can't collect resources I don't need my phone to buzz when a hex
+   *    that I'm not built on and can't receive resources from is out of
+   *    resources, or when it resets."
+   *
+   * Proximity is a second condition now rather than the only one — the caller
+   * has to say the thing belongs to the player before distance is even asked.
+   * It is still the right question for whether a buzz would feel connected to
+   * what is on screen, so it stays.
+   */
   function nearPlayer(x, z, radius) {
     const I = G.__ISLAND__ || (G.window && G.window.__ISLAND__) || null;
     const p = I && I.state && I.state.players && I.state.players[0];
@@ -196,7 +210,12 @@ export function createEffects(scene, opts) {
 
   /* ------------------------------------------------------------------ burst */
 
-  function burst(x, z, kind) {
+  /**
+   * @param {object} [opts] `{ mine: true }` when this is the LOCAL player's own
+   *   pickup. Only then is a haptic even considered — a rival hauling wood past
+   *   your elbow is something to look at, not something to feel.
+   */
+  function burst(x, z, kind, opts) {
     const px = F(x, 0), pz = F(z, 0);
     const rec = RECIPES[kind] || RECIPES[DEFAULT_KIND];
     const gy = groundY(px, pz);
@@ -265,7 +284,7 @@ export function createEffects(scene, opts) {
       });
     }
 
-    if (nearPlayer(px, pz, 7)) haptic(PATTERNS.gather);
+    if (opts && opts.mine === true && nearPlayer(px, pz, 7)) haptic(PATTERNS.gather);
   }
 
   /* -------------------------------------------------------------- floatText */
@@ -318,7 +337,12 @@ export function createEffects(scene, opts) {
 
   /* -------------------------------------------------------------- shockwave */
 
-  function shockwave(tileId) {
+  /**
+   * @param {object} [opts] `{ mine: true }` when this raid actually cost the
+   *   local player something. A Knight dropped on the far side of the island,
+   *   on a hex they have nothing on, is somebody else's news.
+   */
+  function shockwave(tileId, opts) {
     let tx = 0, tz = 0;
     if (tileId && typeof tileId === 'object') {
       tx = F(tileId.x, 0); tz = F(tileId.z, 0);
@@ -393,7 +417,7 @@ export function createEffects(scene, opts) {
     vig.level = 0.85;
     vig.decay = 1.25;
     vig.mesh.visible = true;
-    haptic(PATTERNS.heavy);
+    if (opts && opts.mine === true) haptic(PATTERNS.heavy);
   }
 
   /* ----------------------------------------------------------------- update */

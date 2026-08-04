@@ -360,7 +360,7 @@ export function createTradeSheet(state, game, opts = {}) {
     try {
       const a = game && game.audio;
       if (!a || !a.sfx) return;
-      if (kind === 'deny') a.sfx('deny', { gain: 0.28 });
+      if (kind === 'deny') a.sfx('deny', { gain: 0.28, mine: true });
       else a.sfx('blip', { gain: 0.32 });
     } catch (e) { /* audio is optional */ }
   }

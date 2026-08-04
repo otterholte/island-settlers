@@ -157,8 +157,29 @@ export function createAudio() {
       spec.fn(E, now + 0.008, ch, { detune });
     } catch (e) { /* a bad sound must never break the frame */ }
 
-    const buzz = HAPTIC_FOR[name];
-    if (buzz && p.att > 0.35) haptic(buzz);
+    /*
+     * A BUZZ IS FOR SOMETHING THAT HAPPENED TO YOU.
+     *
+     *   "Remove the haptic feedback for hexes that I'm not on. If I can't
+     *    collect resources I don't need my phone to buzz when a hex that I'm
+     *    not built on and can't receive resources from is out of resources, or
+     *    when it resets."
+     *
+     * This used to fire off DISTANCE — anything audible within about thirty
+     * units buzzed — and distance is the wrong question to ask. Eighteen hexes
+     * run dry and grow back on their own clocks for the whole match, most of
+     * them belonging to somebody else, and every one within earshot was a buzz
+     * in the hand about a thing the player could not act on.
+     *
+     * A haptic is now something a CALLER asks for, by saying this sound is the
+     * player's own: their build, their refusal, a Knight that took from them. A
+     * site that forgets to ask loses a buzz, which is the right way round for
+     * this to fail. Sound still carries across the island; touch does not.
+     */
+    if (o.mine === true) {
+      const buzz = HAPTIC_FOR[name];
+      if (buzz) haptic(buzz);
+    }
   }
 
   function music(mode) {

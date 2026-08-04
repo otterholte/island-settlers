@@ -651,16 +651,27 @@ async function boot() {
   }
 
   function showKnight(ev, late) {
-    structures.setRobber(ev.tile);
-    audio.sfx('horn');
-    effects.shockwave(ev.tile);
-    state.players.forEach(p => avatars[p.id].setCarry(p.res));
+    /*
+     * A RAID YOU WERE NOT IN IS NOT A RAID ON YOU.
+     *
+     * The horn and the shockwave both used to buzz, unconditionally, for every
+     * Knight anybody played anywhere on the island — two buzzes for a card that
+     * might have been dropped on a hex the player has never stood on. It is
+     * still loud and it still throws a ring across the hex, because those are
+     * how a table finds out something happened. The hand is told when the card
+     * cost this player something, or when this player played it.
+     */
     const mine = (ev.losses || []).find(l => l.player === 0);
     const tookFromMe = ev.player !== 0 && mine && mine.total > 0;
+    const isMine = ev.player === 0 || !!tookFromMe;
+    structures.setRobber(ev.tile);
+    audio.sfx('horn', { mine: isMine });
+    effects.shockwave(ev.tile, { mine: isMine });
+    state.players.forEach(p => avatars[p.id].setCarry(p.res));
     hud.raid(ev);
     const who = state.players[ev.player];
     if (tookFromMe) {
-      audio.sfx('deny');
+      audio.sfx('deny', { mine: true });
       gameCamera.shake && gameCamera.shake(0.5);
       hud.announce(
         late ? `${who.name} played a Knight while you traded!` : `${who.name} played a Knight!`,
@@ -682,10 +693,10 @@ async function boot() {
         case 'gained': {
           const p = state.players[ev.player];
           effects.floatText(ev.x, ev.z, `+${ev.amount}`, ev.resource);
-          effects.burst(ev.x, ev.z, ev.resource);
+          effects.burst(ev.x, ev.z, ev.resource, { mine: ev.player === 0 });
           props.playHarvest(ev.node);
           if (ev.depleted) props.setDepleted(ev.node, true);
-          if (ev.player === 0) { audio.sfx('gain'); hud.pulseResource(ev.resource); }
+          if (ev.player === 0) { audio.sfx('gain', { mine: true }); hud.pulseResource(ev.resource); }
           avatars[ev.player].setCarry(p.res);
           break;
         }
@@ -697,7 +708,9 @@ async function boot() {
           if (ev.kind === 'road') structures.spawnRoad(ev.at, ev.player);
           if (ev.kind === 'settlement') structures.spawnSettlement(ev.at, ev.player);
           if (ev.kind === 'city') structures.upgradeCity(ev.at, ev.player);
-          audio.sfx(ev.kind === 'city' ? 'upgrade' : 'build');
+          /* Sound for every build on the island; a buzz for your own only.
+             Three rivals plus a draft's worth of placements is a lot of hand. */
+          audio.sfx(ev.kind === 'city' ? 'upgrade' : 'build', { mine: ev.player === 0 });
           break;
         case 'trade':     audio.sfx('trade'); break;
         case 'cardDrawn':
@@ -718,7 +731,7 @@ async function boot() {
           break;
         }
         case 'award':
-          audio.sfx('award');
+          audio.sfx('award', { mine: ev.player === 0 });
           hud.announce(
             `${state.players[ev.player].name} claims ` +
             `${ev.kind === 'longestRoad' ? 'Longest Road' : 'Largest Army'}!`,
@@ -730,8 +743,10 @@ async function boot() {
           portsView.setUnlocked && portsView.setUnlocked(ev.port, ev.player);
           break;
         case 'blocked':
+          /* This one IS about you: you walked onto a hex the Knight is sitting
+             on and came away with nothing. */
           hud.toast('The Knight blocks this region', 'warn');
-          audio.sfx('deny');
+          audio.sfx('deny', { mine: true });
           break;
         case 'victory':
           audio.music('victory');

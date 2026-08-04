@@ -134,7 +134,9 @@ export function createRoadCue(root, state, game) {
   const say = (msg, kind) => safe(() => g.hud && g.hud.toast && g.hud.toast(msg, kind))
     ?? safe(() => g.toast && g.toast(msg, kind));
   const shout = (msg, color) => safe(() => g.hud && g.hud.announce && g.hud.announce(msg, color));
-  const sfx = name => safe(() => g.audio && g.audio.sfx && g.audio.sfx(name));
+  /* This file only ever speaks for the human's own hand — `held` is their
+     card count — so its sounds carry a haptic. See audio.js. */
+  const sfx = name => safe(() => g.audio && g.audio.sfx && g.audio.sfx(name, { mine: true }));
 
   const cardsHeld = () =>
     me.cards.reduce((n, c) => n + (c.type === 'roadBuilding' ? 1 : 0), 0);

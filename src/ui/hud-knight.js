@@ -206,7 +206,9 @@ export function createKnightCue(root, state, game) {
   const say = (msg, kind) => safe(() => g.hud && g.hud.toast && g.hud.toast(msg, kind))
     ?? safe(() => g.toast && g.toast(msg, kind));
   const shout = (msg, color) => safe(() => g.hud && g.hud.announce && g.hud.announce(msg, color));
-  const sfx = name => safe(() => g.audio && g.audio.sfx && g.audio.sfx(name));
+  /* The human's own Knight, always — a rival playing one never reaches this
+     file. So these are allowed to buzz. See audio.js. */
+  const sfx = name => safe(() => g.audio && g.audio.sfx && g.audio.sfx(name, { mine: true }));
 
   const knightsHeld = () => me.cards.reduce((n, c) => n + (c.type === 'knight' ? 1 : 0), 0);
 
@@ -320,7 +322,7 @@ export function createKnightCue(root, state, game) {
     }
     disarmAuto();
     autoFired = !!auto;
-    safe(() => g.audio && g.audio.sfx && g.audio.sfx('card'));
+    safe(() => g.audio && g.audio.sfx && g.audio.sfx('card', { mine: true }));
     return true;
   }
 

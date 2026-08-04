@@ -140,8 +140,11 @@ function say(g, msg, kind) {
   if (!(g && g.hud && g.hud.toast)) safe(() => g && g.toast && g.toast(msg, kind));
 }
 
+/* Every sound this file makes is the local player's own doing — their
+   purchase, their refusal, their trade — so all of them are allowed to reach
+   the hand. `mine` is what audio.js now gates haptics on; see the note there. */
 function sfx(g, name) {
-  safe(() => g && g.audio && g.audio.sfx && g.audio.sfx(name));
+  safe(() => g && g.audio && g.audio.sfx && g.audio.sfx(name, { mine: true }));
 }
 
 function flash(g, kind) {
