@@ -405,42 +405,39 @@
    so the head of the sheet spent ~75px saying two things. A pair costs the
    height of one medallion, reads symmetrically, and hands the difference to the
    rows underneath. */
-.rs-crown{display:flex;align-items:center;justify-content:center;gap:16px}
-.rs-banner{
-  flex:0 0 auto;line-height:0;
-  padding:9px 13px 10px;border-radius:18px;
-  /* DARK PLATE, GOLD RIM. The plate used to be filled with the winner's colour
-     and it swallowed the cup whole: gold metal on a gold rosette has nowhere
-     to be bright. A trophy is lit against something dark — that is the only
-     reason a trophy looks like metal and not like a yellow shape. */
+/*   "Make the trophies and the text between them all in a single box, instead
+ *    of the two trophies in their own boxes."
+ *
+ * Right — three plates in a row is three objects, and it is one announcement.
+ * The plate moved OUT to the crown and the medallions kept only their glyph, so
+ * the row now reads as one thing with a trophy at each end of it. */
+.rs-crown{
+  align-self:center;display:flex;align-items:center;justify-content:center;
+  gap:18px;padding:7px 22px 8px;border-radius:20px;
   background:
-    radial-gradient(78% 64% at 50% 14%,rgba(255,201,60,.24),rgba(255,201,60,0) 70%),
+    radial-gradient(70% 120% at 50% 0%,rgba(255,201,60,.24),rgba(255,201,60,0) 72%),
     linear-gradient(180deg,#2a1c0c 0%,#160e06 58%,#0b0703 100%);
   border:2.5px solid var(--gold,#ffc93c);
-  box-shadow:0 8px 20px rgba(0,0,0,.6),
-             0 0 30px rgba(255,201,60,.32),
+  box-shadow:0 8px 20px rgba(0,0,0,.6),0 0 30px rgba(255,201,60,.32),
              inset 0 -8px 16px rgba(0,0,0,.5),
              inset 0 0 0 1px rgba(255,231,154,.28);
   animation:bannerDrop .5s cubic-bezier(.2,1.3,.35,1);
 }
-/* Same plate, wearing the winner's colour instead of gold. The shape does not
-   change between winning and losing — only what is on it and what rims it. */
-.rs-banner.lost{
-  padding:8px 11px 9px;
-  /* No coloured wash behind the portrait. The winner's colour is already the
-     rim and the portrait's own ring; a third helping of it behind their face
-     turns the whole medallion into one flat blob of that colour. */
+/* Losing: the same one box, wearing the winner's colour instead of gold. */
+.results.lost .rs-crown{
   background:linear-gradient(180deg,#1b2635 0%,#0d141d 58%,#070b10 100%);
   border-color:var(--wc,#2f8ffb);
-  box-shadow:0 10px 26px rgba(0,0,0,.6),
-             inset 0 -8px 16px rgba(0,0,0,.5),
+  box-shadow:0 8px 20px rgba(0,0,0,.6),inset 0 -8px 16px rgba(0,0,0,.5),
              inset 0 0 0 1px rgba(255,255,255,.16);
+}
+.rs-banner{
+  flex:0 0 auto;line-height:0;padding:0;border:0;border-radius:0;
+  background:none;box-shadow:none;animation:none;
+  /* The dark plate and the gold rim are the CROWN's now — see above. What is
+     left here is the cup itself, lit against that plate. */
 }
 .rs-banner svg{display:block}
 @keyframes bannerDrop{from{transform:translateY(-46px);opacity:0}to{transform:none;opacity:1}}
-/* The right-hand one lands a beat after the left, so the pair reads as a pair
-   arriving rather than as one wide object dropping. */
-.rs-banner.r{animation-delay:.08s;animation-fill-mode:both}
 .rs-head{text-align:center}
 .rs-title{margin:0;font:800 34px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
   color:var(--gold);-webkit-text-stroke:2px rgba(12,20,34,.85);
@@ -508,6 +505,9 @@
   color:var(--gold-l);white-space:nowrap}
 .rs-bd u{font:700 9px/1 var(--ff);text-decoration:none;letter-spacing:.08em;
   text-transform:uppercase;color:rgba(214,232,248,.82);white-space:nowrap}
+/* Two labels per chip, one shown — see `breakdown()` in panels.js. Wide screens
+   get the full name; the compact block below swaps in the short one. */
+.rs-bd u.s{display:none}
 
 /* Longest road and knights played, for EVERY player — the numbers the
    breakdown above can only ever show on the one player who scored from them.
@@ -746,16 +746,15 @@
    * player fell off the bottom. */
   /* The plate is sized by its padding and the glyph inside it, not by a box —
      so shrink those two rather than pinning a width and fighting it. */
-  .rs-crown{gap:11px}
-  .rs-banner{padding:6px 9px 7px;border-radius:14px;border-width:2px}
-  .rs-banner.lost{padding:5px 7px 6px}
-  .rs-banner svg{width:34px;height:34px}
+  .rs-crown{gap:12px;padding:4px 14px 5px;border-radius:16px;border-width:2px}
+  .rs-banner svg{width:32px;height:32px}
   .rs-title{font-size:21px;letter-spacing:.1em}
   .rs-sub{font-size:8.5px;margin-top:2px}
 
-  .rs-tabs{display:flex}
-  .btn.rs-tab{min-height:32px;padding:0 12px;font-size:9px}
-  .rs-body{margin-top:5px}
+  .rs-tabs{display:flex;margin-top:4px}
+  .btn.rs-tab{min-height:28px;padding:0 12px;font-size:9px}
+  .rs-body{margin-top:4px}
+  .rs-list{gap:4px}
   /* One pane at a time, each the full width of the sheet. */
   .rs-side{flex:1 1 auto;min-width:0}
   .results .rs-side{display:none}
@@ -768,13 +767,25 @@
   /* One line per player, so every figure on it can afford to be legible. The
      row used to be a name stacked over a wrapped strip of 8px chips; the height
      that stack cost is what pays for the type size here. */
-  .rs-row{padding:4px 8px;gap:7px}
-  .rs-mid{gap:7px}
-  .rs-name{font-size:13px}
-  .rs-bd{gap:4px;padding-left:7px}
-  .rs-bd i{padding:2px 6px 3px;gap:4px}
-  .rs-bd i svg{width:16px;height:16px}
-  .rs-bd em,.rs-bd u{font-size:9px}
+  /*   "Make the text for __ settlements, __ cities, __ victory cards a bit
+   *    larger. I'd also like for the player lines to be slightly taller so they
+   *    have a bit more space."
+   *
+   * Both, and they have to be paid for: four rows fitting the list without a
+   * scrollbar is a property worth keeping. The height comes from the crown (a
+   * single plate is shallower than a plate holding a plate), from the tab strip
+   * and body margins, and from the gap between rows — none of which anybody
+   * reads — and it goes into the row padding and the chip type, which everybody
+   * does. */
+  .rs-row{padding:6px 8px;gap:7px}
+  .rs-mid{gap:8px}
+  .rs-name{font-size:13.5px}
+  .rs-bd{gap:4px;padding-left:8px}
+  .rs-bd i{padding:2px 7px 3px;gap:5px}
+  .rs-bd i svg{width:17px;height:17px}
+  .rs-bd em,.rs-bd u{font-size:10.5px}
+  .rs-bd u:not(.s){display:none}
+  .rs-bd u.s{display:inline}
   .rs-tally i svg{width:17px;height:17px}
   .rs-tally em{font-size:13px}
   .rs-vp b{font-size:20px}

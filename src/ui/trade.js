@@ -88,21 +88,81 @@ export function createTradeSheet(state, game, opts = {}) {
   const row = el('div', { class: 'tr-row' });
   const cells = {};
 
+  /*
+   * TAPPING FAST HAS TO COUNT.
+   *
+   *   "Can you make it so I can press the up and down arrows in a much quicker
+   *    succession inside of the trading post — since I'm typically going and
+   *    clicking so quickly, but right now it's not registering."
+   *
+   * The arrows ran on `click`, and `click` is the slowest and most cancellable
+   * event a touch screen produces. It is synthesised after the finger leaves,
+   * it is withheld while the browser decides whether a fast second tap was a
+   * gesture, and — the one that actually bit here — it is DROPPED if anything
+   * disables the button between the finger landing and lifting. `sync()` runs
+   * on every stage and again on panels.js's 5Hz refresh, and it was writing
+   * `disabled` unconditionally on all ten arrows every time, so a press could
+   * be voided by a repaint that changed nothing.
+   *
+   * So a press is a POINTERDOWN now: it fires the instant the finger lands,
+   * before any of that can happen to it. Holding repeats — 320ms, then every
+   * 90ms — because staging eight lots should not be eight taps. `click` is
+   * still wired for the keyboard (Enter on a focused arrow), and ignores
+   * itself for 700ms after a pointer press so one tap is never counted twice.
+   */
+  const HOLD_FIRST = 320;
+  const HOLD_EVERY = 90;
+
+  function pressable(btn, fire) {
+    let delay = 0, tick = 0, lastPointer = 0;
+    const stop = () => {
+      if (delay) { clearTimeout(delay); delay = 0; }
+      if (tick) { clearInterval(tick); tick = 0; }
+    };
+    btn.addEventListener('pointerdown', ev => {
+      if (ev.button > 0 || btn.disabled) return;
+      lastPointer = Date.now();
+      // The press itself, immediately — nothing downstream can take it back.
+      fire();
+      stop();
+      delay = setTimeout(() => {
+        tick = setInterval(() => {
+          // A repeat stops the moment the arrow can no longer legally move,
+          // so holding never queues up presses against a dead control.
+          if (btn.disabled) { stop(); return; }
+          fire();
+        }, HOLD_EVERY);
+      }, HOLD_FIRST);
+      /* Capture, so lifting off the edge of a 38px plate still ends the hold —
+         and so a slide off the arrow does not become a drag on the island. */
+      try { btn.setPointerCapture(ev.pointerId); } catch (e) { /* older Safari */ }
+      ev.preventDefault();
+    });
+    for (const t of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) {
+      btn.addEventListener(t, stop);
+    }
+    btn.addEventListener('click', () => {
+      // Keyboard only. A pointer press has already been counted.
+      if (Date.now() - lastPointer < 700) return;
+      fire();
+    });
+  }
+
   RES.forEach((r, i) => {
     const upN = el('em', { class: 'tr-badge', text: '' });
     const dnN = el('em', { class: 'tr-badge', text: '' });
 
     const up = el('button', {
       class: 'tr-arr up', type: 'button', 'data-ui': '',
-      'aria-label': `Give ${RES_LABEL[r]}`,
-      on: { click: () => { focus = i; step(r, 1); } }
+      'aria-label': `Give ${RES_LABEL[r]}`
     }, upN);
+    pressable(up, () => { focus = i; step(r, 1); });
 
     const dn = el('button', {
       class: 'tr-arr dn', type: 'button', 'data-ui': '',
-      'aria-label': `Receive ${RES_LABEL[r]}`,
-      on: { click: () => { focus = i; step(r, -1); } }
+      'aria-label': `Receive ${RES_LABEL[r]}`
     }, dnN);
+    pressable(dn, () => { focus = i; step(r, -1); });
 
     const rate = el('span', { class: 'tr-rate', text: '4:1' });
     const have = el('b', { class: 'tr-have', text: '0' });
@@ -260,8 +320,10 @@ export function createTradeSheet(state, game, opts = {}) {
       const dnOk = canStep(r, -1, R);
       toggle(c.up, 'off', !upOk);
       toggle(c.dn, 'off', !dnOk);
-      c.up.disabled = !upOk;
-      c.dn.disabled = !dnOk;
+      // Write `disabled` ONLY when it changes. Rewriting it on every 5Hz sync
+      // is what let a repaint cancel a press that was already under way.
+      if (c.up.disabled !== !upOk) c.up.disabled = !upOk;
+      if (c.dn.disabled !== !dnOk) c.dn.disabled = !dnOk;
       toggle(c.upN, 'on', give > 0);
       toggle(c.dnN, 'on', take > 0);
       toggle(c.up, 'staged', give > 0);

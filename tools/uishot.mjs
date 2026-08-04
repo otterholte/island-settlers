@@ -1136,6 +1136,52 @@ if (STAGE === 'home') {
       stagedHere:!!c.querySelector('.tr-badge.on')};})()`);
   console.log('  CARD ' + JSON.stringify({ ...card, picked }));
 
+  /* ------------------------------------------------------------ FAST TAPS
+   *
+   *   "Can you make it so I can press the up and down arrows in a much quicker
+   *    succession — since I'm typically clicking so quickly, but right now it's
+   *    not registering."
+   *
+   * Six presses 35ms apart, which is faster than a person can tap and much
+   * faster than `click` can be synthesised and confirmed. With forty wood in the
+   * pack every one of them is legal, so the badge has to read 24 (six lots of
+   * four) and nothing less. Then the same arrow held down for a second, which
+   * has to auto-repeat rather than sit there. */
+  await ev(`(()=>{const I=window.__ISLAND__, p=I.state.players[0];
+    p.res.wood=40; I.game.openTrade(null); return 1})()`);
+  await sleep(420);
+  const arrow = await ev(`(()=>{const a=document.querySelectorAll('.tr-col')[0]
+    .querySelector('.tr-arr.up'); const r=a.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+r.height/2)};})()`);
+  const badge = () => ev(`(()=>{const b=document.querySelectorAll('.tr-col')[0]
+    .querySelector('.tr-arr.up .tr-badge');
+    return (b&&b.textContent||'').trim();})()`);
+  for (let i = 0; i < 6; i++) {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
+    await sleep(35);
+  }
+  await sleep(240);
+  const burst = await badge();
+
+  /* And the hold. Down, wait a second, up. */
+  await ev(`(()=>{const I=window.__ISLAND__;
+    I.state.players[0].res.wood=40; I.game.openTrade(null); return 1})()`);
+  await sleep(360);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
+  await sleep(1000);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
+  await sleep(220);
+  const held = await badge();
+  const after = await badge();
+  console.log('  FASTTAPS ' + JSON.stringify({
+    burst, held, settledAfterRelease: held === after
+  }));
+
   console.log('  TOUCH ' + JSON.stringify({
     plateIsAThumbTarget: m.arrows.every(a => a.plate.h >= 36 && a.plate.w >= 44),
     liveBoxIsBigger: m.arrows.every(a => a.live.h >= a.plate.h),
@@ -1144,6 +1190,9 @@ if (STAGE === 'home') {
     lanesAreBands: m.caps.length === 2 && m.caps.every(c => c.h >= 24 && c.paint
       && c.type >= 12) && /give/i.test(m.caps[0].lab) && /receive/i.test(m.caps[1].lab),
     theFootIsJustTheDeal: m.legendGone === true && /^trade$/i.test(m.foot),
+    sixFastTapsAllCounted: burst === '24',
+    aHeldArrowRepeats: (+held || 0) >= 12 && (+held || 0) > 4,
+    andStopsWhenReleased: held === after,
     theCardKeptItsOwnTaps: card.topEdgeIsTheCard === true
       && picked.picked === undefined && picked.cur === true && !picked.stagedHere
   }));

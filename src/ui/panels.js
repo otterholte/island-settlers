@@ -337,16 +337,38 @@ export function createPanels(root, state, game) {
    * (It read "+4 Victory Points" for a while; the qualifier came back off,
    * since nothing on this screen scores anything else.)
    */
+  /**
+   * Each chip carries TWO labels and the stylesheet picks one.
+   *
+   * The long one is what it has always said. The short one exists because the
+   * type grew — "a bit larger font", and it is worth having — and four chips at
+   * that size do not fit a phone's row: the leading adjective is the part that
+   * can go, because the icon beside it is already saying which award it is and
+   * the gold tally chip further along the row says who holds it. A word swap
+   * costs nothing to read and buys a whole line back. Both are in the DOM and
+   * the breakpoint decides, so it survives a rotation with no JavaScript.
+   *
+   *   [ long, short, points, icon ]
+   */
   function breakdown(p) {
     const bits = [];
     if (p.settlements.size) {
-      bits.push([plural(p.settlements.size, 'Settlement'), p.settlements.size, 'house']);
+      const n = p.settlements.size;
+      // Spelled out in both: it is the game's own noun for the piece and there
+      // is no shortening of it that is not worse than the word.
+      bits.push([plural(n, 'Settlement'), plural(n, 'Settlement'), n, 'house']);
     }
-    if (p.cities.size) bits.push([plural(p.cities.size, 'City').replace('Citys', 'Cities'),
-      p.cities.size * 2, 'castle']);
-    if (p.vpCards) bits.push([plural(p.vpCards, 'Victory Card'), p.vpCards, 'cards']);
-    if (p.hasLongestRoad) bits.push(['Longest Road', LONGEST_ROAD_VP, 'road']);
-    if (p.hasLargestArmy) bits.push(['Largest Army', LARGEST_ARMY_VP, 'knight']);
+    if (p.cities.size) {
+      const n = p.cities.size;
+      bits.push([plural(n, 'City').replace('Citys', 'Cities'),
+        plural(n, 'City').replace('Citys', 'Cities'), n * 2, 'castle']);
+    }
+    if (p.vpCards) {
+      bits.push([plural(p.vpCards, 'Victory Card'), `${p.vpCards} Cards`,
+        p.vpCards, 'cards']);
+    }
+    if (p.hasLongestRoad) bits.push(['Longest Road', 'Road', LONGEST_ROAD_VP, 'road']);
+    if (p.hasLargestArmy) bits.push(['Largest Army', 'Army', LARGEST_ARMY_VP, 'knight']);
     return bits;
   }
 
@@ -436,7 +458,8 @@ export function createPanels(root, state, game) {
             class: 'rs-bd',
             html: bits.length
               ? bits.map(b =>
-                `<i>${icon(b[2], 20)}<u>${b[0]}</u><em class="pt">${points(b[1])}</em></i>`).join('')
+                `<i>${icon(b[3], 20)}<u>${b[0]}</u><u class="s">${b[1]}</u>`
+                + `<em class="pt">${points(b[2])}</em></i>`).join('')
               : '<i><u>No points scored</u></i>'
           })),
         /* The two measurements sit BESIDE the trophy, not under the name.
