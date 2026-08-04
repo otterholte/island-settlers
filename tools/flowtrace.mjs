@@ -817,11 +817,31 @@ if (TRACE === 'camera') {
   check('every keyboard axis is slower than it was',
     slower('keyYaw') && slower('keyPitch') && slower('stepK'),
     `Q/E ${(WAS.keyYaw / rates.keyYaw).toFixed(2)}x, WASD ${(WAS.stepK / rates.stepK).toFixed(2)}x slower`);
+  /* The on-screen pad is deliberately gone — every key on it duplicated a
+     gesture the player already had and it covered the corner of the board it
+     was there to help inspect. `yawPerPadPress` is kept in the table as a
+     zero, because a rig that stops measuring a thing it removed cannot notice
+     the thing coming back. It is not part of this bar. */
   check('and every gesture still MOVES the camera',
     measured.panPerDrag > 0.5 && measured.yawPerDrag > 0.01
-    && measured.zoomPerNotch !== 1 && measured.yawPerPadPress > 0.01
+    && measured.zoomPerNotch !== 1
     && measured.panPerSec > 1 && measured.yawPerSec > 0.1,
     JSON.stringify(measured));
+  check('and the LOOK pad is still gone', measured.yawPerPadPress === 0,
+    `pad presses moved the yaw by ${measured.yawPerPadPress}`);
+
+  /* Which way the ground goes. The rates above say how FAR a drag travels and
+     never said which way it went, which is how the vertical axis shipped
+     inverted: a downward drag pushed the island up and away. `uishot
+     --stage=results` owns the full four-way assertion; this is the sign. */
+  const dir = await ev(`(()=>{const c=window.__ISLAND__.game.camera;
+    const a=c.freeInfo;
+    c.freeDrag(0, 100, innerHeight);          // finger down 100px
+    const b=c.freeInfo;
+    const f={x:-Math.sin(a.yaw), z:-Math.cos(a.yaw)};
+    return +(((b.x-a.x)*f.x+(b.z-a.z)*f.z)).toFixed(2);})()`);
+  check('a downward drag brings the ground DOWN after the finger', dir > 0.5,
+    `focus travelled ${dir} along the axis away from the camera`);
 
   /* The clamps are untouched: push far past every edge and stop at it. */
   const clamped = await ev(`(()=>{

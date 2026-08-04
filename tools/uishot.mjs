@@ -972,6 +972,56 @@ if (STAGE === 'home') {
       { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', clickCount: 1, buttons: 0 });
   }
   console.log('  BOARDVIEW ' + JSON.stringify(swapped));
+
+  /* ------------------------------------------------ WHICH WAY THE BOARD GOES
+   *
+   *   "In the board view after the game is over, dragging left and right is
+   *    working, but dragging with my finger up and down is going the wrong
+   *    direction."
+   *
+   * A pan moves the FOCUS and the rig follows it, so the ground always travels
+   * opposite to the focus on screen. Reading that back as "did the ground go
+   * the way the finger went" means resolving the focus travel onto the camera's
+   * own axes: a rightward drag must move the focus LEFT (negative along screen
+   * right), and a downward drag must move it FORWARD (positive along the axis
+   * away from the camera). Both are measured here because only the first one
+   * ever was, which is exactly how the second came to be inverted. */
+  const pan = async (dx, dy) => {
+    const a = await ev(`window.__ISLAND__.game.camera.freeInfo`);
+    const from = { x: Math.round(V.w * 0.5), y: Math.round(V.h * 0.42) };
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1, buttons: 1 });
+    for (let i = 1; i <= 6; i++) {
+      await send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', buttons: 1,
+        x: Math.round(from.x + dx * i / 6), y: Math.round(from.y + dy * i / 6)
+      });
+    }
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x: Math.round(from.x + dx), y: Math.round(from.y + dy),
+        button: 'left', clickCount: 1, buttons: 0 });
+    await sleep(160);
+    const b = await ev(`window.__ISLAND__.game.camera.freeInfo`);
+    const f = { x: -Math.sin(a.yaw), z: -Math.cos(a.yaw) };   // away from camera
+    const r = { x: -f.z, z: f.x };                            // screen right
+    const d = { x: b.x - a.x, z: b.z - a.z };
+    return {
+      moved: +Math.hypot(d.x, d.z).toFixed(2),
+      alongRight: +(d.x * r.x + d.z * r.z).toFixed(2),
+      alongForward: +(d.x * f.x + d.z * f.z).toFixed(2)
+    };
+  };
+  const panRight = await pan(140, 0);
+  const panDown = await pan(0, 110);
+  const panUp = await pan(0, -110);
+  console.log('  PAN ' + JSON.stringify({ panRight, panDown, panUp }));
+  console.log('  DRAGDIR ' + JSON.stringify({
+    dragRightSendsTheGroundRight: panRight.alongRight < -0.5,
+    dragDownSendsTheGroundDown: panDown.alongForward > 0.5,
+    dragUpSendsTheGroundUp: panUp.alongForward < -0.5,
+    andTheAxesDoNotBleed: Math.abs(panRight.alongForward) < Math.abs(panRight.alongRight)
+      && Math.abs(panDown.alongRight) < Math.abs(panDown.alongForward)
+  }));
   console.log('  REVIEW ' + JSON.stringify({
     landsOnTheWalk: dock.up && dock.roaming && !dock.freecam && !dock.overview,
     aRealDragDrivesTheSettler: walked.stick.y > 0 && walked.moved > 1,

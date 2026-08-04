@@ -310,7 +310,26 @@ export function createGameCamera(renderer, scene) {
     const vert = mpp / Math.max(0.35, Math.sin(fLive.pitch));
     const fx = -Math.sin(fLive.yaw), fz = -Math.cos(fLive.yaw);   // away from camera
     const rx = -fz, rz = fx;                                      // screen right
-    const mx = -dxPx * mpp, my = -dyPx * vert;
+    /*
+     * THE VERTICAL SIGN, WHICH WAS BACKWARDS.
+     *
+     *   "In the board view after the game is over, dragging left and right is
+     *    working, but dragging with my finger up and down is going the wrong
+     *    direction."
+     *
+     * Both axes move the FOCUS, and the focus moves the rig, so the world goes
+     * the opposite way to the focus on screen. Right on both counts horizontally
+     * — drag right, focus goes left, ground goes right with the finger. But the
+     * vertical had the same minus sign, and vertically it does not mean the same
+     * thing: moving the focus BACKWARD (towards the camera) slides the ground UP
+     * the screen, so a downward drag was pushing the island up and away.
+     *
+     * Drag down, focus goes FORWARD, ground comes down after the finger. It read
+     * as correct in review because the only pan the trace rig ever measured was
+     * a horizontal one — see the vertical assertion in uishot's results stage,
+     * which now checks the sign of the focus travel along BOTH axes.
+     */
+    const mx = -dxPx * mpp, my = dyPx * vert;
     fWant.x = fLive.x + rx * mx + fx * my;
     fWant.z = fLive.z + rz * mx + fz * my;
     clampFree(fWant);
