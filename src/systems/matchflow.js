@@ -158,6 +158,28 @@ const WIN = {
 const verb = (p, stem) => (p && p.name === 'You' ? stem : `${stem}s`);
 
 /*
+ * THE CARD THAT WON IT, HELD FOR A BEAT.
+ *
+ *   "Sometimes I win the game with a victory point, but I need to actually see
+ *    that I won a victory point in an easier way, instead of it just going
+ *    straight into the victory / game ending animation. Give it like 1-2
+ *    seconds, so I know what happened."
+ *
+ * A Victory Point card scores the instant it is drawn, so the tap that buys it
+ * and the horn that ends the match are the same moment: the player pressed BUY
+ * and the island started celebrating, with nothing in between to say a card had
+ * been drawn at all, let alone which one. Every other route to the last point —
+ * a settlement, a city, an award changing hands — is something the player did on
+ * the board and watched happen.
+ *
+ * So when the last point comes off a card, the whole victory sequence is pushed
+ * back by this much and the card is named in the gap. The match is already
+ * frozen by then (freezeMatch runs first, as it always did); this only delays
+ * the celebration, so nothing can happen in the beat except reading it.
+ */
+const WIN_CARD_BEAT = 1.6;
+
+/*
  * AND THEN THE COLOUR HAS TO GO
  *
  *   "Also remove the color of all the tiles after I view the scoreboard, so
@@ -234,7 +256,9 @@ export function createMatchFlow(state, game) {
     active: false, done: false, t: 0, celT: 0, wid: -1,
     byTime: false, tiles: [],
     flooded: false, hasFlood: false,
-    celebrated: false, orbitEnded: false, board: true
+    celebrated: false, orbitEnded: false, board: true,
+    // Seconds of held beat before the sequence opens — see WIN_CARD_BEAT.
+    lead: 0, opened: false
   };
 
   // The receding flood. `done` latches so a second dismissal of the scoreboard
@@ -567,6 +591,40 @@ export function createMatchFlow(state, game) {
 
     freezeMatch();
 
+    /* Did the last point come out of a card, in this player's hand, just now?
+     *
+     * Two ways of knowing, and BOTH are needed because of a race the rig found:
+     * `noteCard` is fed from main.js's event pump, which drains AFTER the fixed
+     * step — so on the frame a card wins the match, this module's own watchdog
+     * (`state.phase === 'over' && stage !== 'over'`) reaches `startWin` first
+     * and the pump has not run yet. The card is sitting in `state.events`,
+     * emitted and undelivered.
+     *
+     * So look there too. Reading the queue is not draining it: main.js still
+     * gets every event, in order, a moment later. */
+    const noted = lastCard.pid === 0 && lastCard.type === 'victoryPoint'
+      && (elapsed - lastCard.at) <= 1.0;
+    // `instant` is only ever true for a Victory Point card — it is the one that
+    // scores as it is drawn rather than going into the hand.
+    const queued = Array.isArray(state.events) && state.events.some(e =>
+      e && e.type === 'cardDrawn' && e.player === 0 && e.instant === true);
+    const byCard = win.wid === 0 && (noted || queued);
+    win.lead = byCard ? WIN_CARD_BEAT : 0;
+    win.t = -win.lead;
+    win.opened = false;
+    if (byCard) {
+      // After freezeMatch, which clears the objective card this borrows.
+      ui.showObjective('Victory Point Card', 'The point that wins the island',
+        WIN_CARD_BEAT);
+    } else {
+      openWin();
+    }
+  }
+
+  /** The horn and the words. Held back for the beat when a card won it. */
+  function openWin() {
+    if (win.opened) return;
+    win.opened = true;
     const w = state.players[win.wid];
     if (w) {
       announce(win.byTime
@@ -688,6 +746,17 @@ export function createMatchFlow(state, game) {
     return win.board;
   }
 
+  const hideObjectiveSafe = () => {
+    try { ui.hideObjective(); } catch (e) { warn(e); }
+  };
+
+  /** The rules' own card draws, so `startWin` can tell what scored the last
+   *  point. main.js feeds this from the `cardDrawn` event. */
+  let lastCard = { pid: -1, type: '', at: -99 };
+  function noteCard(pid, type) {
+    lastCard = { pid: pid | 0, type: String(type || ''), at: elapsed };
+  }
+
   /** Nothing may mutate the match after this point. */
   function freezeMatch() {
     state.phase = 'over';
@@ -722,6 +791,11 @@ export function createMatchFlow(state, game) {
     }
     win.t += d;
     if (state.phase !== 'over') state.phase = 'over';
+
+    // The card beat, if there was one: nothing in the sequence starts until it
+    // is over, and it ends with the horn the sequence would have opened on.
+    if (win.t < 0) return;
+    if (!win.opened) { hideObjectiveSafe(); openWin(); }
 
     // 1. the whole island, framed. The flood has to be watched across the
     //    board, so this happens before anything else moves.
@@ -921,6 +995,9 @@ export function createMatchFlow(state, game) {
 
   return {
     update, begin, skipIntro, restartInPlace, setEndView, useDraft, setRoam,
+    noteCard,
+    /** Capture-rig hook: seconds of held beat before the sequence opens. */
+    get winLead() { return win.lead || 0; },
     /** True while the finished island is the player's to walk around. */
     get roaming() { return roaming; },
     /** hud-end.js calls this when the review bar goes up. See FLOOD_FADE_SEC. */

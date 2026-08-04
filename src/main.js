@@ -24,10 +24,59 @@ async function boot() {
   const canvas = document.getElementById('gl');
   const uiRoot = document.getElementById('ui');
 
+  /*
+   * ------------------------------------------------------------------------
+   * HOW MANY PIXELS THIS IS ALLOWED TO COST
+   * ------------------------------------------------------------------------
+   *
+   *   "When I have multiple tabs open on my computer and I try to start playing
+   *    the game on my laptop, it started making my laptop glitch and keep
+   *    flashing black sporadically multiple times a second. I need it to work
+   *    well, and be optimised to function without a lot of compute."
+   *
+   * Flashing black many times a second is not a frame rate problem — a slow
+   * frame is a slow frame, it is not a black one. That is the WebGL context
+   * being lost and restored: the browser is short of GPU memory (a laptop, a
+   * dozen tabs, each with its own context) or the machine has switched graphics
+   * adapter underneath us. Every restore re-uploads the world, hence the
+   * flicker rather than one drop.
+   *
+   * Three things, in order of how much they matter:
+   *
+   *   1. STOP ASKING FOR THE DISCRETE GPU. `powerPreference: 'high-performance'`
+   *      tells a hybrid-graphics laptop to spin up the dGPU for a game whose
+   *      whole frame is 74 draw calls and 124k triangles. When Windows decides
+   *      to switch back — battery saver, thermal, another tab wanting the same
+   *      adapter — the context goes with it. On integrated graphics this scene
+   *      is not remotely demanding; asking for 'default' is asking the browser
+   *      to make that choice, which it makes better than we can.
+   *
+   *   2. A PIXEL BUDGET, not a device-pixel-ratio cap. `min(dpr, 2)` on a
+   *      1512x945 retina laptop is 5.7 MILLION fragments per frame, every one of
+   *      them shaded and shadowed, which is three times what the same game
+   *      renders on the phone it was designed for. The budget below caps the
+   *      TOTAL, so a big window gets a lower ratio and a small one still gets a
+   *      sharp 2x. Sharpness is bounded by the screen; cost is bounded by this.
+   *
+   *   3. MSAA only when the ratio is not already doing that job. Above 1.5x the
+   *      supersampling is the antialiasing, and the multisample buffer is pure
+   *      memory — the exact thing in short supply when contexts start dying.
+   *
+   * And the frame loop caps at 60Hz (see `MIN_FRAME_MS`) so a 120Hz laptop panel
+   * does not double the bill for a game that simulates at 60.
+   */
+  const PIXEL_BUDGET = 2.30e6;
+  function ratioFor(w, h) {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const px = Math.max(1, (w || 1) * (h || 1));
+    return Math.max(1, Math.min(dpr, Math.sqrt(PIXEL_BUDGET / px)));
+  }
+  const ratio0 = ratioFor(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight);
+
   const renderer = new THREE.WebGLRenderer({
-    canvas, antialias: true, powerPreference: 'high-performance', alpha: false
+    canvas, antialias: ratio0 < 1.5, powerPreference: 'default', alpha: false
   });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(ratio0);
   // Provisional; `resize()` below re-measures off the canvas itself, which is
   // the only number that cannot disagree with the CSS box.
   renderer.setSize(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight, false);
@@ -194,6 +243,18 @@ async function boot() {
        "a real drag moved the settler" needs to step it on its own clock,
        because a headless page renders at about 1.5fps and the loop with it. */
     controller,
+    /** Capture-rig hook: why the last frame did or did not draw. */
+    frameInfo() {
+      return {
+        glLost,
+        hidden: !!(typeof document !== 'undefined' && document.hidden),
+        sinceDraw: Math.round(performance.now() - lastDraw),
+        draws, drawFails,
+        checkShaderErrors: !!(renderer.debug && renderer.debug.checkShaderErrors),
+        minFrameMs: MIN_FRAME_MS,
+        ratio: +renderer.getPixelRatio().toFixed(3)
+      };
+    },
     requestBuild(kind) { return hud.requestBuild ? hud.requestBuild(kind) : null; },
     // Returns overview.open's own verdict: FALSE when there was nothing legal
     // to offer and the panel was deliberately left alone. Swallowing it meant
@@ -303,7 +364,7 @@ async function boot() {
     if (vh > 0) document.documentElement.style.setProperty('--vh', (vh / 100) + 'px');
     const w = canvas.clientWidth || innerWidth;
     const h = canvas.clientHeight || vh || innerHeight;
-    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(ratioFor(w, h));
     renderer.setSize(w, h, false);
     camera.aspect = w / (h || 1);
     camera.updateProjectionMatrix();
@@ -436,7 +497,13 @@ async function boot() {
           audio.sfx(ev.kind === 'city' ? 'upgrade' : 'build');
           break;
         case 'trade':     audio.sfx('trade'); break;
-        case 'cardDrawn': audio.sfx('card'); break;
+        case 'cardDrawn':
+          audio.sfx('card');
+          // A Victory Point card scores as it is drawn, so this is how the flow
+          // knows the last point came off a card and holds the celebration for
+          // a beat to say so. See WIN_CARD_BEAT in matchflow.js.
+          if (flow && flow.noteCard) flow.noteCard(ev.player, ev.card);
+          break;
         case 'roadBuilding':
           audio.sfx('card');
           if (ev.player === 0) hud.toast('Road Building — place two roads free');
@@ -485,8 +552,65 @@ async function boot() {
   let acc = 0;
   const FIXED = 1 / 60;
 
+  /* 60Hz is the simulation rate and the art was authored for it; a 120Hz panel
+     rendering the same 60 states twice is double the GPU bill for nothing. The
+     slack is deliberate — 15ms rather than 16.7 — so a display running at
+     exactly 60 never has a frame land a hair early and get thrown away. */
+  const MIN_FRAME_MS = 15;
+  let lastDraw = 0;
+
+  /* Context loss, handled rather than watched. three.js already prevents the
+     default (which is what makes a restore possible at all) and re-initialises
+     itself on the way back; what it cannot know is that this page should stop
+     stepping a match nobody can see, and should not try to draw into a context
+     that is gone. Both of those are here. */
+  let glLost = false;
+  let draws = 0, drawFails = 0;
+  canvas.addEventListener('webglcontextlost', () => {
+    glLost = true;
+    console.warn('[gl] context lost — pausing until it comes back');
+  }, false);
+  canvas.addEventListener('webglcontextrestored', () => {
+    glLost = false;
+    lastDraw = 0;
+    last = performance.now();          // do not step a second of frozen time
+    /*
+     * AND THIS IS THE LINE THAT STOPS THE FLICKER BEING FOREVER.
+     *
+     * three's shader-error check runs `gl.getProgramInfoLog(program).trim()`,
+     * and a driver is entirely within its rights to return null there. On a
+     * freshly restored context SwiftShader does exactly that, so the FIRST
+     * frame back throws inside the shadow-map pass, the frame is abandoned
+     * mid-render, and the context is lost again a moment later. Lost, restored,
+     * thrown, lost — which is what a screen "flashing black multiple times a
+     * second" actually is, rather than a slow frame.
+     *
+     * The check stays on for the whole normal life of the page, which is what
+     * `testmatch` check 1 reads to know no shader is broken (this build DOES
+     * hand-write shader code: island.js and regions.js carry ShaderMaterials
+     * and props.js and mktkit.js inject into stock materials through
+     * onBeforeCompile). It is turned off here, and only here, because from this
+     * point the alternative is not "an error we might miss" — it is a page that
+     * cannot draw at all.
+     */
+    if (renderer.debug) renderer.debug.checkShaderErrors = false;
+    drawFails = 0;
+    resize();
+    console.warn('[gl] context restored');
+  }, false);
+
   function frame(now) {
     requestAnimationFrame(frame);
+
+    /* Nothing to draw into, or nobody looking. `document.hidden` covers the
+       occluded-but-animating case a background tab can still be in; rAF alone
+       does not always stop. Time is re-based on the way back so the match does
+       not fast-forward through however long the tab was away. */
+    if (glLost || (typeof document !== 'undefined' && document.hidden)) {
+      last = now;
+      return;
+    }
+
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
     acc += dt;
@@ -605,7 +729,37 @@ async function boot() {
     panels.update(dt);
     sky.update(now / 1000);
 
-    renderer.render(scene, camera);
+    // The 60Hz cap. Everything above has already run — the world is stepped and
+    // the interface is current — this only skips the DRAW, which is the part
+    // that costs a laptop its fan.
+    if (now - lastDraw < MIN_FRAME_MS) return;
+    lastDraw = now;
+    draws++;
+    /*
+     * A DRAW THAT THROWS MUST NOT TAKE THE LOOP WITH IT.
+     *
+     * A GL context that has just come back can still refuse a frame — a driver
+     * returning null where three expects a string, a resource that has not
+     * finished re-uploading. Left alone that throws out of the rAF callback on
+     * every frame forever, which is a black screen with a console full of the
+     * same line. Caught, it costs one frame and the next one usually works.
+     *
+     * Three in a row means the context is not really back, so we stand down and
+     * wait for the browser to tell us it is — `webglcontextrestored` clears
+     * this. There is no state to lose: the match is still in memory, and the
+     * moment a frame succeeds the island is exactly where it was.
+     */
+    try {
+      renderer.render(scene, camera);
+      drawFails = 0;
+    } catch (e) {
+      drawFails++;
+      if (drawFails <= 2) console.error('[gl] draw failed —', e && e.message);
+      if (drawFails >= 3) {
+        glLost = true;
+        console.error('[gl] three failed draws — waiting for a fresh context');
+      }
+    }
   }
   requestAnimationFrame(frame);
 

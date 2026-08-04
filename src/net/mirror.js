@@ -269,7 +269,10 @@ export function createMirror(state, opts = {}) {
     const p = state.players[ev.player];
     if (!p) return ev;
     if (ev.instant) p.vpCards = (p.vpCards | 0) + 1;
-    else p.cards.push({ type: ev.type, id: `${ev.player}-${state.time.toFixed(2)}` });
+    // `ev.card` since the cardDrawn payload stopped overwriting its own event
+    // type (see rules.drawCard); `ev.type` is what a server on the old build
+    // sends, and costs one `||` to keep working.
+    else p.cards.push({ type: ev.card || ev.type, id: `${ev.player}-${state.time.toFixed(2)}` });
     return ev;
   }
 

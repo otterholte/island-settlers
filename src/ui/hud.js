@@ -770,6 +770,8 @@ export function createHUD(root, state, game) {
     /** Put the Knight's bill on screen. Driven by main.js's `knight` event. */
     raid(ev) { raidCue.show(ev); },
     get raidOpen() { return raidCue.open; },
+    /** Capture-rig hook, and the keyboard route: send the raid card away. */
+    dismissRaid() { return raidCue.dismiss ? raidCue.dismiss() : false; },
     togglePause,
     get isPaused() { return paused; },
     destroy() {

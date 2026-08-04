@@ -517,14 +517,27 @@ export function drawCard(state, pid, free = false) {
     if (roll <= 0) { type = k; break; }
   }
   const card = { type, id: `${pid}-${state.time.toFixed(2)}-${Math.floor(state.rng() * 1e6)}` };
+  /*
+   * `card`, NOT `type`. `emit` builds `{ type, t, ...data }`, so a payload with
+   * its own `type` overwrites the event's — and this one did. Every card draw
+   * has therefore been emitted under the CARD's name rather than 'cardDrawn'
+   * since the day it was written, which had two consequences nobody had chased:
+   * no listener anywhere ever heard 'cardDrawn' (main.js has a case for it that
+   * could not fire, and so the draw sound never played), and DRAWING a Knight
+   * emitted `{type:'knight'}` — indistinguishable from PLAYING one, which is
+   * how a card purchase could raise the raid card with no losses on it.
+   *
+   * The field is renamed rather than the emit re-ordered: `{...data, type}`
+   * would fix this one and leave the same trap set for the next payload.
+   */
   if (type === 'victoryPoint') {
     p.vpCards++;
-    emit(state, 'cardDrawn', { player: pid, type, instant: true });
+    emit(state, 'cardDrawn', { player: pid, card: type, instant: true });
     checkVictory(state);
     return card;
   }
   p.cards.push(card);
-  emit(state, 'cardDrawn', { player: pid, type, instant: false });
+  emit(state, 'cardDrawn', { player: pid, card: type, instant: false });
   return card;
 }
 

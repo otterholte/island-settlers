@@ -1248,6 +1248,308 @@ if (STAGE === 'home') {
   }));
   await shot(`trade-${TAG}`);
 
+/* ----------------------------------------------------------------- vpwin
+ *
+ *   "Sometimes I win the game with a victory point, but I need to actually see
+ *    that I won a victory point in an easier way, instead of it just going
+ *    straight into the victory / game ending animation. Give it like 1-2
+ *    seconds, so I know what happened."
+ *
+ * A Victory Point card scores as it is drawn, so the tap that buys it and the
+ * horn that ends the match were the same moment. This drives the REAL path —
+ * `rules.drawCard` until the deck hands over a victory point, with the player
+ * sitting on eleven — and then checks the three things that make the beat a
+ * beat: the sequence is held, the card is named while it is held, and the horn
+ * lands after the hold rather than under it.
+ */
+} else if (STAGE === 'vpwin') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+  for (let i = 0; i < 90; i++) {
+    const p = await ev('window.__ISLAND__.state.phase');
+    if (p === 'play') break;
+    await ev(`(()=>{
+      const I=window.__ISLAND__, g=I.game, R=window.__R__;
+      for(let k=0;k<40;k++){ g.flow.update(1/60); g.bots&&g.bots.update&&g.bots.update(1/60); }
+      if(I.state.phase!=='setup')return 0;
+      if(R.setupCurrentPlayer(I.state)!==0)return 0;
+      const ov=g.overview;
+      if(!ov||!ov.isOpen)return 0;
+      const road=I.state.setupNeed==='road';
+      const legal=road ? R.legalRoads(I.state,0,true,I.state.setupAnchor)
+        : R.legalSettlements(I.state,0,true);
+      if(!legal.length)return 0;
+      ov.select(legal[0]); ov.commit(); return 1;})()`);
+    await sleep(120);
+  }
+  const draw = await ev(`(async()=>{
+    const I=window.__ISLAND__, R=window.__R__, st=I.state, me=st.players[0];
+    const C = await import('/src/core/constants.js');
+    // One card short of the island — whatever the target is, read rather than
+    // assumed (it is 13, and the README that says 12 is older than the number).
+    const target = C.VICTORY_POINTS;
+    while (R.scoreOf(st, me) < target - 1 && me.vpCards < 40) me.vpCards++;
+    const at11 = R.scoreOf(st, me);
+    let card = null, tries = 0;
+    while (tries++ < 60) {
+      const c = R.drawCard(st, 0, true);         // free, so no pack is needed
+      if (c && c.type === 'victoryPoint') { card = c; break; }
+    }
+    return {target, at11, drew:!!card, tries, score:R.scoreOf(st, me),
+      phase:st.phase};})()`, true);
+  // One frame of the real loop, so main.js drains 'cardDrawn' then 'victory'.
+  await sleep(2200);
+  const held = await ev(`(()=>{const g=window.__ISLAND__.game;
+    const obj=document.querySelector('.mf-obj');
+    const ann=document.querySelector('.ann-txt');
+    return {lead:g.flow.winLead, inSequence:!!g.flow.isWinSequence,
+      objText:((obj&&obj.textContent)||'').replace(/\s+/g,' ').trim().slice(0,60),
+      objUp:!!(obj&&!obj.classList.contains('mf-hid')),
+      announce:((ann&&ann.textContent)||'').trim(),
+      phase:window.__ISLAND__.state.phase};})()`);
+  console.log('  VPWIN ' + JSON.stringify({ ...draw, held }));
+
+  /* Now walk the flow's own clock: one second in, still held; past the beat,
+     open. Driven in game time rather than wall time, because a headless page
+     gets about one frame every 700ms and the beat is 1.6 seconds long. */
+  const at = async secs => ev(`(()=>{const g=window.__ISLAND__.game;
+    for(let i=0;i<${Math.round(secs * 60)};i++) g.flow.update(1/60);
+    const ann=document.querySelector('.ann-txt');
+    return {announce:((ann&&ann.textContent)||'').trim(),
+      lead:g.flow.winLead};})()`);
+  const oneSec = await at(1.0);
+  const past = await at(1.2);
+  console.log('  BEAT ' + JSON.stringify({ oneSec, past }));
+  console.log('  VPCARD ' + JSON.stringify({
+    theCardWonIt: draw.drew === true && draw.at11 === draw.target - 1
+      && draw.phase === 'over',
+    theSequenceIsHeld: held.lead === 1.6,
+    theCardIsNamedWhileItIsHeld: /victory point card/i.test(held.objText),
+    andTheHornWaits: !/take the island/i.test(oneSec.announce),
+    thenItOpens: /take the island/i.test(past.announce)
+  }));
+  await shot(`vpwin-${TAG}`);
+
+/* ------------------------------------------------------------------ raid
+ *
+ *   "If the Knight popup is visible since I was raided, I should be able to
+ *    click anywhere on the screen and have it disappear quicker, instead of
+ *    having to wait for it to disappear on its own."
+ *
+ * Two claims, and the second is the one worth testing: a tap takes it away, AND
+ * a tap that was already happening when it arrived does not. A raid lands on
+ * the rival's clock — quite often while a thumb is mid-press somewhere else —
+ * and a card dismissed by the press that was in flight when it appeared would
+ * look like it never came. So this presses inside the grace window and requires
+ * the card to STAY, then presses after it and requires the card to go.
+ */
+} else if (STAGE === 'raid') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+  for (let i = 0; i < 90; i++) {
+    const p = await ev('window.__ISLAND__.state.phase');
+    if (p === 'play') break;
+    await ev(`(()=>{
+      const I=window.__ISLAND__, g=I.game, R=window.__R__;
+      for(let k=0;k<40;k++){ g.flow.update(1/60); g.bots&&g.bots.update&&g.bots.update(1/60); }
+      if(I.state.phase!=='setup')return 0;
+      if(R.setupCurrentPlayer(I.state)!==0)return 0;
+      const ov=g.overview;
+      if(!ov||!ov.isOpen)return 0;
+      const road=I.state.setupNeed==='road';
+      const legal=road ? R.legalRoads(I.state,0,true,I.state.setupAnchor)
+        : R.legalSettlements(I.state,0,true);
+      if(!legal.length)return 0;
+      ov.select(legal[0]); ov.commit(); return 1;})()`);
+    await sleep(120);
+  }
+  /* A rival Knights the player: give seat 1 the card and a full pack to seat 0,
+     then play it through the real rules call so the real event is emitted. */
+  const raid = await ev(`(()=>{
+    const I=window.__ISLAND__, R=window.__R__, st=I.state;
+    const me=st.players[0];
+    me.res.wood=8;me.res.brick=8;me.res.wool=8;me.res.wheat=8;me.res.ore=8;
+    st.players[1].cards.push({type:'knight'});
+    const tile=[...me.settlements].length
+      ? I.__nodes__ ? 0 : 3 : 3;
+    const ok=R.playKnight(st, 1, tile);
+    return {played:ok, packAfter:{...me.res}};})()`);
+  /* The rules emit; main.js's frame loop drains. Under SwiftShader that is
+     about one frame every 700ms, so this waits for frames, not for a timer. */
+  await sleep(2600);
+  const up = await ev(`(()=>{const n=document.querySelector('.raid');
+    const r=n?n.getBoundingClientRect():null;
+    return {open:!!(n&&!n.classList.contains('hid')),
+      leaving:!!(n&&n.classList.contains('out')),
+      text:((n&&n.textContent)||'').replace(/\s+/g,' ').trim().slice(0,60),
+      box:r?{w:Math.round(r.width),h:Math.round(r.height)}:null,
+      hudSaysOpen:!!window.__ISLAND__.game.hud.raidOpen};})()`);
+  console.log('  RAID ' + JSON.stringify({ ...raid, up }));
+
+  /* The press that was already in flight. Fired immediately after the card
+     lands, which is inside GRACE — it must change nothing. */
+  const press = async () => {
+    const x = Math.round((await ev('innerWidth')) * 0.5);
+    const y = Math.round((await ev('innerHeight')) * 0.82);
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  };
+  await ev(`(()=>{const g=window.__ISLAND__.game;
+    // Re-show it, so the press below is inside the grace window for certain.
+    g.hud.raid({type:'knight',player:1,tile:3,
+      losses:[{player:0,lost:{wood:4,brick:4,wool:4,wheat:4,ore:4},total:20}]});
+    return 1})()`);
+  await press();
+  await ev(`(()=>{const g=window.__ISLAND__.game; g.hud.update(0.05); return 1})()`);
+  const early = await ev(`(()=>{const n=document.querySelector('.raid');
+    return {stillUp:!!(n&&!n.classList.contains('hid')&&!n.classList.contains('out'))};})()`);
+
+  /* And the press a moment later, which must take it away well before the
+     2.4s the card would have held for on its own. */
+  await ev(`(()=>{const g=window.__ISLAND__.game;
+    for(let i=0;i<12;i++) g.hud.update(0.05);   // 0.6s of card life
+    return 1})()`);
+  await press();
+  await ev(`(()=>{window.__ISLAND__.game.hud.update(0.05);return 1})()`);
+  const late = await ev(`(()=>{const n=document.querySelector('.raid');
+    return {leaving:!!(n&&n.classList.contains('out')),
+      open:!!(n&&!n.classList.contains('hid'))};})()`);
+  await ev(`(()=>{const g=window.__ISLAND__.game;
+    for(let i=0;i<12;i++) g.hud.update(0.05); return 1})()`);
+  const gone = await ev(`(()=>{const n=document.querySelector('.raid');
+    return {hidden:!!(n&&n.classList.contains('hid')),
+      hudSaysOpen:!!window.__ISLAND__.game.hud.raidOpen};})()`);
+  console.log('  DISMISS ' + JSON.stringify({ early, late, gone }));
+  console.log('  RAIDCARD ' + JSON.stringify({
+    theCardLands: up.open === true && up.hudSaysOpen === true,
+    itNamesTheLoss: /knight/i.test(up.text),
+    aPressAlreadyInFlightDoesNotTakeIt: early.stillUp === true,
+    aPressAfterThatDoes: late.leaving === true,
+    andItIsGoneWellInsideTheHold: gone.hidden === true && gone.hudSaysOpen === false
+  }));
+  await shot(`raid-${TAG}`);
+
+/* ------------------------------------------------------------------ perf
+ *
+ *   "When I have multiple tabs open on my computer and I try to start playing
+ *    the game on my laptop, it started making my laptop glitch and keep
+ *    flashing black sporadically multiple times a second. I need it to work
+ *    well, and be optimised to function without a lot of compute."
+ *
+ * Flashing black is not slowness — it is the WebGL context being lost and
+ * restored while the machine is short of GPU memory. So this stage measures the
+ * two things that decide how much of that memory a tab is holding (the pixel
+ * budget and the shadow map) and then does the thing itself: takes the context
+ * away with WEBGL_lose_context, gives it back, and checks the game is still
+ * running and still drawing afterwards.
+ */
+} else if (STAGE === 'perf') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await sleep(1500);
+  const budget = await ev(`(()=>{
+    const I=window.__ISLAND__, r=I.renderer, c=r.domElement;
+    const b=r.getDrawingBufferSize(new I.THREE.Vector2());
+    const sun=I.world.sky&&I.world.sky.sun;
+    return {css:{w:c.clientWidth,h:c.clientHeight}, ratio:+r.getPixelRatio().toFixed(3),
+      buffer:{w:b.x,h:b.y}, megapixels:+((b.x*b.y)/1e6).toFixed(2),
+      shadow:sun&&sun.shadow?sun.shadow.mapSize.x:null,
+      antialias:!!(r.getContext().getContextAttributes()||{}).antialias,
+      power:(r.getContext().getContextAttributes()||{}).powerPreference||'default',
+      calls:r.info.render.calls, tris:r.info.render.triangles};})()`);
+  console.log('  BUDGET ' + JSON.stringify(budget));
+
+  /* THE CAP, ON A SCREEN THAT WOULD ACTUALLY HIT IT. Headless Chrome reports a
+     device pixel ratio of 1, so the budget is trivially satisfied and proves
+     nothing. Emulate the retina laptop the complaint came from — same CSS size,
+     2x device pixels — and the ratio has to come DOWN to hold the budget rather
+     than multiplying the bill by four. */
+  await send('Emulation.setDeviceMetricsOverride',
+    { width: W, height: H, deviceScaleFactor: 2, mobile: false });
+  await sleep(900);
+  await ev(`(()=>{dispatchEvent(new Event('resize'));return 1})()`);
+  await sleep(700);
+  const retina = await ev(`(()=>{const r=window.__ISLAND__.renderer;
+    const b=r.getDrawingBufferSize(new window.__ISLAND__.THREE.Vector2());
+    return {dpr:devicePixelRatio, ratio:+r.getPixelRatio().toFixed(3),
+      buffer:{w:b.x,h:b.y}, megapixels:+((b.x*b.y)/1e6).toFixed(2),
+      uncapped:+(((innerWidth*devicePixelRatio)*(innerHeight*devicePixelRatio))/1e6).toFixed(2)};})()`);
+  await send('Emulation.clearDeviceMetricsOverride');
+  await sleep(600);
+  await ev(`(()=>{dispatchEvent(new Event('resize'));return 1})()`);
+  console.log('  RETINA ' + JSON.stringify(retina));
+
+  /* Kill it, and time how long the page takes to be drawing again. A restore
+     re-uploads every texture and buffer, which is exactly the cost the flicker
+     is made of — so the number that matters is that it recovers at all, and
+     without an exception reaching the frame loop. */
+  const before = await ev(`window.__ISLAND__.renderer.info.render.frame`);
+  const lost = await ev(`(()=>{const gl=window.__ISLAND__.renderer.getContext();
+    const x=gl.getExtension('WEBGL_lose_context');
+    if(!x) return {ext:false};
+    window.__LOSE__=x; x.loseContext(); return {ext:true};})()`);
+  await sleep(700);
+  const during = await ev(`(()=>({lost:window.__ISLAND__.renderer.getContext().isContextLost(),
+    frame:window.__ISLAND__.renderer.info.render.frame})) ()`);
+  await ev(`(()=>{ if(window.__LOSE__) window.__LOSE__.restoreContext(); return 1})()`);
+  await sleep(1600);
+  /* three.js re-initialises on restore and its frame counter starts again from
+     zero, so "did it come back" cannot be `frame > frameBefore`. The honest
+     test is that the counter is MOVING now: sample it twice, a second and a
+     half apart — this scene runs at about 1.5fps under SwiftShader. */
+  /* three.js re-initialises on restore and its frame counter starts again from
+     zero, so "did it come back" cannot be `frame > frameBefore`. It is that the
+     counter is MOVING again — polled rather than sampled once, because a
+     restore re-uploads every texture and buffer and this scene runs at about
+     1.5fps under SwiftShader even when nothing is wrong. */
+  let back = null;
+  for (let i = 0; i < 12; i++) {
+    back = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+      const a=r.info.render.frame;
+      await new Promise(res=>setTimeout(res,700));
+      return {lost:r.getContext().isContextLost(), frame:r.info.render.frame,
+        advanced:r.info.render.frame-a, waited:${i + 1},
+        calls:r.info.render.calls, ratio:+r.getPixelRatio().toFixed(3)};})()`, true);
+    if (back && back.advanced > 0) break;
+  }
+  const why = await ev(`window.__ISLAND__.game.frameInfo()`);
+  console.log('  CONTEXT ' + JSON.stringify({ ext: lost.ext, before, during, back, why }));
+
+  /* Hidden tabs must stop drawing. The frame counter is the only honest witness
+     — rAF throttling alone is not what this claims, the explicit guard is. */
+  const hid = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+    const a=r.info.render.frame;
+    await new Promise(res=>setTimeout(res,2200));
+    const b=r.info.render.frame;
+    delete document.hidden;
+    return {drewWhileHidden:b-a};})()`, true);
+  await sleep(600);
+  // Long enough to be a real sample: SwiftShader draws this island about
+  // 1.5 times a second, so a 650ms window says nothing either way.
+  const shown = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+    const a=r.info.render.frame;
+    await new Promise(res=>setTimeout(res,2600));
+    return {drewWhenShown:r.info.render.frame-a};})()`, true);
+  console.log('  HIDDEN ' + JSON.stringify({ ...hid, ...shown }));
+
+  console.log('  PERF ' + JSON.stringify({
+    withinPixelBudget: budget.megapixels <= 2.45,
+    theCapBitesOnARetinaScreen: retina.dpr >= 2 && retina.megapixels <= 2.45
+      && retina.uncapped > 2.45 && retina.ratio < retina.dpr,
+    ratioIsAtLeastOne: budget.ratio >= 1,
+    shadowMatchesTheScreen: budget.buffer.h >= 800
+      ? budget.shadow === 2048 : budget.shadow === 1024,
+    survivesAContextLoss: lost.ext === true && back.lost === false
+      && back.advanced > 0 && back.calls > 0,
+    stopsDrawingWhenHidden: hid.drewWhileHidden === 0 && shown.drewWhenShown > 0
+  }));
+  await shot(`perf-${TAG}`);
+
 /* The gear popup, which carries the second way home for the rest of the match
    — the map pad is only up while the map is. */
 } else if (STAGE === 'settings') {
@@ -1880,6 +2182,10 @@ if (STAGE === 'home') {
 }
 
 console.log(`${exceptions.length} exception(s)`);
-for (const e of exceptions.slice(0, 6)) console.log('  EXC ' + String(e).split('\n')[0].slice(0, 200));
+for (const e of exceptions.slice(0, 6)) {
+  // The first line names it; the next two say where, which is the difference
+  // between "something threw" and a fault anybody can go and look at.
+  console.log('  EXC ' + String(e).split('\n').slice(0, 3).join(' | ').slice(0, 420));
+}
 ws.close(); chrome.kill('SIGKILL');
 process.exit(exceptions.length ? 1 : 0);

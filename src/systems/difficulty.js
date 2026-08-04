@@ -118,41 +118,27 @@ export const LEVELS = {
   easy: {
     key: 'easy',
     label: 'Easy',
-    blurb: 'Steady pace, some pressure',
-    // The old Medium, near enough exactly. Still the level a learner beats
-    // once they have understood the board — but no longer one they beat while
-    // still working out which way the thumbstick goes.
-    speed: 0.69, accel: 0.76,
-    replan: 2.00, hesitate: 0.42, pause: 0.95, actDelay: 0.55,
-    noise: 2.9, secondBest: 0.33, routeSlop: 0.52, tileSlop: 0.42,
-    wander: 0.13, wanderSec: 2.4,
-    hoard: 0.13,
-    trade: 0.46,
-    knight: 0.30, knightAim: 0.20, knightGap: 22,
-    endgame: false, award: 0.70, setupNoise: 3.0, desperate: 23,
-    rampFrom: 195
-  },
-  medium: {
-    key: 'medium',
-    label: 'Medium',
     blurb: 'Brisk pace, presses early',
-    // The old Hard: rivals that expand early, chase both awards and will spend
-    // a Knight on whoever is ahead.
+    // The old Medium — which was itself the Medium of the ladder before that.
+    // Rivals that expand early, chase both awards and will spend a Knight on
+    // whoever is ahead. A beginner loses to this; a beginner who works out that
+    // corners touching three hexes beat corners touching two stops losing to it
+    // inside a few matches, which is the whole job of the bottom rung.
     speed: 0.78, accel: 0.84,
     replan: 1.60, hesitate: 0.28, pause: 0.62, actDelay: 0.38,
     noise: 2.1, secondBest: 0.18, routeSlop: 0.28, tileSlop: 0.26,
     wander: 0.06, wanderSec: 1.8,
     hoard: 0.08,
     trade: 0.68,
-    endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
     knight: 0.56, knightAim: 0.48, knightGap: 11,
+    endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
     rampFrom: 180
   },
-  hard: {
-    key: 'hard',
-    label: 'Hard',
+  medium: {
+    key: 'medium',
+    label: 'Medium',
     blurb: 'Fast pace, constant pressure',
-    // The old Expert.
+    // The old Hard.
     speed: 0.83, accel: 0.88,
     replan: 1.45, hesitate: 0.22, pause: 0.50, actDelay: 0.30,
     noise: 1.85, secondBest: 0.14, routeSlop: 0.22, tileSlop: 0.20,
@@ -163,44 +149,13 @@ export const LEVELS = {
     endgame: true, award: 0.85, setupNoise: 1.7, desperate: 19,
     rampFrom: 175
   },
-  expert: {
-    key: 'expert',
-    label: 'Expert',
-    blurb: 'Relentless — they play to win',
-    // THE TOP OF THE LADDER, AND IT IS MEANT TO HURT. Third pass — half the way
-    // to RAMP_CEILING, then seven tenths, and now essentially all of it on every
-    // knob that models a MISTAKE: they barely hesitate, never wander, postpone
-    // nothing they can afford, take the best option rather than the second, and
-    // can land a Knight on the leader on a one-second cooldown.
-    //
-    // AND THEY ARE FASTER THAN YOU. This is the lever the earlier passes never
-    // pulled, and it is the reason they were not enough. `speed` multiplies
-    // BOT_SPEED (11.0) through a 0.93..1.00 per-bot scale, so a rival at the old
-    // ceiling of 1.00 topped out at 11 against the player's PLAYER_SPEED of
-    // 12 — a permanent 9-16% handicap in a game where gathering is almost
-    // entirely a movement problem. No amount of sharper decision-making closes
-    // that, which is why "I keep winning on expert" survived two passes of
-    // sharpening decisions. At 1.20 an Expert rival runs at 12.3 to 13.2 against
-    // the player's 12: for the first time the top rung is not conceding the one
-    // thing that decides how fast a pack fills, and is very slightly ahead on
-    // it. `accel` goes with it — 1.12 x BOT_ACCEL (55) is 61.6 against the
-    // human's 60.
-    //
-    // It is capped THERE on purpose. Sweeping it to 1.45 takes the good-player
-    // stand-in down to 2%, but 16 world units a second against the player's 12
-    // is a rival visibly teleporting round the island. A top difficulty should
-    // feel unfair to lose to; it should not look broken.
-    //
-    // `rampFrom` 160 -> 100 as well, so the anti-stall ramp starts sharpening
-    // them a minute earlier — at this level it is not an anti-stall measure any
-    // more, it is the second half of the match.
-    //
-    // Measured against a stand-in built to play like somebody who KNOWS the
-    // game — the old Hard bot's decision-making at human running speed, which
-    // is a far better model of the player than `novice` is. It took 11% of 57
-    // matches off the previous Expert; against this one, 6% of 86.
-    // Against the plain novice stand-in this level is at 0-2%, which is the
-    // floor of what that measurement can see.
+  hard: {
+    key: 'hard',
+    label: 'Hard',
+    blurb: 'Sharp, and quicker than you',
+    // The old Expert, unchanged — including the thing that made it bite: at
+    // speed 1.20 these rivals run at 12.3-13.2 against the player's 12, so they
+    // are not conceding the movement race that decides how fast a pack fills.
     speed: 1.20, accel: 1.12,
     replan: 1.05, hesitate: 0.03, pause: 0.07, actDelay: 0.04,
     noise: 1.10, secondBest: 0.02, routeSlop: 0.03, tileSlop: 0.03,
@@ -210,6 +165,62 @@ export const LEVELS = {
     knight: 0.96, knightAim: 0.95, knightGap: 1,
     endgame: true, award: 0.98, setupNoise: 1.06, desperate: 15,
     rampFrom: 100
+  },
+  expert: {
+    key: 'expert',
+    label: 'Expert',
+    blurb: 'Flawless, and faster than you',
+    /*
+     * ABOVE THE OLD TOP RUNG, WHICH IS NOW `hard`.
+     *
+     *   "The bots aren't good enough, they all need to be shifted up a step in
+     *    difficulty level. I keep regularly winning on expert."
+     *
+     * Every knob that models a MISTAKE is already at zero here — there is no
+     * hesitation left to remove, no dithering, no wandering, no second-best
+     * pick, no hoarding, no bad route, no badly aimed Knight. `RAMP_CEILING`,
+     * the profile the anti-stall ramp blends toward and the sharpest play this
+     * codebase can express, is what those fields now read.
+     *
+     * So the only honest way up was the one lever a perfect decision-maker
+     * still cannot use: SPEED. Gathering in this game is a movement problem —
+     * the whole economy is "who gets to the wood first" — and the player runs
+     * at PLAYER_SPEED 12. The old top rung ran at 1.20 x BOT_SPEED (11) through
+     * a 0.93-1.00 per-bot scale, so 12.3-13.2: a whisker ahead. This one runs
+     * at 1.40, so 14.3-15.4, and accelerates at 1.25 x 55 = 69 against the
+     * human's 60.
+     *
+     * MEASURED, because "faster" is not a difficulty on its own. Against a
+     * stand-in built to play like somebody who knows the game — the old
+     * Expert's decision-making at human running speed, which is `hard` now —
+     * 80 matches per point:
+     *
+     *   speed 1.30   the stand-in wins 18% (14/78)
+     *   speed 1.40   the stand-in wins 10% (8/79)
+     *   speed 1.50   the stand-in wins 10% (8/80)
+     *
+     * So 1.40 halves it and 1.50 buys nothing: past that the limit is the board
+     * and the clock, not the running. 1.40 is also the last step before the one
+     * the previous pass rejected on sight — 1.45, 16 units/s, a rival that
+     * visibly teleports round the island. Losing to Expert should feel unfair;
+     * it should not look broken.
+     *
+     * Every other field is already at RAMP_CEILING, so this rung has nowhere
+     * further to go without changing what the bots are allowed to KNOW — which
+     * is the line this file has never crossed and will not.
+     *
+     * `rampFrom` 60: the anti-stall ramp is not an anti-stall measure at this
+     * level, it is the rest of the match.
+     */
+    speed: 1.40, accel: 1.25,
+    replan: 1.00, hesitate: 0.00, pause: 0.00, actDelay: 0.00,
+    noise: 1.00, secondBest: 0.00, routeSlop: 0.00, tileSlop: 0.00,
+    wander: 0.00, wanderSec: 0.0,
+    hoard: 0.00,
+    trade: 1.00,
+    knight: 1.00, knightAim: 1.00, knightGap: 1,
+    endgame: true, award: 1.00, setupNoise: 1.00, desperate: 12,
+    rampFrom: 60
   },
 
   /**

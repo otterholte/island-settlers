@@ -50,7 +50,7 @@ Presentation code reads `state` and consumes `drainEvents(state)` each frame.
 | `restored` | tile | every item on the hex is back |
 | `build` | player, kind (`road`/`settlement`/`city`), at (edge or intersection id) | piece placed |
 | `trade` | player, give, get, ratio | exchange completed |
-| `cardDrawn` | player, type, instant | dev card purchased |
+| `cardDrawn` | player, **card**, instant | dev card purchased (`card` was `type`, which overwrote the event's own type — see rules.drawCard) |
 | `knight` | player, tile, losses[] | Raider moved, rivals robbed |
 | `roadBuilding` | player, free | two free roads granted |
 | `award` | kind (`longestRoad`/`largestArmy`), player, value | award changed hands |

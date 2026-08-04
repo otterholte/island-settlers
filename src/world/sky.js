@@ -196,7 +196,26 @@ export function buildSky(scene, renderer) {
      comparison point a full three texels along the normal and detaches every
      small prop from its own shadow. 0.028 is enough to kill acne. */
   const S = 48;
-  sun.shadow.mapSize.set(2048, 2048);
+  /*
+   * THE MAP IS SIZED TO THE SCREEN IT IS FOR.
+   *
+   * 2048 x 2048 is 16MB of GPU memory and a full scene pass every frame — right
+   * for a laptop window, and three times more shadow than a 667x375 phone can
+   * resolve, on the device least able to spare either. The drawing buffer says
+   * which one we are on, and it already carries the pixel budget from main.js,
+   * so this follows that decision rather than making a second one:
+   *
+   *   under ~800 buffer pixels tall   1024 (a phone, and 9.4cm per texel — a
+   *                                   settler is still 21 texels wide)
+   *   otherwise                       2048, exactly as before
+   *
+   * GPU memory is the resource that runs out when a dozen tabs each hold a
+   * context, and running out is what makes a screen flash black.
+   */
+  const buf = (renderer && renderer.getDrawingBufferSize)
+    ? renderer.getDrawingBufferSize(new THREE.Vector2()) : { x: 1920, y: 1080 };
+  const SHADOW_PX = (buf && buf.y >= 800) ? 2048 : 1024;
+  sun.shadow.mapSize.set(SHADOW_PX, SHADOW_PX);
   sun.shadow.camera.left = -S;
   sun.shadow.camera.right = S;
   sun.shadow.camera.top = S;

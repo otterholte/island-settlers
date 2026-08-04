@@ -68,6 +68,30 @@ const HOLD_LOSS = 2.4;
 const HOLD_GAIN = 1.9;
 const FADE = 0.38;
 
+/*
+ * AND A TAP TAKES IT AWAY.
+ *
+ *   "If the Knight popup is visible since I was raided, I should be able to
+ *    click anywhere on the screen and have it disappear quicker, instead of
+ *    having to wait for it to disappear on its own."
+ *
+ * The card takes no pointer events and must not start — it lands over a live
+ * island, unannounced, and a card that ate the tap under it would cost the
+ * player a build. So the dismissal is a listener on the WINDOW while the card
+ * is up, in the capture phase, passive, and it never consumes the press: the
+ * tap does whatever it was going to do AND the card goes.
+ *
+ * `GRACE` is why it does not vanish on a press that was already happening. A
+ * raid arrives on the rival's clock, not yours — quite often mid-tap on a build
+ * card — and a card dismissed by the tap that was in flight when it appeared
+ * would look like it never came. A quarter of a second is long enough to have
+ * seen it and far too short to be waiting.
+ *
+ * Dismissing is the SAME fade the timer would have used, only sooner: the card
+ * leaves the way it always leaves, so nothing about it flickers.
+ */
+const GRACE = 0.25;
+
 const CSS = `
 .raid{
   position:absolute;left:0;right:0;top:26%;
@@ -212,6 +236,16 @@ export function createRaidCue(root, state, game) {
   let hold = 0;         // how long this one holds before fading
   let live = false;
 
+  const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+
+  /** Start the exit now, wherever the hold had got to. */
+  function dismiss() {
+    if (!live || t < GRACE) return false;
+    if (t < hold) t = hold;
+    return true;
+  }
+  const onAnyPress = () => { dismiss(); };
+
   const safe = fn => { try { return fn(); } catch (e) { return undefined; } };
 
   /** One `icon + −N` chip per resource that actually moved. */
@@ -294,6 +328,11 @@ export function createRaidCue(root, state, game) {
     if (!ev) return;
     safe(() => dress(ev));
     t = 0;
+    if (!live && win) {
+      // Passive and capturing: heard before anything else and never swallowed.
+      win.addEventListener('pointerdown', onAnyPress, { capture: true, passive: true });
+      win.addEventListener('keydown', onAnyPress, { capture: true, passive: true });
+    }
     live = true;
     toggle(wrap, 'hid', false);
     toggle(wrap, 'out', false);
@@ -313,15 +352,25 @@ export function createRaidCue(root, state, game) {
     }
     if (t >= hold + FADE) {
       live = false;
+      unlisten();
       toggle(wrap, 'out', false);
       toggle(wrap, 'hid', true);
     }
   }
 
+  function unlisten() {
+    if (!win) return;
+    win.removeEventListener('pointerdown', onAnyPress, { capture: true });
+    win.removeEventListener('keydown', onAnyPress, { capture: true });
+  }
+
   return {
-    show, update,
+    show, update, dismiss,
     get open() { return live; },
-    destroy() { if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+    destroy() {
+      unlisten();
+      if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    }
   };
 }
 
