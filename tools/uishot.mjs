@@ -1483,6 +1483,45 @@ if (STAGE === 'home') {
   await ev(`(()=>{dispatchEvent(new Event('resize'));return 1})()`);
   console.log('  RETINA ' + JSON.stringify(retina));
 
+  /* ---------------------------------------------------------- battery saver
+   *
+   * The switch, applied to the renderer that is already running: the shadow
+   * pass gone — a whole second scene pass every frame plus a 16MB depth
+   * texture — and the ratio pinned at 1.
+   *
+   * NOT measured in draw calls, though that was the obvious idea. three resets
+   * `info` AFTER the shadow pass and before the scene proper (WebGLRenderer,
+   * `if (this.info.autoReset) this.info.reset()`, immediately after
+   * `shadowMap.render`), so `info.render.calls` has never counted a shadow draw
+   * and turning the pass off cannot change it. The flags are the witness, and
+   * the frames-per-window figures below are the evidence of what it buys — 
+   * reported rather than asserted, because SwiftShader's frame times are far
+   * too noisy to hang a check on. */
+  const rate = async label => {
+    const n = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+      const a=r.info.render.frame;
+      await new Promise(res=>setTimeout(res,3000));
+      return r.info.render.frame-a;})()`, true);
+    return { [label]: n };
+  };
+  const full = await ev(`(()=>{const r=window.__ISLAND__.renderer;
+    return {shadows:r.shadowMap.enabled, calls:r.info.render.calls,
+      ratio:+r.getPixelRatio().toFixed(3)};})()`);
+  const fullRate = await rate('framesIn3s');
+  await ev(`window.__ISLAND__.game.setLowPower(true)`, true);
+  await sleep(2200);
+  const saver = await ev(`(()=>{const r=window.__ISLAND__.renderer;
+    const sun=window.__ISLAND__.world.sky&&window.__ISLAND__.world.sky.sun;
+    return {shadows:r.shadowMap.enabled, casting:!!(sun&&sun.castShadow),
+      calls:r.info.render.calls, ratio:+r.getPixelRatio().toFixed(3),
+      stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').lowPower};})()`);
+  const saverRate = await rate('framesIn3s');
+  await ev(`window.__ISLAND__.game.setLowPower(false)`, true);
+  await sleep(1200);
+  console.log('  SAVER ' + JSON.stringify({
+    full: { ...full, ...fullRate }, saver: { ...saver, ...saverRate }
+  }));
+
   /* Kill it, and time how long the page takes to be drawing again. A restore
      re-uploads every texture and buffer, which is exactly the cost the flicker
      is made of — so the number that matters is that it recovers at all, and
@@ -1517,6 +1556,13 @@ if (STAGE === 'home') {
     if (back && back.advanced > 0) break;
   }
   const why = await ev(`window.__ISLAND__.game.frameInfo()`);
+  /* THE FIRST LOSS TURNS THE SAVER ON BY ITSELF. A browser only takes the 3D
+     view away when it is short of memory, so asking for the same amount again
+     is asking for the same answer. */
+  const auto = await ev(`(()=>({low:window.__ISLAND__.game.lowPower,
+    stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').lowPower,
+    shadows:window.__ISLAND__.renderer.shadowMap.enabled}))()`);
+  console.log('  AUTOSAVER ' + JSON.stringify(auto));
   console.log('  CONTEXT ' + JSON.stringify({ ext: lost.ext, before, during, back, why }));
 
   /* Hidden tabs must stop drawing. The frame counter is the only honest witness
@@ -1546,7 +1592,13 @@ if (STAGE === 'home') {
       ? budget.shadow === 2048 : budget.shadow === 1024,
     survivesAContextLoss: lost.ext === true && back.lost === false
       && back.advanced > 0 && back.calls > 0,
-    stopsDrawingWhenHidden: hid.drewWhileHidden === 0 && shown.drewWhenShown > 0
+    stopsDrawingWhenHidden: hid.drewWhileHidden === 0 && shown.drewWhenShown > 0,
+    batterySaverDropsTheShadowPass: full.shadows === true
+      && saver.shadows === false && saver.casting === false,
+    andPinsTheRatio: saver.ratio === 1,
+    andIsRememberedForNextTime: saver.stored === true,
+    aLostContextTurnsItOnByItself: auto.low === true && auto.stored === true
+      && auto.shadows === false
   }));
   await shot(`perf-${TAG}`);
 

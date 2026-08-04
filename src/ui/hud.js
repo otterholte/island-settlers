@@ -29,7 +29,9 @@ import {
 } from '../core/constants.js';
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
-import { knightsOn, buttonsSide, setButtonsSide } from '../core/options.js';
+import {
+  knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower
+} from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
@@ -321,6 +323,43 @@ export function createHUD(root, state, game) {
   function applyButtonSide() { toggle(hud, 'btn-left', buttonsSide() === 'left'); }
   applyButtonSide();
 
+  /*
+   * GRAPHICS: FULL or BATTERY SAVER.
+   *
+   *   "How do I keep my laptop from constantly doing the black screen flashes?
+   *    It's still doing it like crazy."
+   *
+   * It sits under the gear rather than on the match-setup panel because it is a
+   * property of the DEVICE, like which corner the buttons are in — the same
+   * machine wants the same answer every match, and the setup panel had no room
+   * for a fourth row without pushing its own buttons off a 375px screen.
+   *
+   * Battery saver drops the shadow pass — a second full pass over the scene
+   * every frame, plus a 16MB depth texture — and pins the pixel ratio at 1.
+   * main.js applies it to the renderer that is already running, so the switch
+   * takes effect on the next frame rather than the next match. It also turns
+   * itself on the first time the browser drops the 3D view; see the context
+   * loss handler there.
+   */
+  function powerRow() {
+    const keys = [false, true];
+    const btns = keys.map(v => button('seg', {
+      on: { click: () => { setLowPower(v); apply(); } }
+    }, el('span', { text: v ? 'Saver' : 'Full' })));
+    function apply() {
+      const cur = lowPower();
+      btns.forEach((b, i) => toggle(b, 'on', keys[i] === cur));
+      if (game && typeof game.setLowPower === 'function') {
+        try { game.setLowPower(cur); } catch (e) { /* next boot, then */ }
+      }
+    }
+    apply();
+    return { node: el('div', { class: 'side-row' },
+      el('span', { class: 'side-lab', text: 'Graphics' }),
+      el('div', { class: 'side-seg' }, btns)), repaint: apply };
+  }
+  const power = powerRow();
+
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     el('div', { class: 'pop-head' },
       el('span', { class: 'pop-title', text: 'Settings' }),
@@ -328,6 +367,7 @@ export function createHUD(root, state, game) {
         mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
+    power.node,
     button('wide cream', { on: { click: () => toggle(howBody, 'hid', !howBody.classList.contains('hid')) } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
       el('span', { class: 'sb-lab', text: 'How to Play' })),

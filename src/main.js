@@ -66,7 +66,13 @@ async function boot() {
    * does not double the bill for a game that simulates at 60.
    */
   const PIXEL_BUDGET = 2.30e6;
+  /* Battery saver pins the ratio at 1 — see `applyQuality` and core/options. */
+  let lowPower = false;
+  try {
+    lowPower = (await import('./core/options.js')).lowPower();
+  } catch (e) { /* the option is a nicety; the game is not */ }
   function ratioFor(w, h) {
+    if (lowPower) return 1;
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const px = Math.max(1, (w || 1) * (h || 1));
     return Math.max(1, Math.min(dpr, Math.sqrt(PIXEL_BUDGET / px)));
@@ -185,6 +191,39 @@ async function boot() {
   const effects = fxM.createEffects(scene);
 
   const sky = skyM.buildSky(scene, renderer);
+
+  /*
+   * THE TWO THINGS A SHARED-MEMORY GPU CANNOT AFFORD, IN ONE SWITCH.
+   *
+   * Shadows are a second full pass over the scene every frame plus a 16MB
+   * depth texture; the pixel ratio multiplies everything else. Battery saver
+   * drops both. Materials have to be told: three bakes "is there a shadow map"
+   * into every program it compiles, so flipping `shadowMap.enabled` without
+   * this leaves the old programs sampling a map that is no longer there.
+   */
+  function applyQuality() {
+    renderer.shadowMap.enabled = !lowPower;
+    if (sky && sky.sun) sky.sun.castShadow = !lowPower;
+    scene.traverse(o => {
+      const m = o && o.material;
+      if (!m) return;
+      for (const mm of (Array.isArray(m) ? m : [m])) { if (mm) mm.needsUpdate = true; }
+    });
+    renderer.setPixelRatio(ratioFor(canvas.clientWidth || innerWidth,
+      canvas.clientHeight || innerHeight));
+  }
+  async function setLowPower(on, why) {
+    if (lowPower === !!on) return lowPower;
+    lowPower = !!on;
+    try {
+      const opt = await import('./core/options.js');
+      if (opt.setLowPower) opt.setLowPower(lowPower);
+    } catch (e) { /* it still applies for this session */ }
+    applyQuality();
+    if (why && game && typeof game.toast === 'function') game.toast(why, 'warn');
+    return lowPower;
+  }
+  if (lowPower) applyQuality();
   const water = waterM.buildWater(scene);
   const island = islandM.buildIsland(scene);
   const props = propsM.buildProps(scene);
@@ -236,6 +275,9 @@ async function boot() {
   const game = {
     state, world, audio, effects, camera: gameCamera, input, avatars,
     economy: ecoM,
+    /** Battery saver, from the setup screen or from a context loss. */
+    setLowPower(on) { return setLowPower(!!on); },
+    get lowPower() { return lowPower; },
     /** matchflow.setRoam -> the settler may walk a finished island. */
     setRoam(on) { roam.on = !!on; return roam.on; },
     get roaming() { return roam.on; },
@@ -249,7 +291,8 @@ async function boot() {
         glLost,
         hidden: !!(typeof document !== 'undefined' && document.hidden),
         sinceDraw: Math.round(performance.now() - lastDraw),
-        draws, drawFails,
+        draws, drawFails, losses, lowPower,
+        shadows: !!renderer.shadowMap.enabled,
         checkShaderErrors: !!(renderer.debug && renderer.debug.checkShaderErrors),
         minFrameMs: MIN_FRAME_MS,
         ratio: +renderer.getPixelRatio().toFixed(3)
@@ -565,10 +608,18 @@ async function boot() {
      stepping a match nobody can see, and should not try to draw into a context
      that is gone. Both of those are here. */
   let glLost = false;
-  let draws = 0, drawFails = 0;
+  let draws = 0, drawFails = 0, losses = 0;
   canvas.addEventListener('webglcontextlost', () => {
     glLost = true;
+    losses++;
     console.warn('[gl] context lost — pausing until it comes back');
+    /* THE FIRST LOSS IS THE MACHINE TELLING US. A browser only takes this away
+       when it is short of memory, so asking for the same amount again is asking
+       for the same answer: drop to battery saver, say so, and remember it for
+       next time. Nothing is lost — the match is in memory, not on the GPU. */
+    if (losses === 1 && !lowPower) {
+      setLowPower(true, 'Graphics reduced — the browser dropped the 3D view');
+    }
   }, false);
   canvas.addEventListener('webglcontextrestored', () => {
     glLost = false;

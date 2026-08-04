@@ -102,7 +102,28 @@ export const OPTION_DEFAULTS = Object.freeze({
      Which is the real reason it earns its place: tilting the board back
      squashes it vertically, so a 375px-tall phone fits the whole island
      without pinching. */
-  mapTilt: 0
+  mapTilt: 0,
+
+  /*
+   * BATTERY SAVER — fewer pixels, no shadows.
+   *
+   *   "How do I keep my laptop from constantly doing the black screen flashes?
+   *    It's still doing it like crazy."
+   *
+   * The flashing is the browser dropping this tab's 3D context because the
+   * machine is out of memory — measured on the laptop in question: 8GB of RAM,
+   * 862MB free, 16GB committed, Intel Iris Xe, which means the graphics memory
+   * comes out of that same 8GB. Surviving a context loss (which the build now
+   * does) is not the same as not causing one, and the two biggest things this
+   * game asks a shared-memory GPU for are the pixel count and the shadow pass.
+   *
+   * On, this drops the shadow map entirely — one whole scene pass per frame and
+   * a 16MB texture — and pins the pixel ratio at 1. It is a real setting rather
+   * than a hidden heuristic because the player is the one who can see the
+   * flicker; it also turns itself on the first time the context is lost, since
+   * by then the machine has told us plainly.
+   */
+  lowPower: false
 });
 
 const current = { ...OPTION_DEFAULTS };
@@ -184,6 +205,10 @@ export function setButtonsSide(v) { return setOption('buttonsSide', side(v)); }
 export function autoDraft() { return !!current.autoDraft; }
 export function setAutoDraft(v) { return setOption('autoDraft', !!v); }
 
+/** Battery saver: no shadow pass, pixel ratio pinned at 1. See OPTION_DEFAULTS. */
+export function lowPower() { return !!current.lowPower; }
+export function setLowPower(v) { return setOption('lowPower', !!v); }
+
 const TILT_MAX = 1;
 export function mapTilt() {
   const v = Number(current.mapTilt);
@@ -227,5 +252,5 @@ export function playerName() {
 export default {
   getOption, setOption, onOptionsChange,
   knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt,
-  autoDraft, setAutoDraft, playerName
+  autoDraft, setAutoDraft, lowPower, setLowPower, playerName
 };
