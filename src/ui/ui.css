@@ -193,10 +193,28 @@
 }
 
 /* --- the arrows.
-   The visible plate is 28px tall; the hit area is 44 (::after reaches out into
-   the lane label above/below it, which is plain text and never interactive). */
+ *
+ *   "Can you make the up and down arrows for the trading post larger and easier
+ *    to press? Right now it's hard to press consistently."
+ *
+ * Two boxes, and they had drifted apart. The plate a thumb AIMS at was 25px
+ * tall on a phone; the box that answered a press was 47, because a transparent
+ * ::after reached 21px out into the lane caption — and only 1px back towards
+ * the card. So the target was mostly in the direction nobody aims, the visible
+ * edge nearest the card was the edge people actually pressed, and a press three
+ * pixels below the plate hit the CARD, which changes the focus and stages
+ * nothing. That is what "hard to press consistently" is: a control whose real
+ * shape is not the shape it draws.
+ *
+ * The plate is 40px now (38 on a phone) — a thumb target on its own, before any
+ * help — and the ::after is symmetric: it still reaches out into the caption,
+ * and it now also covers the 4px gap between the arrow and the card, so there
+ * is no dead lane between them. Nothing overlaps the card itself; the card is
+ * still a button and still takes its own taps. The glyph grew with the plate
+ * (16x10 -> 22x13), because a bigger button with the same tiny chevron on it
+ * reads as the same small control. */
 .tr-arr{
-  position:relative;height:28px;padding:0;border-radius:8px;cursor:pointer;
+  position:relative;height:40px;padding:0;border-radius:9px;cursor:pointer;
   background:linear-gradient(180deg,#fffaee,#ead9b3);
   border:1.5px solid rgba(90,58,30,.42);
   box-shadow:0 2px 0 rgba(90,58,30,.26),inset 0 1px 0 rgba(255,255,255,.85);
@@ -205,12 +223,12 @@
   transition:opacity .14s ease,filter .14s ease,background .14s ease;
 }
 .tr-arr::after{content:'';position:absolute;left:0;right:0}
-.tr-arr.up::after{top:-16px;bottom:0}
-.tr-arr.dn::after{top:0;bottom:-16px}
+.tr-arr.up::after{top:-14px;bottom:-4px}
+.tr-arr.dn::after{top:-4px;bottom:-14px}
 .tr-arr::before{content:'';width:0;height:0;
-  border-left:8px solid transparent;border-right:8px solid transparent}
-.tr-arr.up::before{border-bottom:10px solid var(--brown)}
-.tr-arr.dn::before{border-top:10px solid var(--brown)}
+  border-left:11px solid transparent;border-right:11px solid transparent}
+.tr-arr.up::before{border-bottom:13px solid var(--brown)}
+.tr-arr.dn::before{border-top:13px solid var(--brown)}
 .tr-arr:active{transform:translateY(2px);box-shadow:0 0 0 rgba(90,58,30,.3)}
 
 /* DISABLED IS THE POINT. Two brick and a 4:1 rate means a dead up arrow, and
@@ -446,8 +464,11 @@
 /* Longest road and knights played, for EVERY player — the numbers the
    breakdown above can only ever show on the one player who scored from them.
    The holder's chip goes gold and names the award; everyone else's is a plain
-   reading of how close they came. */
-.rs-tally{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+   reading of how close they came.
+   It sits on the scoring end of the row, immediately left of the trophy, and
+   it never wraps: two small figures beside the total they did not quite earn,
+   rather than a third line under a name. */
+.rs-tally{display:flex;flex-wrap:nowrap;gap:5px;flex:0 0 auto}
 .rs-tally i{display:inline-flex;align-items:center;gap:5px;font-style:normal;
   padding:2px 7px 3px;border-radius:7px;background:rgba(255,255,255,.06);
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.10)}
@@ -459,11 +480,17 @@
 .rs-tally i.won em{color:var(--gold-l)}
 .rs-tally i.won u{color:var(--gold-l);opacity:.92}
 @media (max-height:500px),(max-width:1023px){
-  .rs-bd i,.rs-tally i{padding:1px 5px 2px;gap:4px}
+  .rs-bd i{padding:1px 5px 2px;gap:4px}
   .rs-bd em,.rs-bd u{font-size:8px}
-  .rs-tally em{font-size:11px}
-  .rs-tally u{font-size:7.5px}
-  .rs-tally{margin-top:3px;gap:4px}
+  /* ICON AND NUMBER, NOTHING ELSE. The label is what made this two lines, and
+     it is the least of the three things in the chip: the road glyph and the
+     knight glyph are already the words, and the gold still says who holds the
+     award. What is left is the same shape as the trophy chip beside it. */
+  .rs-tally{gap:4px}
+  .rs-tally i{padding:2px 6px 3px;gap:3px}
+  .rs-tally u{display:none}
+  .rs-tally em{font-size:12px}
+  .rs-tally i svg{width:15px;height:15px}
 }
 .rs-vp{display:flex;align-items:center;gap:4px}
 .rs-vp b{font:800 22px/1 var(--ff);color:var(--gold);
@@ -707,17 +734,20 @@
   .dcard{flex-basis:108px;width:108px;min-height:140px}
   .hand{min-height:140px}
   /* Every pixel the trade sheet gives back here is a pixel the key legend in
-     the foot keeps: at 375px tall it was the line being clipped off. The
-     arrow plates shrink; their 44px hit areas (the ::after) do not, and no
-     resource icon goes under 26. */
+     the foot keeps: at 375px tall it was the line being clipped off. The card
+     gives; the ARROWS NO LONGER DO. They used to come down to a 25px plate,
+     which is the one thing on this sheet a thumb has to hit twice in a row —
+     they hold 38 now, and the 60px the pair of them cost comes out of the
+     card's minimum height and the sheet's own margins, which had 43px of slack
+     top and bottom at 375. No resource icon goes under 26. */
   .sheet{gap:6px;padding:9px 12px 10px}
   .tr-row{gap:6px}
-  .tr-card{min-height:66px;padding:5px 3px 4px;gap:1px}
+  .tr-card{min-height:58px;padding:5px 3px 4px;gap:1px}
   .tr-ico svg{width:28px;height:28px}
   .tr-have{font-size:22px}
-  .tr-arr{height:25px}
-  .tr-arr.up::after{top:-19px}
-  .tr-arr.dn::after{bottom:-19px}
+  .tr-arr{height:38px}
+  .tr-arr.up::after{top:-11px}
+  .tr-arr.dn::after{bottom:-11px}
   .kbhint{font-size:8px;letter-spacing:.03em}
   .kbhint i{padding:1px 4px 2px}
   .rs-foot{gap:8px}

@@ -197,8 +197,35 @@ export function setMapTilt(v) {
 
 export function setKnights(on) { return setOption('knights', !!on) !== false; }
 
+/**
+ * The name this device last played under, or '' if nobody has typed one.
+ *
+ *   "Or maybe if I ever have used a name, it remembers the most recent name I
+ *    played with, but still works if I haven't added a name before."
+ *
+ * Which is already true of multiplayer — `src/net/client.js` saves whatever you
+ * type in the room screen and never asks again — and was not true of anything
+ * else, so a player with a name spent the single-player match being called YOU
+ * by a game that knew better. This reads that same entry; client.js is still
+ * the only thing that WRITES it, and the key is duplicated rather than imported
+ * because the whole networking layer must stay off the boot path of a match
+ * that never goes online. An empty string is the honest answer for a device
+ * that has never been named, and every caller falls back to 'You'.
+ */
+const NAME_KEY = 'island-settlers.name';
+export function playerName() {
+  const s = store();
+  if (!s) return '';
+  try {
+    // The same tidy `cleanName` in net/protocol.js applies on the way in,
+    // repeated here rather than imported: this goes straight into a scoreboard
+    // and localStorage is writable by anything that shares the origin.
+    return String(s.getItem(NAME_KEY) || '').trim().replace(/\s+/g, ' ').slice(0, 14);
+  } catch (e) { return ''; }
+}
+
 export default {
   getOption, setOption, onOptionsChange,
   knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt,
-  autoDraft, setAutoDraft
+  autoDraft, setAutoDraft, playerName
 };

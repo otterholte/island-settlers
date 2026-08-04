@@ -702,6 +702,38 @@ if (STAGE === 'home') {
     while(R.scoreOf(st,w) < 13 && guard++ < 40) w.vpCards++;
     R.checkVictory(st);
     return {winner:w.name, colour:w.color.key, vp:R.scoreOf(st,w), phase:st.phase};})()`, true)));
+  /* THE SENTENCE THE WIN IS ANNOUNCED IN.
+   *
+   *   "When you win the game it says 'YOU TAKES THE ISLAND' — can you change
+   *    the verbiage so that it works for single player if I won."
+   *
+   * Read on the first beat of the sequence, because the plate is pulled long
+   * before the scoreboard lands. The unnamed seat is the second person and must
+   * conjugate as one; a device that has been given a name is third person and
+   * keeps the -s, which is the other half of the check below. */
+  const said = await ev(`(()=>{const g=window.__ISLAND__.game;
+    for(let k=0;k<12;k++) g.flow.update(1/60);
+    const n=document.querySelector('.ann-txt');
+    return {line:((n&&n.textContent)||'').trim(),
+      seat:window.__ISLAND__.state.players[0].name};})()`);
+  const named = await ev(`(async()=>{
+    const o=await import('/src/core/options.js');
+    const K='island-settlers.name', had=localStorage.getItem(K);
+    const blank=o.playerName();
+    localStorage.setItem(K,'Eli');
+    const set=o.playerName();
+    localStorage.setItem(K,'x'.repeat(40));
+    const long=o.playerName().length;
+    if(had===null) localStorage.removeItem(K); else localStorage.setItem(K,had);
+    return {blankDevice:blank, remembers:set, clampedTo:long};})()`, true);
+  console.log('  ANNOUNCE ' + JSON.stringify({ ...said, name: named }));
+  console.log('  VERBIAGE ' + JSON.stringify({
+    noLongerYouTakes: !/You takes/i.test(said.line),
+    secondPersonAgrees: /^You take the island$/i.test(said.line),
+    unnamedDeviceIsStillYou: said.seat === 'You' && named.blankDevice === '',
+    aNameIsRemembered: named.remembers === 'Eli' && named.clampedTo === 14
+  }));
+
   /* Drive the win timeline by hand. It is 8.85 seconds long and this scene
      renders at about 1.5fps under SwiftShader with dt capped at 0.1 — so left
      to the frame loop the reveal is a minute away, and the wait would look
@@ -892,6 +924,144 @@ if (STAGE === 'home') {
     neverBothDrivers: !(dock.roaming && dock.freecam)
       && !!swapped && !(swapped.roaming && !swapped.freecam)
   }));
+
+/* ----------------------------------------------------------------- trade
+ *
+ *   "Can you make the up and down arrows for the trading post larger and easier
+ *    to press? Right now it's hard to press consistently."
+ *
+ * Two different measurements, and only one of them was ever right. The plate a
+ * player AIMS at was 25px tall on a phone; the box that actually answers a
+ * press was 44, because a transparent ::after reached out into the lane caption
+ * above and below it. A thumb goes where the eye goes, so half the presses
+ * landed on a target the player could not see, and the ones that missed missed
+ * a control that looked like it had been hit.
+ *
+ * So this stage measures BOTH: the painted plate from its own box, and the live
+ * hit area by walking `elementFromPoint` down a column through the arrow until
+ * the answer stops being that arrow. Then it presses one — with a real pointer,
+ * at the top edge of the plate rather than the comfortable middle — and reads
+ * the staged amount back off the sheet.
+ */
+} else if (STAGE === 'trade') {
+  await waitIntro();
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
+  for (let i = 0; i < 90; i++) {
+    const p = await ev('window.__ISLAND__.state.phase');
+    if (p === 'play') break;
+    await ev(`(()=>{
+      const I=window.__ISLAND__, g=I.game, R=window.__R__;
+      for(let k=0;k<40;k++){ g.flow.update(1/60); g.bots&&g.bots.update&&g.bots.update(1/60); }
+      if(I.state.phase!=='setup')return 0;
+      if(R.setupCurrentPlayer(I.state)!==0)return 0;
+      const ov=g.overview;
+      if(!ov||!ov.isOpen)return 0;
+      const road=I.state.setupNeed==='road';
+      const legal=road
+        ? R.legalRoads(I.state,0,true,I.state.setupAnchor)
+        : R.legalSettlements(I.state,0,true);
+      if(!legal.length)return 0;
+      ov.select(legal[0]); ov.commit();
+      return 1;})()`);
+    await sleep(120);
+  }
+  /* A full pack, so every arrow on the sheet is live: without the goods to give
+     the up arrows are legitimately dead and there is nothing to measure. */
+  await ev(`(async()=>{const I=window.__ISLAND__, p=I.state.players[0];
+    p.res.wood=8;p.res.brick=8;p.res.wool=8;p.res.wheat=8;p.res.ore=8;
+    /* Standing AT the market, because economy.js owns the "you must be at the
+       post" rule and a sheet opened from across the island has every arrow
+       legitimately dead — which measures nothing. */
+    const L=await import('/src/board/layout.js');
+    p.x=L.MARKET.x; p.z=L.MARKET.z; p.vx=0; p.vz=0; p.nearTrade='market';
+    I.game.controller.update(1/60);
+    I.game.openTrade(null); return {at:p.nearTrade};})()`, true);
+  await sleep(700);
+
+  const MEASURE = `(()=>{
+    const hit=(el,x,y0,dir)=>{               // how far the live box reaches
+      let y=y0, n=0;
+      for(;n<90;n++){
+        const at=document.elementFromPoint(x, Math.round(y+dir*n));
+        if(!at || (at!==el && !el.contains(at) && at.closest('.tr-arr')!==el)) break;
+      }
+      return n;
+    };
+    const arrows=[...document.querySelectorAll('.tr-arr')].map(a=>{
+      const r=a.getBoundingClientRect();
+      const cx=Math.round(r.left+r.width/2);
+      const up=hit(a, cx, Math.round(r.top+1), -1);
+      const dn=hit(a, cx, Math.round(r.bottom-1), 1);
+      return {cls:a.className.replace('tr-arr ',''),
+        plate:{w:Math.round(r.width),h:Math.round(r.height)},
+        live:{h:Math.round(r.height)+up+dn, over:up, under:dn},
+        off:a.classList.contains('off')};
+    });
+    const sheet=document.querySelector('.sheet.trade').getBoundingClientRect();
+    const glyph=(()=>{const a=document.querySelector('.tr-arr.up');
+      const s=getComputedStyle(a,'::before');
+      return {w:parseFloat(s.borderLeftWidth)*2, h:parseFloat(s.borderBottomWidth)};})();
+    return {arrows, glyph, vh:innerHeight,
+      sheet:{y:Math.round(sheet.top),bottom:Math.round(sheet.bottom),
+        h:Math.round(sheet.height)},
+      fits:sheet.bottom<=innerHeight+1 && sheet.top>=-1,
+      legend:!!document.querySelector('.trade .kbhint')};})()`;
+  const m = await ev(MEASURE);
+  console.log('  ARROWS ' + JSON.stringify({
+    n: m.arrows.length, glyph: m.glyph, sheet: m.sheet, fits: m.fits, vh: m.vh,
+    plate: m.arrows[0] && m.arrows[0].plate, live: m.arrows[0] && m.arrows[0].live
+  }));
+
+  /* THE PRESS. Deliberately awkward: 3px inside the TOP edge of the plate, not
+     the middle — the edge is where an inconsistent control gives itself away. */
+  const press = await ev(`(()=>{const a=document.querySelectorAll('.tr-col')[0]
+    .querySelector('.tr-arr.up'); const r=a.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+3),
+      onTop:(document.elementFromPoint(Math.round(r.left+r.width/2),
+        Math.round(r.top+3))||{}).closest !== undefined
+        && (document.elementFromPoint(Math.round(r.left+r.width/2),
+        Math.round(r.top+3)).closest('.tr-arr')===a)};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: press.x, y: press.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: press.x, y: press.y, button: 'left', clickCount: 1 });
+  await sleep(300);
+  const staged = await ev(`(()=>{const b=document.querySelectorAll('.tr-col')[0]
+    .querySelector('.tr-arr.up .tr-badge');
+    return {on:!!b&&b.classList.contains('on'), text:(b&&b.textContent||'').trim()};})()`);
+  console.log('  PRESS ' + JSON.stringify({ ...press, staged }));
+  /* And the card underneath is still its own button: the arrows' hit boxes now
+     cover the 4px gap on either side of it, which is dead space, and nothing
+     beyond it. If they had crept over the card this press would stage instead
+     of picking. */
+  const card = await ev(`(()=>{const c=document.querySelectorAll('.tr-col')[2];
+    const b=c.querySelector('.tr-card'), r=b.getBoundingClientRect();
+    return {res:c.getAttribute('data-res'),
+      x:Math.round(r.left+r.width/2), y:Math.round(r.top+2),
+      topEdgeIsTheCard:(document.elementFromPoint(Math.round(r.left+r.width/2),
+        Math.round(r.top+2))||{}).closest!==undefined
+        && document.elementFromPoint(Math.round(r.left+r.width/2),
+          Math.round(r.top+2)).closest('.tr-card')===b};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: card.x, y: card.y, button: 'left', clickCount: 1 });
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: card.x, y: card.y, button: 'left', clickCount: 1 });
+  await sleep(250);
+  const picked = await ev(`(()=>{const c=document.querySelectorAll('.tr-col')[2];
+    return {cur:c.classList.contains('cur'),
+      stagedHere:!!c.querySelector('.tr-badge.on')};})()`);
+  console.log('  CARD ' + JSON.stringify({ ...card, picked }));
+
+  console.log('  TOUCH ' + JSON.stringify({
+    plateIsAThumbTarget: m.arrows.every(a => a.plate.h >= 36 && a.plate.w >= 44),
+    liveBoxIsBigger: m.arrows.every(a => a.live.h >= a.plate.h),
+    theEdgePressLanded: press.onTop === true && staged.on === true,
+    theWholeSheetStillFits: m.fits === true && m.legend === true,
+    theCardKeptItsOwnTaps: card.topEdgeIsTheCard === true
+      && picked.picked === undefined && picked.cur === true && !picked.stagedHere
+  }));
+  await shot(`trade-${TAG}`);
 
 /* The gear popup, which carries the second way home for the rest of the match
    — the map pad is only up while the map is. */

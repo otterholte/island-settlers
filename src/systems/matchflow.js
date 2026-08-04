@@ -141,6 +141,22 @@ const WIN = {
   reveal: 8.85
 };
 
+/**
+ * "You take the island" — but "Alex takes the island".
+ *
+ *   "When you win the game it says 'YOU TAKES THE ISLAND', can you change the
+ *    verbiage so that it works for single player if I won, since that's not
+ *    grammatically correct."
+ *
+ * The line was built by dropping a name into a third-person sentence, and the
+ * one seat whose name is not a name got the sentence written about it anyway.
+ * The only second-person subject in the game is the default seat-0 label, so
+ * that is the only thing this has to test — a player who has typed a name gets
+ * a third-person sentence, because by then they have a name in the seat and
+ * `Eli takes the island` is right. See `playerName()` in core/options.js.
+ */
+const verb = (p, stem) => (p && p.name === 'You' ? stem : `${stem}s`);
+
 /*
  * AND THEN THE COLOUR HAS TO GO
  *
@@ -553,7 +569,9 @@ export function createMatchFlow(state, game) {
 
     const w = state.players[win.wid];
     if (w) {
-      announce(win.byTime ? `Time — ${w.name} leads` : `${w.name} takes the island`, w.color.css);
+      announce(win.byTime
+        ? `Time — ${w.name} ${verb(w, 'lead')}` : `${w.name} ${verb(w, 'take')} the island`,
+        w.color.css);
       toast(win.byTime
         ? `Match called on points · ${scoreOf(state, w)} VP`
         : `${w.name} reached ${scoreOf(state, w)} points`, 'good');

@@ -91,6 +91,17 @@ async function boot() {
 
   const state = createMatch({ seed: joining ? (joining.seed >>> 0) : ((Math.random() * 1e9) | 0) });
 
+  /* YOUR SEAT TAKES YOUR NAME, IF THIS DEVICE HAS EVER BEEN GIVEN ONE.
+     The room screen saves it and never asks again, so a player who has played
+     with friends already told us — and there is no reason the scoreboard of a
+     single-player match should be the one place that does not know. Nobody has
+     to: `playerName()` is '' on a fresh device and the seat keeps its 'You',
+     which every line that addresses the player is written against. */
+  try {
+    const named = (await import('./core/options.js')).playerName();
+    if (named && state.players[0]) state.players[0].name = named;
+  } catch (e) { /* the label is a nicety; the match is not */ }
+
   // ---------------------------------------------------------------- modules
   const [
     skyM, waterM, islandM, propsM, structM, marketM,

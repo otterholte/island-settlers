@@ -417,8 +417,21 @@ export function createPanels(root, state, game) {
               ? bits.map(b =>
                 `<i>${icon(b[2], 20)}<u>${b[0]}</u><em class="pt">${points(b[1])}</em></i>`).join('')
               : '<i><u>No points scored</u></i>'
-          }),
-          el('span', { class: 'rs-tally', html: tally(p) })),
+          })),
+        /* The two measurements sit BESIDE the trophy, not under the name.
+         *
+         *   "Instead of them being full text, just a little icon and a number
+         *    next to it, for each, to the left of the trophies — that way it
+         *    doesn't spill into two lines and it matches the style."
+         *
+         * Under the name they were a second row inside a row that was already
+         * two deep, so every player cost three lines on a 375px-tall phone and
+         * four of them did not fit. Out here they are one more figure on the
+         * scoring end of the row, which is where the eye is going anyway. The
+         * words come off on a phone (see .rs-tally u in ui.css) — the icon
+         * says road or knight faster than the label does, and gold still says
+         * who holds the award. */
+        el('span', { class: 'rs-tally', html: tally(p) }),
         el('span', { class: 'rs-vp' }, el('b', { text: String(entry.vp) }),
           el('i', { html: icon('trophy', 20) })));
       resList.appendChild(row);
