@@ -677,7 +677,9 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     const staged2 = [stage('wood',1), stage('ore',-1)];
     const btn2=document.querySelector('.sheet.trade .sheet-foot .btn.green');
     const btn2Off = btn2 ? btn2.className.indexOf('off')>=0 : null;
-    const why = (document.querySelector('.sheet.trade .why')||{}).textContent;
+    // The foot's prose moved into the coloured lane bands — see ui.css .tr-cap.
+    const why = [...document.querySelectorAll('.sheet.trade .tr-cap.say .tc-live')]
+      .map(n => (n.textContent || '').trim()).join(' · ');
     if(btn2 && !btn2.disabled) btn2.click();
     const uiTraded = { dWood:p.res.wood-w3, dOre:p.res.ore-o3,
                        closed: !document.querySelector('.sheet.trade:not(.hid)') };

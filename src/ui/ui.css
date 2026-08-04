@@ -176,15 +176,47 @@
   .tr-paused i{width:6px;height:6px}
 }
 
-.trade-body{display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:0}
+.trade-body{display:flex;flex-direction:column;align-items:stretch;gap:5px;min-height:0}
 
-/* the two lane labels — the whole explanation of the row, in nine words */
+/* THE TWO LANES — the whole explanation of the row, and now it is said out loud.
+ *
+ *   "Can you make the YOU GIVE and YOU RECEIVE sections larger as well and more
+ *    clearly marked — maybe with larger text and colored areas above and below."
+ *
+ * They were 8.5px of grey at 72% opacity: footnote weight for the one fact the
+ * sheet turns on. Bands now, full width, in the two colours the staged badges
+ * have always used — brown for what leaves your pack, green for what arrives —
+ * so the direction is carried by colour and position before a word is read, and
+ * each band sits on the side of the row it describes. The chevron grew with the
+ * type and stays on the outside edge, pointing the way the goods travel.
+ *
+ * `.tc-live` is the one live message left on the sheet (see trade.js): blank
+ * almost always, and when it is not, it is in the lane it is about. */
 .tr-cap{
-  font:800 8.5px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
-  color:var(--brown-2);text-align:center;opacity:.72;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  padding:6px 12px 7px;border-radius:11px;
+  font:800 13px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 0 rgba(90,58,30,.22);
 }
-.tr-cap.give::before{content:'\25B2\2002'}
-.tr-cap.get::after{content:'\2002\25BC'}
+.tr-cap b{font:inherit}
+.tr-cap.give{background:linear-gradient(180deg,#8a5f2e,#5a3a1e);color:#ffeec4;
+  text-shadow:0 1px 0 rgba(0,0,0,.35)}
+.tr-cap.get{background:linear-gradient(180deg,#3f9a52,#25692f);color:#eafce9;
+  text-shadow:0 1px 0 rgba(0,0,0,.3)}
+.tr-cap::before,.tr-cap::after{font-size:15px;line-height:1;opacity:.95}
+.tr-cap.give::before{content:'\25B2'}
+.tr-cap.give::after{content:'\25B2'}
+.tr-cap.get::before{content:'\25BC'}
+.tr-cap.get::after{content:'\25BC'}
+/* The live word. It is the reason the foot's block of prose could go, so it
+   has to be readable on the band rather than whispered under it. */
+.tc-live{display:none;font:800 11px/1 var(--ff);font-style:normal;
+  letter-spacing:.12em;padding:3px 8px 4px;border-radius:8px;
+  background:rgba(0,0,0,.26);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.tr-cap.say .tc-live{display:inline-flex}
+
+/* Nothing sits in the foot but the deal itself now. */
+.trade .sheet-foot{justify-content:center}
 
 .tr-row{display:flex;gap:8px;align-items:stretch}
 .tr-col{
@@ -308,13 +340,6 @@
 }
 
 /* the foot: one line of reason, one line of keys, one button */
-.tfoot{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
-.kbhint{font:700 8.5px/1.3 var(--ff);letter-spacing:.06em;text-transform:uppercase;
-  color:#8a6a44}
-.kbhint i{font-style:normal;display:inline-block;margin:0 3px 0 0;padding:1px 5px 2px;
-  border-radius:5px;color:#fff6e4;background:linear-gradient(180deg,#6b4826,#43290f);
-  box-shadow:0 1px 0 rgba(90,58,30,.5)}
-
 /* --- cards --------------------------------------------------------------- */
 /* The buy button carries its own cost row: it must not inherit the build
    card's full-bleed gold band, which overflows a 48px-tall button. */
@@ -748,8 +773,10 @@
   .tr-arr{height:38px}
   .tr-arr.up::after{top:-11px}
   .tr-arr.dn::after{bottom:-11px}
-  .kbhint{font-size:8px;letter-spacing:.03em}
-  .kbhint i{padding:1px 4px 2px}
+  /* The bands do NOT shrink here — they are the two words this sheet exists to
+     say, and the 24px the foot's legend used to spend is paying for them. */
+  .tr-cap{font-size:12px;padding:5px 10px 6px;gap:7px}
+  .tc-live{font-size:10px;padding:2px 7px 3px}
   .rs-foot{gap:8px}
   .ew-plate{padding:7px 15px 9px;gap:9px;border-radius:14px}
   .ew-title{font-size:19px}

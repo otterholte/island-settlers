@@ -1006,11 +1006,35 @@ if (STAGE === 'home') {
       sheet:{y:Math.round(sheet.top),bottom:Math.round(sheet.bottom),
         h:Math.round(sheet.height)},
       fits:sheet.bottom<=innerHeight+1 && sheet.top>=-1,
-      legend:!!document.querySelector('.trade .kbhint')};})()`;
+      /* The foot's prose and arrow-key legend are gone; the two lanes are
+         bands now, and they are what has to be measurable. */
+      legendGone:!document.querySelector('.trade .kbhint')
+        && !document.querySelector('.trade .why'),
+      caps:[...document.querySelectorAll('.tr-cap')].map(c=>{
+        const r=c.getBoundingClientRect(), cs=getComputedStyle(c);
+        return {lab:(c.querySelector('b').textContent||'').trim(),
+          h:Math.round(r.height), w:Math.round(r.width),
+          type:Math.round(parseFloat(cs.fontSize)),
+          paint:cs.backgroundImage!=='none',
+          live:(c.querySelector('.tc-live').textContent||'').trim()};}),
+      foot:(()=>{const f=document.querySelector('.trade .sheet-foot');
+        return f?(f.textContent||'').trim():'';})(),
+      /* The sheet hides its overflow, so "the box fits" is only half of it —
+         everything in the box has to fit the box. */
+      clipped:(()=>{const s=document.querySelector('.sheet.trade')
+        .getBoundingClientRect(); let n=0;
+        for(const el of document.querySelectorAll(
+            '.trade .tr-arr,.trade .tr-card,.trade .tr-cap,.trade .sheet-foot .btn')){
+          const r=el.getBoundingClientRect();
+          if(r.top<s.top-0.5||r.bottom>s.bottom+0.5) n++;
+        } return n;})()};})()`;
   const m = await ev(MEASURE);
   console.log('  ARROWS ' + JSON.stringify({
     n: m.arrows.length, glyph: m.glyph, sheet: m.sheet, fits: m.fits, vh: m.vh,
     plate: m.arrows[0] && m.arrows[0].plate, live: m.arrows[0] && m.arrows[0].live
+  }));
+  console.log('  LANES ' + JSON.stringify({
+    caps: m.caps, legendGone: m.legendGone, foot: m.foot, clipped: m.clipped
   }));
 
   /* THE PRESS. Deliberately awkward: 3px inside the TOP edge of the plate, not
@@ -1057,7 +1081,10 @@ if (STAGE === 'home') {
     plateIsAThumbTarget: m.arrows.every(a => a.plate.h >= 36 && a.plate.w >= 44),
     liveBoxIsBigger: m.arrows.every(a => a.live.h >= a.plate.h),
     theEdgePressLanded: press.onTop === true && staged.on === true,
-    theWholeSheetStillFits: m.fits === true && m.legend === true,
+    theWholeSheetStillFits: m.fits === true && m.clipped === 0,
+    lanesAreBands: m.caps.length === 2 && m.caps.every(c => c.h >= 24 && c.paint
+      && c.type >= 12) && /give/i.test(m.caps[0].lab) && /receive/i.test(m.caps[1].lab),
+    theFootIsJustTheDeal: m.legendGone === true && /^trade$/i.test(m.foot),
     theCardKeptItsOwnTaps: card.topEdgeIsTheCard === true
       && picked.picked === undefined && picked.cur === true && !picked.stagedHere
   }));

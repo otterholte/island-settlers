@@ -276,7 +276,13 @@ const readTrade = async () => ev(`(()=>{
     dnsLive:cols.filter(c=>!c.querySelector('.tr-arr.dn').classList.contains('off'))
       .map(c=>c.getAttribute('data-res')),
     where:txt(document.querySelector('.sheet.trade .tr-where')),
-    why:txt(document.querySelector('.sheet.trade .why')),
+    /* The foot's prose is gone (see ui.css's .tr-cap block): the lanes are
+       coloured bands now and the one live message rides in the band it is
+       about. "say" is whichever band is currently saying something. */
+    say:[...document.querySelectorAll('.sheet.trade .tr-cap.say')]
+      .map(c=>c.className.indexOf('give')>=0 ? 'give:'+txt(c.querySelector('.tc-live'))
+        : 'get:'+txt(c.querySelector('.tc-live'))).join(' | '),
+    lanes:[...document.querySelectorAll('.sheet.trade .tr-cap b')].map(txt),
     tradeOff:!!document.querySelector('.sheet.trade .sheet-foot .btn.off'),
     captured:!!(g.input&&g.input.keyboardCaptured),
     res:{...s.players[0].res}, traded:s.players[0].stats.traded,
@@ -388,7 +394,7 @@ if (STAGE === 'trade') {
     'and how many you hold', t.order.map(r => `${r} ${t.cards[r].have}`).join('  '));
   ok(t.dnsLive.length === 0,
     'with nothing staged EVERY receive arrow is greyed out', `live: [${t.dnsLive}]`);
-  console.log(`  at ${t.where} | cursor ${t.cursor} | ${t.why}`);
+  console.log(`  at ${t.where} | cursor ${t.cursor} | lanes ${t.lanes.join(' / ')}`);
   await shot(`kb${TAG}-02-panel`);
 
   // ---- Left / Right move between cards
@@ -409,7 +415,10 @@ if (STAGE === 'trade') {
   ok(u1.dnsLive.length === 5,
     'and now every receive arrow is live, because something pays for it',
     `live: [${u1.dnsLive}]`);
-  ok(u1.tradeOff === true, 'half a deal is not a deal yet', JSON.stringify(u1.why));
+  ok(u1.tradeOff === true, 'half a deal is not a deal yet', JSON.stringify(u1.say));
+  ok(/^get:take 1 more$/i.test(u1.say),
+    'and the RECEIVE band says what is missing, in the lane it is missing from',
+    JSON.stringify(u1.say));
 
   // ---- Down on another card stages the receive
   await tap('ArrowRight');
@@ -423,7 +432,8 @@ if (STAGE === 'trade') {
     'every receive arrow greys out again — one lot pays for exactly one card '
     + '(only the staged give stays live, to undo it)', `still live: [${d1.dnsLive}]`);
   ok(d1.tradeOff === false, 'the deal is now legal and Trade lights up');
-  ok(/for/i.test(d1.why), 'the backstop line names the deal', JSON.stringify(d1.why));
+  ok(d1.say === '', 'and with the deal balanced neither band has anything left to say',
+    JSON.stringify(d1.say));
   await shot(`kb${TAG}-03-staged`);
 
   // ---- Enter trades, and the sheet stays open
@@ -446,7 +456,7 @@ if (STAGE === 'trade') {
     await tap('ArrowLeft');
     await tap('ArrowDown');
     const r2 = await readTrade();
-    ok(r2.tradeOff === false, 'a second deal staged in three keys', JSON.stringify(r2.why));
+    ok(r2.tradeOff === false, 'a second deal staged in three keys', JSON.stringify(r2.say));
     await tap('Enter', 520);
     ok((await readTrade()).traded > after.traded,
       'and Enter traded again without ever reopening the sheet');
@@ -478,7 +488,7 @@ if (STAGE === 'trade') {
   const broke = await readTrade();
   ok(broke.upsLive.length === 0 && broke.dnsLive.length === 0,
     'with an empty pack every arrow on the row is greyed out');
-  ok(broke.tradeOff === true, 'and the Trade button is off', JSON.stringify(broke.why));
+  ok(broke.tradeOff === true, 'and the Trade button is off', JSON.stringify(broke.say));
   await tap('Enter', 700);
   const shut = await readTrade();
   ok(shut.kind === null && !shut.open, 'Enter with nothing staged closed the sheet',
@@ -514,8 +524,23 @@ if (STAGE === 'trade') {
   await frames(6);
   await tap('Enter'); await frames(4);
   ok((await readTrade()).kind === 'trade', 'Enter re-opened it');
-  await clickAt(Math.round(W * 0.5), 12);
-  ok((await readTrade()).kind === null, 'a click on the scrim outside the sheet closed it');
+  /* A point on the scrim, computed rather than guessed. The sheet grew when the
+     lanes became bands, and a fixed y=12 is now ON its top edge at 375px tall —
+     which measured the tester's arithmetic, not the product. Take the widest
+     free margin the scrim actually has. */
+  const gap = await ev(`(()=>{const r=document.querySelector('.sheet.trade')
+    .getBoundingClientRect();
+    const m=[{x:Math.round(r.left+r.width/2),y:Math.round(r.top/2),s:r.top},
+      {x:Math.round(r.left+r.width/2),y:Math.round((r.bottom+innerHeight)/2),
+        s:innerHeight-r.bottom},
+      {x:Math.round(r.left/2),y:Math.round(r.top+r.height/2),s:r.left},
+      {x:Math.round((r.right+innerWidth)/2),y:Math.round(r.top+r.height/2),
+        s:innerWidth-r.right}].sort((a,b)=>b.s-a.s)[0];
+    return {x:m.x,y:m.y,room:Math.round(m.s),
+      onScrim:(document.elementFromPoint(m.x,m.y)||{className:''}).className==='scrim'};})()`);
+  await clickAt(gap.x, gap.y);
+  ok((await readTrade()).kind === null, 'a click on the scrim outside the sheet closed it',
+    `at ${gap.x},${gap.y} — ${gap.room}px of scrim, elementFromPoint says scrim=${gap.onScrim}`);
 
   // ---- the X button
   await tap('Enter', 400);

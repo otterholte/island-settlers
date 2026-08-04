@@ -118,8 +118,30 @@ export function createTradeSheet(state, game, opts = {}) {
     row.appendChild(col);
   });
 
-  const why = el('span', { class: 'why', text: '' });
-  const keys = el('span', { class: 'kbhint' });
+  /* THE TWO LANES, AND THE ONLY LIVE LINE LEFT ON THE SHEET.
+   *
+   *   "Can you make the YOU GIVE and YOU RECEIVE sections larger as well and
+   *    more clearly marked — maybe with larger text and colored areas above and
+   *    below. You can remove the arrow directions and all of that text on the
+   *    bottom left side."
+   *
+   * They were two 8.5px grey captions, which is the same weight as a footnote
+   * for the one fact that makes the whole sheet legible: up is what you hand
+   * over, down is what you take. They are bands now — brown above, green below,
+   * the colours the staged badges already use — and the foot's block of prose
+   * and arrow-key legend is gone with them.
+   *
+   * Nothing was lost by deleting it. Of the five lines that block could show,
+   * three were saying what the bands now say in colour and one was restating
+   * the badges. The fifth — you have staged more to give than to take — is the
+   * only one that ever told a player something they could act on, so it rides
+   * in the band it applies to, where they are already looking. */
+  const giveLive = el('i', { class: 'tc-live', text: '' });
+  const getLive = el('i', { class: 'tc-live', text: '' });
+  const capGive = el('span', { class: 'tr-cap give' },
+    el('b', { text: 'You give' }), giveLive);
+  const capGet = el('span', { class: 'tr-cap get' },
+    el('b', { text: 'You receive' }), getLive);
   const tradeBtn = button('big green off', {
     'aria-label': 'Confirm the trade', on: { click: () => confirm() }
   }, el('span', { class: 'sb-ico', html: icon('swap', 22) }),
@@ -128,15 +150,8 @@ export function createTradeSheet(state, game, opts = {}) {
   const node = el('div', { class: 'sheet trade hid' },
     el('div', { class: 'sheet-head' },
       el('span', { class: 'sheet-title', text: 'Trade' }), where, paused, closeBtn),
-    el('div', { class: 'trade-body' },
-      el('span', { class: 'tr-cap give', text: 'You give' }),
-      row,
-      el('span', { class: 'tr-cap get', text: 'You receive' })),
-    el('div', { class: 'sheet-foot' },
-      el('div', { class: 'tfoot' }, why, keys), tradeBtn));
-
-  keys.innerHTML = '<i>&#9664;&#9654;</i>pick <i>&#9650;</i>give '
-    + '<i>&#9660;</i>receive <i>Enter</i>trade';
+    el('div', { class: 'trade-body' }, capGive, row, capGet),
+    el('div', { class: 'sheet-foot' }, tradeBtn));
 
   /* ----------------------------------------------------------------- rates */
 
@@ -219,10 +234,6 @@ export function createTradeSheet(state, game, opts = {}) {
 
   /* ------------------------------------------------------------------ view */
 
-  function listSide(pick, label) {
-    return RES.filter(pick).map(label).join(', ');
-  }
-
   function sync() {
     const R = rates();
     const tg = totalGive(), tt = totalGet();
@@ -263,26 +274,18 @@ export function createTradeSheet(state, game, opts = {}) {
     toggle(tradeBtn, 'off', !ready);
     if (tradeBtn.disabled !== undefined) tradeBtn.disabled = !ready;
 
-    /* The backstop line. The greying has already said what is possible; this
-       only ever names the deal, or the one thing standing in its way. */
-    let line;
-    if (!R.ok) {
-      line = R.reason || 'Head to a trading post';
-    } else if (!tg && !tt) {
-      line = 'Up to give, down to receive';
-    } else if (short) {
-      line = 'You no longer hold enough for that';
-    } else if (tg > tt) {
-      const n = tg - tt;
-      line = `Take ${n} more — press down on what you need`;
-    } else {
-      const g = listSide(r => lotsGiven(r) > 0,
-        r => `${lotsGiven(r) * (R.ratio[r] || TRADE_BASE)} ${RES_LABEL[r]}`);
-      const t = listSide(r => cardsTaken(r) > 0,
-        r => `${cardsTaken(r)} ${RES_LABEL[r]}`);
-      line = `Give ${g} for ${t}`;
-    }
-    setText(why, line);
+    /* The backstop, in the lane it belongs to. The greying has already said
+       what is possible and the bands say which way is which, so this is only
+       ever the ONE thing standing between a staged deal and a legal one —
+       blank the rest of the time, which is most of the time. */
+    let giveSay = '', getSay = '';
+    if (!R.ok) giveSay = R.reason || 'Head to a trading post';
+    else if (short) giveSay = 'Not enough left';
+    else if (tg > tt) getSay = `Take ${tg - tt} more`;
+    setText(giveLive, giveSay);
+    setText(getLive, getSay);
+    toggle(capGive, 'say', !!giveSay);
+    toggle(capGet, 'say', !!getSay);
   }
 
   function placeName() {
