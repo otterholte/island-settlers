@@ -400,9 +400,15 @@
 
    The keyline is a warm deep brown at partial opacity rather than near-black.
    At 3px against gold, black reads as a sticker cut out and pasted on. */
+/* THE CROWN ROW — medallion, words, medallion, all on one line.
+   The single plate hung off the top edge and the title had to clear it by 44px,
+   so the head of the sheet spent ~75px saying two things. A pair costs the
+   height of one medallion, reads symmetrically, and hands the difference to the
+   rows underneath. */
+.rs-crown{display:flex;align-items:center;justify-content:center;gap:16px}
 .rs-banner{
-  position:absolute;left:50%;top:-8px;transform:translateX(-50%);line-height:0;
-  padding:13px 27px 15px;border-radius:0 0 22px 22px;
+  flex:0 0 auto;line-height:0;
+  padding:9px 13px 10px;border-radius:18px;
   /* DARK PLATE, GOLD RIM. The plate used to be filled with the winner's colour
      and it swallowed the cup whole: gold metal on a gold rosette has nowhere
      to be bright. A trophy is lit against something dark — that is the only
@@ -410,9 +416,9 @@
   background:
     radial-gradient(78% 64% at 50% 14%,rgba(255,201,60,.24),rgba(255,201,60,0) 70%),
     linear-gradient(180deg,#2a1c0c 0%,#160e06 58%,#0b0703 100%);
-  border:2.5px solid var(--gold,#ffc93c);border-top:0;
-  box-shadow:0 10px 26px rgba(0,0,0,.6),
-             0 0 34px rgba(255,201,60,.34),
+  border:2.5px solid var(--gold,#ffc93c);
+  box-shadow:0 8px 20px rgba(0,0,0,.6),
+             0 0 30px rgba(255,201,60,.32),
              inset 0 -8px 16px rgba(0,0,0,.5),
              inset 0 0 0 1px rgba(255,231,154,.28);
   animation:bannerDrop .5s cubic-bezier(.2,1.3,.35,1);
@@ -420,7 +426,7 @@
 /* Same plate, wearing the winner's colour instead of gold. The shape does not
    change between winning and losing — only what is on it and what rims it. */
 .rs-banner.lost{
-  padding:12px 25px 14px;
+  padding:8px 11px 9px;
   /* No coloured wash behind the portrait. The winner's colour is already the
      rim and the portrait's own ring; a third helping of it behind their face
      turns the whole medallion into one flat blob of that colour. */
@@ -431,8 +437,11 @@
              inset 0 0 0 1px rgba(255,255,255,.16);
 }
 .rs-banner svg{display:block}
-@keyframes bannerDrop{from{transform:translateX(-50%) translateY(-70px)}to{transform:translateX(-50%)}}
-.rs-head{margin-top:74px;text-align:center}
+@keyframes bannerDrop{from{transform:translateY(-46px);opacity:0}to{transform:none;opacity:1}}
+/* The right-hand one lands a beat after the left, so the pair reads as a pair
+   arriving rather than as one wide object dropping. */
+.rs-banner.r{animation-delay:.08s;animation-fill-mode:both}
+.rs-head{text-align:center}
 .rs-title{margin:0;font:800 34px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
   color:var(--gold);-webkit-text-stroke:2px rgba(12,20,34,.85);
   text-shadow:0 4px 0 rgba(8,14,26,.5),0 0 34px rgba(255,201,60,.55);
@@ -466,14 +475,28 @@
 .rs-av{line-height:0;flex:0 0 auto}
 .rs-pos{font:800 17px/1 var(--ff);color:rgba(255,255,255,.5);width:16px;text-align:center}
 .rs-row.win .rs-pos{color:var(--gold)}
-.rs-mid{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:4px}
-.rs-name{font:800 13px/1 var(--ff);letter-spacing:.1em;text-transform:uppercase;color:#fff}
+/* NAME AND BADGES ON ONE LINE, WITH A RULE BETWEEN THEM.
+ *
+ *   "Can you put the name on one line, and badges on the same line to its right
+ *    with a small vertical separator line. That way the text and icons can be
+ *    larger and more legible."
+ *
+ * Exactly the trade the row wanted: stacking the name above the chips spent a
+ * whole line on two words and left the chips paying for it in point size. Side
+ * by side, the row is one line tall and everything in it can grow. `.rs-bd`
+ * keeps its wrap as a safety net — a player holding five different scoring
+ * things on a narrow screen takes a second line rather than being cut off. */
+.rs-mid{flex:1 1 auto;min-width:0;display:flex;flex-direction:row;
+  align-items:center;gap:9px}
+.rs-name{flex:0 0 auto;white-space:nowrap;
+  font:800 14px/1 var(--ff);letter-spacing:.1em;text-transform:uppercase;color:#fff}
 /* Each chip reads left to right as a sentence: what it was, then what it paid.
    The payment used to be a bare "+4" in front of the label, which is the one
    number on this screen with no unit on it — sitting beside a settlement count,
    a city count and a card count that were all bare numbers too, so all four
    looked like the same kind of figure and only one of them was. */
-.rs-bd{display:flex;flex-wrap:wrap;gap:5px}
+.rs-bd{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap;gap:5px;
+  padding-left:9px;border-left:2px solid rgba(255,255,255,.17)}
 .rs-bd i{display:inline-flex;align-items:center;gap:5px;font-style:normal;
   padding:2px 7px 3px;border-radius:7px;background:rgba(0,0,0,.30);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
@@ -505,8 +528,6 @@
 .rs-tally i.won em{color:var(--gold-l)}
 .rs-tally i.won u{color:var(--gold-l);opacity:.92}
 @media (max-height:500px),(max-width:1023px){
-  .rs-bd i{padding:1px 5px 2px;gap:4px}
-  .rs-bd em,.rs-bd u{font-size:8px}
   /* ICON AND NUMBER, NOTHING ELSE. The label is what made this two lines, and
      it is the least of the three things in the chip: the road glyph and the
      knight glyph are already the words, and the gold still says who holds the
@@ -514,8 +535,6 @@
   .rs-tally{gap:4px}
   .rs-tally i{padding:2px 6px 3px;gap:3px}
   .rs-tally u{display:none}
-  .rs-tally em{font-size:12px}
-  .rs-tally i svg{width:15px;height:15px}
 }
 .rs-vp{display:flex;align-items:center;gap:4px}
 .rs-vp b{font:800 22px/1 var(--ff);color:var(--gold);
@@ -727,10 +746,10 @@
    * player fell off the bottom. */
   /* The plate is sized by its padding and the glyph inside it, not by a box —
      so shrink those two rather than pinning a width and fighting it. */
-  .rs-banner{padding:8px 18px 10px;border-radius:0 0 16px 16px;border-width:2px}
-  .rs-banner.lost{padding:7px 16px 9px}
-  .rs-banner svg{width:38px;height:38px}
-  .rs-head{margin-top:44px}
+  .rs-crown{gap:11px}
+  .rs-banner{padding:6px 9px 7px;border-radius:14px;border-width:2px}
+  .rs-banner.lost{padding:5px 7px 6px}
+  .rs-banner svg{width:34px;height:34px}
   .rs-title{font-size:21px;letter-spacing:.1em}
   .rs-sub{font-size:8.5px;margin-top:2px}
 
@@ -746,12 +765,20 @@
   .rs-stat span{font-size:11px}
   .rs-stat b{font-size:15px}
 
-  /* The chips fit on one line now, so they can afford to be legible. */
-  .rs-row{padding:5px 8px;gap:8px}
-  .rs-bd{gap:4px}
+  /* One line per player, so every figure on it can afford to be legible. The
+     row used to be a name stacked over a wrapped strip of 8px chips; the height
+     that stack cost is what pays for the type size here. */
+  .rs-row{padding:4px 8px;gap:7px}
+  .rs-mid{gap:7px}
+  .rs-name{font-size:13px}
+  .rs-bd{gap:4px;padding-left:7px}
   .rs-bd i{padding:2px 6px 3px;gap:4px}
-  .rs-bd i svg{width:15px;height:15px}
-  .rs-vp b{font-size:18px}
+  .rs-bd i svg{width:16px;height:16px}
+  .rs-bd em,.rs-bd u{font-size:9px}
+  .rs-tally i svg{width:17px;height:17px}
+  .rs-tally em{font-size:13px}
+  .rs-vp b{font-size:20px}
+  .rs-vp i svg{width:21px;height:21px}
 
   /* Two buttons that were sized for a title screen, on a results sheet. */
   .rs-foot .btn{min-height:42px;padding:0 16px;font-size:12px;gap:6px}

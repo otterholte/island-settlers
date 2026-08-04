@@ -216,7 +216,23 @@ export function createPanels(root, state, game) {
   }
 
   /* ============================================================== results */
-  const resBanner = el('div', { class: 'rs-banner' });
+  /* TWO MEDALLIONS, ONE LINE.
+   *
+   *   "I'd also like for the trophy to be two trophies instead, on either side
+   *    of the words VICTORY, and 'You settled the island with __ points'. That
+   *    way they can both be on the top of the page, and save more vertical
+   *    space for the actual players' lines/badges beneath it."
+   *
+   * The single medallion hung off the top edge and the title had to be pushed
+   * 44px clear of it, so the top of the sheet cost about 75px of height to say
+   * two things. A pair of them flanking the words costs the height of ONE
+   * medallion and says the same thing with better symmetry — and the ~30px it
+   * gives back goes straight into the rows underneath, which is what the player
+   * actually came to read. Both carry identical content; `banner()` writes to
+   * the list. */
+  const resBanner = el('div', { class: 'rs-banner l' });
+  const resBanner2 = el('div', { class: 'rs-banner r' });
+  const medals = [resBanner, resBanner2];
   const resTitle = el('h1', { class: 'rs-title', text: 'Victory!' });
   const resSub = el('p', { class: 'rs-sub', text: '' });
   const resList = el('div', { class: 'rs-list' });
@@ -272,8 +288,11 @@ export function createPanels(root, state, game) {
   }
 
   const resultsSheet = el('div', { class: 'results hid' },
-    resBanner, resX,
-    el('div', { class: 'rs-head' }, resTitle, resSub),
+    resX,
+    el('div', { class: 'rs-crown' },
+      resBanner,
+      el('div', { class: 'rs-head' }, resTitle, resSub),
+      resBanner2),
     resTabs,
     el('div', { class: 'rs-body' }, resList, resSide),
     el('div', { class: 'rs-foot' }, againBtn, boardBtn));
@@ -370,9 +389,10 @@ export function createPanels(root, state, game) {
     lastWinner = wid;
     endgame.setDock(false);
 
-    if (resBanner.style) {
-      resBanner.style.setProperty('--wc', w.color.css);
-      resBanner.style.setProperty('--wl', w.color.light);
+    for (const m of medals) {
+      if (!m.style) continue;
+      m.style.setProperty('--wc', w.color.css);
+      m.style.setProperty('--wl', w.color.light);
     }
     /* THE MEDALLION SAYS WHOSE ISLAND IT IS.
      *
@@ -388,10 +408,11 @@ export function createPanels(root, state, game) {
      * portrait, on their colour: the same fact the line underneath states in
      * words, said once in a picture. Nothing is being awarded to anybody who
      * did not earn it. */
-    resBanner.innerHTML = iWon
-      ? icon('trophyBig', 64)
-      : avatar(w.color.css, w.color.light, 58);
-    toggle(resBanner, 'lost', !iWon);
+    const face = iWon ? icon('trophyBig', 64) : avatar(w.color.css, w.color.light, 58);
+    for (const m of medals) {
+      m.innerHTML = face;
+      toggle(m, 'lost', !iWon);
+    }
     setText(resTitle, iWon ? 'Victory!' : 'Defeat');
     toggle(resultsSheet, 'lost', !iWon);
     setText(resSub, iWon

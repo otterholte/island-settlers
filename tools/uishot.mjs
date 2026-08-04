@@ -765,6 +765,15 @@ if (STAGE === 'home') {
         w:Math.round(r.width),h:Math.round(r.height)}:null};})()`)));
   await shot(`results-${WIN ? 'win' : 'lose'}-${TAG}`);
 
+  /* The win plate is still in the air in that frame — the rig drives the win
+     sequence far faster than the plate's own real-time hide timer — and it sits
+     right over the crown row. One extra capture with it pulled, purely so the
+     header can be looked at. */
+  await ev(`(()=>{const n=document.querySelector('.endwin');
+    if(n){n.classList.remove('in');n.classList.add('hid');} return 1})()`);
+  await sleep(260);
+  await shot(`results-crown-${TAG}`);
+
   /* THE OTHER TAB. Two panes that were side by side and squeezed are one at a
      time and full width now, so the check is that the switch works and that
      what it switches to actually fits. */
@@ -783,6 +792,56 @@ if (STAGE === 'home') {
         return {lab:(b.textContent||'').trim(),w:Math.round(r.width),h:Math.round(r.height)};}),
       vh:innerHeight};})()`);
   console.log('  TABS ' + JSON.stringify(tabs));
+
+  /* ONE LINE PER PLAYER, AND A HEAD THAT DOES NOT COST A THIRD OF THE SHEET.
+     The row is measured piece by piece — name, rule, chips — because "it looks
+     like one line" and "the chips actually had room to sit on it" are different
+     claims and only the second one is worth having. */
+  const rows = await ev(`(()=>{
+    const B=n=>{const r=n.getBoundingClientRect();
+      return {x:Math.round(r.left),y:Math.round(r.top),
+        w:Math.round(r.width),h:Math.round(r.height)};};
+    const list=document.querySelector('.rs-list');
+    const rows=[...document.querySelectorAll('.rs-row')].map(n=>{
+      const mid=n.querySelector('.rs-mid'), name=n.querySelector('.rs-name');
+      const bd=n.querySelector('.rs-bd');
+      const chips=[...bd.querySelectorAll('i')].map(B);
+      const lines=new Set(chips.map(c=>c.y)).size;
+      const cs=getComputedStyle(bd);
+      return {name:(name.textContent||'').trim(), row:B(n), mid:B(mid),
+        nameBox:B(name), bd:B(bd), chips:chips.length, chipLines:lines,
+        rule:cs.borderLeftWidth, type:Math.round(parseFloat(getComputedStyle(name).fontSize)),
+        chipType:chips.length?Math.round(parseFloat(
+          getComputedStyle(bd.querySelector('i u')).fontSize)):0,
+        /* The name sits against the CHIP BLOCK, not against chip one: a player
+           holding four scoring things takes two chip lines on a 667px screen
+           and the name centres on the pair of them, which is right. */
+        sameLine:Math.abs(B(name).y+B(name).h/2-(B(bd).y+B(bd).h/2))<8};});
+    const crown=document.querySelector('.rs-crown');
+    const meds=[...document.querySelectorAll('.rs-banner')].map(B);
+    return {rows, list:B(list),
+      scroll:{h:list.scrollHeight, box:list.clientHeight},
+      crown:B(crown), medals:meds,
+      title:B(document.querySelector('.rs-title'))};})()`);
+  console.log('  ROWS ' + JSON.stringify(rows.rows.map(r => ({
+    n: r.name, h: r.row.h, chips: r.chips, lines: r.chipLines,
+    bdW: r.bd.w, type: r.type, chipType: r.chipType, sameLine: r.sameLine
+  }))));
+  console.log('  HEAD ' + JSON.stringify({
+    crown: rows.crown, medals: rows.medals, title: rows.title,
+    list: rows.list, scroll: rows.scroll
+  }));
+  console.log('  STANDINGS ' + JSON.stringify({
+    nameAndChipsShareALine: rows.rows.every(r => r.sameLine || r.chips === 0),
+    aRuleBetweenThem: rows.rows.every(r => parseFloat(r.rule) >= 1),
+    onlyTheWinnerNeedsASecondChipLine:
+      rows.rows.filter(r => r.chipLines > 1).length <= 1
+      && rows.rows.every(r => r.chipLines <= 2),
+    allFourFitWithoutScrolling: rows.scroll.h <= rows.scroll.box + 1,
+    twoMedallionsOnTheTitleLine: rows.medals.length === 2
+      && rows.medals.every(m => Math.abs(m.y + m.h / 2
+        - (rows.title.y + rows.title.h / 2)) < 26)
+  }));
   const rep = await ev(`(()=>{const b=[...document.querySelectorAll('.btn.rs-tab')]
     .find(n=>/report/i.test(n.textContent||''));
     const r=b.getBoundingClientRect();
