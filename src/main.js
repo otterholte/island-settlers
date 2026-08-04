@@ -328,8 +328,36 @@ async function boot() {
      * (bots hold goals, matchflow holds a script, the map is locked open), and
      * it is the phase the player named.
      */
-    leaveMatch() {
+    /*
+     * LEAVING MEANS LEAVING.
+     *
+     *   "When the users go back to the home page, right now for one user it was
+     *    glitching and kept trying to reopen the game, and for the other it did
+     *    show the same room and the same players again, which it shouldn't —
+     *    since if you leave you leave. You have to start again."
+     *
+     * Both of those are one omission: this reloaded the page and told the SERVER
+     * nothing. So the room still had you in it (hence the same room, same
+     * players) and the moment the fresh page connected it was sent MATCH_BEGIN
+     * for the match you had just walked out of — which the client parks and
+     * reloads for. Boot, connect, begin, park, reload, for ever.
+     *
+     * So the leave goes up the wire first, and the reload waits for it — but
+     * only briefly. A player pressing HOME is leaving whether or not the socket
+     * agrees, so the request races a short timer and the page goes either way;
+     * `netmatch.markLeft` has already written the match id down, and a page that
+     * comes back to a MATCH_BEGIN for a match on that list refuses it.
+     */
+    async leaveMatch() {
       try { if (overview && overview.close) overview.close(); } catch (e) { /* going anyway */ }
+      try {
+        if (net && net.active && typeof net.leave === 'function') {
+          await Promise.race([
+            net.leave(),
+            new Promise(r => setTimeout(r, 600))
+          ]);
+        }
+      } catch (e) { /* the reload is not conditional on the server hearing */ }
       location.reload();
     },
     toast(msg, kind) { hud.toast(msg, kind); }

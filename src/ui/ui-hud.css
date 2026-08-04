@@ -204,6 +204,18 @@
   box-shadow:1px 0 0 rgba(4,12,24,.7),0 0 9px var(--c,#2f8ffb)}
 .rk-av{line-height:0;flex:0 0 auto;opacity:.9}
 .rk.me .rk-av{opacity:1}
+/* LEFT THE MATCH, or away from it. See refreshRanks in hud.js: the standings
+   are the only place that answers "is my friend still in this?", so a seat that
+   has been abandoned is struck through and dimmed rather than quietly
+   continuing to look like a person. */
+.rk.left{opacity:.55}
+.rk.left .rk-name{text-decoration:line-through;text-decoration-thickness:1.5px}
+.rk.left .rk-av{filter:grayscale(1) brightness(.8)}
+.rk.left .rk-name::after{content:'\00D7';margin-left:5px;font-weight:800;
+  color:#f5a3a3;text-decoration:none;display:inline-block}
+.rk.away{opacity:.75}
+.rk.away .rk-name::after{content:'\2026';margin-left:4px;opacity:.8}
+
 .rk-name{flex:1 1 auto;min-width:0;font:700 11px/1 var(--ff);letter-spacing:.04em;
   color:rgba(226,238,250,.82);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;

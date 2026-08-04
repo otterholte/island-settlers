@@ -237,9 +237,13 @@ export function createPanels(root, state, game) {
   const resSub = el('p', { class: 'rs-sub', text: '' });
   const resList = el('div', { class: 'rs-list' });
   const resStats = el('div', { class: 'rs-stats' });
-  const againBtn = button('big gold huge', { on: { click: () => game.restart() } },
-    el('span', { class: 'sb-ico', html: icon('restart', 24) }),
-    el('span', { class: 'sb-lab', text: 'Play Again' }));
+  /* HOME. It reloads to the opening screen, which is where "play again" starts
+     from anyway — see the note in hud-end.js. */
+  const againBtn = button('big gold huge', {
+    on: { click: () => (game.leaveMatch || game.restart).call(game) }
+  },
+    el('span', { class: 'sb-ico', html: icon('home', 24) }),
+    el('span', { class: 'sb-lab', text: 'Home' }));
 
   // Nothing traps the player on the scoreboard. Both of these put the finished
   // island back on screen; the bar from hud-end.js brings the scores back.

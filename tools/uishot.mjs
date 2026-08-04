@@ -281,6 +281,33 @@ if (STAGE === 'home') {
   console.log('  INTRO ' + JSON.stringify(await ev(MEASURE_INTRO)));
   await shot(`home-${TAG}`);
 
+  /* ------------------------------------------------- IT NEVER STARTS ITSELF
+   *
+   *   "It's starting games without me explicitly saying to. Like while I'm
+   *    waiting on the screen to choose the settings I want for the game, or
+   *    waiting for friends to join, it just starts the game for me. That should
+   *    never happen."
+   *
+   * There was a ninety-second timer on the opening screen, described in the
+   * source as a safety net for an abandoned tab. Reading the setup panel,
+   * typing a room code or waiting for a third friend all take longer than
+   * ninety seconds, and all of them ended with the draft starting underneath
+   * the player. Two hundred seconds of game time are pumped here — more than
+   * twice the old fuse — and the opening screen has to still be sitting there
+   * with the match untouched. */
+  const waited = await ev(`(()=>{const g=window.__ISLAND__.game, st=window.__ISLAND__.state;
+    for(let i=0;i<60*200;i++) g.flow.update(1/60);
+    const n=document.querySelector('.mf-intro');
+    return {stage:g.flow.stage, phase:st.phase,
+      introUp:!!(n&&n.classList.contains('on')),
+      buildings:st.buildings.size, elapsed:Math.round(g.flow.elapsed)};})()`);
+  console.log('  PATIENCE ' + JSON.stringify(waited));
+  console.log('  NOAUTOSTART ' + JSON.stringify({
+    theOpeningScreenIsStillUp: waited.introUp === true && waited.stage === 'title',
+    andNoMatchStartedItself: waited.phase === 'setup' && waited.buildings === 0,
+    afterThisLongInGameTime: waited.elapsed >= 200
+  }));
+
   /* ADD TO HOME SCREEN, forced up.
    *
    * The chip is correctly invisible here: `beforeinstallprompt` only fires
@@ -1581,6 +1608,25 @@ if (STAGE === 'home') {
     const a=r.info.render.frame;
     await new Promise(res=>setTimeout(res,2600));
     return {drewWhenShown:r.info.render.frame-a};})()`, true);
+  /*
+   *   "I need the music and audio to stop playing in the background if I've
+   *    left the PWA, or even left the tab. Same if I turn the screen off."
+   *
+   * The same hidden window the renderer is checked against, asked of the audio
+   * engine: the context itself must be suspended, not merely quiet, because a
+   * running context fed by a throttled timer is what the crackle was.
+   */
+  const snd = await ev(`(async()=>{const a=window.__ISLAND__.game.audio;
+    const before={asleep:!!a.asleep, state:a.state};
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(r=>setTimeout(r,400));
+    const away={asleep:!!a.asleep, state:a.state};
+    delete document.hidden;
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise(r=>setTimeout(r,400));
+    return {before, away, back:{asleep:!!a.asleep, state:a.state}};})()`, true);
+  console.log('  AUDIO ' + JSON.stringify(snd));
   console.log('  HIDDEN ' + JSON.stringify({ ...hid, ...shown }));
 
   console.log('  PERF ' + JSON.stringify({
@@ -1593,6 +1639,8 @@ if (STAGE === 'home') {
     survivesAContextLoss: lost.ext === true && back.lost === false
       && back.advanced > 0 && back.calls > 0,
     stopsDrawingWhenHidden: hid.drewWhileHidden === 0 && shown.drewWhenShown > 0,
+    theSoundGoesWithThePage: snd.away.asleep === true
+      && snd.away.state === 'suspended' && snd.back.asleep === false,
     batterySaverDropsTheShadowPass: full.shadows === true
       && saver.shadows === false && saver.casting === false,
     andPinsTheRatio: saver.ratio === 1,

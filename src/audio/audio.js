@@ -197,6 +197,74 @@ export function createAudio() {
     } catch (e) { /* ignore */ }
   }
 
+  /*
+   * ------------------------------------------------------------------------
+   * THE PAGE GOES AWAY, THE SOUND GOES WITH IT
+   * ------------------------------------------------------------------------
+   *
+   *   "I need the music and audio to stop playing in the background if I've
+   *    left the PWA, or even left the tab on my computer. If it's not active
+   *    and open it shouldn't be making a sound. Same if I turn the screen off.
+   *    Right now my smartphone is off but the sound of the ocean is still on
+   *    and super crackly, like the audio is skipping/buffering."
+   *
+   * Both halves of that are the same fault. A hidden page keeps its AudioContext
+   * running — the spec says an audio context is not throttled the way timers and
+   * rAF are, which is what lets a music player keep playing — but everything
+   * FEEDING it is throttled to a wake-up a second, so the beds' scheduled tones
+   * run dry between refills. That gap is the crackle: it is not a buffering
+   * artefact, it is a synthesiser being asked to play from a clock that has been
+   * put to sleep.
+   *
+   * So the context is suspended outright when the page is hidden, and the beds
+   * are stopped BEFORE it is: suspending mid-tone leaves the last block looping
+   * on some Android builds, which would be the crackle again with extra steps.
+   * `visibilitychange` covers a tab switch, a minimise, a home-screen swipe out
+   * of the PWA and the screen locking; `pagehide` and `freeze` cover the rest of
+   * the way out on iOS and a bfcache'd tab.
+   *
+   * Coming back restores exactly what was playing — `wantAmb` and `lastMusic`
+   * are the same two flags `setMuted` uses, so a player who muted stays muted.
+   */
+  let asleep = false;
+
+  function sleep(on) {
+    const want = !!on;
+    if (want === asleep) return asleep;
+    asleep = want;
+    try {
+      if (asleep) {
+        if (beds) { beds.ambience(false); beds.music('off'); }
+        if (E.ctx && typeof E.ctx.suspend === 'function') {
+          const r = E.ctx.suspend();
+          if (r && typeof r.catch === 'function') r.catch(NOOP);
+        }
+      } else {
+        if (E.ctx && E.ctx.state === 'suspended' && typeof E.ctx.resume === 'function') {
+          const r = E.ctx.resume();
+          if (r && typeof r.catch === 'function') r.catch(NOOP);
+        }
+        if (beds && !muted) {
+          if (wantAmb) beds.ambience(true);
+          if (lastMusic && lastMusic !== 'off') beds.music(lastMusic);
+        }
+      }
+    } catch (e) { /* an audio engine is never worth an exception */ }
+    return asleep;
+  }
+
+  const doc = (typeof document !== 'undefined') ? document : null;
+  if (doc && doc.addEventListener) {
+    doc.addEventListener('visibilitychange', () => sleep(!!doc.hidden));
+    // iOS never fires visibilitychange on the way out of a standalone PWA.
+    doc.addEventListener('freeze', () => sleep(true));
+    doc.addEventListener('resume', () => sleep(!doc.hidden));
+  }
+  if (G && G.addEventListener) {
+    G.addEventListener('pagehide', () => sleep(true));
+    G.addEventListener('pageshow', () => sleep(false));
+  }
+
   function setMuted(on) {
     const want = !!on;
     if (want === muted) return;
@@ -219,7 +287,10 @@ export function createAudio() {
   }
 
   const api = {
-    sfx, music, ambience, unlock, setMuted,
+    sfx, music, ambience, unlock, setMuted, sleep,
+    /** Capture-rig hook: is the whole engine parked because the page is away? */
+    get asleep() { return asleep; },
+    get state() { return (E.ctx && E.ctx.state) || 'none'; },
     mute: setMuted,
     ok: true,
     _primed: false,

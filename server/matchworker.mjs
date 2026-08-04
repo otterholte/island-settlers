@@ -544,6 +544,25 @@ parentPort.on('message', msg => {
       } else if (msg.state === 'live') {
         p.isBot = false;
         rebuildBots();
+        /*
+         * AND TELL THEM WHOSE TURN IT IS.
+         *
+         *   "When I'm playing with a friend, the game would let one player pick
+         *    their location, but not the other."
+         *
+         * The draft prompt is a BROADCAST, sent once when the turn changes. A
+         * client that is reloading at that moment — which every client does
+         * exactly once, on the way into a match, because the island cannot be
+         * re-dealt under a live scene — misses it and has nothing to act on. It
+         * then sits watching a board it is allowed to pick on and does not know
+         * it. The seat is not stuck; the message was.
+         *
+         * So a peer coming back gets the current state of the opening, and the
+         * cheapest correct way to do that is to say it again to everybody: the
+         * clients that already have it are idempotent about it (`draftState` is
+         * assigned, not accumulated) and it is one small message.
+         */
+        if (state.phase === 'setup') draftAnnounce();
       } else if (msg.state === 'gone') {
         // Held seat: stop moving, keep everything they own.
         const stick = sticks.get(msg.pid);

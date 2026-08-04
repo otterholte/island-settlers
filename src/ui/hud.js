@@ -176,15 +176,16 @@ export function createHUD(root, state, game) {
   const rankRows = state.players.map(p => {
     const vp = el('b', { text: '0' });
     const award = el('span', { class: 'rk-award' });
+    const nameEl = el('span', { class: 'rk-name', text: p.name });
     const row = el('div', {
       class: 'rk' + (p.id === 0 ? ' me' : ''), 'data-p': p.id,
       style: { '--c': p.color.css, '--cl': p.color.light }
     },
       el('span', { class: 'rk-av', html: avatar(p.color.css, p.color.light, p.id === 0 ? 26 : 22) }),
-      el('span', { class: 'rk-name', text: p.name }),
+      nameEl,
       award,
       el('span', { class: 'rk-vp' }, p.id === 0 ? iconEl('trophy', 16) : null, vp));
-    return { p, row, vp, award };
+    return { p, row, vp, award, nameEl };
   });
   const rankList = el('div', { class: 'ranks' }, rankRows.map(r => r.row));
   const tr = el('div', { class: 'hud-tr plate' }, rankList);
@@ -539,6 +540,30 @@ export function createHUD(root, state, game) {
       if (e.p.hasLongestRoad) aw += icon('road', 16, 'aw');
       if (e.p.hasLargestArmy) aw += icon('knight', 16, 'aw');
       if (r.award.innerHTML !== aw) r.award.innerHTML = aw;
+      /*
+       * WHO IS STILL HERE.
+       *
+       *   "When one friend leaves a game the other should get a notification
+       *    for it, and it should x and grey out their name in the leaderboard
+       *    in the corner as well."
+       *
+       * `netState` is written by netmatch.js off the server's peer pushes:
+       * 'live' is connected, 'gone' is a seat being held while somebody
+       * reconnects, and 'bot' is somebody who left for good and whose settler
+       * is being played out by a subroutine. The last two are worth showing —
+       * the standings are the only place that answers "is my friend still in
+       * this?" — and the name is the honest place to show it.
+       *
+       * Names are re-read here too. In a networked match the roster arrives
+       * after these rows are built, so the row created with 'Alex' on it has to
+       * be told when the seat turns out to be a person called Sam.
+       */
+      const st = e.p.netState;
+      toggle(r.row, 'left', st === 'bot');
+      toggle(r.row, 'away', st === 'gone');
+      const label = (st === 'bot' || st === 'gone')
+        ? `${e.p.netName || e.p.name}` : e.p.name;
+      if (r.nameEl && r.nameEl.textContent !== label) setText(r.nameEl, label);
       if (changed) rankList.appendChild(r.row);
     });
 

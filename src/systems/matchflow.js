@@ -54,10 +54,26 @@ import { createTutorial } from './tutorial.js';
 
 const T = {
   boot: 0.40,          // let the boot splash clear before the title lands
-  // The opening screen is a MENU, not a cinematic: it carries the difficulty
-  // picker, so it waits for BEGIN THE DRAFT rather than timing out from under
-  // the player. This is only a safety net for an abandoned tab.
-  title: 90.0,
+  /*
+   * THE OPENING SCREEN NEVER TIMES OUT. NOT AFTER NINETY SECONDS, NOT EVER.
+   *
+   *   "It's starting games without me explicitly saying to. Like while I'm
+   *    waiting on the screen to choose the settings I want for the game, or
+   *    waiting for friends to join, it just starts the game for me. That should
+   *    never happen."
+   *
+   * It was 90 seconds, described as "a safety net for an abandoned tab", and it
+   * was nothing of the sort: reading the setup panel, picking a difficulty,
+   * typing a room code, waiting for a third friend to press JOIN — all of those
+   * are longer than ninety seconds, and all of them ended with the draft
+   * starting underneath the player. An abandoned tab needs no safety net; it is
+   * a tab sitting on a menu, which is what menus are for.
+   *
+   * `Infinity` rather than a bigger number, because a bigger number is the same
+   * bug with a longer fuse. The only ways out of the opening screen are now the
+   * ones the player presses.
+   */
+  title: Infinity,
   draftIntro: 1.90,    // board is up, the order is on it — let it be read
   // The camera blend out of the board framing runs under the start countdown,
   // so this is only the fallback for a build with no countdown view at all.
@@ -908,11 +924,8 @@ export function createMatchFlow(state, game) {
         break;
 
       case 'title':
-        if (stageT >= T.title) {
-          ui.hideIntro();
-          stage = 'draftIntro'; stageT = 0;
-          openDraftFraming();
-        }
+        // Deliberately nothing. See T.title: the opening screen waits for a
+        // press, however long that takes.
         break;
 
       case 'draftIntro':

@@ -204,9 +204,17 @@ export function createEndgame(root, state, game, hooks = {}) {
 
   const dock = el('div', { class: 'endbar hid', 'data-ui': '' },
     el('span', { class: 'eb-tag', text: 'Match over' },),
-    button('gold', { on: { click: () => game.restart && game.restart() } },
-      el('span', { class: 'sb-ico', html: icon('restart', 20) }),
-      el('span', { class: 'sb-lab', text: 'Play Again' })),
+    /* HOME, not PLAY AGAIN.
+     *
+     *   "Change everything that says Play Again to something like Home, since
+     *    they go back to the homepage anyway if they want to play again."
+     *
+     * Which is exactly what it always did — `restart()` reloads the page and a
+     * cold boot lands on the opening screen, so the button has been called one
+     * thing and done another. Same route, honest label, and the icon follows. */
+    button('gold', { on: { click: () => (game.leaveMatch || game.restart).call(game) } },
+      el('span', { class: 'sb-ico', html: icon('home', 20) }),
+      el('span', { class: 'sb-lab', text: 'Home' })),
     button('cream', { on: { click: () => hooks.onResults && hooks.onResults() } },
       el('span', { class: 'sb-ico', html: icon('trophy', 20) }),
       el('span', { class: 'sb-lab', text: 'Results' })),

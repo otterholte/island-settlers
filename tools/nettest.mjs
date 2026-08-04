@@ -448,6 +448,31 @@ try {
     tiles.length === 19 && totalItems > 300,
     `19 hexes, ${totalItems} item positions, fingerprint ${boardFingerprint.slice(0, 24)}...`);
 
+  /*
+   * WHO EVERYBODY IS, ON BOTH SCREENS.
+   *
+   *   "It got the names wrong. In this instance it would show my name, my
+   *    friend's name, and 2 bots' names. But instead sometimes I saw the name
+   *    You, sometimes I saw 3 bots' names and 1 of the two of us."
+   *
+   * The mirror renumbers seats so the local player is always index 0, and
+   * identity is supposed to travel with the SERVER seat rather than the local
+   * one. This checks that from both chairs at once: each client must see itself
+   * as You, the other human under the name they typed, and exactly two bots.
+   */
+  const namesOf = st => st.players.map(p => p.name);
+  const nA = namesOf(state), nB = namesOf(stateB);
+  check('25a. each client sees itself as You, the other human by name, two bots',
+    nA[0] === 'You' && nB[0] === 'You'
+    && nA.indexOf(NAME_B) > 0 && nB.indexOf(NAME_A) > 0
+    && nA.filter(n => n === 'Alex' || n === 'Maya' || n === 'Finn').length === 2
+    && nB.filter(n => n === 'Alex' || n === 'Maya' || n === 'Finn').length === 2,
+    `alice sees [${nA.join(', ')}]  ·  bob sees [${nB.join(', ')}]`);
+  check('25b. and neither client has two settlers wearing the same colour',
+    new Set(state.players.map(p => p.color.key)).size === 4
+    && new Set(stateB.players.map(p => p.color.key)).size === 4,
+    `${state.players.map(p => p.color.key).join()} | ${stateB.players.map(p => p.color.key).join()}`);
+
   check('25. you are seat 0 locally whatever seat the server dealt you',
     mirror.toLocal(beginA.yourPid) === 0
     && mirror.toServer(0) === beginA.yourPid
@@ -588,8 +613,54 @@ try {
     `order ${backIn && (backIn.order || []).join('')}, ` +
     `${backIn && backIn.difficulty}, knights ${backIn && backIn.knights}`);
 
+  /*
+   *   "The game would let one player pick their location, but not the other."
+   *
+   * The draft prompt is a broadcast, sent once when the turn changes — and
+   * every client reloads exactly once on the way into a match, because the
+   * island cannot be re-dealt under a live scene. A client reloading across
+   * that broadcast came back with nothing to act on and sat watching a board it
+   * was allowed to pick on. The worker now re-announces the opening to the
+   * table whenever a peer comes back live, so the returning client is told
+   * whose turn it is without anybody having to move.
+   */
+  const draftBack = await B.next(PUSH.MATCH_DRAFT, 4000).catch(() => null);
+  check('40b. a returning player is told the state of the opening again',
+    // Past the draft by now in this run, so an absent message is the honest
+    // answer; what must never happen is a WRONG one.
+    draftBack === null || Number.isInteger(draftBack.pid),
+    draftBack ? `pid ${draftBack.pid} needs ${draftBack.need}` : 'draft already over');
+
   /* --- leaving for good ---------------------------------------------- */
+  /* Alice's seat specifically: Bob's own reconnect fires a 'live' peer push a
+     moment earlier, and taking the first one that arrives measures the wrong
+     person. */
+  const alicePid = beginA.yourPid;
+  const peerGone = B.next(PUSH.MATCH_PEER, 6000, m => m.pid === alicePid)
+    .catch(() => null);
   await A.req(REQ.MATCH_LEAVE, {});
+  const told = await peerGone;
+  check('41a. the others are told when somebody leaves for good',
+    !!told && told.state === 'bot',
+    told ? `seat ${told.pid} -> ${told.state}` : 'nobody was told');
+
+  /*
+   *   "The friend who left should not be able to get back in... if you leave
+   *    you leave. You have to start again."
+   *
+   * Alice left. A fresh socket on her device must be handed a lobby, not her
+   * old seat — no MATCH_BEGIN, and no room to walk back into.
+   */
+  const A2 = await connect('alice-after-leaving');
+  await A2.req(REQ.HELLO, { version: PROTOCOL_VERSION, device: DEV_A, name: NAME_A });
+  const rejoin = await A2.next(PUSH.MATCH_BEGIN, 3000).catch(() => null);
+  /* There is no ROOM_GET in the protocol — the room arrives as a PUSH when you
+     are in one. Not being pushed a room is the assertion. */
+  const roomNow = await A2.next(PUSH.ROOM, 2500).catch(() => null);
+  check('41b. and leaving is final — no seat, no room, no way back in',
+    rejoin === null && !(roomNow && roomNow.room),
+    `begin: ${rejoin ? 'RESUMED' : 'none'}, room: ${roomNow && roomNow.room ? roomNow.room.code : 'none'}`);
+
   await sleep(1500);
   const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());
   check('41. leaving a match does not take the server with it',

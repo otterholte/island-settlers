@@ -95,6 +95,49 @@ export function parkMatch(msg) {
   }
 }
 
+/*
+ * MATCHES THIS PAGE HAS WALKED OUT OF.
+ *
+ *   "When the users go back to the home page, right now for one user it was
+ *    glitching and kept trying to reopen the game."
+ *
+ * That loop is exactly reproducible: leaving reloaded the page without telling
+ * the server, so the server still had the player seated, and the moment the
+ * fresh page connected it was sent MATCH_BEGIN for the match it had just left.
+ * The client parked it and reloaded. Boot, connect, begin, park, reload, for
+ * ever.
+ *
+ * The real fix is that leaving tells the server (see `leave` below, now called
+ * by `game.leaveMatch`). This is the belt: a match id written here is one this
+ * page has deliberately walked out of, and no MATCH_BEGIN for it will be
+ * honoured again — however slow, retried or duplicated the server's push is.
+ * Session-scoped, so a genuinely new match with a new id is unaffected and a
+ * new tab starts with a clean slate.
+ */
+const LEFT_KEY = 'island-settlers.left';
+
+function leftMatches() {
+  const s = sess();
+  if (!s) return [];
+  try { return JSON.parse(s.getItem(LEFT_KEY) || '[]') || []; } catch (e) { return []; }
+}
+
+export function markLeft(matchId) {
+  const s = sess();
+  if (!s || !matchId) return false;
+  try {
+    const all = leftMatches().filter(id => id !== matchId);
+    all.push(matchId);
+    // Four is plenty: this only has to outlive one reload.
+    s.setItem(LEFT_KEY, JSON.stringify(all.slice(-4)));
+    return true;
+  } catch (e) { return false; }
+}
+
+export function hasLeft(matchId) {
+  return !!matchId && leftMatches().indexOf(matchId) >= 0;
+}
+
 export function clearPendingMatch() {
   const s = sess();
   try { s && s.removeItem(HANDOFF_KEY); } catch (e) { /* nothing to clear */ }
@@ -204,6 +247,12 @@ export function createNetMatch(state, game, client) {
 
   on(PUSH.MATCH_BEGIN, msg => {
     if (active && info && info.matchId === msg.matchId) return;   // a resume echo
+    if (hasLeft(msg.matchId)) {
+      // Walked out of this one. See markLeft: this is what stops the reload
+      // loop even if the server is still convinced we are playing.
+      try { client.req(REQ.MATCH_LEAVE, {}); } catch (e) { /* already going */ }
+      return;
+    }
     begin(msg);
   });
 
@@ -276,9 +325,31 @@ export function createNetMatch(state, game, client) {
     if (!mirror) return;
     const local = mirror.toLocal(msg.pid);
     const p = state.players[local];
+    const was = p && p.netState;
     if (p) p.netState = msg.state;
+    /*
+     *   "When one friend leaves a game the other should get a notification for
+     *    it."
+     *
+     * The peer push has always arrived and nothing has ever said it out loud.
+     * Three states worth a sentence, and only on a CHANGE — a resume echo that
+     * repeats 'live' at somebody who never went anywhere is not news.
+     */
+    if (p && was && was !== msg.state && local !== 0) {
+      const who = p.netName || p.name;
+      if (msg.state === 'bot') hud('%s left the match — a bot is playing their settler', who, 'warn');
+      else if (msg.state === 'gone') hud('%s dropped out — holding their seat', who, 'warn');
+      else if (msg.state === 'live' && was !== 'live') hud('%s is back', who, 'good');
+    }
     notify('peer', { local, state: msg.state });
   });
+
+  /** One line to the player, if there is a HUD to say it to. */
+  function hud(fmt, who, kind) {
+    const h = game && game.hud;
+    if (!h || typeof h.toast !== 'function') return;
+    try { h.toast(String(fmt).replace('%s', who), kind); } catch (e) { /* cosmetic */ }
+  }
 
   on('m.free', msg => {
     if (!mirror) return;
@@ -583,6 +654,7 @@ export function createNetMatch(state, game, client) {
 
   async function leave() {
     stand_down();
+    if (info && info.matchId) markLeft(info.matchId);
     clearPendingMatch();
     try { await client.req(REQ.MATCH_LEAVE, {}); } catch (e) { /* going anyway */ }
   }

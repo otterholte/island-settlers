@@ -1495,7 +1495,9 @@ await test(15, 'A player can win; the results screen appears with correct rankin
     && /Victory/i.test(uiA.title || '') && uiA.lost === false && uiA.top === 'You';
   const pass = humanWinOk && drive.phase === 'over' && drive.winner === 1
     && seq.after.isWin === true && seq.after.overview === true
-    && ui.present && !ui.hidden && rankMatch && ui.frozen && /Play Again/i.test(ui.again || '');
+    // The scoreboard's gold button says HOME now — it always reloaded to the
+    // opening screen, so PLAY AGAIN was a label describing a different button.
+    && ui.present && !ui.hidden && rankMatch && ui.frozen && /Home/i.test(ui.again || '');
   if (SHOTS) await shot(`tm-results-${W}x${H}`);
   return {
     pass,
@@ -1584,15 +1586,15 @@ await test(16, 'Replay/restart works and starts a clean match', async () => {
   return {
     pass,
     evidence:
-      `Play Again: ${clicked}\n` +
+      `Home button: ${clicked}\n` +
       `reset -> phase=${after.phase} time=${after.time} winner=${after.winner} ` +
       `buildings=${after.buildings} roads=${after.roads} resultsHidden=${after.resultsHidden}\n` +
       `resources back to START=${cleanRes}; vpCards=${JSON.stringify(after.vpCards)} ` +
       `knights=${JSON.stringify(after.knights)} awards=${JSON.stringify(after.awards)}\n` +
       `second draft: phase=${d2.phase} settlements=${d2.buildings} roads=${d2.roads}\n` +
       `30s of replayed play: buildings +${play.grew}, gathered=${JSON.stringify(play.gathered)}, vp=${JSON.stringify(play.vp)}\n` +
-      `bot brains before Play Again: ${JSON.stringify(brainsBefore)}\n` +
-      `bot brains after Play Again:  ${JSON.stringify(after.brains)}${staleBrains.length ? '  <-- STALE' : '  (clean)'}\n` +
+      `bot brains before Home: ${JSON.stringify(brainsBefore)}\n` +
+      `bot brains after Home:  ${JSON.stringify(after.brains)}${staleBrains.length ? '  <-- STALE' : '  (clean)'}\n` +
       `bot brains after 45s of play: ${JSON.stringify(dirty)}${wasDirty ? '  (dirty, as expected)' : '  <-- never got dirty; the reset check is vacuous'}\n` +
       `bot brains after 2nd restart: ${JSON.stringify(reclean)}${stillStale.length ? '  <-- STALE' : '  (clean)'}`
   };
