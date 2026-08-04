@@ -30,7 +30,7 @@
 
 import * as THREE from 'three';
 import { MARKET, ports, edges } from '../board/layout.js';
-import { PLAYER_COLORS } from '../core/constants.js';
+import { seatHex } from '../core/seatcolor.js';
 import { heightAt } from './terrain.js';
 import { merge, place, instanced, setInstance, hideInstance, triCount } from './geo.js';
 import { villagerGeo, glowSolidMaterial, clothMaterial, rng } from './buildkit.js';
@@ -356,8 +356,10 @@ export function buildPorts(scene, state) {
         0.46 + 0.54 * rec.lit, 0.49 + 0.51 * rec.lit, 0.54 + 0.46 * rec.lit);
     }
     if (rec.owner >= 0) {
-      const pc = PLAYER_COLORS[((rec.owner | 0) % PLAYER_COLORS.length + PLAYER_COLORS.length) % PLAYER_COLORS.length];
-      _c.set(pc ? pc.hex : 0xffffff);
+      /* The dock's flag flies the OWNER's colour, and online that is the
+         colour the server gave their seat rather than the palette entry at
+         their local index — see src/core/seatcolor.js. */
+      _c.set(seatHex(rec.owner));
       flag.instanceColor.setXYZ(rec.i, _c.r, _c.g, _c.b);
     }
   }

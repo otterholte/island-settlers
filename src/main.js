@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import { createMatch, drainEvents, tickWorld } from './core/rules.js';
+import * as seatColorM from './core/seatcolor.js';
 
 const NOOP = () => {};
 const stub = (extra = {}) => ({ update: NOOP, ...extra });
@@ -190,6 +191,23 @@ async function boot() {
 
   const state = createMatch({ seed: joining ? (joining.seed >>> 0) : ((Math.random() * 1e9) | 0) });
 
+  /*
+   * EVERY RENDERER ASKS THE PLAYER WHAT COLOUR THEY ARE, NOT THE PALETTE.
+   *
+   *   "On player one's screen the roads they built were blue, and for the
+   *    other player, looking at the same roads, they were purple — and one of
+   *    the bots was building blue things."
+   *
+   * The pieces that read `state.players[i].color` were right on both screens
+   * and the pieces that indexed `PLAYER_COLORS` by seat were wrong on all but
+   * one, because `mirror.js` renumbers seats so the local player is index 0.
+   * One line: the lookup in `core/seatcolor.js` is pointed at this array — the
+   * same array the mirror assigns colours on — and structures, dock flags, the
+   * victory flood and the region tint all follow it from here without being
+   * told again.
+   */
+  seatColorM.useSeats(state.players);
+
   /* YOUR SEAT TAKES YOUR NAME, IF THIS DEVICE HAS EVER BEEN GIVEN ONE.
      The room screen saves it and never asks again, so a player who has played
      with friends already told us — and there is no reason the scoreboard of a
@@ -325,6 +343,24 @@ async function boot() {
       changed++;
     });
     if (changed) packSig.fill('');    // the carry stacks are new; repaint them
+
+    /*
+     * AND EVERYTHING ELSE THAT WEARS A SEAT'S COLOUR.
+     *
+     * `core/seatcolor.js` reads the live player, so anything drawn from here on
+     * is already right. These two are the exceptions, because they were painted
+     * BEFORE the server said who was what: the pieces already on the board
+     * (none, on the way into a match — but a re-seat can arrive at any time and
+     * a rebuild from state is cheap and total), and the island's own tint for
+     * "this hex is mine", which lives in a shader uniform rather than being
+     * read per frame.
+     */
+    try { if (structures && structures.syncFromState) structures.syncFromState(); }
+    catch (e) { /* colour is cosmetic; the board is not */ }
+    const reg = props && props.regions;
+    if (reg && typeof reg.retint === 'function') {
+      try { reg.retint(); } catch (e) { /* the tint is a nicety */ }
+    }
     return changed;
   }
 

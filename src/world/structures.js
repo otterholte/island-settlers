@@ -37,6 +37,7 @@
 
 import * as THREE from 'three';
 import { HEX_SIZE, PLAYER_COLORS, PIECE_LIMIT } from '../core/constants.js';
+import { seatHex } from '../core/seatcolor.js';
 import { knightsOn } from '../core/options.js';
 import { tiles, intersections, edges } from '../board/layout.js';
 import { heightAt, topOf } from './terrain.js';
@@ -69,11 +70,20 @@ const CAP = {
 const _col = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
-/** Owner colour, safe against a stray player id. */
-function playerHex(pid) {
-  const p = PLAYER_COLORS[((pid | 0) % PLAYER_COLORS.length + PLAYER_COLORS.length) % PLAYER_COLORS.length];
-  return p ? p.hex : 0xffffff;
-}
+/**
+ * Owner colour, safe against a stray player id.
+ *
+ *   "On player one's screen the roads they built were blue, and for the other
+ *    player the same roads were purple — and one of the bots was building blue
+ *    things."
+ *
+ * This used to index `PLAYER_COLORS` directly, which is the DEFAULT palette by
+ * seat. Online the mirror renumbers seats so the local player is index 0, so
+ * local index 2 is a different person on each device — and the colour that
+ * belongs to them is on the player, not in the palette. `seatHex` asks the
+ * player when there is a match and the palette when there is not.
+ */
+const playerHex = seatHex;
 
 /* ------------------------------------------------------------- allocators */
 

@@ -338,5 +338,47 @@ ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robbe
   'a machine that dropped a context here before is believed over its spec sheet');
 }
 
+/* ------------------------------------------------------- who wears what
+ *
+ *   "On player one's screen the roads they built were blue, and for the other
+ *    player the same roads were purple — and one of the bots was building blue
+ *    things."
+ *
+ * The renderers used to index the default palette by seat, which is right in a
+ * single-player match and wrong in every networked one, because `mirror.js`
+ * renumbers seats so the local player is always index 0. `core/seatcolor.js`
+ * is the indirection: the palette when there is no match, the PLAYER when
+ * there is — and the same player objects the mirror assigns onto, so a re-seat
+ * needs no second call.
+ */
+{
+  const S = await import('../src/core/seatcolor.js');
+  const { PLAYER_COLORS } = await import('../src/core/constants.js');
+
+  S.clearSeats();
+  ok(S.seatHex(2) === PLAYER_COLORS[2].hex,
+    'with no match running, a seat wears its palette colour');
+
+  const seats = [
+    { color: PLAYER_COLORS[3] }, { color: PLAYER_COLORS[0] },
+    { color: PLAYER_COLORS[1] }, { color: PLAYER_COLORS[2] }
+  ];
+  S.useSeats(seats);
+  ok(S.seatHex(0) === PLAYER_COLORS[3].hex && S.seatHex(1) === PLAYER_COLORS[0].hex,
+    'in a match, a seat wears what the server gave it, not its index');
+
+  // The mirror assigns onto the SAME objects. Nothing is told twice.
+  seats[1].color = { ...PLAYER_COLORS[2], hex: 0x00ff88 };
+  ok(S.seatHex(1) === 0x00ff88,
+    'and a re-seat is picked up without anybody being told again');
+
+  ok(S.seatHex(-1) === S.seatHex(3) && S.seatHex(9) === S.seatHex(1),
+    'a stray player id still answers a colour rather than throwing');
+
+  S.clearSeats();
+  ok(S.seatHex(1) === PLAYER_COLORS[1].hex,
+    'and the opening screen gets the palette back when the match is gone');
+}
+
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nAll structural checks passed.');
 process.exit(fail ? 1 : 0);

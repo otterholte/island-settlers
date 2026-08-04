@@ -42,7 +42,8 @@
  */
 
 import * as THREE from 'three';
-import { RES_COLOR, PLAYER_COLORS } from '../core/constants.js';
+import { RES_COLOR } from '../core/constants.js';
+import { seatLight } from '../core/seatcolor.js';
 import { tiles } from '../board/layout.js';
 import { heightAt, APOTHEM } from './terrain.js';
 import {
@@ -235,7 +236,7 @@ function buildOverlay(list) {
       // the trees and the terrain breathe on, so nothing can drift out of step.
       uPulse: uMoodTime,
       uRim:  { value: new THREE.Color(0x93cbff) },
-      // Overwritten from PLAYER_COLORS[0].light the moment the mesh is built
+      // Overwritten from seatLight(0) the moment the mesh is built
       // (see `MINE` below); the literal is only the value the shader compiles
       // with, kept in step by hand so a glance at this file is not misleading.
       //
@@ -460,12 +461,19 @@ export function buildRegions(group, dressing, stumps) {
 
   /* The human's LIGHT variant, not the base hex: a mid blue laid over grass and
      clay at 70% alpha reads as a smudge. The pale variant holds against every
-     terrain, and it follows PLAYER_COLORS so the brighter palette carries here
-     without a second edit. */
+     terrain, and it follows the seat palette so the brighter colours carry
+     here without a second edit.
+
+     Two uniforms rather than a constant, because online this is not known yet
+     when the mesh is built: the seats are recoloured from the server the
+     moment the mirror lands, several seconds later, and `retint()` is how the
+     island is told. See src/core/seatcolor.js. */
   const _c = new THREE.Color();
-  const MINE = (PLAYER_COLORS[0] && PLAYER_COLORS[0].light) || '#93cbff';
-  ground.mat.uniforms.uRim.value.set(MINE).convertSRGBToLinear();
-  marker.mat.uniforms.uOwn.value.copy(ground.mat.uniforms.uRim.value);
+  function retint() {
+    ground.mat.uniforms.uRim.value.set(seatLight(0)).convertSRGBToLinear();
+    marker.mat.uniforms.uOwn.value.copy(ground.mat.uniforms.uRim.value);
+  }
+  retint();
 
   const EMBER = new THREE.Color().setHex(0xff9c2a, THREE.SRGBColorSpace);
   regions.forEach((r) => {
@@ -630,6 +638,10 @@ export function buildRegions(group, dressing, stumps) {
     stand,
     drawCalls: 2,
     triangles: ground.triangles + marker.triangles,
+
+    /** Re-read the local player's colour. Called once a networked match has
+     *  told us which seat we are actually sitting in. */
+    retint,
 
     /** Debug / capture hook: how much of the dressing has answered. */
     debug(tileId) { return stand.debug(tileId); },

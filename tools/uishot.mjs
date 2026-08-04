@@ -697,6 +697,46 @@ if (STAGE === 'home') {
       dropped:n.mirror.stats.dropped, unknown:n.mirror.stats.unknown,
       buffered:n.buffered, t:+I.state.time.toFixed(1),
       hudUp:!!document.querySelector('.hud:not(.pre)')};})()`)));
+  /*
+   * AND THE THINGS THEY BUILD, WHICH IS WHERE IT WAS STILL WRONG.
+   *
+   *   "The player's own character and the colours on the map view look the same
+   *    on both screens, but in the close-up 3D game, on player one's screen the
+   *    roads they built were blue, and for the other player the same roads were
+   *    purple — and one of the bots was building blue things."
+   *
+   * Every road deck, roof, tower and ground band is an instance colour written
+   * once when the piece goes up, and it used to be read out of the DEFAULT
+   * palette by seat index. The mirror renumbers seats, so that palette entry
+   * belongs to a different person on every device.
+   *
+   * So this reads the colours actually written into the meshes and asks two
+   * things of them: every live seat colour is on the board (four people have
+   * built by now), and no colour from the default palette is on the board
+   * unless it is also a live seat colour. The second half is the bug — a bot
+   * wearing the blue that belongs to somebody else.
+   */
+  console.log('  PIECECOLOR ' + JSON.stringify(await ev(`(async()=>{
+    const THREE=await import('/vendor/three.module.js');
+    const C=await import('/src/core/constants.js');
+    const S=await import('/src/core/seatcolor.js');
+    const I=window.__ISLAND__;
+    const live=I.state.players.map(p=>p.color.hex);
+    const seatLookup=I.state.players.map((p,i)=>S.seatHex(i)===p.color.hex);
+    const seen=new Set(); const c=new THREE.Color();
+    I.game.world.structures.group.traverse(o=>{
+      const a=o.instanceColor; if(!a) return;
+      const n=Math.min(o.count||0, a.count||0);
+      for(let i=0;i<n;i++){ c.fromBufferAttribute(a,i); seen.add(c.getHex(THREE.SRGBColorSpace)); }
+    });
+    const strays=C.PLAYER_COLORS.map(p=>p.hex).filter(h=>!live.includes(h)&&seen.has(h));
+    const missing=live.filter(h=>!seen.has(h));
+    return {ok: seatLookup.every(Boolean) && strays.length===0 && missing.length===0,
+      seatLookup, painted:seen.size,
+      live:live.map(h=>'#'+h.toString(16)),
+      strays:strays.map(h=>'#'+h.toString(16)),
+      missing:missing.map(h=>'#'+h.toString(16))};})()`, true)));
+
   await shot(`netmatch-${TAG}`);
   /* AND THE REPAINT ITSELF, DRIVEN ON PURPOSE.
    *
@@ -723,6 +763,32 @@ if (STAGE === 'home') {
       && now[0].rebuilt && now[1].rebuilt && now[0].inScene && now[1].inScene
       && !now[2].rebuilt && !now[3].rebuilt && !moved,
       swapped:[c0.key,c1.key], untouched:[now[2].rebuilt,now[3].rebuilt], moved};})()`)));
+
+  /*
+   * AND DID THE THINGS THEY HAVE ALREADY BUILT FOLLOW?
+   *
+   * A swap between two seats leaves the SET of colours on the board unchanged,
+   * so it cannot prove that the roads moved with their owner. This gives a seat
+   * a colour that is in no palette at all and asks whether it appears on the
+   * island. If it does, the pieces are reading the player; if it does not, they
+   * are still reading the palette and this is the reported bug, alive.
+   */
+  console.log('  PIECEFOLLOW ' + JSON.stringify(await ev(`(async()=>{
+    const THREE=await import('/vendor/three.module.js');
+    const I=window.__ISLAND__, g=I.game, S=I.state;
+    const ODD=0x00ff88;
+    const owner=[...S.roadOwner.values()][0];
+    const seat=Number.isInteger(owner)?owner:1;
+    S.players[seat].color={...S.players[seat].color, hex:ODD};
+    g.recolorAvatars();
+    const c=new THREE.Color(); let found=false;
+    g.world.structures.group.traverse(o=>{
+      const a=o.instanceColor; if(!a||found) return;
+      const n=Math.min(o.count||0, a.count||0);
+      for(let i=0;i<n;i++){ c.fromBufferAttribute(a,i);
+        if(c.getHex(THREE.SRGBColorSpace)===ODD){ found=true; return; } }
+    });
+    return {seat, roads:S.roadOwner.size, ok:found};})()`, true)));
 
 /* The results sheet, both ways round. `--win=1` for your victory, `--win=0` to
    lose to a rival, which is the state the medallion had to stop congratulating

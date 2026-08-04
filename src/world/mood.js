@@ -98,7 +98,7 @@
  */
 
 import * as THREE from 'three';
-import { PLAYER_COLORS } from '../core/constants.js';
+import { seatHex } from '../core/seatcolor.js';
 import { tiles } from '../board/layout.js';
 import {
   tileFraction, tileRecovery, isTileExhausted, tileItemsRemaining, tileItemCount
@@ -241,7 +241,7 @@ export const GLOW_HZ = 1.85;
  *     const secs = props.startVictoryFlood(winnerPlayerId);
  *     //  -> startVictoryFlood(pid, opts?) -> seconds
  *     //     pid   0..3, the winning player's index. Its colour comes from
- *     //           PLAYER_COLORS[pid].hex and the wave starts on the hexes that
+ *     //           seatHex(pid) and the wave starts on the hexes that
  *     //           player holds, spreading outward from them across the island.
  *     //     opts  { color: 0xRRGGBB,   override the winner's colour
  *     //             from: [tileId,..], override the seed hexes ([] = centre)
@@ -478,8 +478,10 @@ function setFloodColor(hex) {
  * this one line. Returns the total seconds the sequence will take.
  */
 export function startVictoryFlood(pid, opts = {}) {
-  const p = PLAYER_COLORS[pid | 0];
-  setFloodColor(opts.color !== undefined ? opts.color : (p ? p.hex : 0xffc93c));
+  /* The winner's own colour, live — see src/core/seatcolor.js. Flooding the
+     island in the palette entry for their LOCAL index paints the wrong
+     person's victory on every screen but one. */
+  setFloodColor(opts.color !== undefined ? opts.color : seatHex(pid));
   seedOrder(opts.from !== undefined ? opts.from : heldTiles(pid | 0));
   FLOOD.duration = Math.max(0.2, +opts.duration || 2.4);
   FLOOD.hold = Math.max(0, opts.hold === undefined ? 1.0 : +opts.hold);
