@@ -594,8 +594,20 @@ export function createNetMatch(state, game, client) {
     const moved = Math.abs(dx - lastSent.x) > 0.02 || Math.abs(dz - lastSent.z) > 0.02;
     if (!moved && t - lastSent.at < 250) return;
     if (t - lastSent.at < SEND_EVERY) return;
+    /*
+     * A DROPPED STICK IS NOT A SENT STICK.
+     *
+     * `client.fire` returns false when the socket is not open — which is the
+     * ordinary state of things for a second or two after the page reloads into
+     * a match, and again after any blip. Marking it sent anyway meant the next
+     * attempt waited out the full heartbeat, and every one of those in a row
+     * is a stretch of running that the SERVER never saw. Your settler moves on
+     * your screen, because it is predicted locally, and stands still on the
+     * island everyone else is playing on. That is invisible until you walk to
+     * the market and it will not trade with you, which is exactly the report.
+     */
+    if (!client.fire(REQ.MATCH_INPUT, { x: +dx.toFixed(3), z: +dz.toFixed(3), q: ++seq })) return;
     lastSent = { x: dx, z: dz, at: t };
-    client.fire(REQ.MATCH_INPUT, { x: +dx.toFixed(3), z: +dz.toFixed(3), q: ++seq });
   }
 
   /* ----------------------------------------------------------- the frame */
@@ -618,6 +630,53 @@ export function createNetMatch(state, game, client) {
     sendInput();
     reconcile(dt);
     interpolate();
+  }
+
+  /**
+   * Put your settler where the SERVER has it, now, without easing.
+   *
+   *   "It also wouldn't let the remaining player use the trading post any more.
+   *    It would open, but the trades didn't work."
+   *
+   * Your settler is predicted locally so it answers the stick without waiting
+   * for a round trip, and `reconcile` closes the small disagreements that
+   * always follow. What it cannot close is a disagreement it never hears
+   * about: if a stretch of input never reached the server, the server's copy of
+   * you simply did not go, and the two of you are somewhere else entirely.
+   *
+   * Everything positional is judged on the SERVER — trading is, deliberately,
+   * because "trade from anywhere" is the cheapest thing in this game to cheat.
+   * So the sheet opens on a position the browser believes and the trade is
+   * refused against a position the server knows, and the player is told "you
+   * cannot do that there" while standing on the thing.
+   *
+   * A refusal is therefore evidence. Rather than argue with it, take the
+   * server's word and stand where it says you are standing: one visible
+   * correction, and every attempt after it is honest. `reconcile` handles the
+   * ordinary case; this is the one that has already gone wrong.
+   */
+  function resync() {
+    for (let i = buf.length - 1; i >= 0; i--) {
+      const seat = buf[i].seats.find(s => s.local === 0);
+      if (!seat) continue;
+      const p = state.players[0];
+      if (!p) return 0;
+      const gap = Math.hypot(seat.x - p.x, seat.z - p.z);
+      p.x = seat.x; p.z = seat.z; p.vx = 0; p.vz = 0;
+      return gap;
+    }
+    return 0;
+  }
+
+  /** How far the browser's idea of you is from the server's. Rigs read this. */
+  function serverGap() {
+    for (let i = buf.length - 1; i >= 0; i--) {
+      const seat = buf[i].seats.find(s => s.local === 0);
+      if (!seat) continue;
+      const p = state.players[0];
+      return p ? Math.hypot(seat.x - p.x, seat.z - p.z) : -1;
+    }
+    return -1;
   }
 
   /**
@@ -703,11 +762,17 @@ export function createNetMatch(state, game, client) {
     } catch (e) {
       // The server said no. Say so plainly rather than leaving the player
       // wondering why their road did not appear.
+      /* A refusal about WHERE you are means the two copies of you have come
+         apart. Take the server's word for it before saying anything, so the
+         player is standing somewhere true by the time they read the message
+         and their next attempt is judged on the same position they can see. */
+      let moved = 0;
+      if (e.code === 'move.illegal') moved = resync();
       const msg = e.code === 'move.notyours'
         ? 'Not your turn yet'
         : (e.code ? errText(e.code) : 'The server refused that');
-      if (game.toast) game.toast(msg, 'bad');
-      notify('refused', { kind, code: e.code });
+      if (game.toast) game.toast(moved > 1 ? 'Catching you up with the island' : msg, 'bad');
+      notify('refused', { kind, code: e.code, resynced: moved });
       return false;
     }
   }
@@ -758,8 +823,12 @@ export function createNetMatch(state, game, client) {
   };
 
   return {
-    begin, start, update, draft, agent, send, leave,
+    begin, start, update, draft, agent, send, leave, resync,
     onEvent: fn => { watchers.add(fn); return () => watchers.delete(fn); },
+    /** How far the browser's idea of your settler is from the server's. Every
+     *  positional rule is judged on the server's number, so this is the one
+     *  measurement that says whether trading is about to work. */
+    get serverGap() { return serverGap(); },
     get active() { return active; },
     get info() { return info; },
     get mirror() { return mirror; },

@@ -54,7 +54,8 @@ import { fileURLToPath } from 'node:url';
 import { rmSync, mkdirSync } from 'node:fs';
 
 import { createMatch, legalSettlements, legalRoads, scoreOf } from '../src/core/rules.js';
-import { reshuffle, tiles } from '../src/board/layout.js';
+import { reshuffle, tiles, MARKET } from '../src/board/layout.js';
+import { TRADE_RADIUS } from '../src/core/constants.js';
 import { itemsByTile } from '../src/board/nodes.js';
 import { createMirror } from '../src/net/mirror.js';
 import {
@@ -604,6 +605,11 @@ try {
 
   /* --- reconnect ----------------------------------------------------- */
   B = await connect('bob-back');
+  /* The new socket needs the same pump the old one had, or bob's board stops
+     being fed the moment he reconnects and every later reading of it — where
+     his settler is, what is in his pack — is a photograph of the moment he
+     dropped. The stand-in reloads its client; the real one reloads its page. */
+  B.onPush = pump(B);
   await B.req(REQ.HELLO, { version: PROTOCOL_VERSION, device: DEV_B, name: NAME_B });
   const backIn = await B.next(PUSH.MATCH_BEGIN, 8000).catch(() => null);
   check('39. reconnecting with the same device puts you back in your own seat',
@@ -652,21 +658,61 @@ try {
    * second fails then the leaving is what broke it, and this says so in one
    * line instead of a bug report.
    */
-  /* What the server says to an act from the remaining player. A trade from the
-     wrong hex is `move.illegal` and that is a fine answer — it means the match
-     heard the request and applied its own rules. `no.match` is the failure this
-     is looking for: the server no longer recognising a player who never went
-     anywhere, which is what "the trades didn't work" looks like from the
-     inside. Walking Bob onto the market and stocking his pack would test the
-     rules of trading, which check 36 already does; this tests whether he is
-     still IN the match. */
-  const actAnswer = async who => {
+  /*
+   * A REAL TRADE, NOT AN ANSWER TO ONE.
+   *
+   * This check used to fire a trade from wherever Bob happened to be standing
+   * and accept `move.illegal` as a pass, on the grounds that a refusal still
+   * proves the match heard him. It does prove that — and it is exactly the
+   * shape of test that lets the reported bug through, because the reported bug
+   * IS a refusal. So: walk him onto the Great Market, find something in his
+   * pack he can afford to spend, and trade for real. Once before Alice leaves
+   * as the control, once after. If only the second fails, the leaving broke it.
+   */
+  const RES5 = ['wood', 'brick', 'wool', 'wheat', 'ore'];
+
+  /** Drive a settler onto the market, the way a thumb would. */
+  async function walkToMarket(who, st, secs = 30) {
+    const near = () => {
+      const p = st.players[0];
+      return Math.hypot(p.x - MARKET.x, p.z - MARKET.z);
+    };
+    const until = Date.now() + secs * 1000;
+    while (Date.now() < until) {
+      const p = st.players[0];
+      const dx = MARKET.x - p.x, dz = MARKET.z - p.z;
+      const d = Math.hypot(dx, dz) || 1;
+      if (d < TRADE_RADIUS * 0.5) break;
+      who.fire(REQ.MATCH_INPUT, { x: dx / d, z: dz / d, q: 0 });
+      await sleep(50);
+    }
+    who.fire(REQ.MATCH_INPUT, { x: 0, z: 0, q: 0 });
+    await sleep(250);
+    return near();
+  }
+
+  /** Spend four of something on one of something else, and say what happened. */
+  async function tradeForReal(who, st) {
+    const p = st.players[0];
+    const give = RES5.find(r => (p.res[r] | 0) >= 4);
+    if (!give) return { how: 'no-goods', pack: RES5.map(r => p.res[r] | 0).join(',') };
+    const get = RES5.find(r => r !== give);
+    const had = p.res[give] | 0;
     try {
-      await who.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give: 'wood', get: 'ore' });
-      return 'traded';
-    } catch (e) { return e.code || 'refused'; }
-  };
-  const tradeBefore = await actAnswer(B);
+      await who.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give, get });
+    } catch (e) {
+      return { how: e.code || 'refused', give, get, had };
+    }
+    await sleep(700);                       // one snapshot, so the pack lands
+    return { how: 'traded', give, get, had, now: st.players[0].res[give] | 0 };
+  }
+
+  const distBefore = await walkToMarket(B, stateB);
+  const tradeBefore = await tradeForReal(B, stateB);
+  check('40c. a player standing on the market can trade while both are here',
+    tradeBefore.how === 'traded',
+    `${distBefore.toFixed(1)} from the market (radius ${TRADE_RADIUS}), `
+    + `${tradeBefore.give || '-'} -> ${tradeBefore.get || '-'}: ${tradeBefore.how}`);
 
   /* --- leaving for good ---------------------------------------------- */
   /* Alice's seat specifically: Bob's own reconnect fires a 'live' peer push a
@@ -713,10 +759,21 @@ try {
     rejoin === null && !(roomNow && roomNow.room),
     `begin: ${rejoin ? 'RESUMED' : 'none'}, room: ${roomNow && roomNow.room ? roomNow.room.code : 'none'}`);
 
-  const tradeAfter = await actAnswer(B);
-  check('41c. and the match goes on for whoever is left — the post still answers',
-    tradeAfter === tradeBefore && tradeAfter !== 'no.match',
-    `before Alice left: ${tradeBefore} · after: ${tradeAfter}`);
+  /*
+   *   "It also wouldn't let the remaining player use the trading post any more.
+   *    It would open, but the trades didn't work."
+   *
+   * Same market, same pack, same player — the only thing that changed is that
+   * the other human is gone. Anything other than a completed trade here is the
+   * bug, and the reason it is worth walking him back on first is that a settler
+   * standing next to three bots does not necessarily stay where you left him.
+   */
+  const distAfter = await walkToMarket(B, stateB, 20);
+  const tradeAfter = await tradeForReal(B, stateB);
+  check('41c. and the one still playing can still use the trading post',
+    tradeAfter.how === 'traded',
+    `before Alice left: ${tradeBefore.how} · after: ${tradeAfter.how}`
+    + ` (${distAfter.toFixed(1)} from the market)`);
 
   await sleep(1500);
   const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());
