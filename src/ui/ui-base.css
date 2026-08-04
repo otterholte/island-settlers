@@ -126,6 +126,32 @@ html,body{
     inset 0 -9px 14px rgba(0,0,0,.30);
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
 }
+
+/*
+ * THE BOTTOM RUNG TAKES THE BLUR OFF EVERYTHING.
+ *
+ *   "When I open the trading post or try and move too quickly, it starts to
+ *    flash black screen again."
+ *
+ * `backdrop-filter` is not a paint effect, it is an allocation: the compositor
+ * snapshots whatever is behind the element into its own buffer and blurs that.
+ * Every plate in this interface has one — the HUD bars, the popups, the sheets
+ * — and a NEW blurred surface appearing allocates a new buffer on the spot.
+ * Opening the trade sheet raises the biggest of them (a full-screen scrim) over
+ * a GPU that is already out of room, which is precisely the moment named above.
+ *
+ * `#ui.saver` is set by systems/quality.js on rung 0. Nothing else changes: the
+ * plates keep their dark translucent background and lose an effect most people
+ * could not point to, for the one that was costing a context.
+ */
+#ui.saver .plate,
+#ui.saver .scrim,
+#ui.saver .pop,
+#ui.saver .tc-card,
+#ui.saver .tut-scrim{backdrop-filter:none !important;-webkit-backdrop-filter:none !important}
+/* The scrim was leaning on the blur to separate a sheet from the island; with
+   no blur it does that with darkness instead. */
+#ui.saver .scrim{background:rgba(4,14,28,.80)}
 .plate.lift{box-shadow:
     0 10px 22px rgba(0,0,0,.50),
     0 2px 3px rgba(0,0,0,.4),

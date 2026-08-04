@@ -201,9 +201,13 @@ function snapshot() {
    is three people. */
 const draft = { pid: -1, need: 'settlement', wait: 0, deadline: 0, target: -1, sent: false };
 
-function draftAnnounce() {
+function draftAnnounce(resend) {
   post({
     t: 'draft',
+    // A REPEAT, not a new turn. The clients that already have this one must be
+    // able to tell, or an auto-drafting client picks twice for the same seat —
+    // once for the announcement and once for its echo. See netmatch.js.
+    resend: !!resend,
     index: state.setupIndex,
     total: state.setupOrder.length * 2,
     pid: draft.pid,
@@ -562,7 +566,7 @@ parentPort.on('message', msg => {
          * clients that already have it are idempotent about it (`draftState` is
          * assigned, not accumulated) and it is one small message.
          */
-        if (state.phase === 'setup') draftAnnounce();
+        if (state.phase === 'setup') draftAnnounce(true);
       } else if (msg.state === 'gone') {
         // Held seat: stop moving, keep everything they own.
         const stick = sticks.get(msg.pid);

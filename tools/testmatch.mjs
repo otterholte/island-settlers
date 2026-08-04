@@ -482,8 +482,14 @@ await test(1, 'Match launches with no uncaught exceptions and no broken shaders'
   // Let a few real frames render so every material has actually compiled.
   await sleep(450);
   const perf = await pev('__perf()');
+  /* WARNINGS AND ERRORS ONLY. three reports a broken shader as an error, and
+     the console is not otherwise a quiet place: `[quality] starting at 0 ·
+     shared-memory GPU (ANGLE ... SwiftShader ...)` is an INFO line explaining a
+     decision, and matching it as "shader trouble" made this check fail on the
+     word SwiftShader appearing in a hardware name. */
   const shaderTrouble = consoleLines.filter(l =>
-    /shader|program|glsl|link|compile|WebGL: INVALID|context lost/i.test(l.text));
+    (l.level === 'error' || l.level === 'warning')
+    && /shader|program|glsl|link|compile|WebGL: INVALID|context lost/i.test(l.text));
   const hardErrors = consoleLines.filter(l => l.level === 'error');
   const bootExc = exceptions.slice();
   const pass = bootExc.length === 0 && shaderTrouble.length === 0 && perf.calls > 0;

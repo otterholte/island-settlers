@@ -66,21 +66,65 @@ async function boot() {
    * does not double the bill for a game that simulates at 60.
    */
   const PIXEL_BUDGET = 2.30e6;
-  /* Battery saver pins the ratio at 1 — see `applyQuality` and core/options. */
-  let lowPower = false;
-  try {
-    lowPower = (await import('./core/options.js')).lowPower();
-  } catch (e) { /* the option is a nicety; the game is not */ }
-  function ratioFor(w, h) {
-    if (lowPower) return 1;
+  function budgetRatio(w, h) {
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const px = Math.max(1, (w || 1) * (h || 1));
     return Math.max(1, Math.min(dpr, Math.sqrt(PIXEL_BUDGET / px)));
   }
+
+  /*
+   * WHICH RUNG THIS MACHINE STARTS ON, DECIDED BEFORE THE FIRST FRAME.
+   *
+   *   "The only problem is that I have to go into a game, get through the draft,
+   *    get to the board, and press the settings bar before I see it. Is there a
+   *    simple way to automatically test if the computer is low on compute
+   *    reliably, and automatically turn on the graphics saver as soon as the app
+   *    is opened?"
+   *
+   * There is nothing to measure yet, so this is a guess off what the browser
+   * will say — memory, cores, the GL adapter's own name — plus what this machine
+   * did last time, which is the strongest signal of the lot. `systems/quality.js`
+   * owns the reasoning and, once frames exist, the measuring.
+   *
+   * The guess has to happen HERE, before the renderer is constructed, because
+   * two of the savings cannot be changed afterwards: the multisample buffer
+   * (`antialias`) and the adapter preference are fixed at context creation.
+   */
+  const qualityM = await load('./systems/quality.js', null);
+  /* A THROWAWAY CANVAS, not the real one. Asking the game's canvas for a
+     context here would hand three.js that same context a moment later — with
+     the attributes THIS call asked for, silently ignoring the antialias and
+     alpha settings below, because a canvas only ever has one context. */
+  let probeGL = null;
+  try {
+    const scratch = document.createElement('canvas');
+    scratch.width = 1; scratch.height = 1;
+    probeGL = scratch.getContext('webgl2') || scratch.getContext('webgl');
+  } catch (e) { probeGL = null; }
+  const guessed = (qualityM && qualityM.guessLevel)
+    ? qualityM.guessLevel({ renderer: qualityM.rendererName(probeGL) })
+    : { level: 2, why: ['quality module unavailable'] };
+  let startLevel = guessed.level;
+  try {
+    const opt = await import('./core/options.js');
+    // The old boolean setting still wins if somebody pinned it by hand.
+    if (opt.lowPower()) startLevel = 0;
+  } catch (e) { /* the option is a nicety */ }
+  console.info('[quality] starting at', startLevel, '·', guessed.why.join('; '));
+
+  function ratioFor(w, h) {
+    return startLevel === 0 ? 1 : budgetRatio(w, h);
+  }
   const ratio0 = ratioFor(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight);
 
   const renderer = new THREE.WebGLRenderer({
-    canvas, antialias: ratio0 < 1.5, powerPreference: 'default', alpha: false
+    canvas,
+    // No multisample buffer on the bottom rung: it is several megabytes of the
+    // exact thing that runs out, and at ratio 1 it is the only antialiasing —
+    // which is a trade worth making on a machine that is dropping contexts.
+    antialias: startLevel > 0 && ratio0 < 1.5,
+    powerPreference: startLevel === 0 ? 'low-power' : 'default',
+    alpha: false
   });
   renderer.setPixelRatio(ratio0);
   // Provisional; `resize()` below re-measures off the canvas itself, which is
@@ -193,37 +237,26 @@ async function boot() {
   const sky = skyM.buildSky(scene, renderer);
 
   /*
-   * THE TWO THINGS A SHARED-MEMORY GPU CANNOT AFFORD, IN ONE SWITCH.
-   *
-   * Shadows are a second full pass over the scene every frame plus a 16MB
-   * depth texture; the pixel ratio multiplies everything else. Battery saver
-   * drops both. Materials have to be told: three bakes "is there a shadow map"
-   * into every program it compiles, so flipping `shadowMap.enabled` without
-   * this leaves the old programs sampling a map that is no longer there.
+   * THE LADDER. `systems/quality.js` decides which rung; this hands it the
+   * three levers — the shadow pass, the pixel ratio and the interface's
+   * backdrop blur — and a place to say so.
    */
-  function applyQuality() {
-    renderer.shadowMap.enabled = !lowPower;
-    if (sky && sky.sun) sky.sun.castShadow = !lowPower;
-    scene.traverse(o => {
-      const m = o && o.material;
-      if (!m) return;
-      for (const mm of (Array.isArray(m) ? m : [m])) { if (mm) mm.needsUpdate = true; }
-    });
-    renderer.setPixelRatio(ratioFor(canvas.clientWidth || innerWidth,
-      canvas.clientHeight || innerHeight));
-  }
-  async function setLowPower(on, why) {
-    if (lowPower === !!on) return lowPower;
-    lowPower = !!on;
-    try {
-      const opt = await import('./core/options.js');
-      if (opt.setLowPower) opt.setLowPower(lowPower);
-    } catch (e) { /* it still applies for this session */ }
-    applyQuality();
-    if (why && game && typeof game.toast === 'function') game.toast(why, 'warn');
-    return lowPower;
-  }
-  if (lowPower) applyQuality();
+  const quality = (qualityM && qualityM.createQuality)
+    ? qualityM.createQuality({
+      renderer, scene, root: uiRoot, level: startLevel,
+      sunOf: () => (sky && sky.sun) || null,
+      ratioFor: budgetRatio,
+      onChange: (lvl, why) => {
+        console.info('[quality] ->', lvl, why ? `(${why})` : '');
+        try {
+          if (game && game.hud && lvl === 0 && why && why !== 'chosen') {
+            game.hud.toast('Graphics eased back to keep it smooth', 'warn');
+          }
+        } catch (e) { /* cosmetic */ }
+      }
+    })
+    : null;
+  if (quality) quality.apply(startLevel, 'boot');
   const water = waterM.buildWater(scene);
   const island = islandM.buildIsland(scene);
   const props = propsM.buildProps(scene);
@@ -275,9 +308,20 @@ async function boot() {
   const game = {
     state, world, audio, effects, camera: gameCamera, input, avatars,
     economy: ecoM,
-    /** Battery saver, from the setup screen or from a context loss. */
-    setLowPower(on) { return setLowPower(!!on); },
-    get lowPower() { return lowPower; },
+    /**
+     * The gear's Full / Saver switch. A choice by hand PINS the rung: from then
+     * on the probes keep measuring and reporting and stop deciding, because a
+     * setting that argues with the player is not a setting.
+     */
+    setLowPower(on) {
+      if (!quality) return !!on;
+      quality.pin(on ? 0 : 2);
+      return quality.level === 0;
+    },
+    get lowPower() { return !!quality && quality.level === 0; },
+    /** Capture-rig hook: the whole ladder, its schedule and its last reading. */
+    get quality() { return quality ? quality.info : null; },
+    qualityProbe() { if (quality) quality.startProbe(); return !!quality; },
     /** matchflow.setRoam -> the settler may walk a finished island. */
     setRoam(on) { roam.on = !!on; return roam.on; },
     get roaming() { return roam.on; },
@@ -291,7 +335,9 @@ async function boot() {
         glLost,
         hidden: !!(typeof document !== 'undefined' && document.hidden),
         sinceDraw: Math.round(performance.now() - lastDraw),
-        draws, drawFails, losses, lowPower,
+        draws, drawFails, losses,
+        level: quality ? quality.level : null,
+        lowPower: !!quality && quality.level === 0,
         shadows: !!renderer.shadowMap.enabled,
         checkShaderErrors: !!(renderer.debug && renderer.debug.checkShaderErrors),
         minFrameMs: MIN_FRAME_MS,
@@ -643,11 +689,9 @@ async function boot() {
     console.warn('[gl] context lost — pausing until it comes back');
     /* THE FIRST LOSS IS THE MACHINE TELLING US. A browser only takes this away
        when it is short of memory, so asking for the same amount again is asking
-       for the same answer: drop to battery saver, say so, and remember it for
-       next time. Nothing is lost — the match is in memory, not on the GPU. */
-    if (losses === 1 && !lowPower) {
-      setLowPower(true, 'Graphics reduced — the browser dropped the 3D view');
-    }
+       for the same answer: down to the bottom rung, remembered across reloads
+       (quality.js writes it), and no climbing again this session. */
+    if (quality) quality.loss();
   }, false);
   canvas.addEventListener('webglcontextrestored', () => {
     glLost = false;
@@ -795,6 +839,7 @@ async function boot() {
       ecoM.placeFreeRoads(game);
     }
 
+    if (quality) quality.update(dt);
     props.update(dt);
     structures.update(dt);
     market.update(dt);
@@ -812,6 +857,7 @@ async function boot() {
     // the interface is current — this only skips the DRAW, which is the part
     // that costs a laptop its fan.
     if (now - lastDraw < MIN_FRAME_MS) return;
+    if (quality) quality.frame(now);      // one subtraction; nothing is drawn
     lastDraw = now;
     draws++;
     /*

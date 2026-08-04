@@ -1477,6 +1477,14 @@ if (STAGE === 'home') {
 } else if (STAGE === 'perf') {
   await waitIntro();
   await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro();return 1})()`);
+  /* THIS PAGE STARTS ON THE BOTTOM RUNG AND IS RIGHT TO: headless Chrome is
+     SwiftShader on two cores, which is exactly what `guessLevel` is for. The
+     budget, shadow-map and antialias checks below are about the FULL rung, so
+     it is pinned there first — and pinning is what a player pressing the switch
+     does, so the pin itself is being exercised too. */
+  const bootLevel = await ev(`window.__ISLAND__.game.quality`);
+  console.log('  BOOT ' + JSON.stringify(bootLevel));
+  await ev(`window.__ISLAND__.game.setLowPower(false)`, true);
   await sleep(1500);
   const budget = await ev(`(()=>{
     const I=window.__ISLAND__, r=I.renderer, c=r.domElement;
@@ -1533,7 +1541,8 @@ if (STAGE === 'home') {
   };
   const full = await ev(`(()=>{const r=window.__ISLAND__.renderer;
     return {shadows:r.shadowMap.enabled, calls:r.info.render.calls,
-      ratio:+r.getPixelRatio().toFixed(3)};})()`);
+      ratio:+r.getPixelRatio().toFixed(3),
+      blurOff:document.getElementById('ui').classList.contains('saver')};})()`);
   const fullRate = await rate('framesIn3s');
   await ev(`window.__ISLAND__.game.setLowPower(true)`, true);
   await sleep(2200);
@@ -1541,13 +1550,59 @@ if (STAGE === 'home') {
     const sun=window.__ISLAND__.world.sky&&window.__ISLAND__.world.sky.sun;
     return {shadows:r.shadowMap.enabled, casting:!!(sun&&sun.castShadow),
       calls:r.info.render.calls, ratio:+r.getPixelRatio().toFixed(3),
-      stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').lowPower};})()`);
+      stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)===0,
+      blurOff:document.getElementById('ui').classList.contains('saver')};})()`);
   const saverRate = await rate('framesIn3s');
   await ev(`window.__ISLAND__.game.setLowPower(false)`, true);
   await sleep(1200);
   console.log('  SAVER ' + JSON.stringify({
     full: { ...full, ...fullRate }, saver: { ...saver, ...saverRate }
   }));
+
+  /* --------------------------------------------------------- the ladder
+   *
+   *   "Is there a simple way to automatically test if the computer is low on
+   *    compute reliably, and automatically turn on the graphics saver as soon
+   *    as the app is opened... and check at minute 1, 3, 5, 10, 15, 20, 30 to
+   *    see if the compute has improved... without detracting from the
+   *    experience at all. No black flashes while testing, no extra visuals."
+   *
+   * Three claims, and they are separable. The GUESS happens before the first
+   * frame and is inspectable. The PROBE is 2.5 seconds of reading a clock the
+   * loop already looks at — so the test is that a probe draws exactly as many
+   * frames as not probing does, and allocates nothing. And the LADDER moves one
+   * rung at a time, with the cheap half (pixel ratio, no recompile) separated
+   * from the expensive half (the shadow pass). */
+  const ladder = await ev(`(async()=>{
+    const g=window.__ISLAND__.game, r=window.__ISLAND__.renderer;
+    const Q=await import('/src/systems/quality.js');
+    const guessLow=Q.guessLevel({navigator:{deviceMemory:8,hardwareConcurrency:4},
+      renderer:'Intel(R) Iris(R) Xe Graphics', stored:{}});
+    const guessHigh=Q.guessLevel({navigator:{deviceMemory:32,hardwareConcurrency:16},
+      renderer:'NVIDIA GeForce RTX 4080', stored:{}});
+    return {schedule:Q.PROBE_AT_MIN, guessLow, guessHigh,
+      level:g.quality && g.quality.level, blurOff:document.getElementById('ui')
+        .classList.contains('saver')};})()`, true);
+  console.log('  LADDER ' + JSON.stringify(ladder));
+
+  /* A probe costs nothing: run one and count the frames drawn while it is
+     sampling against the same window with no probe running. */
+  await ev(`window.__ISLAND__.game.setLowPower(true)`, true);
+  await sleep(900);
+  const quiet = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+    const a=r.info.render.frame; await new Promise(x=>setTimeout(x,2600));
+    return r.info.render.frame-a;})()`, true);
+  const beforeProbe = await ev(`(()=>{const r=window.__ISLAND__.renderer;
+    return {level:window.__ISLAND__.game.quality.level, calls:r.info.render.calls,
+      ratio:+r.getPixelRatio().toFixed(3)};})()`);
+  await ev(`window.__ISLAND__.game.qualityProbe()`);
+  const busy = await ev(`(async()=>{const r=window.__ISLAND__.renderer;
+    const a=r.info.render.frame; await new Promise(x=>setTimeout(x,2600));
+    return r.info.render.frame-a;})()`, true);
+  const after = await ev(`(()=>{const r=window.__ISLAND__.renderer;
+    const q=window.__ISLAND__.game.quality;
+    return {q, calls:r.info.render.calls, ratio:+r.getPixelRatio().toFixed(3)};})()`);
+  console.log('  PROBECOST ' + JSON.stringify({ quiet, busy, beforeProbe, after }));
 
   /* Kill it, and time how long the page takes to be drawing again. A restore
      re-uploads every texture and buffer, which is exactly the cost the flicker
@@ -1587,7 +1642,8 @@ if (STAGE === 'home') {
      view away when it is short of memory, so asking for the same amount again
      is asking for the same answer. */
   const auto = await ev(`(()=>({low:window.__ISLAND__.game.lowPower,
-    stored:JSON.parse(localStorage.getItem('island-settlers.options')||'{}').lowPower,
+    stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)===0,
+    losses:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').losses)|0,
     shadows:window.__ISLAND__.renderer.shadowMap.enabled}))()`);
   console.log('  AUTOSAVER ' + JSON.stringify(auto));
   console.log('  CONTEXT ' + JSON.stringify({ ext: lost.ext, before, during, back, why }));
@@ -1646,7 +1702,23 @@ if (STAGE === 'home') {
     andPinsTheRatio: saver.ratio === 1,
     andIsRememberedForNextTime: saver.stored === true,
     aLostContextTurnsItOnByItself: auto.low === true && auto.stored === true
-      && auto.shadows === false
+      && auto.shadows === false && auto.losses > 0,
+    andTheGuessWasAlreadyLowOnThisMachine: bootLevel && bootLevel.level === 0,
+    aLaptopIsGuessedLowBeforeTheFirstFrame: ladder.guessLow.level === 0
+      && ladder.guessLow.why.length > 0,
+    aRealGpuIsNot: ladder.guessHigh.level === 2,
+    theScheduleIsTheOneAskedFor:
+      JSON.stringify(ladder.schedule) === JSON.stringify([0.4, 1, 3, 5, 10, 15, 20, 30]),
+    theBottomRungDropsTheBackdropBlur: saver.blurOff === true && full.blurOff === false,
+    /* Nothing about a probe changes what is drawn — it reads the clock the
+       loop already looks at. The invariants are exact — same rung, same draw
+       calls, same pixel ratio — and the frame counts are printed as evidence
+       rather than asserted: SwiftShader draws this scene about twice a second,
+       and two windows of that differ by a factor of two on their own. The
+       ladder's own arithmetic is tested for real in tools/verify.mjs, where it
+       can be fed exact frame times. */
+    andProbingCostsNothing: after.q.level === beforeProbe.level
+      && after.calls === beforeProbe.calls && after.ratio === beforeProbe.ratio
   }));
   await shot(`perf-${TAG}`);
 

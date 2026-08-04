@@ -244,5 +244,92 @@ ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robbe
   ok(printA === printB && a.seed === b.seed, 'a pinned seed reproduces the board exactly');
 }
 
+/* ------------------------------------------------------- the quality ladder
+ *
+ * `systems/quality.js` decides how much graphics a machine can afford, and its
+ * arithmetic is the one part of that which can be tested exactly: feed it frame
+ * times and check which way it steps. A browser cannot do this — under
+ * SwiftShader every frame is 500ms and the ladder correctly never climbs — so
+ * it is tested here, with a clock we own.
+ */
+{
+  const Q = await import('../src/systems/quality.js');
+  const mk = level => {
+    const seen = [];
+    const q = Q.createQuality({
+      renderer: { shadowMap: {}, setPixelRatio: () => {}, domElement: {} },
+      scene: null, root: null, level,
+      sunOf: () => null, ratioFor: () => 1.5,
+      onChange: (l, why) => seen.push([l, why])
+    });
+    q.apply(level, 'test');
+    return { q, seen };
+  };
+  /* `update` clamps a step to 0.25s — a frame loop never hands it more, and a
+     tab that was away must not age the schedule by an hour. So waiting is
+     ticking, not one big number. */
+  const wait = (q, secs) => { for (let i = 0; i < secs * 4; i++) q.update(0.25); };
+  /** Play `ms`-per-frame for one probe's worth of frames. */
+  const run = (q, ms, frames = 200) => {
+    q.startProbe();
+    let t = 0;
+    for (let i = 0; i < frames; i++) { t += ms; q.frame(t); }
+    q.finishProbe();
+  };
+
+  const a = mk(Q.SAVER);
+  run(a.q, 16.7);
+  ok(a.q.level === Q.MIDDLE,
+    'a comfortable machine climbs one rung off the bottom, not two',
+    `level ${a.q.level} after p90 ${a.q.info.last.p90}ms`);
+  // The cooldown is real: a second good probe straight away must NOT climb.
+  run(a.q, 16.7);
+  ok(a.q.level === Q.MIDDLE, 'and waits a cooldown before the expensive rung',
+    `level ${a.q.level}`);
+  wait(a.q, 120);
+  run(a.q, 16.7);
+  ok(a.q.level === Q.FULL, 'then takes it once it has held the middle rung',
+    `level ${a.q.level}`);
+
+  const b = mk(Q.FULL);
+  run(b.q, 45);
+  ok(b.q.level === Q.SAVER, 'a struggling machine drops straight to the bottom',
+    `level ${b.q.level} after p90 ${b.q.info.last.p90}ms`);
+
+  const c = mk(Q.FULL);
+  run(c.q, 24);
+  ok(c.q.level === Q.FULL,
+    'and the gap between the bars is dead ground — no rung-hopping',
+    `p90 ${c.q.info.last.p90}ms left it at ${c.q.level}`);
+
+  const d = mk(Q.FULL);
+  d.q.loss();
+  run(d.q, 16.7);
+  wait(d.q, 600);
+  run(d.q, 16.7);
+  ok(d.q.level === Q.SAVER,
+    'a machine that lost a context never climbs again this session',
+    `level ${d.q.level}`);
+
+  const e = mk(Q.FULL);
+  e.q.pin(Q.SAVER);
+  run(e.q, 16.7);
+  wait(e.q, 600);
+  run(e.q, 16.7);
+  ok(e.q.level === Q.SAVER && e.q.pinned === true,
+    'and a choice made by hand outranks every measurement',
+    `level ${e.q.level}`);
+
+  ok(Q.guessLevel({ navigator: { deviceMemory: 8, hardwareConcurrency: 4 },
+    renderer: 'Intel(R) Iris(R) Xe Graphics', stored: {} }).level === Q.SAVER,
+  'a shared-memory laptop is guessed low before the first frame');
+  ok(Q.guessLevel({ navigator: { deviceMemory: 32, hardwareConcurrency: 16 },
+    renderer: 'NVIDIA GeForce RTX 4080', stored: {} }).level === Q.FULL,
+  'and a real GPU is not');
+  ok(Q.guessLevel({ navigator: { deviceMemory: 32, hardwareConcurrency: 16 },
+    renderer: 'NVIDIA GeForce RTX 4080', stored: { losses: 1 } }).level === Q.SAVER,
+  'a machine that dropped a context here before is believed over its spec sheet');
+}
+
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nAll structural checks passed.');
 process.exit(fail ? 1 : 0);

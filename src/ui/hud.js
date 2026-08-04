@@ -345,19 +345,30 @@ export function createHUD(root, state, game) {
   function powerRow() {
     const keys = [false, true];
     const btns = keys.map(v => button('seg', {
-      on: { click: () => { setLowPower(v); apply(); } }
+      on: { click: () => choose(v) }
     }, el('span', { text: v ? 'Saver' : 'Full' })));
-    function apply() {
-      const cur = lowPower();
+
+    /* PAINTING IS NOT CHOOSING.
+     *
+     * This row used to call `game.setLowPower` from its own initial paint,
+     * which PINS the quality ladder — so the automatic tuning in
+     * systems/quality.js was switched off before the first frame by the mere
+     * existence of the settings popup. Painting reads; only a press decides. */
+    function repaint() {
+      const cur = !!(game && game.lowPower);
       btns.forEach((b, i) => toggle(b, 'on', keys[i] === cur));
-      if (game && typeof game.setLowPower === 'function') {
-        try { game.setLowPower(cur); } catch (e) { /* next boot, then */ }
-      }
     }
-    apply();
+    function choose(v) {
+      setLowPower(v);
+      if (game && typeof game.setLowPower === 'function') {
+        try { game.setLowPower(v); } catch (e) { /* next boot, then */ }
+      }
+      repaint();
+    }
+    repaint();
     return { node: el('div', { class: 'side-row' },
       el('span', { class: 'side-lab', text: 'Graphics' }),
-      el('div', { class: 'side-seg' }, btns)), repaint: apply };
+      el('div', { class: 'side-seg' }, btns)), repaint };
   }
   const power = powerRow();
 
@@ -813,6 +824,9 @@ export function createHUD(root, state, game) {
     knightCue.update(d);
     roadCue.update(d);
     raidCue.update(d);
+    // The ladder can move by itself (systems/quality.js), so the row follows it
+    // rather than remembering what it last drew.
+    power.repaint();
   }
 
   function onPlayBegan() {

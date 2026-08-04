@@ -353,7 +353,15 @@ try {
     placePick(who, msg);
   }
 
+  const placedAt = new Map();           // client -> last setup index acted on
+
   async function placePick(who, msg) {
+    /* The server repeats the draft announcement when a peer comes back live, so
+       a client that reloaded across the original is told whose turn it is. A
+       stand-in for a person must ignore the repeat for a turn it has already
+       played, exactly as netmatch.js does. */
+    if (msg.resend && placedAt.get(who) === msg.index) return;
+    placedAt.set(who, msg.index);
     const m = who === A ? net.mirrorA : net.mirrorB;
     const st = who === A ? net.stateA : net.stateB;
     const localPid = m.toLocal(msg.pid);

@@ -428,7 +428,16 @@ export function createNetMatch(state, game, client) {
   const CLEAN_BRAIN = () => ({ d: { ...difficultyParams(), setupNoise: 0 } });
   let autoT = 0;
 
+  let autoPicked = -1;                  // the setup index we last picked for
+
   function autoPick(msg) {
+    /* An announcement can arrive twice for one turn: the server repeats it when
+       a player comes back, so a client that reloaded across the original is
+       told whose turn it is. Acting on the repeat would place twice for the
+       same seat, and the second attempt is a refusal in the log at best. */
+    const idx = Number.isInteger(msg.index) ? msg.index : -1;
+    if (msg.resend && idx >= 0 && idx === autoPicked) return;
+    autoPicked = idx;
     if (autoT) clearTimeout(autoT);
     autoT = setTimeout(() => {
       autoT = 0;
