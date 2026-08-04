@@ -352,9 +352,35 @@ export function createRooms(root, opts = {}) {
     }));
     krow.appendChild(el('b', { class: 'fr-swtxt', text: room.settings.knights ? 'On' : 'Off' }));
     body.appendChild(krow);
+
+    /* WHO PICKS THE OPENING — for the whole table.
+     *
+     *   "The person that created the room was allowed to pick their position on
+     *    the draft/board. The friend who joined wasn't. When really whoever
+     *    created the room should choose whether everyone does or doesn't
+     *    draft."
+     *
+     * It was a per-device preference, so two people in one match could disagree
+     * about whether there was a draft at all — and the one whose device said
+     * "pick for me" watched their corners being taken without ever being asked.
+     * It is a room setting now, beside the difficulty and the Knights, and the
+     * host owns it exactly as they own those. */
+    const arow = el('div', { class: 'fr-set' });
+    const drafting = !room.settings.autoDraft;
+    arow.appendChild(el('span', { class: 'fr-slab', text: 'Draft' }));
+    arow.appendChild(button('mf-switch fr-switch' + (drafting ? ' on' : ''), {
+      role: 'switch', 'aria-checked': drafting ? 'true' : 'false',
+      'aria-label': 'Everybody picks their own opening',
+      disabled: host ? undefined : 'disabled',
+      on: { click: () => host && setSetting({ autoDraft: drafting }) }
+    }));
+    arow.appendChild(el('b', { class: 'fr-swtxt',
+      text: drafting ? 'We pick' : 'Auto' }));
+    body.appendChild(arow);
+
     body.appendChild(el('p', { class: 'fr-hint', text: host
       ? 'Empty seats become bots at this difficulty when you start.'
-      : 'The player who made the room picks the difficulty and the Knights.' }));
+      : 'The player who made the room picks the difficulty, the Knights and the draft.' }));
 
     /* --- everybody has to say yes -------------------------------------------
      *

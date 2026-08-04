@@ -384,13 +384,17 @@ export function createHUD(root, state, game) {
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
       el('span', { class: 'sb-lab', text: 'How to Play' })),
     howBody,
-    button('wide red', { on: { click: () => game.restart() } },
-      el('span', { class: 'sb-ico', html: icon('restart', 20) }),
-      el('span', { class: 'sb-lab', text: 'Restart Match' })),
-    /* The second way home. The map pad's HOME key is the one the player named,
-       but the pad is only up while the map is, so the gear carries the same
-       exit for the rest of the match. Both land on the opening screen. */
-    button('wide cream', { on: { click: () => leaveMatch() } },
+    /* ONE WAY OUT, AND IT IS RED.
+     *
+     *   "Please get rid of the restart match, I don't need that AND leave
+     *    match. Just have one, but have leave match be red."
+     *
+     * They also did the same thing. `restart()` reloads the page and a cold boot
+     * lands on the opening screen; `leaveMatch()` reloads the page — telling the
+     * server first, which is the part that matters online — and lands on the
+     * opening screen. Two buttons, one destination, and only one of them was
+     * safe to press in a networked match. */
+    button('wide red', { on: { click: () => leaveMatch() } },
       el('span', { class: 'sb-ico', html: icon('home', 20) }),
       el('span', { class: 'sb-lab', text: 'Leave Match' }))
   );
@@ -560,19 +564,28 @@ export function createHUD(root, state, game) {
        *
        * `netState` is written by netmatch.js off the server's peer pushes:
        * 'live' is connected, 'gone' is a seat being held while somebody
-       * reconnects, and 'bot' is somebody who left for good and whose settler
-       * is being played out by a subroutine. The last two are worth showing —
-       * the standings are the only place that answers "is my friend still in
-       * this?" — and the name is the honest place to show it.
+       * reconnects, 'left' is a person who walked out and whose settler is
+       * being played out by a subroutine, and 'bot' is a seat that was never
+       * a person at all. The middle two are worth showing — the standings are
+       * the only place that answers "is my friend still in this?" — and the
+       * name is the honest place to show it.
+       *
+       *   "It just crossed out the friend's and the other bots' names in the
+       *    top right corner even though the bots were still playing."
+       *
+       * That is this line, and it used to read `st === 'bot'`. Three of the
+       * four seats in a two-player room are bots from the opening whistle, so
+       * striking through 'bot' struck through the whole board the moment
+       * anybody walked. Only 'left' is a departure.
        *
        * Names are re-read here too. In a networked match the roster arrives
        * after these rows are built, so the row created with 'Alex' on it has to
        * be told when the seat turns out to be a person called Sam.
        */
       const st = e.p.netState;
-      toggle(r.row, 'left', st === 'bot');
+      toggle(r.row, 'left', st === 'left');
       toggle(r.row, 'away', st === 'gone');
-      const label = (st === 'bot' || st === 'gone')
+      const label = (st === 'left' || st === 'gone')
         ? `${e.p.netName || e.p.name}` : e.p.name;
       if (r.nameEl && r.nameEl.textContent !== label) setText(r.nameEl, label);
       if (changed) rankList.appendChild(r.row);

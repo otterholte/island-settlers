@@ -107,13 +107,13 @@ async function boot() {
   let startLevel = guessed.level;
   try {
     const opt = await import('./core/options.js');
-    // The old boolean setting still wins if somebody pinned it by hand.
-    if (opt.lowPower()) startLevel = 0;
+    // The old boolean setting still wins if somebody chose it by hand.
+    if (opt.lowPower() && startLevel > 1) startLevel = 1;
   } catch (e) { /* the option is a nicety */ }
   console.info('[quality] starting at', startLevel, '·', guessed.why.join('; '));
 
   function ratioFor(w, h) {
-    return startLevel === 0 ? 1 : budgetRatio(w, h);
+    return startLevel === 2 ? budgetRatio(w, h) : 1;
   }
   const ratio0 = ratioFor(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight);
 
@@ -122,8 +122,8 @@ async function boot() {
     // No multisample buffer on the bottom rung: it is several megabytes of the
     // exact thing that runs out, and at ratio 1 it is the only antialiasing —
     // which is a trade worth making on a machine that is dropping contexts.
-    antialias: startLevel > 0 && ratio0 < 1.5,
-    powerPreference: startLevel === 0 ? 'low-power' : 'default',
+    antialias: startLevel === 2 && ratio0 < 1.5,
+    powerPreference: startLevel === 2 ? 'default' : 'low-power',
     alpha: false
   });
   renderer.setPixelRatio(ratio0);
@@ -275,11 +275,58 @@ async function boot() {
   // Settlers ------------------------------------------------------------
   const avatars = state.players.map(p => {
     const s = settlerM.createSettler(p.color.hex, p.id === 0);
+    s.__hex = p.color.hex;
     scene.add(s.group);
     s.group.position.set(p.x, heightAt(p.x, p.z), p.z);
     return s;
   });
   world.avatars = avatars;
+
+  /*
+   * THE SETTLERS WEAR WHAT THE SCOREBOARD SAYS THEY WEAR.
+   *
+   *   "The colours of the different players changed from one friend's screen to
+   *    the next. The different players should be the same colours from one
+   *    device to the other."
+   *
+   * These are built at boot from `state.players[i].color`, which at boot is the
+   * DEFAULT palette by index — blue, red, orange, purple. In a networked match
+   * `mirror.js` then renumbers the seats so the local player is index 0 and
+   * re-assigns colours by SERVER seat, which is what makes everybody agree...
+   * except that the 3D settlers had already been built, in the old colours. So
+   * the HUD, the results table and the board map showed one set of colours and
+   * the four people running around showed another, differently on each device.
+   *
+   * The palette is baked into geometry and a painted texture at build time, so
+   * the honest fix is to build them again — once, during the load-in pause, and
+   * only the ones whose colour actually changed. The array is mutated in place
+   * (`world.avatars` is the same array), so every later read picks up the new
+   * settler. The one direct reference anything else holds is the player
+   * controller's — it reads the impact counter for the camera shake — and it
+   * is handed the new object below.
+   */
+  function recolorAvatars() {
+    let changed = 0;
+    state.players.forEach((p, i) => {
+      const old = avatars[i];
+      if (!old || old.__hex === p.color.hex) return;
+      try {
+        scene.remove(old.group);
+        if (typeof old.dispose === 'function') old.dispose();
+      } catch (e) { /* it is going away regardless */ }
+      const s = settlerM.createSettler(p.color.hex, p.id === 0);
+      s.__hex = p.color.hex;
+      s.group.position.copy(old.group.position);
+      scene.add(s.group);
+      avatars[i] = s;
+      if (i === 0 && controller && typeof controller.setSettler === 'function') {
+        controller.setSettler(s);     // the camera shake reads this one directly
+      }
+      changed++;
+    });
+    if (changed) packSig.fill('');    // the carry stacks are new; repaint them
+    return changed;
+  }
 
   const gameCamera = camM
     ? camM.createGameCamera(renderer, scene)
@@ -308,6 +355,9 @@ async function boot() {
   const game = {
     state, world, audio, effects, camera: gameCamera, input, avatars,
     economy: ecoM,
+    /** Rebuild any settler whose seat colour has changed under it — netmatch.js
+     *  calls this once, the moment the server's seat colours land. */
+    recolorAvatars,
     /**
      * The gear's Full / Saver switch. A choice by hand PINS the rung: from then
      * on the probes keep measuring and reporting and stop deciding, because a
@@ -315,10 +365,10 @@ async function boot() {
      */
     setLowPower(on) {
       if (!quality) return !!on;
-      quality.pin(on ? 0 : 2);
-      return quality.level === 0;
+      quality.pin(on ? 1 : 2);
+      return quality.level < 2;
     },
-    get lowPower() { return !!quality && quality.level === 0; },
+    get lowPower() { return !!quality && quality.level < 2; },
     /** Capture-rig hook: the whole ladder, its schedule and its last reading. */
     get quality() { return quality ? quality.info : null; },
     qualityProbe() { if (quality) quality.startProbe(); return !!quality; },
@@ -337,7 +387,7 @@ async function boot() {
         sinceDraw: Math.round(performance.now() - lastDraw),
         draws, drawFails, losses,
         level: quality ? quality.level : null,
-        lowPower: !!quality && quality.level === 0,
+        lowPower: !!quality && quality.level < 2,
         shadows: !!renderer.shadowMap.enabled,
         checkShaderErrors: !!(renderer.debug && renderer.debug.checkShaderErrors),
         minFrameMs: MIN_FRAME_MS,
@@ -673,6 +723,9 @@ async function boot() {
      rendering the same 60 states twice is double the GPU bill for nothing. The
      slack is deliberate — 15ms rather than 16.7 — so a display running at
      exactly 60 never has a frame land a hair early and get thrown away. */
+  /* The base cap. `systems/quality.js` can lower it further — the bottom rung
+     draws at 30, which halves the GPU bill outright and, in a game about
+     walking around an island, changes nothing else. */
   const MIN_FRAME_MS = 15;
   let lastDraw = 0;
 
@@ -683,6 +736,8 @@ async function boot() {
      that is gone. Both of those are here. */
   let glLost = false;
   let draws = 0, drawFails = 0, losses = 0;
+  /** Last pack seen per player, so the carry stack can follow it exactly. */
+  const packSig = state.players.map(() => '');
   canvas.addEventListener('webglcontextlost', () => {
     glLost = true;
     losses++;
@@ -815,6 +870,33 @@ async function boot() {
       bots.update(FIXED);
     }
 
+    /*
+     * THE STACK ABOVE YOUR HEAD, THE INSTANT THE PACK CHANGES.
+     *
+     *   "When I purchase or trade something, the count of the items right above
+     *    my head takes a few seconds to refresh, which gives me an incorrect
+     *    idea of how many resources I actually have and is really confusing. I
+     *    need that to update the instant a trade or purchase happens. Or a
+     *    Knight."
+     *
+     * It was driven by EVENTS — 'gained' and the Knight — so a trade, a
+     * purchase, a card and every road ever built left it showing the pack from
+     * before, until the next thing picked up off the ground happened to refresh
+     * it. And online there are no local events at all: resources arrive inside
+     * a snapshot, so the stack was stale by design over the wire.
+     *
+     * A signature of the pack, compared every frame. Four small string
+     * comparisons for something that is never wrong again, and `setCarry` is
+     * only called when the numbers actually moved.
+     */
+    for (const p of state.players) {
+      const sig = `${p.res.wood}|${p.res.brick}|${p.res.wool}|${p.res.wheat}|${p.res.ore}`;
+      if (packSig[p.id] !== sig) {
+        packSig[p.id] = sig;
+        avatars[p.id].setCarry(p.res);
+      }
+    }
+
     for (const p of state.players) {
       const a = avatars[p.id];
       const k = Math.min(1, dt * 22);
@@ -856,7 +938,7 @@ async function boot() {
     // The 60Hz cap. Everything above has already run — the world is stepped and
     // the interface is current — this only skips the DRAW, which is the part
     // that costs a laptop its fan.
-    if (now - lastDraw < MIN_FRAME_MS) return;
+    if (now - lastDraw < (quality ? quality.frameMs : MIN_FRAME_MS)) return;
     if (quality) quality.frame(now);      // one subtraction; nothing is drawn
     lastDraw = now;
     draws++;

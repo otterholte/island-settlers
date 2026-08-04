@@ -279,46 +279,53 @@ ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robbe
 
   const a = mk(Q.SAVER);
   run(a.q, 16.7);
-  ok(a.q.level === Q.MIDDLE,
-    'a comfortable machine climbs one rung off the bottom, not two',
-    `level ${a.q.level} after p90 ${a.q.info.last.p90}ms`);
-  // The cooldown is real: a second good probe straight away must NOT climb.
+  wait(a.q, 600);
   run(a.q, 16.7);
-  ok(a.q.level === Q.MIDDLE, 'and waits a cooldown before the expensive rung',
-    `level ${a.q.level}`);
-  wait(a.q, 120);
-  run(a.q, 16.7);
-  ok(a.q.level === Q.FULL, 'then takes it once it has held the middle rung',
-    `level ${a.q.level}`);
+  ok(a.q.level === Q.SAVER,
+    'a comfortable machine is LEFT WHERE IT IS — the ladder never climbs',
+    `level ${a.q.level} after two clean probes and ten minutes`);
 
   const b = mk(Q.FULL);
   run(b.q, 45);
-  ok(b.q.level === Q.SAVER, 'a struggling machine drops straight to the bottom',
+  ok(b.q.level === Q.SAVER, 'a struggling machine drops out of full quality',
     `level ${b.q.level} after p90 ${b.q.info.last.p90}ms`);
 
-  const c = mk(Q.FULL);
-  run(c.q, 24);
-  ok(c.q.level === Q.FULL,
-    'and the gap between the bars is dead ground — no rung-hopping',
-    `p90 ${c.q.info.last.p90}ms left it at ${c.q.level}`);
+  const c = mk(Q.SAVER);
+  run(c.q, 60);
+  ok(c.q.level === Q.LOW,
+    'and one that is drowning even in saver goes to the bottom rung',
+    `level ${c.q.level} after p90 ${c.q.info.last.p90}ms`);
+
+  const c2 = mk(Q.FULL);
+  run(c2.q, 24);
+  ok(c2.q.level === Q.FULL,
+    'while a machine inside the bar is not touched at all',
+    `p90 ${c2.q.info.last.p90}ms left it at ${c2.q.level}`);
 
   const d = mk(Q.FULL);
   d.q.loss();
-  run(d.q, 16.7);
-  wait(d.q, 600);
-  run(d.q, 16.7);
-  ok(d.q.level === Q.SAVER,
-    'a machine that lost a context never climbs again this session',
+  ok(d.q.level === Q.LOW,
+    'a lost context goes straight to the bottom, not one rung down',
     `level ${d.q.level}`);
 
   const e = mk(Q.FULL);
   e.q.pin(Q.SAVER);
   run(e.q, 16.7);
   wait(e.q, 600);
-  run(e.q, 16.7);
   ok(e.q.level === Q.SAVER && e.q.pinned === true,
-    'and a choice made by hand outranks every measurement',
+    'and a choice made by hand is where it stays',
     `level ${e.q.level}`);
+
+  const f = mk(Q.LOW);
+  ok(Q.RUNGS[Q.LOW].fps === 30 && Q.RUNGS[Q.LOW].ratio < 1
+    && Q.RUNGS[Q.LOW].shadows === false && Q.RUNGS[Q.LOW].blur === false
+    && f.q.frameMs > 30,
+  'the bottom rung is half the frame rate and fewer pixels than the saver',
+  `${Q.RUNGS[Q.LOW].fps}fps, ratio ${Q.RUNGS[Q.LOW].ratio}, ${f.q.frameMs.toFixed(1)}ms between draws`);
+
+  ok(Q.PROBE_AT_SEC <= 12,
+    'and the one look happens while the opening screen is still up',
+    `${Q.PROBE_AT_SEC}s`);
 
   ok(Q.guessLevel({ navigator: { deviceMemory: 8, hardwareConcurrency: 4 },
     renderer: 'Intel(R) Iris(R) Xe Graphics', stored: {} }).level === Q.SAVER,

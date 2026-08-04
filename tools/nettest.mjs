@@ -639,6 +639,35 @@ try {
     draftBack === null || Number.isInteger(draftBack.pid),
     draftBack ? `pid ${draftBack.pid} needs ${draftBack.need}` : 'draft already over');
 
+  /*
+   * ------------------------------------------------------------------------
+   * AND THE MATCH GOES ON FOR WHOEVER IS LEFT
+   * ------------------------------------------------------------------------
+   *
+   *   "It also wouldn't let the remaining player use the trading post any more.
+   *    It would open, but the trades didn't work."
+   *
+   * So: park Bob on the market, give him goods, and have him trade — once
+   * before Alice leaves and once after. The first is the control. If only the
+   * second fails then the leaving is what broke it, and this says so in one
+   * line instead of a bug report.
+   */
+  /* What the server says to an act from the remaining player. A trade from the
+     wrong hex is `move.illegal` and that is a fine answer — it means the match
+     heard the request and applied its own rules. `no.match` is the failure this
+     is looking for: the server no longer recognising a player who never went
+     anywhere, which is what "the trades didn't work" looks like from the
+     inside. Walking Bob onto the market and stocking his pack would test the
+     rules of trading, which check 36 already does; this tests whether he is
+     still IN the match. */
+  const actAnswer = async who => {
+    try {
+      await who.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give: 'wood', get: 'ore' });
+      return 'traded';
+    } catch (e) { return e.code || 'refused'; }
+  };
+  const tradeBefore = await actAnswer(B);
+
   /* --- leaving for good ---------------------------------------------- */
   /* Alice's seat specifically: Bob's own reconnect fires a 'live' peer push a
      moment earlier, and taking the first one that arrives measures the wrong
@@ -649,8 +678,23 @@ try {
   await A.req(REQ.MATCH_LEAVE, {});
   const told = await peerGone;
   check('41a. the others are told when somebody leaves for good',
-    !!told && told.state === 'bot',
+    !!told && told.state === 'left',
     told ? `seat ${told.pid} -> ${told.state}` : 'nobody was told');
+
+  /*
+   *   "It just crossed out the friend's and the other bots' names in the top
+   *    right corner even though the bots were still playing."
+   *
+   * The standings strike through 'left'. A seat that was a bot from the
+   * opening whistle must therefore NOT be called 'left' — the two words have
+   * to stay apart or one person walking greys out the whole board. This is the
+   * assertion that keeps them apart: the departure says 'left', the seats that
+   * were never people still say 'bot'.
+   */
+  const botSeats = (beginB.seats || []).filter(s => s.kind === 'bot');
+  check('41a2. a bot seat is never called "left"',
+    botSeats.length > 0 && botSeats.every(s => s.state === 'bot') && told && told.state !== 'bot',
+    `${botSeats.length} bot seats: ${botSeats.map(s => s.state).join(',') || 'none'}`);
 
   /*
    *   "The friend who left should not be able to get back in... if you leave
@@ -668,6 +712,11 @@ try {
   check('41b. and leaving is final — no seat, no room, no way back in',
     rejoin === null && !(roomNow && roomNow.room),
     `begin: ${rejoin ? 'RESUMED' : 'none'}, room: ${roomNow && roomNow.room ? roomNow.room.code : 'none'}`);
+
+  const tradeAfter = await actAnswer(B);
+  check('41c. and the match goes on for whoever is left — the post still answers',
+    tradeAfter === tradeBefore && tradeAfter !== 'no.match',
+    `before Alice left: ${tradeBefore} · after: ${tradeAfter}`);
 
   await sleep(1500);
   const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());

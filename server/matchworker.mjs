@@ -162,7 +162,7 @@ for (const pid of human) {
 
 /** Free roads owed by Road Building, per seat. The browser keeps this on the
  *  player (`p.freeRoads`) and so do we — `rules.playRoadBuilding` sets it. */
-const peerState = new Map();  // pid -> 'live' | 'gone' | 'bot'
+const peerState = new Map();  // pid -> 'live' | 'gone' | 'bot' | 'left'
 for (const s of roster) peerState.set(s.pid, s.kind === 'human' ? 'live' : 'bot');
 
 /* ================================================================== output */
@@ -537,10 +537,14 @@ parentPort.on('message', msg => {
       peerState.set(msg.pid, msg.state);
       const p = state.players[msg.pid];
       if (!p) return;
-      if (msg.state === 'bot') {
+      if (msg.state === 'bot' || msg.state === 'left') {
         // Somebody left for good. Their settler carries on as a bot rather
         // than standing in the sea for the rest of the match — a frozen
         // settler is worse for everyone else than a competent one.
+        //
+        // 'left' and 'bot' are played identically and read differently: only
+        // 'left' is a person who was here, and only that seat is struck
+        // through in the standings (see `leaveRoom` in hub.mjs).
         p.isBot = true;
         const stick = sticks.get(msg.pid);
         if (stick) { stick.x = 0; stick.y = 0; }

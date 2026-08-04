@@ -287,7 +287,7 @@ export function createHub(deps) {
 
       case REQ.MATCH_LEAVE: {
         const seat = matchSeat(me.id);
-        if (seat) matches.peer(seat.matchId, seat.pid, 'bot');
+        if (seat) matches.peer(seat.matchId, seat.pid, 'left');
         leaveRoom(me.id);
         peer.send({ t: PUSH.ROOM, room: null });
         return reply(peer, i, {});
@@ -343,6 +343,8 @@ export function createHub(deps) {
       roomId: room.id, roster, byUser, seed,
       difficulty: room.settings.difficulty,
       knights: room.settings.knights,
+      // The host's answer for the whole table — see rooms.setSettings.
+      autoDraft: !!room.settings.autoDraft,
       order: null                        // filled in by the worker's `begin`
     });
     rooms.beginMatch(room, started.matchId);
@@ -383,7 +385,8 @@ export function createHub(deps) {
           order: msg.order,
           yourPid: pid,
           difficulty: msg.difficulty,
-          knights: msg.knights
+          knights: msg.knights,
+          autoDraft: !!info.autoDraft
         });
       }
       return;
@@ -437,12 +440,28 @@ export function createHub(deps) {
   function leaveRoom(userId) {
     const room = rooms.forUser(userId);
     if (!room) return;
-    // Walking out of a lobby mid-match hands your settler to a bot rather
-    // than deleting it: the island already has your roads on it.
+    /*
+     * Walking out of a lobby mid-match hands your settler to a bot rather
+     * than deleting it: the island already has your roads on it.
+     *
+     * The state sent is 'left', not 'bot', and the difference matters at the
+     * far end:
+     *
+     *   "When one player left, the other player didn't see a popup showing
+     *    them that their friend left, it just crossed out the friend's AND the
+     *    other bots' names in the top right corner even though the bots were
+     *    still playing."
+     *
+     * The seats that were bots from the opening whistle are also 'bot', so a
+     * standings row that greys itself out on 'bot' greys out three of the four
+     * seats the moment anybody walks. 'left' means A PERSON WHO WAS HERE AND
+     * ISN'T — exactly the row worth striking through, and the only one worth a
+     * popup. The worker plays a 'left' seat identically to a 'bot' one.
+     */
     if (room.state === 'playing' && room.matchId) {
       const info = matchOf.get(room.matchId);
       const pid = info && info.byUser.get(userId);
-      if (pid !== undefined) matches.peer(room.matchId, pid, 'bot');
+      if (pid !== undefined) matches.peer(room.matchId, pid, 'left');
     }
     const r = rooms.leave(userId);
     if (r && !r.dissolved) {
@@ -495,6 +514,7 @@ export function createHub(deps) {
         order: info.order,
         difficulty: info.difficulty,
         knights: info.knights,
+        autoDraft: !!info.autoDraft,
         yourPid: seat.pid,
         resumed: true
       });

@@ -70,7 +70,11 @@ function buildPages() {
       h: 'Five kinds of hex',
       body: [
         'The island is nineteen hexes. Five of them grow something you can carry away.',
-        'Forest gives wood. Clay hills give brick. Pasture gives wool. Fields give wheat. Mountains give ore. The desert gives nothing.'
+        // "Remove the mention of the desert in the tutorial, since it's actually
+        // the trading post." Quite right: the nineteenth hex carries the Great
+        // Market, and calling it a desert that gives nothing describes a
+        // tabletop rule this game does not have.
+        'Forest gives wood. Clay hills give brick. Pasture gives wool. Fields give wheat. Mountains give ore. The nineteenth is the Great Market, where you trade.'
       ]
     },
     {

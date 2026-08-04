@@ -92,7 +92,17 @@ export function createRooms() {
       touchedAt: Date.now(),
       state: 'lobby',           // 'lobby' | 'playing'
       matchId: null,
-      settings: { difficulty: 'medium', knights: true },
+      /* THREE SETTINGS NOW. `autoDraft` is the host's answer to "does anybody
+         pick their own opening", and it belongs to the ROOM for the reason the
+         other two do: a match cannot half-happen. It shipped as a per-device
+         preference and online that meant one player drafting while the other
+         watched their corners being chosen for them —
+           "the person that created the room was allowed to pick their position
+            on the draft/board. The friend who joined wasn't. When really
+            whoever created the room should choose whether everyone does or
+            doesn't draft."
+         Same rule as difficulty: the host sets it, everybody plays it. */
+      settings: { difficulty: 'medium', knights: true, autoDraft: false },
       seats: Array.from({ length: SEATS }, (_, pid) => ({
         pid,
         kind: 'empty',          // 'human' | 'bot' | 'empty'
@@ -187,13 +197,16 @@ export function createRooms() {
 
   function setSettings(room, patch) {
     if (!room || room.state === 'playing') return false;
-    const before = `${room.settings.difficulty}/${room.settings.knights}`;
+    const before = `${room.settings.difficulty}/${room.settings.knights}/${room.settings.autoDraft}`;
     if (typeof patch.difficulty === 'string') room.settings.difficulty = patch.difficulty;
     if (typeof patch.knights === 'boolean') room.settings.knights = patch.knights;
+    if (typeof patch.autoDraft === 'boolean') room.settings.autoDraft = patch.autoDraft;
     // CHANGING THE GAME UNREADIES EVERYONE. You said yes to Medium with
     // Knights; the host quietly moving it to Expert should ask you again
     // rather than carry your agreement over to a different match.
-    if (`${room.settings.difficulty}/${room.settings.knights}` !== before) clearReady(room);
+    if (`${room.settings.difficulty}/${room.settings.knights}/${room.settings.autoDraft}` !== before) {
+      clearReady(room);
+    }
     room.touchedAt = Date.now();
     return true;
   }

@@ -23,83 +23,109 @@
  * a time in whichever direction the measurement points.
  *
  * ---------------------------------------------------------------------------
- * A LADDER, NOT A SWITCH
+ * A LADDER THAT ONLY EVER GOES DOWN
  * ---------------------------------------------------------------------------
- * The old setting was a boolean, and a boolean cannot make a subtle transition:
- * coming back out of saver meant turning the shadow pass on, which makes three
- * recompile every material in the scene — a visible hitch, on the one machine
- * least able to absorb it. Three rungs, and the cheap half of the climb is
- * separated from the expensive half:
+ *   "Maybe don't constantly check. Just have a simple test while the app is
+ *    loading and if it should be on graphics saver just switch it there for me.
+ *    Just harden the graphics saver even slightly more so it works well on even
+ *    the worst struggling computers."
  *
- *   0  SAVER   no shadows · pixel ratio 1 · no backdrop blur anywhere
- *   1  MIDDLE  no shadows · full pixel budget · blur back
- *   2  FULL    shadows on · full pixel budget · blur back
+ * Three rungs (see `RUNGS`), decided once and then left alone:
  *
- * 0 -> 1 is a resize. No recompile, no allocation, invisible. 1 -> 2 is the
- * expensive one and is only attempted from a rung the machine has already been
- * holding comfortably, so by the time it is paid for we have evidence it can be
- * afforded. Downgrades skip straight to 0: a machine in trouble is not helped by
- * being let down gently.
+ *   2  FULL   shadows · full pixel budget · the interface's backdrop blur
+ *   1  SAVER  no shadows · pixel ratio 1 · no blur anywhere
+ *   0  LOW    no shadows · ratio 0.8 · 30fps · no blur
+ *
+ * The first version of this climbed back up on a schedule, and on the laptop it
+ * was written for that made things WORSE — every climb is an allocation. Raising
+ * the ratio resizes every buffer; turning shadows back on recompiles every
+ * material and allocates a 16MB target. Doing that repeatedly on a machine one
+ * allocation away from losing its context is not a measurement, it is the thing
+ * being measured. It goes down and stays down; the player can put it back.
  *
  * ---------------------------------------------------------------------------
  * WHAT "LOW ON COMPUTE" MEANS, MEASURABLY
  * ---------------------------------------------------------------------------
- * Two different questions, answered two different ways.
- *
  * BEFORE THE FIRST FRAME there is nothing to measure, so it is a guess off what
- * the browser will tell us: `deviceMemory` (Chrome reports 8 or less on the
- * laptop this came from), `hardwareConcurrency`, and the unmasked GL renderer
- * string, which names the adapter — an Intel Iris/UHD or a phone GPU means the
+ * the browser will tell us: `deviceMemory`, `hardwareConcurrency`, and the
+ * unmasked GL renderer string — an Intel Iris/UHD or a phone GPU means the
  * graphics memory IS the system memory, which is the condition that makes a
- * browser start dropping contexts. Guessing low is the cheap mistake: a fast
- * machine is at full quality twenty-five seconds later and never saw it.
+ * browser drop contexts. Plus what this machine did here last time, which beats
+ * any of them. Guessing low is the cheap mistake.
  *
- * ONCE IT IS RUNNING the honest measure is frame TIME, and the honest statistic
- * is not the mean. The loop caps at 60Hz, so a healthy machine cannot report
- * better than ~16.7ms and the mean says nothing; what separates a machine that
- * is coping from one that is not is the tail. `p90` — the frame nine out of ten
- * are quicker than — is flat at the cap when things are fine and climbs first
- * when they are not. A probe is 2.5 seconds of that, and it costs nothing: it
- * is reading a clock the loop already looks at. Nothing is drawn, allocated,
- * resized or hidden to take a measurement.
+ * ONE PROBE, eight seconds in, while the opening screen is up. The statistic is
+ * p90 rather than the mean: the loop caps at 60Hz so a healthy machine cannot
+ * report better than ~16.7ms, and it is the tail that moves first. It costs
+ * nothing — reading a clock the loop already has — and it can only lower the
+ * rung.
  *
  * Owner: Lead.
  */
 
 /** Rungs. See the header. */
-export const SAVER = 0;
-export const MIDDLE = 1;
+export const LOW = 0;
+export const SAVER = 1;
 export const FULL = 2;
 
-/* When to look, in minutes of wall clock since the page opened. The first is
-   deliberately early — a machine that was guessed wrong should not spend a whole
-   match paying for it — and they thin out, because a laptop that has been fine
-   for twenty minutes is not about to surprise anybody. */
-export const PROBE_AT_MIN = [0.4, 1, 3, 5, 10, 15, 20, 30];
+/*
+ * ONE LOOK, EARLY, AND THEN IT LEAVES THE MACHINE ALONE.
+ *
+ *   "Maybe don't constantly check. Just have a simple test while the app is
+ *    loading and if it should be on graphics saver just switch it there for me.
+ *    Just harden the graphics saver even slightly more so it works well on even
+ *    the worst struggling computers."
+ *
+ * The first version of this climbed: it probed at 0.4, 1, 3, 5, 10, 15, 20 and
+ * 30 minutes and stepped UP whenever the numbers looked good. On the laptop it
+ * was written for that made things worse, and the reason is obvious in
+ * hindsight — every climb is an allocation. Raising the pixel ratio resizes
+ * every buffer; turning the shadow pass back on recompiles every material and
+ * allocates a 16MB target. Doing that on a machine that is one allocation away
+ * from losing its context is not a measurement, it is the thing being measured.
+ *
+ * So there is ONE probe, eight seconds in, while the opening screen is up and
+ * nothing is at stake, and it can only ever move DOWN. After that the ladder is
+ * still: the only things that move it are a lost context (down) and the player
+ * (either way, and it stays where they put it).
+ */
+export const PROBE_AT_SEC = 8;
 
 /** Seconds of frames per probe. Long enough to see a tail, short enough that a
  *  hiccup while it happens to be sampling does not decide anything on its own. */
 const PROBE_SEC = 2.5;
 
 /*
- * The bars, in milliseconds per frame.
+ * WHAT EACH RUNG COSTS THE MACHINE.
  *
- * COMFORTABLE is what a machine has to show to be trusted with the next rung
- * up: a p90 of 20ms is 50fps at the tail with the loop capped at 60, which is
- * headroom rather than luck. STRUGGLING is what drops it to the bottom rung:
- * 30ms p90 is 33fps at the tail, which is where a player starts to feel it.
- *
- * The gap between them is deliberate and wide. A single threshold with anything
- * either side of it produces a machine that spends its life climbing one rung
- * and falling off it, which is far worse to look at than either rung.
+ *   ratio     multiplies the pixel budget. 0.8 is 36% fewer fragments than 1.0
+ *             and is very slightly soft; it is only ever reached by a machine
+ *             that has already had a context taken away from it, where softness
+ *             is not the problem being solved.
+ *   fps       the frame cap. Halving it halves the GPU bill outright, and this
+ *             is a game about walking around an island rather than a shooter —
+ *             at 30 the only thing that changes is the fan.
+ *   shadows   a second full pass over the scene, every frame, plus the target.
+ *   blur      every `backdrop-filter` in the interface. See ui-base.css: each
+ *             one is a compositor buffer, allocated when the panel appears.
  */
-const COMFORTABLE_MS = 20;
-const STRUGGLING_MS = 30;
+export const RUNGS = [
+  { key: 'low', ratio: 0.80, fps: 30, shadows: false, blur: false },
+  { key: 'saver', ratio: 1.00, fps: 60, shadows: false, blur: false },
+  { key: 'full', ratio: 1.00, fps: 60, shadows: true, blur: true }
+];
 
-/** No upgrade within this long of a downgrade or a lost context. */
-const COOLDOWN_SEC = 90;
-/** Two failed climbs and it stops trying for the rest of the session. */
-const MAX_CLIMBS = 2;
+/*
+ * The bars, in milliseconds per frame. Only ever used to go DOWN.
+ *
+ *   STRUGGLING  33fps at the tail. A machine showing this at full quality is
+ *               told to save.
+ *   DROWNING    20fps at the tail. A machine showing this while ALREADY saving
+ *               has nothing left to give at this resolution, so it goes to the
+ *               bottom rung — softer and half the frame rate — rather than
+ *               carrying on at a rate the player can see.
+ */
+const STRUGGLING_MS = 30;
+const DROWNING_MS = 50;
 
 const STORE_KEY = 'island-settlers.quality';
 
@@ -189,11 +215,9 @@ export function createQuality(opts = {}) {
   const stored = readStored() || {};
   let level = Number.isInteger(opts.level) ? opts.level : FULL;
   let pinned = false;                 // the player chose; stop deciding for them
-  let climbs = 0;                     // failed attempts to go up
   let losses = stored.losses | 0;
-  let sinceChange = COOLDOWN_SEC;     // seconds; starts warm so probe 1 can act
   let elapsed = 0;                    // seconds since the page opened
-  let nextProbe = 0;                  // index into PROBE_AT_MIN
+  let probed = false;                 // the one look has been taken
 
   /* The sampler. `frame(now)` is called from the render loop with the same
      timestamp it already has, so measuring costs one subtraction. */
@@ -234,7 +258,10 @@ export function createQuality(opts = {}) {
    * this whole file. Moving between 0 and 1 never touches it.
    */
   function apply(next, why) {
-    const want = next < SAVER ? SAVER : (next > FULL ? FULL : next);
+    // Clamp to the ladder, whose floor is LOW. (It read `< SAVER ? SAVER` while
+    // SAVER was the bottom rung; adding a rung underneath made that a floor at
+    // the wrong height, and the bottom rung became unreachable.)
+    const want = next < LOW ? LOW : (next > FULL ? FULL : next);
     const shadowsWere = !!(renderer && renderer.shadowMap && renderer.shadowMap.enabled);
     const shadowsWant = want === FULL;
     const changed = want !== level;
@@ -259,10 +286,15 @@ export function createQuality(opts = {}) {
       });
     }
 
+    const rung = RUNGS[want];
     if (renderer && renderer.setPixelRatio) {
       const w = (renderer.domElement && renderer.domElement.clientWidth) || 0;
       const h = (renderer.domElement && renderer.domElement.clientHeight) || 0;
-      renderer.setPixelRatio(want === SAVER ? 1 : ratioFor(w, h));
+      // FULL takes the whole pixel budget; the rungs below scale it down. 0.8
+      // is 36% fewer fragments than 1.0 — the single biggest lever left once
+      // the shadow pass has gone.
+      const base = want === FULL ? ratioFor(w, h) : 1;
+      renderer.setPixelRatio(Math.max(0.5, base * rung.ratio));
     }
 
     /*
@@ -283,10 +315,9 @@ export function createQuality(opts = {}) {
      * background and lose an effect most people could not point to — for the one
      * that was costing a context.
      */
-    if (root && root.classList) root.classList.toggle('saver', want === SAVER);
+    if (root && root.classList) root.classList.toggle('saver', !rung.blur);
 
     if (changed) {
-      sinceChange = 0;
       writeStored({ level, at: Date.now() });
       onChange(level, why || '');
     }
@@ -311,38 +342,32 @@ export function createQuality(opts = {}) {
 
     if (pinned) { last.verdict = 'pinned'; return; }
 
-    if (last.p90 >= STRUGGLING_MS && level > SAVER) {
+    /* DOWN ONLY. A machine that is coping is left exactly where it is: there is
+       nothing to gain from moving it and an allocation to lose. */
+    if (level === FULL && last.p90 >= STRUGGLING_MS) {
       last.verdict = 'struggling';
       apply(SAVER, `p90 ${last.p90}ms`);
       return;
     }
-    if (last.p90 <= COMFORTABLE_MS && level < FULL
-        && sinceChange >= COOLDOWN_SEC && climbs < MAX_CLIMBS) {
-      last.verdict = 'comfortable';
-      // ONE RUNG. 0 -> 1 is free; 1 -> 2 is the recompile, and it only happens
-      // from a rung this machine has already held for a cooldown.
-      if (level === MIDDLE) climbs++;
-      apply(level + 1, `p90 ${last.p90}ms`);
+    if (level === SAVER && last.p90 >= DROWNING_MS) {
+      last.verdict = 'drowning';
+      apply(LOW, `p90 ${last.p90}ms`);
       return;
     }
     last.verdict = 'steady';
   }
 
-  /** Seconds of wall clock. Drives the schedule and the sampling window. */
+  /** Seconds of wall clock. Drives the one probe and the sampling window. */
   function update(dt) {
     const d = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 1 / 60;
     elapsed += d;
-    sinceChange += d;
     if (probing > 0) {
       probing -= d;
       if (probing <= 0) { probing = 0; finishProbe(); }
       return;
     }
-    while (nextProbe < PROBE_AT_MIN.length && elapsed >= PROBE_AT_MIN[nextProbe] * 60) {
-      nextProbe++;
-      startProbe();
-      return;
-    }
+    // One look, while the opening screen is up and nothing is at stake.
+    if (!probed && elapsed >= PROBE_AT_SEC) { probed = true; startProbe(); }
   }
 
   /** The browser took the context away. Nothing to measure — this IS the
@@ -350,16 +375,19 @@ export function createQuality(opts = {}) {
   function loss() {
     losses++;
     writeStored({ losses });
-    climbs = MAX_CLIMBS;              // do not climb again this session
-    if (level !== SAVER) apply(SAVER, 'context lost');
-    sinceChange = 0;
+    /* THE BOTTOM RUNG, NOT THE MIDDLE ONE. A machine that has actually had its
+       context taken away has proved it cannot hold what it was given, and the
+       next thing that happens on that machine should be the cheapest frame this
+       game can draw. Softer and half the rate is a far better answer than a
+       black screen, and it is remembered for next time. */
+    if (level !== LOW) apply(LOW, 'context lost');
     return level;
   }
 
   /** The player used the switch. Their choice outranks every measurement. */
   function pin(next) {
     pinned = true;
-    climbs = MAX_CLIMBS;
+    probed = true;
     return apply(next, 'chosen');
   }
 
@@ -367,12 +395,15 @@ export function createQuality(opts = {}) {
     apply, frame, update, loss, pin,
     startProbe, finishProbe,
     get level() { return level; },
+    /** Milliseconds the frame loop should leave between draws at this rung. */
+    get frameMs() { return Math.round(1000 / RUNGS[level].fps) - 1.7; },
     get pinned() { return pinned; },
     get info() {
       return {
-        level, pinned, climbs, losses,
+        level, pinned, losses, rung: RUNGS[level].key,
+        fps: RUNGS[level].fps, ratioScale: RUNGS[level].ratio,
         elapsed: Math.round(elapsed),
-        nextProbeAt: nextProbe < PROBE_AT_MIN.length ? PROBE_AT_MIN[nextProbe] : null,
+        probeAt: probed ? null : PROBE_AT_SEC,
         probing: probing > 0,
         last: { ...last }
       };

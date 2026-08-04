@@ -203,7 +203,25 @@ export function createPlayerController(state, settler, gameCamera, input, world,
     }
   }
 
-  return { update };
+  return {
+    update,
+    /**
+     * Point at a different settler object for the same seat.
+     *
+     * A networked match rebuilds the settlers once the server has said what
+     * colour each seat is (`recolorAvatars` in main.js), and the one thing this
+     * file holds a direct reference for — the impact counter behind the camera
+     * shake — would otherwise go on reading a settler that is no longer in the
+     * scene, so bumping a tree would stop shaking anything. The count starts
+     * again from the new object: a rebuild is not a collision.
+     */
+    setSettler(next) {
+      if (!next || next === settler) return false;
+      settler = next;
+      lastImpacts = typeof next.impacts === 'number' ? next.impacts : 0;
+      return true;
+    }
+  };
 }
 
 export default createPlayerController;

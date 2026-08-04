@@ -87,6 +87,7 @@ export function parkMatch(msg) {
       yourPid: msg.yourPid,
       difficulty: msg.difficulty,
       knights: msg.knights,
+      autoDraft: msg.autoDraft,
       at: Date.now()
     }));
     return true;
@@ -205,6 +206,28 @@ export function createNetMatch(state, game, client) {
       roster: msg.seats,
       order: msg.order
     });
+    /*
+     * AND REPAINT THE SETTLERS TO MATCH.
+     *
+     *   "The colours of the different players changed from one friend's screen
+     *    to the next. The different players should be the same colours from one
+     *    device to the other."
+     *
+     * They already were, in the standings — `createMirror` assigns every seat
+     * the colour the SERVER gave it, so both devices agree on who is red. The
+     * disagreement was three feet lower down: the 3D settlers are built at boot
+     * from the default index colours, before any of this, and each device puts
+     * itself in seat 0. So everyone saw themselves in the seat-0 colour and
+     * everyone else shuffled.
+     *
+     * The palette is baked into geometry and a painted texture when a settler
+     * is built, so this rebuilds the ones whose colour actually changed rather
+     * than walking every mesh. It is the first frame of the match; nobody is
+     * looking at a settler yet.
+     */
+    if (typeof game.recolorAvatars === 'function') {
+      try { game.recolorAvatars(); } catch (e) { /* colours are cosmetic; the match is not */ }
+    }
     active = true;
     draftState.done = false;
     draftState.pid = -1;
@@ -282,7 +305,20 @@ export function createNetMatch(state, game, client) {
     // Yours: targets and a confirm. Anybody else's: the same board, re-dressed
     // to say whose turn it is. Never nothing — that was the bug.
     if (draftState.pid === 0 && msg.need !== 'loading') {
-      if (autoDraft()) { closePick(); autoPick(msg); }
+      /* THE ROOM DECIDES, NOT THE DEVICE.
+       *
+       *   "Whoever created the room should choose whether everyone does or
+       *    doesn't draft."
+       *
+       * `autoDraft()` is a per-device preference and reading it here is what
+       * produced the report: the host had it off and picked their corners,
+       * the friend who joined had it on and never saw the board — from their
+       * chair, the game simply would not let them play the draft. Online the
+       * host's setting arrives in the begin message and is the answer for
+       * everybody; the local preference is what single player uses. */
+      const auto = info && typeof info.autoDraft === 'boolean'
+        ? info.autoDraft : autoDraft();
+      if (auto) { closePick(); autoPick(msg); }
       else openPick(msg);
     } else closePick();
     notify('draft', { ...draftState });
@@ -337,12 +373,34 @@ export function createNetMatch(state, game, client) {
      */
     if (p && was && was !== msg.state && local !== 0) {
       const who = p.netName || p.name;
-      if (msg.state === 'bot') hud('%s left the match — a bot is playing their settler', who, 'warn');
-      else if (msg.state === 'gone') hud('%s dropped out — holding their seat', who, 'warn');
+      if (msg.state === 'left' || msg.state === 'bot') {
+        /*
+         * A DEPARTURE IS AN EVENT, NOT A TOAST.
+         *
+         *   "When one player left, the other player didn't see a popup showing
+         *    them that their friend left."
+         *
+         * A toast in the corner is what this was, and a corner is where a
+         * person watching their own settler never looks. The centre-screen
+         * announcement is the same channel the game already uses for the
+         * things you must not miss — a raid, a victory point — and losing the
+         * only other person in the match belongs on it. The toast stays too,
+         * a line lower, because it says what happens NEXT.
+         */
+        say(`${who} left the match`, '#f5a33c');
+        hud('%s left — a bot is playing their settler', who, 'warn');
+      } else if (msg.state === 'gone') hud('%s dropped out — holding their seat', who, 'warn');
       else if (msg.state === 'live' && was !== 'live') hud('%s is back', who, 'good');
     }
     notify('peer', { local, state: msg.state });
   });
+
+  /** The centre-screen announcement, if there is a HUD to say it on. */
+  function say(text, color) {
+    const h = game && game.hud;
+    if (!h || typeof h.announce !== 'function') return;
+    try { h.announce(text, color); } catch (e) { /* cosmetic */ }
+  }
 
   /** One line to the player, if there is a HUD to say it to. */
   function hud(fmt, who, kind) {

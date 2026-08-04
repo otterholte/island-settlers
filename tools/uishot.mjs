@@ -601,6 +601,24 @@ if (STAGE === 'home') {
     if (back && back.net) break;
   }
   console.log('  REJOINED ' + JSON.stringify(back));
+  /* THE SETTLERS WEAR WHAT THE SCOREBOARD SAYS THEY WEAR.
+   *
+   *   "The colours of the different players changed from one friend's screen to
+   *    the next."
+   *
+   * The seats are recoloured by the server the moment the mirror is built, and
+   * the 3D settlers were built before that, at boot, in the default palette. So
+   * the assertion is not about which colours were dealt — it is that the thing
+   * running around and the row in the standings are the same colour, on the
+   * device where the renumbering happened. Any mismatch here is a settler the
+   * other player sees in a different jersey. */
+  console.log('  AVATARCOLOR ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__, av=I.game.avatars||[];
+    const rows=I.state.players.map((p,i)=>({
+      seat:p.netSeat, key:p.color.key,
+      match:!!(av[i]&&av[i].__hex===p.color.hex),
+      inScene:!!(av[i]&&av[i].group&&av[i].group.parent)}));
+    return {ok:rows.every(r=>r.match&&r.inScene), rows};})()`)));
   await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m;return 1})`, true);
   const watch = { n: 0, mine: 0, mineOpen: 0, theirs: 0, theirsOpen: 0, title: null };
 
@@ -680,6 +698,31 @@ if (STAGE === 'home') {
       buffered:n.buffered, t:+I.state.time.toFixed(1),
       hudUp:!!document.querySelector('.hud:not(.pre)')};})()`)));
   await shot(`netmatch-${TAG}`);
+  /* AND THE REPAINT ITSELF, DRIVEN ON PURPOSE.
+   *
+   * The check above passes trivially whenever the server happens to deal this
+   * client seat 0 — every seat keeps its boot colour and nothing has to move.
+   * The interesting case is the other one, so this stage MAKES it happen: give
+   * two seats each other's colours, ask for the repaint, and check that the
+   * settlers that come back are the new colour, are in the scene, are standing
+   * exactly where the old ones were, and that the untouched seats were not
+   * rebuilt. Done after the photograph so nothing else in the stage reads a
+   * board that has been meddled with. */
+  console.log('  REPAINT ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__, g=I.game, S=I.state, av=g.avatars;
+    const at=i=>({x:+av[i].group.position.x.toFixed(3),z:+av[i].group.position.z.toFixed(3)});
+    const was=[0,1,2,3].map(i=>({o:av[i], hex:av[i].__hex, pos:at(i)}));
+    const c0=S.players[0].color, c1=S.players[1].color;
+    S.players[0].color=c1; S.players[1].color=c0;
+    const n=g.recolorAvatars();
+    const now=[0,1,2,3].map(i=>({hex:av[i].__hex, pos:at(i), rebuilt:av[i]!==was[i].o,
+      inScene:!!(av[i].group&&av[i].group.parent)}));
+    const moved=[0,1].some(i=>now[i].pos.x!==was[i].pos.x||now[i].pos.z!==was[i].pos.z);
+    return {changed:n, ok: n===2
+      && now[0].hex===c1.hex && now[1].hex===c0.hex
+      && now[0].rebuilt && now[1].rebuilt && now[0].inScene && now[1].inScene
+      && !now[2].rebuilt && !now[3].rebuilt && !moved,
+      swapped:[c0.key,c1.key], untouched:[now[2].rebuilt,now[3].rebuilt], moved};})()`)));
 
 /* The results sheet, both ways round. `--win=1` for your victory, `--win=0` to
    lose to a rival, which is the state the medallion had to stop congratulating
@@ -1550,7 +1593,7 @@ if (STAGE === 'home') {
     const sun=window.__ISLAND__.world.sky&&window.__ISLAND__.world.sky.sun;
     return {shadows:r.shadowMap.enabled, casting:!!(sun&&sun.castShadow),
       calls:r.info.render.calls, ratio:+r.getPixelRatio().toFixed(3),
-      stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)===0,
+      stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)<2,
       blurOff:document.getElementById('ui').classList.contains('saver')};})()`);
   const saverRate = await rate('framesIn3s');
   await ev(`window.__ISLAND__.game.setLowPower(false)`, true);
@@ -1580,7 +1623,7 @@ if (STAGE === 'home') {
       renderer:'Intel(R) Iris(R) Xe Graphics', stored:{}});
     const guessHigh=Q.guessLevel({navigator:{deviceMemory:32,hardwareConcurrency:16},
       renderer:'NVIDIA GeForce RTX 4080', stored:{}});
-    return {schedule:Q.PROBE_AT_MIN, guessLow, guessHigh,
+    return {probeAtSec:Q.PROBE_AT_SEC, rungs:Q.RUNGS, guessLow, guessHigh,
       level:g.quality && g.quality.level, blurOff:document.getElementById('ui')
         .classList.contains('saver')};})()`, true);
   console.log('  LADDER ' + JSON.stringify(ladder));
@@ -1642,7 +1685,7 @@ if (STAGE === 'home') {
      view away when it is short of memory, so asking for the same amount again
      is asking for the same answer. */
   const auto = await ev(`(()=>({low:window.__ISLAND__.game.lowPower,
-    stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)===0,
+    stored:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').level)<2,
     losses:(JSON.parse(localStorage.getItem('island-settlers.quality')||'{}').losses)|0,
     shadows:window.__ISLAND__.renderer.shadowMap.enabled}))()`);
   console.log('  AUTOSAVER ' + JSON.stringify(auto));
@@ -1703,12 +1746,13 @@ if (STAGE === 'home') {
     andIsRememberedForNextTime: saver.stored === true,
     aLostContextTurnsItOnByItself: auto.low === true && auto.stored === true
       && auto.shadows === false && auto.losses > 0,
-    andTheGuessWasAlreadyLowOnThisMachine: bootLevel && bootLevel.level === 0,
-    aLaptopIsGuessedLowBeforeTheFirstFrame: ladder.guessLow.level === 0
+    andTheGuessWasAlreadyLowOnThisMachine: bootLevel && bootLevel.level < 2,
+    aLaptopIsGuessedLowBeforeTheFirstFrame: ladder.guessLow.level === 1
       && ladder.guessLow.why.length > 0,
     aRealGpuIsNot: ladder.guessHigh.level === 2,
-    theScheduleIsTheOneAskedFor:
-      JSON.stringify(ladder.schedule) === JSON.stringify([0.4, 1, 3, 5, 10, 15, 20, 30]),
+    thereIsOneLookAndItIsEarly: ladder.probeAtSec <= 12,
+    andTheBottomRungIsHalfTheFrameRate: ladder.rungs[0].fps === 30
+      && ladder.rungs[0].ratio < 1,
     theBottomRungDropsTheBackdropBlur: saver.blurOff === true && full.blurOff === false,
     /* Nothing about a probe changes what is drawn — it reads the clock the
        loop already looks at. The invariants are exact — same rung, same draw
