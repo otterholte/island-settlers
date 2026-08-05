@@ -163,7 +163,7 @@ function buildPages() {
       title: 'The Two Bonuses',
       h: 'Points you do not build',
       body: [
-        `Longest Road goes to whoever has ${LONGEST_ROAD_MIN} or more segments in one unbroken line. It is worth ${LONGEST_ROAD_VP} points — more than two settlements.`,
+        `Longest Road goes to whoever has ${LONGEST_ROAD_MIN} or more segments in one unbroken line. It is worth ${LONGEST_ROAD_VP} points — as much as three settlements.`,
         `Largest Army goes to whoever has played ${LARGEST_ARMY_MIN} or more knights. It is worth ${LARGEST_ARMY_VP}.`,
         'Both can be taken off you the moment somebody beats your total.'
       ]

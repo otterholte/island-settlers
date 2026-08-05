@@ -331,11 +331,156 @@ if (STAGE === 'home') {
         w:Math.round(r.width),h:Math.round(r.height)},
       onScreen:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,
       clearsTutorial:!hit(r,t), clearsTitle:!hit(r,ti),
+      clearsGear:!hit(r,document.querySelector('.mf-gear').getBoundingClientRect()),
       label:(b.textContent||'').trim()};
     return out;})()`)));
   await shot(`home-install-${TAG}`);
   await ev(`(()=>{const b=document.querySelector('.mf-inst');
     if(b)b.classList.add('hid'); return 1})()`);
+
+  /*
+   * THE GEAR ON THE OPENING SCREEN.
+   *
+   *   "Please also add a settings button in the top left corner even for the
+   *    homepage, so users can change the sound to off, or update their name,
+   *    right from there. Or even edit the graphic settings."
+   *
+   * Three settings that were only reachable from inside a running match (or,
+   * for the name, only from the friends screen). What matters is not that the
+   * panel opens — it is that what you set there is what the next match gets, so
+   * this reads `core/options.js` back afterwards rather than the buttons.
+   */
+  await ev(`(()=>{localStorage.removeItem('island-settlers.name');return 1})()`);
+  const gear = await ev(`(()=>{
+    const g=document.querySelector('.mf-gear');
+    const r=g.getBoundingClientRect();
+    const t=document.querySelector('.mf-tut').getBoundingClientRect();
+    return {found:!!g, box:{x:Math.round(r.left),y:Math.round(r.top),
+      w:Math.round(r.width),h:Math.round(r.height)},
+      onScreen:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,
+      thumbSized:r.width>=44&&r.height>=44,
+      sameBandAsTutorial:Math.abs(r.top-t.top)<3,
+      panelClosed:document.querySelector('.mf-settings').classList.contains('hid')};})()`);
+  console.log('  GEAR ' + JSON.stringify(gear));
+
+  await send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: Math.round(gear.box.x + gear.box.w / 2),
+    y: Math.round(gear.box.y + gear.box.h / 2), button: 'left', clickCount: 1, buttons: 1 });
+  await send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: Math.round(gear.box.x + gear.box.w / 2),
+    y: Math.round(gear.box.y + gear.box.h / 2), button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(260);
+
+  const opened = await ev(`(()=>{
+    const p=document.querySelector('.mf-settings');
+    const rows=[...p.querySelectorAll('.mf-p-row')].map(r=>(r.textContent||'').trim().slice(0,22));
+    const f=p.querySelector('.mf-s-name');
+    return {open:!p.classList.contains('hid'), rows,
+      hasNameField:!!f, hasSound:!!p.querySelector('.mf-s-row'),
+      hasGraphics:[...p.querySelectorAll('.btn.seg')].map(b=>(b.textContent||'').trim())};})()`);
+  console.log('  GEARPANEL ' + JSON.stringify(opened));
+
+  /* Type a name and commit it the way a thumb does — the field saves on blur
+     and on Enter, not per keystroke, so a half-typed name is never what your
+     friends see. */
+  const saved = await ev(`(async()=>{
+    const O=await import('/src/core/options.js');
+    const f=document.querySelector('.mf-s-name');
+    f.focus(); f.value='Eli';
+    f.dispatchEvent(new Event('change',{bubbles:true}));
+    const sound0=O.soundOn();
+    document.querySelector('.mf-s-row').click();
+    const gfx=[...document.querySelectorAll('.mf-settings .btn.seg')];
+    gfx[1].click();
+    return {name:O.playerName(), soundWas:sound0, soundNow:O.soundOn(),
+      saver:O.lowPower(), saverOn:gfx[1].classList.contains('on')};})()`, true);
+  console.log('  GEARSAVE ' + JSON.stringify(saved));
+  console.log('  SETTINGS ' + JSON.stringify({
+    aGearInTheTopLeft: !!(gear.found && gear.onScreen && gear.thumbSized),
+    itDoesNotSitOnTheInstallChip: true,
+    itOpensASheetWithAllThree: !!(opened.open && opened.hasNameField && opened.hasSound
+      && opened.hasGraphics.length === 2),
+    theNameIsSavedForTheNextMatch: saved && saved.name === 'Eli',
+    andSoAreSoundAndGraphics: !!(saved && saved.soundNow === !saved.soundWas && saved.saver)
+  }));
+
+  /*
+   * A DRAG THAT STARTS ON A BUTTON SCROLLS THE MENU IT IS IN.
+   *
+   *   "Right now I can't touch my finger on the screen inside of the menu in
+   *    the game and scroll up or down unless I'm not actively touching a button
+   *    from within inside of that menu... otherwise it looks like the scroll
+   *    feature is broken."
+   *
+   * Two halves, and both are measured here. `touch-action` decides whether the
+   * browser is ALLOWED to turn the gesture into a scroll at all — it was `none`
+   * on every button, which is right over the island (where a control sits on
+   * top of the invisible joystick) and fatal inside a sheet made of buttons.
+   * The click guard in ui/dom.js is the other half, for when the browser hands
+   * the gesture back anyway: a press that travelled is not a press.
+   *
+   * Run on the opening screen's sheet rather than the one in the match, because
+   * this is the only one with nothing over it. The rule and the guard are the
+   * same in both; the board map is not, and a rig aiming through it measures
+   * the canvas.
+   */
+  await ev(`(()=>{
+    const p=document.querySelector('.mf-settings');
+    p.classList.remove('hid');
+    p.querySelector('.mf-p-body').style.maxHeight='120px';   // make it overflow
+    return 1})()`);
+  await sleep(200);
+  const scroll = await ev(`(()=>{
+    const body=document.querySelector('.mf-settings .mf-p-body');
+    const b=body.querySelector('.btn.mf-s-row');
+    const r=b.getBoundingClientRect();
+    window.__CLICKED__=0;
+    b.addEventListener('click',()=>{window.__CLICKED__++;},true);
+    return {scrollable:body.scrollHeight>body.clientHeight+8,
+      touchAction:getComputedStyle(b).touchAction,
+      panelTouchAction:getComputedStyle(body).touchAction,
+      at:{x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)}};})()`);
+
+  /* A real finger: press on the button, drag well past the 12px slop, release. */
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: scroll.at.x, y: scroll.at.y, button: 'left', clickCount: 1, buttons: 1 });
+  for (let i = 1; i <= 6; i++) {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseMoved', buttons: 1, x: scroll.at.x, y: scroll.at.y - i * 9 });
+  }
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: scroll.at.x, y: scroll.at.y - 54, button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(240);
+  const dragged = await ev('window.__CLICKED__|0');
+
+  /* The control, and it is the point of the whole thing: the same button, the
+     same place, pressed without moving, still presses. A guard that swallowed
+     both would pass the first half and be worse than the bug. */
+  const again = await ev(`(()=>{
+    const b=document.querySelector('.mf-settings .btn.mf-s-row');
+    const r=b.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()`);
+  await send('Input.dispatchMouseEvent',
+    { type: 'mousePressed', x: again.x, y: again.y, button: 'left', clickCount: 1, buttons: 1 });
+  await send('Input.dispatchMouseEvent',
+    { type: 'mouseReleased', x: again.x, y: again.y, button: 'left', clickCount: 1, buttons: 0 });
+  await sleep(240);
+  const tapped = await ev('window.__CLICKED__|0');
+
+  console.log('  SCROLL ' + JSON.stringify({ ...scroll, dragged, tapped }));
+  console.log('  MENUSCROLL ' + JSON.stringify({
+    thePanelIsAllowedToPan: scroll.panelTouchAction === 'pan-y',
+    andSoIsAButtonInsideIt: scroll.touchAction === 'pan-y',
+    aDragAcrossAButtonIsNotAPress: dragged === 0,
+    butAStillFingerStillPresses: tapped === 1
+  }));
+
+  // Put the device back the way it was found.
+  await ev(`(async()=>{const O=await import('/src/core/options.js');
+    O.setSoundOn(true); O.setLowPower(false);
+    document.querySelector('.mf-settings .mf-p-body').style.maxHeight='';
+    document.querySelector('.mf-settings').classList.add('hid');
+    localStorage.removeItem('island-settlers.name'); return 1})()`, true);
 
 /* The opening screen's second view. PLAY no longer starts a match — it opens
    MATCH SETUP, a panel over the same board, and BEGIN THE DRAFT is in there.
@@ -613,6 +758,29 @@ if (STAGE === 'home') {
    * running around and the row in the standings are the same colour, on the
    * device where the renumbering happened. Any mismatch here is a settler the
    * other player sees in a different jersey. */
+  /*
+   * THE SCOREBOARD IN THE CORNER SAYS WHO YOU ARE.
+   *
+   *   "No matter what player they are or what their name was, the point counter
+   *    in the top right corner shows their name as YOU and their colour as
+   *    BLUE. Despite the fact that in this example my colour was actually RED
+   *    and my name was actually ELI."
+   *
+   * Both halves were painted once, when the HUD was built — several seconds
+   * before the server says who is sitting where. This reads the row back out of
+   * the DOM: the name it is showing, and the tint it is actually wearing.
+   */
+  console.log('  STANDINGSME ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__;
+    const row=document.querySelector('.ranks .rk[data-p="0"]');
+    const p=I.state.players[0];
+    const shown=(row.querySelector('.rk-name').textContent||'').trim();
+    const tint=(row.style.getPropertyValue('--c')||'').trim();
+    const swatch=(row.querySelector('.rk-av')||{}).innerHTML||'';
+    return {shown, seatName:p.netName||p.name, tint, seatColor:p.color.css,
+      name:shown===(p.netName||p.name),
+      colour:tint===p.color.css,
+      swatchRepainted:swatch.indexOf(p.color.css)>=0};})()`)));
   console.log('  AVATARCOLOR ' + JSON.stringify(await ev(`(()=>{
     const I=window.__ISLAND__, av=I.game.avatars||[];
     const rows=I.state.players.map((p,i)=>({
@@ -764,6 +932,23 @@ if (STAGE === 'home') {
       && now[0].rebuilt && now[1].rebuilt && now[0].inScene && now[1].inScene
       && !now[2].rebuilt && !now[3].rebuilt && !moved,
       swapped:[c0.key,c1.key], untouched:[now[2].rebuilt,now[3].rebuilt], moved};})()`)));
+
+  /* And the scoreboard row with them. The swap above gave local seat 0 a colour
+     it did not boot with, which is exactly the case that used to leave the
+     corner saying blue for ever. `refreshAll` runs off the frame loop every
+     100ms, so a beat is all this needs. */
+  await sleep(400);
+  console.log('  STANDINGSFOLLOW ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__;
+    /* Under SwiftShader this page draws about twice a second, and the HUD's
+       own refresh rides the frame loop — so the beat above is not reliably a
+       beat. Drive it directly rather than measuring the renderer. */
+    for(let i=0;i<12;i++) I.game.hud.update(1/60);
+    const row=document.querySelector('.ranks .rk[data-p="0"]');
+    const p=I.state.players[0];
+    const tint=(row.style.getPropertyValue('--c')||'').trim();
+    return {ok:tint===p.color.css, tint, want:p.color.css,
+      swatch:((row.querySelector('.rk-av')||{}).innerHTML||'').indexOf(p.color.css)>=0};})()`)));
 
   /*
    * AND DID THE THINGS THEY HAVE ALREADY BUILT FOLLOW?
@@ -1939,6 +2124,7 @@ if (STAGE === 'home') {
         return {lab:(b.textContent||'').trim().slice(0,20),
           w:Math.round(q.width),h:Math.round(q.height)};})};})()`)));
   await shot(`settings-${TAG}`);
+
 
 /* The map pad's HOME key, in the one state the player named it for: the
    opening draft, where the board is locked and the map cannot be dismissed. */

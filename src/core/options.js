@@ -51,6 +51,21 @@ export const OPTION_DEFAULTS = Object.freeze({
   /** Knight cards, the Knight, and Largest Army with them. */
   knights: true,
 
+  /*
+   * SOUND, AND WHY IT LIVES HERE NOW.
+   *
+   *   "Add a settings button in the top left corner even for the homepage, so
+   *    users can change the sound to off, or update their name, right from
+   *    there."
+   *
+   * Muting used to be a local `let` inside hud.js, which meant it existed only
+   * while a match did: turn the sound off, leave the match, and the next one
+   * came back loud. Two places can set it now — the gear on the opening screen
+   * and the gear in the match — and a device setting is exactly the kind of
+   * thing this file is for.
+   */
+  sound: true,
+
   /* ------------------------------------------------------- reach
    *
    *   "Have there be an actual joystick on the right side of the screen in the
@@ -209,6 +224,10 @@ export function setAutoDraft(v) { return setOption('autoDraft', !!v); }
 export function lowPower() { return !!current.lowPower; }
 export function setLowPower(v) { return setOption('lowPower', !!v); }
 
+/** Is the game allowed to make a noise? Survives leaving a match. */
+export function soundOn() { return current.sound !== false; }
+export function setSoundOn(v) { return setOption('sound', !!v) !== false; }
+
 const TILT_MAX = 1;
 export function mapTilt() {
   const v = Number(current.mapTilt);
@@ -238,6 +257,28 @@ export function setKnights(on) { return setOption('knights', !!on) !== false; }
  * that has never been named, and every caller falls back to 'You'.
  */
 const NAME_KEY = 'island-settlers.name';
+
+/** Tidy a typed name the same way the server would, so what a player sees on
+ *  the opening screen is what their friends will see on the lobby. */
+export function cleanPlayerName(v) {
+  return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').slice(0, 14);
+}
+
+/**
+ * Write the name this device plays under.
+ *
+ * `client.js` used to be the only writer, which was fine while the only place
+ * to type a name was the friends screen. The gear on the opening screen is a
+ * second place, and it must work with the networking layer never loaded — so
+ * the key is written here and `client.js` reads the same entry on its way up.
+ */
+export function setPlayerName(v) {
+  const name = cleanPlayerName(v);
+  const s = store();
+  try { if (s) s.setItem(NAME_KEY, name); } catch (e) { /* private mode */ }
+  return name;
+}
+
 export function playerName() {
   const s = store();
   if (!s) return '';
@@ -252,5 +293,6 @@ export function playerName() {
 export default {
   getOption, setOption, onOptionsChange,
   knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt,
-  autoDraft, setAutoDraft, lowPower, setLowPower, playerName
+  autoDraft, setAutoDraft, lowPower, setLowPower,
+  soundOn, setSoundOn, playerName, setPlayerName, cleanPlayerName
 };

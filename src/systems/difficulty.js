@@ -59,9 +59,35 @@ export const DEFAULT_DIFFICULTY = 'easy';
  *     easy 94.6%   medium 52.5%   hard 20.2%   expert 8.5%
  *
  * and they now measure (`tools/simulate.mjs --matches=60 --novice
- * --difficulty=…`, run against the new economy):
+ * --difficulty=…`, run against the current economy and a 12-point target):
  *
- *     easy 49%     medium 27%     hard 16%     expert 2%
+ *     easy 55%     medium 13%     hard 0%     expert 5%
+ *
+ * EASY WAS RETUNED AGAIN, AND ONLY EASY.
+ *
+ *   "I'd like for the easy level to be even easier. As a new player still
+ *    learning, they seem to move really fast still. But keep the other levels
+ *    of difficulty the same."
+ *
+ * Measured before touching it, the bottom rung was letting the novice stand-in
+ * win 17% — the file said 49%, and the ladder had drifted a long way under it
+ * as the economy and the target moved. Seventeen per cent is not a bottom rung;
+ * it is the same cutscene as 95%, played the other way round.
+ *
+ * The retune below splits into two kinds of knob, because they do not cost the
+ * same thing. Blunting a rival's JUDGEMENT — worse opening picks, the second
+ * best purchase, the wrong hex, no trophy chase, no endgame rush — makes it
+ * beatable without making the match longer. Slowing it DOWN does both, so the
+ * pace knobs moved least: speed 0.78 -> 0.70, which against the player's 12 is
+ * about 7.4 to their 12, comfortably behind rather than shoulder to shoulder.
+ *
+ * Match length was watched the whole way: the median finished match is 332s and
+ * 4 of 60 reach the soft cap, against 299s and 3 of 60 before. An earlier pass
+ * that got the win rate to 67% cost 12 of 60 running past seven minutes, which
+ * is not a beginner's game, it is a long one.
+ *
+ * Hard reading 0% and Expert 5% is the floor talked about below, not Hard being
+ * harder than Expert — under about 10% the stand-in is losing to variance.
  *
  * Two different complaints, one at each end. At the bottom, 95% is not a
  * difficulty, it is a cutscene — a beginner never lost and so never found out
@@ -118,21 +144,25 @@ export const LEVELS = {
   easy: {
     key: 'easy',
     label: 'Easy',
-    blurb: 'Brisk pace, presses early',
-    // The old Medium — which was itself the Medium of the ladder before that.
-    // Rivals that expand early, chase both awards and will spend a Knight on
-    // whoever is ahead. A beginner loses to this; a beginner who works out that
-    // corners touching three hexes beat corners touching two stops losing to it
-    // inside a few matches, which is the whole job of the bottom rung.
-    speed: 0.78, accel: 0.84,
-    replan: 1.60, hesitate: 0.28, pause: 0.62, actDelay: 0.38,
-    noise: 2.1, secondBest: 0.18, routeSlop: 0.28, tileSlop: 0.26,
-    wander: 0.06, wanderSec: 1.8,
-    hoard: 0.08,
-    trade: 0.68,
-    knight: 0.56, knightAim: 0.48, knightGap: 11,
-    endgame: true, award: 0.80, setupNoise: 2.0, desperate: 20,
-    rampFrom: 180
+    blurb: 'Gentle pace, easy to get ahead of',
+    /* Rivals that amble. They run at about 7.4 against the player's 12, take a
+       breath before every build, take the second-best thing a third of the
+       time, work the wrong hex nearly as often, never chase a trophy on purpose
+       and have no endgame rush at all. The Knight goes out rarely and is badly
+       aimed when it does.
+       What is deliberately NOT turned off: they still expand, still trade
+       sometimes, still take a corner you wanted. A rung that cannot beat you is
+       not teaching you anything — this one wins about 45% of the time against
+       somebody still learning the board. */
+    speed: 0.70, accel: 0.78,
+    replan: 1.85, hesitate: 0.34, pause: 0.80, actDelay: 0.52,
+    noise: 3.1, secondBest: 0.36, routeSlop: 0.42, tileSlop: 0.42,
+    wander: 0.11, wanderSec: 2.3,
+    hoard: 0.16,
+    trade: 0.46,
+    knight: 0.26, knightAim: 0.22, knightGap: 22,
+    endgame: false, award: 0.42, setupNoise: 3.3, desperate: 28,
+    rampFrom: 300
   },
   medium: {
     key: 'medium',

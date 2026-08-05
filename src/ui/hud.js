@@ -30,7 +30,7 @@ import {
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
 import {
-  knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower
+  knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower, soundOn, setSoundOn
 } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
@@ -177,15 +177,17 @@ export function createHUD(root, state, game) {
     const vp = el('b', { text: '0' });
     const award = el('span', { class: 'rk-award' });
     const nameEl = el('span', { class: 'rk-name', text: p.name });
+    const av = el('span', { class: 'rk-av', html: avatar(p.color.css, p.color.light, p.id === 0 ? 26 : 22) });
     const row = el('div', {
       class: 'rk' + (p.id === 0 ? ' me' : ''), 'data-p': p.id,
       style: { '--c': p.color.css, '--cl': p.color.light }
-    },
-      el('span', { class: 'rk-av', html: avatar(p.color.css, p.color.light, p.id === 0 ? 26 : 22) }),
-      nameEl,
-      award,
+    }, av, nameEl, award,
       el('span', { class: 'rk-vp' }, p.id === 0 ? iconEl('trophy', 16) : null, vp));
-    return { p, row, vp, award, nameEl };
+    /* `hex` is what the row is CURRENTLY wearing. These rows are built at boot,
+       from the default palette, and a networked match re-seats everybody a few
+       seconds later — see `refreshRanks`. Keeping the painted value beside the
+       row is what lets that be noticed. */
+    return { p, row, vp, award, nameEl, av, hex: p.color.hex };
   });
   const rankList = el('div', { class: 'ranks' }, rankRows.map(r => r.row));
   const tr = el('div', { class: 'hud-tr plate' }, rankList);
@@ -286,8 +288,11 @@ export function createHUD(root, state, game) {
   const annWrap = el('div', { class: 'announce' }, annTxt);
 
   /* --- settings ----------------------------------------------------------- */
-  let soundOn = true;
-  const soundBtn = button('wide cream', { on: { click: () => setSound(!soundOn) } },
+  /* Read, not assumed. Muting used to be a local `let` that started true every
+     time a match booted, so turning the sound off and leaving put it back on
+     again for the next one. It is a device setting now — see core/options.js. */
+  let sound = soundOn();
+  const soundBtn = button('wide cream', { on: { click: () => setSound(!sound) } },
     el('span', { class: 'sb-ico', html: icon('sound', 20) }),
     el('span', { class: 'sb-lab', text: 'Sound: On' }));
 
@@ -508,17 +513,18 @@ export function createHUD(root, state, game) {
   }
 
   function setSound(on) {
-    soundOn = !!on;
+    sound = !!on;
+    setSoundOn(sound);
     const a = game.audio;
     if (a) {
-      a.muted = !soundOn;
-      if (typeof a.setMuted === 'function') a.setMuted(!soundOn);
-      else if (typeof a.mute === 'function') a.mute(!soundOn);
-      if (typeof a.ambience === 'function') a.ambience(soundOn);
-      if (typeof a.music === 'function' && !soundOn) a.music('off');
+      a.muted = !sound;
+      if (typeof a.setMuted === 'function') a.setMuted(!sound);
+      else if (typeof a.mute === 'function') a.mute(!sound);
+      if (typeof a.ambience === 'function') a.ambience(sound);
+      if (typeof a.music === 'function' && !sound) a.music('off');
     }
-    soundBtn.childNodes[0].innerHTML = icon(soundOn ? 'sound' : 'mute', 20);
-    soundBtn.childNodes[1].textContent = 'Sound: ' + (soundOn ? 'On' : 'Off');
+    soundBtn.childNodes[0].innerHTML = icon(sound ? 'sound' : 'mute', 20);
+    soundBtn.childNodes[1].textContent = 'Sound: ' + (sound ? 'On' : 'Off');
   }
 
   let settingsOpen = false;
@@ -585,9 +591,44 @@ export function createHUD(root, state, game) {
       const st = e.p.netState;
       toggle(r.row, 'left', st === 'left');
       toggle(r.row, 'away', st === 'gone');
-      const label = (st === 'left' || st === 'gone')
-        ? `${e.p.netName || e.p.name}` : e.p.name;
+
+      /*
+       * THE ROW SAYS WHO YOU ARE AND WHAT YOU ARE WEARING.
+       *
+       *   "No matter what player they are or what their name was, the point
+       *    counter in the top right corner shows their name as YOU and their
+       *    colour as BLUE. Despite the fact that in this example my colour was
+       *    actually RED and my name was actually ELI."
+       *
+       * Both halves were painted ONCE, when these rows were built, and in a
+       * networked match that is several seconds before the server says who is
+       * sitting where. The row for local seat 0 therefore kept the boot default
+       * for ever: the name `createMatch` gives seat zero, and the first colour
+       * in the palette.
+       *
+       * The name is read every pass now, not only for somebody who has left,
+       * and it prefers the name the SEAT carries — that is the name typed on
+       * the friends screen, the one on the lobby and the one the other player
+       * sees. 'You' is still the fallback, because a single-player match has no
+       * seat name and 'You' is right there.
+       *
+       * The colour is a repaint rather than a re-read: the swatch is drawn SVG
+       * and the row's tint is two custom properties, so both have to be written
+       * again. Guarded on the hex actually changing, which is once a match.
+       */
+      const label = e.p.netName || e.p.name;
       if (r.nameEl && r.nameEl.textContent !== label) setText(r.nameEl, label);
+
+      if (r.hex !== e.p.color.hex) {
+        r.hex = e.p.color.hex;
+        if (r.row.style) {
+          r.row.style.setProperty('--c', e.p.color.css);
+          r.row.style.setProperty('--cl', e.p.color.light);
+        }
+        if (r.av) {
+          r.av.innerHTML = avatar(e.p.color.css, e.p.color.light, e.p.id === 0 ? 26 : 22);
+        }
+      }
       if (changed) rankList.appendChild(r.row);
     });
 
@@ -849,7 +890,7 @@ export function createHUD(root, state, game) {
     announce('Settle the Island', me.color.css);
   }
 
-  setSound(true);
+  setSound(soundOn());
   refreshAll(true);
   if (state.phase === 'play') toggle(hud, 'pre', false);
 

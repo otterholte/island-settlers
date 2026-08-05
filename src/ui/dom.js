@@ -41,11 +41,68 @@ function add(parent, kids) {
   return parent;
 }
 
-/** A chunky game button. Always tagged data-ui so the joystick ignores it. */
+/**
+ * How far a finger may travel and still have meant to press.
+ *
+ * Twelve pixels is the same figure `onTap` uses below and is about a
+ * millimetre and a half of thumb — under it nobody is scrolling, over it
+ * nobody is aiming.
+ */
+const TAP_SLOP = 12;
+
+/**
+ * A chunky game button. Always tagged data-ui so the joystick ignores it.
+ *
+ * A DRAG IS NOT A PRESS, EVEN WHEN IT ENDS ON THE BUTTON.
+ *
+ *   "I'd prefer that if it doesn't register an actual click of those buttons,
+ *    but instead I'm just trying to scroll down, my finger would be able to
+ *    touch the button while attempting to scroll."
+ *
+ * The CSS half of that is in ui-base.css: buttons inside a scrolling panel get
+ * `touch-action: pan-y` so the browser is allowed to take the gesture at all.
+ * When it does take it, it cancels the press and suppresses the click, and
+ * nothing here is needed.
+ *
+ * This is the other half, for the case where the browser does NOT take it —
+ * a short drag it judged too small to be a scroll, a mouse dragged across a
+ * button, a panel that turned out to have nothing to scroll. The click still
+ * fires, and firing it means a player who was reaching for the list has just
+ * left the match. So the pointer is measured, and a press that travelled is
+ * dropped. A press that did not travel behaves exactly as it always did.
+ */
 export function button(cls, attrs, ...kids) {
   const a = Object.assign({ type: 'button', 'data-ui': '' }, attrs || {});
   a.class = 'btn ' + (cls || '');
-  return el('button', a, ...kids);
+  const node = el('button', a, ...kids);
+  guardTaps(node);
+  return node;
+}
+
+/**
+ * Drop a click that arrived at the end of a drag.
+ *
+ * Capture phase, so it runs before the handlers `el` attached — a click that
+ * is stopped here never reaches them. Nothing is remembered between presses:
+ * `moved` is set on the way down and only ever read for the click that follows.
+ */
+export function guardTaps(node) {
+  if (!node || !node.addEventListener) return node;
+  let sx = 0, sy = 0, moved = false;
+  node.addEventListener('pointerdown', e => {
+    sx = e.clientX; sy = e.clientY; moved = false;
+  }, true);
+  node.addEventListener('pointermove', e => {
+    if (Math.abs(e.clientX - sx) > TAP_SLOP || Math.abs(e.clientY - sy) > TAP_SLOP) moved = true;
+  }, true);
+  node.addEventListener('click', e => {
+    if (!moved) return;
+    moved = false;
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
+  return node;
 }
 
 export function clear(node) {
@@ -125,4 +182,4 @@ export function onTap(node, fn) {
   node.addEventListener('pointercancel', () => { id = -1; });
 }
 
-export default { el, button, clear, clamp, lerp, fmtTime, hash01, onTap };
+export default { el, button, clear, clamp, lerp, fmtTime, hash01, onTap, guardTaps };

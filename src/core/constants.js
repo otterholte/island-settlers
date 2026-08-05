@@ -37,7 +37,18 @@ export const RES_COLOR = {
 };
 
 // ---------------------------------------------------------------- pacing
-export const VICTORY_POINTS = 13;
+/*
+ * TWELVE, NOT THIRTEEN.
+ *
+ *   "Everywhere the game should update to only being 12 points, not 13."
+ *
+ * Nothing else in the build hard-codes the target. The VP track in the HUD
+ * builds that many cells, the tutorial and the rules art write the number into
+ * their own prose, `matchflow` derives its halfway and match-point beats from
+ * it, and `botBrain` measures how far a rival is from winning against it — so
+ * this line is the whole change. That is deliberate and worth keeping.
+ */
+export const VICTORY_POINTS = 12;
 export const MATCH_SOFT_CAP_SEC = 420;   // safety net; match should end well before
 
 // Productivity: pips = 6 - |7 - number|  (6/8 -> 5 pips, 2/12 -> 1 pip)
@@ -173,7 +184,20 @@ export const PIECE_LIMIT = { road: 18, settlement: 7, city: 5 };
 // ---------------------------------------------------------------- awards
 export const LONGEST_ROAD_MIN = 4;   // segments needed to claim
 export const LARGEST_ARMY_MIN = 2;   // knights played to claim
-export const LONGEST_ROAD_VP = 4;
+/*
+ * THREE, NOT FOUR.
+ *
+ *   "I'd like to change the game so the Longest Road is only worth 3 points."
+ *
+ * At four it was a third of a shorter game in one award — worth more than two
+ * settlements and a city put together, on a board where roads are the cheapest
+ * thing to build. Three still makes it the biggest single prize on the island
+ * and still worth changing plans for; it stops being the plan.
+ *
+ * The tutorial, the rules illustration and the results breakdown all read this
+ * constant, so they say three from here without a second edit.
+ */
+export const LONGEST_ROAD_VP = 3;
 export const LARGEST_ARMY_VP = 2;
 
 // ---------------------------------------------------------------- dev cards

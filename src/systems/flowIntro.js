@@ -38,7 +38,10 @@ import { icon, avatar } from '../ui/icons.js';
 import {
   DIFFICULTY_ORDER, LEVELS, getDifficulty, setDifficulty
 } from './difficulty.js';
-import { knightsOn, setKnights, autoDraft, setAutoDraft } from '../core/options.js';
+import {
+  knightsOn, setKnights, autoDraft, setAutoDraft,
+  soundOn, setSoundOn, lowPower, setLowPower, playerName, setPlayerName
+} from '../core/options.js';
 
 export const INTRO_CSS = `
 /* --------------------------------------------------------- opening screen */
@@ -412,10 +415,55 @@ export const INTRO_CSS = `
 .mf-tut .mf-t-sub{font:700 clamp(6.6px,1.05vw,8.4px)/1.15 var(--ff);letter-spacing:.11em;
   text-transform:uppercase;color:#7a5228;text-shadow:none;white-space:nowrap}
 
+/* THE GEAR, TOP LEFT.
+   Opposite the tutorial and the same height as it, so the two top corners
+   balance. It is deliberately the plainest control on the screen: a player who
+   is not looking for it should not find it first. */
+.btn.mf-gear{
+  position:absolute;left:clamp(10px,2.4vw,22px);top:clamp(10px,2.4vh,20px);
+  width:clamp(44px,9.5vh,50px);min-height:clamp(44px,9.5vh,50px);padding:0;
+  border-radius:16px;border-width:2.5px;
+  --f1:#fbf3de;--f2:#f0dfb6;--f3:#dcc493;--lip:#8f7444;--fg:#3f2a12;
+  box-shadow:0 6px 0 var(--lip),0 11px 20px rgba(0,0,0,.5),
+             inset 0 3px 0 rgba(255,255,255,.7),inset 0 -7px 11px rgba(0,0,0,.16);
+}
+.btn.mf-gear:active{transform:translateY(6px);
+  box-shadow:0 0 0 var(--lip),0 4px 8px rgba(0,0,0,.45),
+             inset 0 3px 0 rgba(255,255,255,.6)}
+.mf-g-ico{display:flex;align-items:center;justify-content:center;width:22px;height:22px}
+.mf-g-ico svg{width:100%;height:100%;display:block}
+
+/* The settings sheet itself. Same plate as Match Setup — it IS the same kind of
+   thing — laid over whichever screen is up, with a scrim so the island behind
+   it stops competing for attention. */
+.mf-settings{
+  position:absolute;inset:0;z-index:6;
+  display:flex;align-items:center;justify-content:center;
+  padding:clamp(8px,2vh,20px);
+  background:rgba(3,10,22,.62);
+  pointer-events:auto;
+}
+.mf-settings.hid{display:none}
+.mf-settings .mf-p-body{max-height:min(62vh,420px);overflow-y:auto}
+.mf-s-name{
+  width:min(280px,74vw);min-height:44px;padding:0 14px;
+  border-radius:12px;border:2px solid rgba(255,201,60,.42);
+  background:rgba(4,14,28,.9);color:#f3e7cd;
+  font:800 clamp(13px,2.2vw,16px)/1 var(--ff);letter-spacing:.06em;text-align:center;
+}
+.mf-s-name:focus{outline:none;border-color:rgba(255,201,60,.9);
+  box-shadow:0 0 0 3px rgba(255,201,60,.22)}
+.mf-settings .btn.mf-s-row{width:min(280px,74vw)}
+
 /* The install chip, opposite the tutorial. Quiet by design and hidden outright
    until there is something to install — see the askInstall() note below. */
+/* Pushed right by the width of the gear plus a gap: both live in the top-left
+   corner and the gear is the one that is always there, so the chip that only
+   sometimes exists is the one that moves. */
 .btn.mf-inst{
-  position:absolute;left:clamp(10px,2.4vw,22px);top:clamp(10px,2.4vh,20px);
+  position:absolute;
+  left:calc(clamp(10px,2.4vw,22px) + clamp(44px,9.5vh,50px) + clamp(6px,1.4vw,10px));
+  top:clamp(10px,2.4vh,20px);
   min-height:clamp(42px,9vh,48px);padding:0 clamp(11px,2.2vw,16px);
   border-radius:14px;border-width:2px;gap:8px;
   --f1:#eef4fc;--f2:#cfdcec;--f3:#b6c7dc;--lip:#6d7d92;--fg:#22344a;
@@ -839,6 +887,125 @@ export function buildIntro(state, onBegin) {
     on: { click: () => show('home') }
   }, el('span', { class: 'sb-lab', text: 'Back' }));
 
+  /*
+   * ------------------------------------------------------------------------
+   * THE GEAR, ON THE OPENING SCREEN
+   * ------------------------------------------------------------------------
+   *
+   *   "Please also add a settings button in the top left corner even for the
+   *    homepage, so users can change the sound to off, or update their name,
+   *    right from there. Or even edit the graphic settings."
+   *
+   * Every one of those three was already a device setting with nowhere to set
+   * it until a match was running. Sound and Graphics lived under the gear in
+   * the HUD, which is behind a difficulty screen, a draft and a countdown; the
+   * name lived only on the friends screen, so a player who never pressed Play
+   * with Friends was called YOU by a game that had no way to be told otherwise.
+   *
+   * The same three switches, in the same words, in the corner of the first
+   * screen. `core/options.js` is the single place all of them are stored, so
+   * this panel and the one in the match cannot disagree — turning the sound off
+   * here means the match starts quiet, and the gear in the match opens already
+   * saying Off.
+   *
+   * The name field commits on blur and on Enter, not on every keystroke: a
+   * half-typed name should not be what your friends see if you walk away
+   * mid-word, and `setPlayerName` tidies it the same way the server would.
+   */
+  const nameInput = el('input', {
+    class: 'mf-s-name', type: 'text', maxlength: '14', 'data-ui': '',
+    placeholder: 'You', 'aria-label': 'The name your friends see',
+    on: {
+      change: e => commitName(e.target.value),
+      blur: e => commitName(e.target.value),
+      keydown: e => { if (e.key === 'Enter') { e.target.blur(); } }
+    }
+  });
+  nameInput.value = playerName();
+
+  function commitName(v) {
+    const name = setPlayerName(v);
+    nameInput.value = name;
+    return name;
+  }
+
+  const soundBtn = button('wide cream mf-s-row', { on: { click: () => setSound(!soundOn()) } },
+    el('span', { class: 'sb-ico', html: icon('sound', 20) }),
+    el('span', { class: 'sb-lab', text: 'Sound: On' }));
+
+  function setSound(on) {
+    setSoundOn(!!on);
+    soundBtn.childNodes[0].innerHTML = icon(on ? 'sound' : 'mute', 20);
+    soundBtn.childNodes[1].textContent = 'Sound: ' + (on ? 'On' : 'Off');
+    /* There is no match and therefore no audio engine yet on a cold boot; when
+       there is one — a second match from the same page — tell it now rather
+       than waiting for the HUD to be rebuilt. */
+    const a = (typeof window !== 'undefined' && window.__ISLAND__)
+      ? window.__ISLAND__.game && window.__ISLAND__.game.audio : null;
+    if (a) {
+      a.muted = !on;
+      if (typeof a.setMuted === 'function') a.setMuted(!on);
+      else if (typeof a.mute === 'function') a.mute(!on);
+      if (typeof a.ambience === 'function') a.ambience(!!on);
+      if (typeof a.music === 'function' && !on) a.music('off');
+    }
+  }
+  setSound(soundOn());
+
+  /* Full / Saver, the same two words as the gear in the match. The ladder in
+     systems/quality.js reads `lowPower()` on the way up, so a choice made here
+     is in force before the first frame of the next match is drawn — which is
+     the whole point of it being on this screen. */
+  const gfxBtns = [false, true].map(v => button('seg', {
+    on: { click: () => setGfx(v) }
+  }, el('span', { text: v ? 'Saver' : 'Full' })));
+
+  function setGfx(v) {
+    setLowPower(v);
+    const g = (typeof window !== 'undefined' && window.__ISLAND__)
+      ? window.__ISLAND__.game : null;
+    if (g && typeof g.setLowPower === 'function') {
+      try { g.setLowPower(v); } catch (e) { /* next boot, then */ }
+    }
+    paintGfx();
+  }
+  function paintGfx() {
+    const cur = lowPower();
+    gfxBtns.forEach((b, i) => b.classList.toggle('on', [false, true][i] === cur));
+  }
+  paintGfx();
+
+  /* `data-ui` on the scrim AND on the field: `#ui *{pointer-events:none}` with
+     `#ui [data-ui]{pointer-events:auto}` is what keeps the interface out of the
+     way of the joystick, and `button()` adds the marker for itself. Anything
+     that is not a button has to say so. */
+  const settingsPanel = el('div', { class: 'mf-settings hid', 'data-ui': '' },
+    el('div', { class: 'mf-panel' },
+      el('div', { class: 'mf-p-head' },
+        el('b', { text: 'Settings' }),
+        el('span', { text: 'Saved on this device' })),
+      el('div', { class: 'mf-p-body' },
+        el('div', { class: 'mf-p-row' },
+          el('div', { class: 'mf-i-dlab', text: 'Your name' }), nameInput),
+        el('div', { class: 'mf-p-row' }, soundBtn),
+        el('div', { class: 'mf-p-row' },
+          el('div', { class: 'mf-i-dlab', text: 'Graphics' }),
+          el('div', { class: 'side-seg' }, gfxBtns))),
+      el('div', { class: 'mf-p-foot' },
+        button('cream mf-back', { on: { click: () => showSettings(false) } },
+          el('span', { class: 'sb-lab', text: 'Done' })))));
+
+  const gearBtn = button('cream mf-gear', {
+    'aria-label': 'Settings — sound, your name and graphics',
+    on: { click: () => showSettings(settingsPanel.classList.contains('hid')) }
+  }, el('span', { class: 'mf-g-ico', html: icon('gear', 20) }));
+
+  function showSettings(on) {
+    settingsPanel.classList.toggle('hid', !on);
+    if (on) { nameInput.value = playerName(); paintGfx(); }
+    else commitName(nameInput.value);
+  }
+
   /* --------------------------------------------------------------- screen 1 */
   const homeView = el('div', { class: 'mf-view mf-home' },
     el('div', { class: 'mf-i-crest', text: 'Island' }),
@@ -851,7 +1018,7 @@ export function buildIntro(state, onBegin) {
     el('div', { class: 'mf-i-hint' },
       el('b', { text: 'Claim two corners' }),
       ' · gather from the land you touch · build roads, settlements and cities'),
-    tutBtn, installBtn);
+    tutBtn, installBtn, gearBtn);
 
   /* --------------------------------------------------------------- screen 2 */
   const setupView = el('div', { class: 'mf-view mf-setup hid' },
@@ -877,13 +1044,16 @@ export function buildIntro(state, onBegin) {
     homeView.classList.toggle('hid', step !== 'home');
     setupView.classList.toggle('hid', step !== 'setup');
     friendsNote.classList.add('hid');
+    showSettings(false);
   }
 
-  const node = el('div', { class: 'mf-intro mf-hid' }, homeView, setupView);
+  const node = el('div', { class: 'mf-intro mf-hid' }, homeView, setupView, settingsPanel);
 
   return {
     node, cards, playBtn, startBtn, friendsBtn, tutBtn, backBtn,
-    diffButtons, raidSwitch,
+    diffButtons, raidSwitch, gearBtn, settingsPanel,
+    /** Capture-rig hook, and the keyboard route in later. */
+    showSettings,
     /** flowUI calls this if the friends screen could not be built at all. */
     nudgeFriends,
     refreshDifficulty: paint,

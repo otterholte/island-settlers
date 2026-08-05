@@ -202,6 +202,61 @@ html,body{
 .btn.stone{--f1:#d3dae3;--f2:#98a3b2;--f3:#7d8998;--lip:#4c5763;--fg:#1d2833}
 .btn.gold{--f1:#ffe79a;--f2:#ffc93c;--f3:#eaad20;--lip:#a8741a;--fg:#3a2208}
 
+/*
+ * A DRAG THAT STARTS ON A BUTTON SHOULD SCROLL THE MENU IT IS IN.
+ *
+ *   "Right now I can't touch my finger on the screen inside of the menu in the
+ *    game and scroll up or down unless I'm not actively touching a button from
+ *    within inside of that menu. I'd prefer that if it doesn't register an
+ *    actual click of those buttons, but instead I'm just trying to scroll down,
+ *    my finger would be able to touch the button while attempting to scroll —
+ *    otherwise it looks like the scroll feature is broken."
+ *
+ * `touch-action: none` above is why, and it is right where it is: over the
+ * island every control sits on top of the invisible joystick, and a browser
+ * gesture starting on one would be the game deciding between scrolling nothing
+ * and running somewhere. It also blocks the two-finger page zoom that used to
+ * survive a reload and bring the match back zoomed in.
+ *
+ * Inside a scrolling panel none of that applies — there is no joystick under a
+ * settings sheet — and the cost is total: a menu whose buttons fill it is a
+ * menu that cannot be scrolled anywhere, which reads as broken rather than as
+ * careful. `pan-y` hands the browser back the ONE gesture that is wanted:
+ * vertical panning of the nearest scrollable ancestor. Pinch-zoom stays blocked
+ * (that needs `pinch-zoom` naming itself in the value), and a finger that does
+ * not move still delivers its tap, because the browser only steals the gesture
+ * once it has decided this is a scroll — at which point it cancels the press
+ * and suppresses the click for us.
+ *
+ * `overscroll-behavior: contain` on the panels stops a flick that runs past the
+ * end of a list from turning into a pull on the page behind it.
+ */
+.pop,
+.ov-rail,
+.rs-list,
+.rs-side,
+.fr-body,
+.mf-p-body,
+.tut-body,
+.how{
+  touch-action:pan-y;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.pop .btn,      .pop .cbtn,      .pop [data-ui],
+.ov-rail .btn,  .ov-rail .cbtn,  .ov-rail [data-ui],
+.rs-list .btn,  .rs-list .cbtn,  .rs-list [data-ui],
+.rs-side .btn,  .rs-side .cbtn,  .rs-side [data-ui],
+.fr-body .btn,  .fr-body .cbtn,  .fr-body [data-ui],
+.mf-p-body .btn,.mf-p-body .cbtn,.mf-p-body [data-ui],
+.tut-body .btn, .tut-body .cbtn, .tut-body [data-ui],
+.how .btn,      .how .cbtn,      .how [data-ui]{
+  touch-action:pan-y;
+}
+/* The one exception, and it has to be: a text field inside one of these still
+   wants its own caret dragging, and `pan-y` on an input eats the selection. */
+.mf-p-body input,.fr-body input{touch-action:auto}
+
 /* circular buttons ------------------------------------------------------- */
 .cbtn{
   position:relative;display:inline-flex;flex-direction:column;
