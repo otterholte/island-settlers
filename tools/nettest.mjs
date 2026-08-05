@@ -53,10 +53,12 @@ import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rmSync, mkdirSync } from 'node:fs';
 
-import { createMatch, legalSettlements, legalRoads, scoreOf } from '../src/core/rules.js';
+import {
+  createMatch, legalSettlements, legalRoads, scoreOf, ownedTiles
+} from '../src/core/rules.js';
 import { reshuffle, tiles, MARKET } from '../src/board/layout.js';
 import { TRADE_RADIUS } from '../src/core/constants.js';
-import { itemsByTile } from '../src/board/nodes.js';
+import { items, itemsByTile } from '../src/board/nodes.js';
 import { createMirror } from '../src/net/mirror.js';
 import {
   REQ, PUSH, OK, ERR, ACT, PROTOCOL_VERSION, CODE_LEN, CODE_ALPHABET
@@ -96,8 +98,10 @@ function check(name, ok, detail = '') {
 
 /* ================================================================== server */
 
-const HTTP = REMOTE ? `https://${REMOTE.replace(/^https?:\/\//, '').replace(/\/$/, '')}` : `http://127.0.0.1:${PORT}`;
-const WS = REMOTE ? HTTP.replace(/^https/, 'wss') + '/ws' : `ws://127.0.0.1:${PORT}/ws`;
+const HTTP = REMOTE
+  ? (/^https?:\/\//i.test(REMOTE) ? REMOTE : `https://${REMOTE}`).replace(/\/$/, '')
+  : `http://127.0.0.1:${PORT}`;
+const WS = REMOTE ? HTTP.replace(/^http/i, 'ws') + '/ws' : `ws://127.0.0.1:${PORT}/ws`;
 
 let server = null;
 let serverLog = '';
@@ -500,6 +504,15 @@ try {
   }
 
   await Promise.race([draftDone, sleep(50000)]);
+  /* The final `done` announcement and the build-event batch are separate
+     websocket messages. Through a busy proxy they can straddle the 50-second
+     boundary by a few hundred milliseconds: the old assertion sampled 7/7,
+     then checks 27-29 (after their existing 600ms tail beat) correctly saw
+     all 8/8 on both clients. Wait for the state the assertion is about rather
+     than turning packet ordering at one arbitrary millisecond into a failure. */
+  for (let i = 0; i < 50 && (state.buildings.size < 8 || state.roadOwner.size < 8); i++) {
+    await sleep(100);
+  }
   check('26. the opening draft completes with eight settlements and eight roads',
     state.buildings.size === 8 && state.roadOwner.size === 8,
     `${state.buildings.size} settlements, ${state.roadOwner.size} roads`);
@@ -671,47 +684,106 @@ try {
    */
   const RES5 = ['wood', 'brick', 'wool', 'wheat', 'ore'];
 
-  /** Drive a settler onto the market, the way a thumb would. */
-  async function walkToMarket(who, st, secs = 30) {
+  let marketInputSeq = 100000;
+
+  /** Drive a settler to a point using only the public input message. */
+  async function walkTo(who, st, x, z, secs = 25, stopAt = 0.8) {
     const near = () => {
       const p = st.players[0];
-      return Math.hypot(p.x - MARKET.x, p.z - MARKET.z);
+      return Math.hypot(p.x - x, p.z - z);
     };
     const until = Date.now() + secs * 1000;
     while (Date.now() < until) {
       const p = st.players[0];
-      const dx = MARKET.x - p.x, dz = MARKET.z - p.z;
+      const dx = x - p.x, dz = z - p.z;
       const d = Math.hypot(dx, dz) || 1;
-      if (d < TRADE_RADIUS * 0.5) break;
-      who.fire(REQ.MATCH_INPUT, { x: dx / d, z: dz / d, q: 0 });
+      if (d < stopAt) break;
+      who.fire(REQ.MATCH_INPUT, { x: dx / d, z: dz / d, q: ++marketInputSeq });
       await sleep(50);
     }
-    who.fire(REQ.MATCH_INPUT, { x: 0, z: 0, q: 0 });
-    await sleep(250);
+    who.fire(REQ.MATCH_INPUT, { x: 0, z: 0, q: ++marketInputSeq });
+    await sleep(180);
     return near();
+  }
+
+  /**
+   * Make the trade check deterministic by gathering four matching resources.
+   *
+   * The old assertion assumed a random player would naturally have four of
+   * one resource after nine seconds of play. A perfectly healthy match often
+   * distributes 12-15 goods as 3/3/3/3/2, which made the test report
+   * `no-goods` before it had exercised trading at all. This walks over real
+   * items on a hex Bob owns and waits for the ordinary gained events, so the
+   * inventory is earned through the same authoritative path as gameplay.
+   */
+  async function stockForTrade(who, st, secs = 35) {
+    const affordable = () => RES5.find(r => (st.players[0].res[r] | 0) >= 4);
+    if (affordable()) return { give: affordable(), gathered: 0 };
+
+    const mine = ownedTiles(st, 0);
+    const choices = RES5.map(resource => ({
+      resource,
+      have: st.players[0].res[resource] | 0,
+      field: items.filter(it => mine.has(it.tile) && it.resource === resource)
+    }))
+      .filter(c => c.field.length)
+      .sort((a, b) => b.have - a.have || b.field.length - a.field.length);
+
+    const until = Date.now() + secs * 1000;
+    let gathered = 0;
+    for (const choice of choices) {
+      const before = st.players[0].res[choice.resource] | 0;
+      for (const it of choice.field) {
+        if (Date.now() >= until) break;
+        if (affordable()) return { give: affordable(), gathered };
+        if (!it.available) continue;
+        const old = st.players[0].res[choice.resource] | 0;
+        await walkTo(who, st, it.x, it.z, 10, 0.65);
+        for (let i = 0; i < 8 && (st.players[0].res[choice.resource] | 0) === old; i++) {
+          await sleep(100);
+        }
+        if ((st.players[0].res[choice.resource] | 0) > old) gathered++;
+      }
+      if ((st.players[0].res[choice.resource] | 0) > before && affordable()) {
+        return { give: affordable(), gathered };
+      }
+    }
+    return { give: affordable() || null, gathered };
+  }
+
+  /** Drive a settler onto the market, the way a thumb would. */
+  async function walkToMarket(who, st, secs = 30) {
+    return walkTo(who, st, MARKET.x, MARKET.z, secs, TRADE_RADIUS * 0.5);
   }
 
   /** Spend four of something on one of something else, and say what happened. */
   async function tradeForReal(who, st) {
+    const stocked = await stockForTrade(who, st);
     const p = st.players[0];
-    const give = RES5.find(r => (p.res[r] | 0) >= 4);
-    if (!give) return { how: 'no-goods', pack: RES5.map(r => p.res[r] | 0).join(',') };
+    const give = stocked.give || RES5.find(r => (p.res[r] | 0) >= 4);
+    if (!give) return {
+      how: 'no-goods', gathered: stocked.gathered,
+      pack: RES5.map(r => p.res[r] | 0).join(',')
+    };
+    const distance = await walkToMarket(who, st);
     const get = RES5.find(r => r !== give);
     const had = p.res[give] | 0;
     try {
       await who.req(REQ.MATCH_ACT, { kind: ACT.TRADE, give, get });
     } catch (e) {
-      return { how: e.code || 'refused', give, get, had };
+      return { how: e.code || 'refused', give, get, had, distance };
     }
     await sleep(700);                       // one snapshot, so the pack lands
-    return { how: 'traded', give, get, had, now: st.players[0].res[give] | 0 };
+    return {
+      how: 'traded', give, get, had, now: st.players[0].res[give] | 0,
+      gathered: stocked.gathered, distance
+    };
   }
 
-  const distBefore = await walkToMarket(B, stateB);
   const tradeBefore = await tradeForReal(B, stateB);
   check('40c. a player standing on the market can trade while both are here',
     tradeBefore.how === 'traded',
-    `${distBefore.toFixed(1)} from the market (radius ${TRADE_RADIUS}), `
+    `${Number(tradeBefore.distance).toFixed(1)} from the market (radius ${TRADE_RADIUS}), `
     + `${tradeBefore.give || '-'} -> ${tradeBefore.get || '-'}: ${tradeBefore.how}`);
 
   /* --- leaving for good ---------------------------------------------- */
@@ -758,6 +830,7 @@ try {
   check('41b. and leaving is final — no seat, no room, no way back in',
     rejoin === null && !(roomNow && roomNow.room),
     `begin: ${rejoin ? 'RESUMED' : 'none'}, room: ${roomNow && roomNow.room ? roomNow.room.code : 'none'}`);
+  A2.close();
 
   /*
    *   "It also wouldn't let the remaining player use the trading post any more.
@@ -768,12 +841,11 @@ try {
    * bug, and the reason it is worth walking him back on first is that a settler
    * standing next to three bots does not necessarily stay where you left him.
    */
-  const distAfter = await walkToMarket(B, stateB, 20);
   const tradeAfter = await tradeForReal(B, stateB);
   check('41c. and the one still playing can still use the trading post',
     tradeAfter.how === 'traded',
     `before Alice left: ${tradeBefore.how} · after: ${tradeAfter.how}`
-    + ` (${distAfter.toFixed(1)} from the market)`);
+    + ` (${Number(tradeAfter.distance).toFixed(1)} from the market)`);
 
   await sleep(1500);
   const stillGoing = await fetch(`${HTTP}/health`).then(r => r.json());
@@ -791,6 +863,22 @@ try {
     && typeof finalHealth.openRooms === 'number',
     `${finalHealth.players} players, ${finalHealth.rooms} rooms, ` +
     `${finalHealth.openRooms} of them open`);
+
+  /* Leave production as clean as we found it. Bob had to remain in the match
+     through every assertion above, but the harness itself is not a player who
+     should hold a room open for the two-hour lobby sweep after it exits. */
+  try { await B.req(REQ.MATCH_LEAVE, {}); } catch (e) { /* cleanup only */ }
+  if (!REMOTE) {
+    let clean = null;
+    for (let i = 0; i < 20; i++) {
+      clean = await fetch(`${HTTP}/health`).then(r => r.json());
+      if (clean.matches === 0 && clean.rooms === 0) break;
+      await sleep(100);
+    }
+    check('43. the last human leaving immediately reclaims the match worker',
+      !!clean && clean.matches === 0 && clean.rooms === 0,
+      clean ? `${clean.matches} matches, ${clean.rooms} rooms` : 'no health answer');
+  }
 
 } catch (e) {
   failed++;

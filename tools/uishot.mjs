@@ -503,6 +503,7 @@ if (STAGE === 'home') {
     const code=(document.querySelector('.fr-codeval')||{}).textContent||'';
     return {title:(document.querySelector('.fr-title')||{}).textContent,
       code, codeLen:code.length,
+      bodyScroll:Math.round((document.querySelector('.fr-body')||{}).scrollTop||0),
       seats,
       diff:[...document.querySelectorAll('.btn.fr-d')]
         .map(b=>(b.textContent||'').trim()+(b.classList.contains('on')?'*':'')),

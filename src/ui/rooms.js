@@ -77,6 +77,7 @@ export function createRooms(root, opts = {}) {
   const onClose = typeof opts.onClose === 'function' ? opts.onClose : () => {};
 
   let panel = 'home';
+  let renderedPanel = null;
   let room = null;
   let busy = false;
   /** Kept across redraws so a half-typed code survives a `room` push. */
@@ -453,9 +454,23 @@ export function createRooms(root, opts = {}) {
 
   function draw() {
     if (!client) return;
-    if (panel === 'lobby' && room) return drawLobby();
-    if (panel === 'lobby' && !room) panel = 'home';
-    return drawHome();
+    let result;
+    if (panel === 'lobby' && room) result = drawLobby();
+    else {
+      if (panel === 'lobby' && !room) panel = 'home';
+      result = drawHome();
+    }
+    /* `fr-body` is deliberately reused so live room pushes do not throw away
+       the reader's place. A real panel transition is different: if the room
+       code field scrolled Home down for the mobile keyboard, carrying that
+       scrollTop into Lobby opens the new room below its own code and player
+       names. Reset only when the panel identity changes; ordinary lobby
+       redraws continue to preserve their scroll position. */
+    if (renderedPanel !== panel) {
+      body.scrollTop = 0;
+      renderedPanel = panel;
+    }
+    return result;
   }
 
   function paintStatus() {
@@ -507,6 +522,7 @@ export function createRooms(root, opts = {}) {
     toggle(node, 'hid', false);
     if (room) panel = 'lobby';
     else panel = 'home';
+    renderedPanel = null;
     paintStatus();
     draw();
     if (client.status === 'offline' || client.status === 'failed') client.connect(true);

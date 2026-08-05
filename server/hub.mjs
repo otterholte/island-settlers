@@ -440,6 +440,14 @@ export function createHub(deps) {
   function leaveRoom(userId) {
     const room = rooms.forUser(userId);
     if (!room) return;
+    /* Keep the match id before `rooms.leave` potentially dissolves the room.
+       A room with no humans has nobody who can reconnect to it and nobody who
+       can receive its snapshots, so its worker must be reclaimed immediately.
+       `matchhost` has always supported the "everybody leaves" ending; this is
+       the missing wire that actually invokes it. Without it, six abandoned
+       games occupy all six worker slots until bots finish on their own, and a
+       real new room is refused as `rate.limited`. */
+    const playingMatchId = room.state === 'playing' ? room.matchId : null;
     /*
      * Walking out of a lobby mid-match hands your settler to a bot rather
      * than deleting it: the island already has your roads on it.
@@ -464,7 +472,9 @@ export function createHub(deps) {
       if (pid !== undefined) matches.peer(room.matchId, pid, 'left');
     }
     const r = rooms.leave(userId);
-    if (r && !r.dissolved) {
+    if (r && r.dissolved && playingMatchId) {
+      matches.stop(playingMatchId, 'abandoned');
+    } else if (r && !r.dissolved) {
       // The people still in the lobby may all have been ready already, waiting
       // on the person who just walked out. Do not strand them.
       if (!maybeStart(r.room)) pushRoom(r.room);

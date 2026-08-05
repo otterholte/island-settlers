@@ -137,7 +137,10 @@ export function createMatchHost(opts = {}) {
     if (rec.linger) { clearTimeout(rec.linger); rec.linger = null; }
     // Ask nicely — the worker clears its own interval, which lets the thread
     // exit on its own — then insist, because a wedged loop will not answer.
-    post(matchId, { t: 'stop' });
+    /* Do not go through `post`: it deliberately refuses a record whose
+       `stopping` flag is set. The old ordering therefore never sent this
+       message and every normal stop waited for the 500ms axe. */
+    try { rec.worker.postMessage({ t: 'stop' }); } catch (e) { /* axe below */ }
     const axe = setTimeout(() => {
       try { rec.worker.terminate(); } catch (e) { /* already gone */ }
     }, 500);

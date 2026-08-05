@@ -28,7 +28,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -42,13 +42,19 @@ const arg = (k, d) => {
 const SEEDS = Number(arg('seeds', 6));
 const RUNS = Number(arg('runs', 3));
 
+/* Dynamic imports inside the child must be URLs, not native Windows paths.
+   A quoted `C:\\...` string is parsed as the unsupported `c:` URL scheme by
+   Node's ESM loader, so build the file URLs in the parent on every platform. */
+const LAYOUT_URL = pathToFileURL(join(ROOT, 'src/board/layout.js')).href;
+const NODES_URL = pathToFileURL(join(ROOT, 'src/board/nodes.js')).href;
+
 /* The child. Deals the seed it is given and prints one line of hashes.
    Written as a string and run with `--input-type=module` so this stays a
    single file with nothing to clean up. */
 const CHILD = `
 import { createHash } from 'node:crypto';
-import { reshuffle, tiles, ports, intersections, edges } from ${JSON.stringify(join(ROOT, 'src/board/layout.js'))};
-import { items, nodes, itemsByTile } from ${JSON.stringify(join(ROOT, 'src/board/nodes.js'))};
+import { reshuffle, tiles, ports, intersections, edges } from ${JSON.stringify(LAYOUT_URL)};
+import { items, nodes, itemsByTile } from ${JSON.stringify(NODES_URL)};
 const seed = Number(process.env.SEED);
 reshuffle(seed);
 const h = s => createHash('sha1').update(s).digest('hex').slice(0, 16);

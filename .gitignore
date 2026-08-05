@@ -6,3 +6,5 @@
 # All of it is local working material, not part of the game.
 progress/
 server/data/
+.playwright-cli/
+output/
