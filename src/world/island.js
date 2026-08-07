@@ -59,10 +59,45 @@ function paintVertex(x, z, h, out) {
 
   // terrain flavour --------------------------------------------------------
   if (tile.terrain === 'mountains') {
-    // pale, near-snow caps on the pointed peaks
-    out.lerp(_a.set(0xdde6ef), smoothstep(5.2, 6.8, h));
-    // dark scree in the folds
-    out.lerp(_a.set(0x4d545e), smoothstep(0.42, 0.24, nb) * 0.45);
+    // THE SNOW CAPS ARE GONE, and they were never snow.
+    //
+    //   "Delete the flat pale quads — shadeless white polygons which look like
+    //    paper cut-outs lying on the surface. Cut the ~14 small pale pebble
+    //    flecks to zero or near-zero."
+    //
+    // Both of those were this one line. `out.lerp(0xdde6ef, smoothstep(5.2,
+    // 6.8, h))` is a per-VERTEX test on a ground mesh whose vertices are one
+    // world unit apart and jittered, and on a mountain hex only about a dozen
+    // of them ever clear 5.2 — the four peaks are narrow and the field between
+    // them sits at 3.7. So the paint never had a snowLINE to draw; it had
+    // twelve isolated vertices, each of which pulls the three or four triangles
+    // that share it toward near-white while every neighbouring vertex stays
+    // slate. That is precisely a pale quad with a hard edge lying flat on the
+    // surface, and twelve of them is precisely "~14 small pale pebble flecks".
+    // Measured on the boards in progress/tut: 44 to 47 samples over 5.2 at half
+    // a unit's spacing, which is 11 to 12 actual grid vertices per hex.
+    //
+    // Nothing replaces it. A cap needs a mountain big enough to carry one and
+    // these are hex-sized bumps; the peaks came down in `terrain.js` with this
+    // pass anyway, so the highest ground on the island is now well under where
+    // the threshold used to sit and the line could not fire even if it stayed.
+    //
+    // The scree in the folds stays, because a completely flat grey hex is not
+    // what was asked for either — "slightly subtly textured" is — but it is a
+    // long way quieter. It used to drag a quarter of the hex 45% of the way to
+    // 0x4d545e, which is darker than the terrain's own `deep`: a mid-grey hex
+    // with near-black blotches across it, and those blotches are a good part of
+    // why an emptied mountain read as a scorched crater rather than as rock. At
+    // 22% toward a colour only a step under `deep` it is a shading in the
+    // surface, which is all a texture is supposed to be.
+    //
+    // Re-picked with the palette, and it had to be: `deep` moved from 0x5f6772
+    // to a warm 0x7b7873 (see the note in terrain.js), so 0x5a616c stopped
+    // being "a step under deep" and went back to being a cool near-black blot
+    // on a warm hex — the exact thing the reviewer measured at (38,38,42).
+    // 0x716e69 is one step under the new `deep` in the same warm family, which
+    // keeps the scree reading as shading rather than as staining.
+    out.lerp(_a.set(0x716e69), smoothstep(0.42, 0.24, nb) * 0.22);
   } else if (tile.terrain === 'hills') {
     // exposed clay strata
     const s = vnoise2(x * 0.09, h * 1.9);

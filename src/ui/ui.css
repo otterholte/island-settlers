@@ -139,21 +139,101 @@
   text-transform:uppercase;flex:1 1 auto}
 
 /* --- trade ----------------------------------------------------------------
-   ONE ROW OF FIVE CARDS. Above each card the arrow that pushes it up into YOU
-   GIVE, below it the arrow that pulls it down into YOU RECEIVE, and on the
-   card itself the only three facts that decide a maritime deal: what it is,
-   how many you hold, and what this post charges for it.
+   ONE ROW OF FIVE CARDS. Above each card the arrow that lifts it up into YOU
+   RECEIVE, below it the arrow that hands it down into YOU GIVE, and on the card
+   the pile itself — what you hold, and what this deal would leave you holding.
+
+   THE LANES ARE THE OTHER WAY UP THAN THEY WERE.
+
+     "I think the 'you give' and 'you receive' should swap sides, with the 'you
+      receive' on the top. Since basically how many resources I have is in the
+      middle, so if I click the up arrow, that should mean that I'm adding that
+      many resources to my stockpile."
+
+   Green band on top, brown band underneath. The COLOURS did not swap with the
+   words — green has meant "arrives in your pack" and brown/gold "leaves it"
+   since long before this, so keeping them pinned to their meaning is what lets
+   a player who already knew the sheet read the new one without being taught it
+   twice.
+
+   FOUR COLOURS AND NO MORE. Green for receive, gold-and-brown for give, mint
+   for the pile you have asked for, and a flat sand grey for a pile that cannot
+   pay. That is the entire palette above the resource art, and it is a rule
+   rather than a preference: the first version of this sheet reached eight hues,
+   two rings, three badges and two slabs inside a 570px row, and a reviewer
+   counted them one by one. Anything new here has to be one of those four or it
+   does not go on.
 
    Deliberately flat. No inner boxes, no rails, no plates inside plates — the
    cream sheet is the only frame and everything else is drawn with a hairline
    and a shadow. See src/ui/trade.js for the staging model. */
 
 .sheet.trade{width:min(600px,calc(100vw - 28px - var(--sal) - var(--sar)))}
-.sheet.trade .sheet-head{justify-content:flex-start}
+.sheet.trade .sheet-head{justify-content:flex-start;gap:7px}
 .tr-where{
-  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font:800 9px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
   color:var(--brown-2);opacity:.8;padding-top:2px;
+}
+/* THE RATE, ONCE, BESIDE THE NAME OF THE POST. It used to be stamped in the
+   corner of all five cards, which at the Great Market is the same three
+   characters printed five times down one row. It is a property of the place,
+   so it is quoted where the place is named, and a card only carries its own
+   rate when that rate DISAGREES with this one — which is precisely the 2:1
+   dock somebody crossed the island to reach. */
+.tr-headrate{
+  flex:0 0 auto;padding:3px 7px 4px;border-radius:7px;
+  font:800 10px/1 var(--ff);letter-spacing:.06em;
+  background:rgba(90,58,30,.12);color:var(--brown);
+  box-shadow:inset 0 0 0 1.2px rgba(90,58,30,.22);
+}
+.sheet.trade .tr-paused{margin-left:auto}
+/* THE CLOSE BUTTON'S HIT AREA IS 44 EVEN WHERE ITS CIRCLE IS 34.
+ *
+ *   "The close X is ~32px at 640x320, still under 44. Raise the hit area even
+ *    if the drawn circle stays small."
+ *
+ * The circle is the first thing that gives up height on a 320px screen, and it
+ * should be — Escape, the scrim and the back gesture all close this sheet too,
+ * so the X is the least load-bearing control on it. What it must not be is a
+ * target a thumb misses, and a miss here lands on the sheet's own head and does
+ * nothing at all. So the drawn circle keeps shrinking and the LIVE box does
+ * not: a 44px pad in absolute pixels, so it is 44 whatever the breakpoint has
+ * done to the button. It inherits the button's own `pointer-events:auto` (see
+ * the `[data-ui]` rule in ui-base.css), and it grows into the sheet's padding
+ * and the dead space beside the "Match paused" chip, which is not a control and
+ * cannot lose a tap to it.
+ *
+ * IT LEANS DOWNWARDS, AND IT IS 46 TALL RATHER THAN 44, because the sheet clips
+ * its own overflow: a pad centred on a 34px circle whose top edge lands on the
+ * sheet's inner rim has that top row cut off by the clip and measures 43 —
+ * exactly the sort of one-pixel lie this pass exists to stop. The spare room is
+ * underneath, where the receive band is a caption rather than a control and
+ * cannot lose a tap to anything. */
+.sheet.trade .sheet-head .cbtn.small::after{
+  content:'';position:absolute;left:50%;top:50%;
+  width:44px;height:46px;margin:-21px 0 0 -22px;border-radius:50%;
+}
+/* AND IT IS THE SHEET'S OWN CHROME, NOT A BLUE BUTTON ON A BROWN PANEL.
+ *
+ *   "The close button is the only blue on the sheet (hue 213 against everything
+ *    else at 28-43 and 127-130) and its highest-contrast object, pulling the eye
+ *    to the corner away from the deal. Tone it toward the panel's brown chrome."
+ *
+ * `.cbtn.ghost` is the HUD's dark glass disc, and on the HUD it is right — it
+ * sits over the island. On a cream sheet it was a navy hole with a gold rim
+ * competing with the Trade button for first look. It wears the arrows' own face
+ * now: cream disc, brown hairline, brown lip, the dark keyline X that every
+ * chrome glyph in this game is drawn with. Still obviously a button, still the
+ * same 44px live pad, and no longer the loudest thing in the room. */
+.sheet.trade .sheet-head .cbtn.small.x{
+  --f1:#fffaee;--f2:#f2e3c4;--f3:#e0cba3;--lip:rgba(90,58,30,.3);
+  border-color:rgba(90,58,30,.45);color:#6b4a26;
+  box-shadow:0 3px 0 rgba(90,58,30,.28),0 5px 9px rgba(90,58,30,.18),
+             inset 0 2px 0 rgba(255,255,255,.85);
+}
+.sheet.trade .sheet-head .cbtn.small.x:active{
+  box-shadow:0 1px 0 rgba(90,58,30,.28),inset 0 2px 0 rgba(255,255,255,.7);
 }
 /* "Nothing is happening out there while you do this." Two dots and two words,
    in the sheet's own cream-and-brown, sitting between the place name and the
@@ -174,28 +254,47 @@
 @media (max-height:500px),(max-width:1023px){
   .tr-paused{padding:2px 6px 3px;font-size:7.5px;letter-spacing:.11em;gap:4px}
   .tr-paused i{width:6px;height:6px}
+  .tr-headrate{padding:2px 6px 3px;font-size:9px}
 }
 
-.trade-body{display:flex;flex-direction:column;align-items:stretch;gap:5px;min-height:0}
+.trade-body{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-height:0}
 
-/* THE TWO LANES — the whole explanation of the row, and now it is said out loud.
+/* THE TWO LANES — the whole explanation of the row, said out loud.
  *
  *   "Can you make the YOU GIVE and YOU RECEIVE sections larger as well and more
  *    clearly marked — maybe with larger text and colored areas above and below."
  *
  * They were 8.5px of grey at 72% opacity: footnote weight for the one fact the
- * sheet turns on. Bands now, full width, in the two colours the staged badges
- * have always used — brown for what leaves your pack, green for what arrives —
- * so the direction is carried by colour and position before a word is read, and
- * each band sits on the side of the row it describes. The chevron grew with the
- * type and stays on the outside edge, pointing the way the goods travel.
+ * sheet turns on. Bands now, full width, each sitting on the side of the row it
+ * describes, with the chevron on the outside edge pointing the way the goods
+ * travel — up out of the row into the green band, down out of it into the brown
+ * one.
  *
- * `.tc-live` is the one live message left on the sheet (see trade.js): blank
- * almost always, and when it is not, it is in the lane it is about. */
+ * They are LEANER than they were, and that height went straight into the
+ * arrows. A band is worth its 20px because it names the lane; it is not worth
+ * 30, because past a certain size it is only decoration and the thumb targets
+ * either side of it were the things actually running short.
+ *
+ * `.tc-live` is the one live message on the sheet, and it is PARKED at the
+ * right-hand end rather than sitting in the flow between the title and its
+ * chevron — where it used to shove the title sideways every time it changed.
+ * It is drawn as a tip (a pale wash of the band's own colour) and not as a
+ * stamp: the black-at-26% version read as the disabled badge on a broken
+ * control, which is the opposite of "here is what to do next". */
+/* A BAND IS A CAPTION, NOT A CONTROL, so it does not answer to a pointer.
+   It never had a handler on it, but `#ui [data-ui] *` hands pointer-events back
+   to every descendant of the panel wrapper, so the band was still the topmost
+   hit-testable thing over its own 16px strip — which is what was eating the
+   bottom two pixels of the close button's 44px pad one row above it, and what
+   would eat the top of an arrow's reach if that ever grew towards it. Two
+   classes deep so it outranks that rule rather than tying with it. Taps land on
+   the sheet underneath, exactly as they do on any other piece of cream. */
+#ui .tr-cap.get,#ui .tr-cap.give{pointer-events:none}
 .tr-cap{
+  position:relative;
   display:flex;align-items:center;justify-content:center;gap:9px;
-  padding:6px 12px 7px;border-radius:11px;
-  font:800 13px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
+  padding:4px 12px 5px;border-radius:9px;
+  font:800 12px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 0 rgba(90,58,30,.22);
 }
 .tr-cap b{font:inherit}
@@ -203,25 +302,84 @@
   text-shadow:0 1px 0 rgba(0,0,0,.35)}
 .tr-cap.get{background:linear-gradient(180deg,#3f9a52,#25692f);color:#eafce9;
   text-shadow:0 1px 0 rgba(0,0,0,.3)}
-.tr-cap::before,.tr-cap::after{font-size:15px;line-height:1;opacity:.95}
-.tr-cap.give::before{content:'\25B2'}
-.tr-cap.give::after{content:'\25B2'}
-.tr-cap.get::before{content:'\25BC'}
-.tr-cap.get::after{content:'\25BC'}
-/* The live word. It is the reason the foot's block of prose could go, so it
-   has to be readable on the band rather than whispered under it. */
-.tc-live{display:none;font:800 11px/1 var(--ff);font-style:normal;
-  letter-spacing:.12em;padding:3px 8px 4px;border-radius:8px;
-  background:rgba(0,0,0,.26);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.tr-cap::before,.tr-cap::after{font-size:13px;line-height:1;opacity:.95}
+.tr-cap.get::before{content:'\25B2'}
+.tr-cap.get::after{content:'\25B2'}
+.tr-cap.give::before{content:'\25BC'}
+.tr-cap.give::after{content:'\25BC'}
+.tc-live,.tc-cost{
+  display:none;position:absolute;top:50%;transform:translateY(-50%);
+  font:800 9.5px/1 var(--ff);font-style:normal;letter-spacing:.1em;
+  padding:3px 8px 4px;border-radius:7px;color:inherit;
+  background:rgba(255,255,255,.2);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.34);
+}
+/* THE TIP IS THE QUIETER OF THE TWO. It is advice; the thing at the other end
+   of the band is the price of the deal, and they were shipping as the same pill
+   at the same size in the same colour:
+     "The cost readout and the instructional hint are the same pill, same size,
+      same colour, at opposite ends of the same bar, so the number reads as
+      advice."
+   So the tip gives up two points of type and most of its wash, and the total
+   takes them. Nothing new is introduced to tell them apart — it is the same
+   white-on-the-band's-own-colour they always were, just no longer at equal
+   volume. */
+.tc-live{right:9px;font-size:9px;background:rgba(255,255,255,.13);
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.22)}
 .tr-cap.say .tc-live{display:inline-flex}
 
-/* Nothing sits in the foot but the deal itself now. */
-.trade .sheet-foot{justify-content:center}
+/* WHAT THE DEAL COSTS, AS A NUMBER, AT THE OTHER END OF THE SAME BAND.
+ *
+ *   "The price of the deal is currently only ever inferable: in the ask frame
+ *    you read it off the PAY plates, in the mixed frame you must mentally add
+ *    CLEAR 8 + CLEAR 4, and in trade-960x444-ask3.png the number 12 appears
+ *    NOWHERE on the sheet."
+ *
+ * NEEDS 12, then 8 OF 12, then 12 OF 12. It is parked absolutely exactly as the
+ * tip is, at the left end rather than the right, so the two never touch and the
+ * band's own title never moves when either of them changes width. It is the
+ * same chip in the same wash as the tip because it is the same kind of thing —
+ * the band talking — and a second treatment here would be a fifth colour on a
+ * sheet that is allowed four.
+ *
+ * The number itself is a size up and rides in the band's own ink, because it is
+ * the one figure on this sheet a player is doing arithmetic with. */
+.tc-cost{
+  left:9px;font-size:12px;letter-spacing:.08em;padding:3px 9px 4px;
+  background:rgba(255,255,255,.3);
+  box-shadow:inset 0 0 0 1.4px rgba(255,255,255,.46),0 1px 0 rgba(0,0,0,.16);
+}
+.tr-cap.cost .tc-cost{display:inline-flex}
+/* Covered. Not a new colour — the same white wash, turned up, on the beat the
+   Trade button lights. */
+.tc-cost.full{background:rgba(255,255,255,.44);
+  box-shadow:inset 0 0 0 1.6px rgba(255,255,255,.6),0 1px 0 rgba(0,0,0,.16)}
 
+/* Nothing sits in the foot but the deal itself — and it is spaced so that the
+   room above the button and the room below it are the SAME room.
+ *
+ *   "3px of clearance below the primary call to action against ~10px above it,
+ *    with only 10px of screen below the sheet. Give it bottom padding matching
+ *    the top."
+ *
+ * The gap above the Trade button is the sheet's own column gap plus this rule
+ * and this padding; the gap below it is the sheet's padding-bottom. Taking a
+ * pixel off the padding here is what makes the two match at every breakpoint
+ * without moving the sheet's outer padding, which is shared with two other
+ * panels that were not complaining. */
+.trade .sheet-foot{justify-content:center;padding-top:2px}
+
+/* THE GAP BETWEEN AN ARROW AND ITS CARD IS A SAFETY MARGIN, NOT A MARGIN.
+ *
+ *   "The gap between the down-arrow and the card above it is ~6px — the two
+ *    most different actions in the sheet (spend one step / spend everything)
+ *    are 6px apart."
+ *
+ * Ten now. It is the only separation between "one lot" and "all of it", and a
+ * thumb that lands three pixels low should not have spent sixteen wool. */
 .tr-row{display:flex;gap:8px;align-items:stretch}
 .tr-col{
-  flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:4px;
-  transition:transform .12s ease;
+  flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:10px;
 }
 
 /* --- the arrows.
@@ -231,101 +389,267 @@
  *
  * Two boxes, and they had drifted apart. The plate a thumb AIMS at was 25px
  * tall on a phone; the box that answered a press was 47, because a transparent
- * ::after reached 21px out into the lane caption — and only 1px back towards
- * the card. So the target was mostly in the direction nobody aims, the visible
- * edge nearest the card was the edge people actually pressed, and a press three
- * pixels below the plate hit the CARD, which changes the focus and stages
- * nothing. That is what "hard to press consistently" is: a control whose real
- * shape is not the shape it draws.
+ * ::after reached out into the lane caption. So the target was mostly in the
+ * direction nobody aims, and a press three pixels below the plate hit the CARD,
+ * which changes the focus and stages nothing.
  *
- * The plate is 40px now (38 on a phone) — a thumb target on its own, before any
- * help — and the ::after is symmetric: it still reaches out into the caption,
- * and it now also covers the 4px gap between the arrow and the card, so there
- * is no dead lane between them. Nothing overlaps the card itself; the card is
- * still a button and still takes its own taps. The glyph grew with the plate
- * (16x10 -> 22x13), because a bigger button with the same tiny chevron on it
- * reads as the same small control. */
+ * The plate went to 40, and then to 46 (44 on a phone), because 38 is still
+ * under the thumb minimum and this is the one control on the sheet a player
+ * hits four times in a row. The height came out of the two lane bands, which
+ * were 30px of colour carrying two words each.
+ *
+ * The ::after still reaches out into the caption and now stops 5px short of the
+ * card, which is HALF the 10px gap: the arrow's live box and the card's live
+ * box no longer touch, and there is a real no-man's-land between "spend one
+ * lot" and "spend all of it". */
 .tr-arr{
-  position:relative;height:40px;padding:0;border-radius:9px;cursor:pointer;
+  position:relative;height:46px;padding:0;border-radius:10px;cursor:pointer;
   background:linear-gradient(180deg,#fffaee,#ead9b3);
   border:1.5px solid rgba(90,58,30,.42);
   box-shadow:0 2px 0 rgba(90,58,30,.26),inset 0 1px 0 rgba(255,255,255,.85);
   display:flex;align-items:center;justify-content:center;
   touch-action:none;
-  transition:opacity .14s ease,filter .14s ease,background .14s ease;
+  /* Nor is an arrow's, for the same reason the card's is not: a control caught
+     half-way between live and dead is a control the player has to look at
+     twice. See the note on `.tr-card` and the muted-gold ring that was neither
+     armed nor neutral. */
 }
 .tr-arr::after{content:'';position:absolute;left:0;right:0}
-.tr-arr.up::after{top:-14px;bottom:-4px}
-.tr-arr.dn::after{top:-4px;bottom:-14px}
+.tr-arr.up::after{top:-13px;bottom:-5px}
+.tr-arr.dn::after{top:-5px;bottom:-13px}
 .tr-arr::before{content:'';width:0;height:0;
   border-left:11px solid transparent;border-right:11px solid transparent}
-.tr-arr.up::before{border-bottom:13px solid var(--brown)}
-.tr-arr.dn::before{border-top:13px solid var(--brown)}
+/* THE GLYPHS ARE PAINTED IN THE COLOUR OF THE BAND THEY POINT AT. Both were
+   brown when both lanes were brown-above-green-below by accident of order; now
+   that the lanes have swapped, an arrow whose colour disagreed with the band
+   two pixels away from it would be the single most confusing thing on the
+   sheet. Up is green because up is into your pack. The plate keeps its cream —
+   ten coloured plates would be a row of traffic lights — and takes the lane's
+   colour only in its hairline. */
+.tr-arr.up::before{border-bottom:13px solid var(--green-d)}
+.tr-arr.dn::before{border-top:13px solid #7a5228}
+.tr-arr.up{border-color:rgba(37,105,47,.4)}
+.tr-arr.dn{border-color:rgba(90,58,30,.42)}
 .tr-arr:active{transform:translateY(2px);box-shadow:0 0 0 rgba(90,58,30,.3)}
 
-/* DISABLED IS THE POINT. Two brick and a 4:1 rate means a dead up arrow, and
-   the player reads that before they read anything else on the sheet. */
+/* THE ARROW OVER A PAYING PILE IS THE ONE-LOT UNDO, and it takes a wash of the
+   lane it feeds so that it looks like one.
+ *
+ *   "Sheep is 4 of 8 spent but its down arrow is dimmed, so the only adjustment
+ *    is CLEAR 4 — all or nothing."
+ *
+ * It never was all or nothing — this arrow hands one lot back per tap and is
+ * live in exactly that state — but nothing on the card said so, and a green
+ * glyph labelled "Receive Sheep" over a card that is spending sheep does not
+ * read as the undo it is. A faint mint on the plate, which is the receive
+ * lane's own colour and already on the sheet, and the aria-label says the rest.
+ * No new hue: taking a lot back out of the give lane really does put those
+ * cards back in your pack, which is what green has always meant here.
+ *
+ * `:not(.off)` because a dead arrow must look dead whatever else is true of it,
+ * and two classes would otherwise outrank the disabled rule below. */
+.tr-arr.up.back:not(.off){
+  background:linear-gradient(180deg,#fbfff6,#dcecd4);
+  border-color:rgba(37,105,47,.55);
+}
+
+/* DISABLED IS THE POINT. Nothing to pay for yet means no give arrow can move,
+   and the player reads that before they read anything else on the sheet.
+   The floor sits at .42 rather than the .3 it used to: a dead arrow used to be
+   one or two plates in a row of live ones, and the sheet now OPENS with all
+   five give arrows dead, which at .3 read as a lane with no controls in it
+   rather than a lane waiting its turn. */
 .tr-arr.off{cursor:default}
 .tr-arr.off::before{border-bottom-color:#b3a084;border-top-color:#b3a084}
 .tr-arr.off:active{transform:none}
-/* An arrow already carrying a staged amount is AT its cap, not dead: it keeps
-   its plate so the counter riding it never reads as greyed out too. */
-.tr-arr.off:not(.staged){opacity:.3;box-shadow:none;background:rgba(90,58,30,.06);
-  border-color:rgba(90,58,30,.17)}
+.tr-arr.off{opacity:.42;box-shadow:none;background:rgba(90,58,30,.05);
+  border-color:rgba(90,58,30,.2)}
 
-/* the staged counter, riding the arrow it was staged with */
-.tr-badge{
-  position:absolute;top:50%;right:6px;transform:translateY(-50%);
-  min-width:19px;height:19px;padding:0 4px;border-radius:10px;
-  display:none;align-items:center;justify-content:center;
-  font:800 11px/1 var(--ff);font-style:normal;
-}
-.tr-badge.on{display:flex}
-.tr-arr.up .tr-badge.on{background:#5a3a1e;color:#ffeec4;
-  box-shadow:0 1px 0 rgba(255,255,255,.5)}
-.tr-arr.dn .tr-badge.on{background:var(--green-d);color:#eafce9;
-  box-shadow:0 1px 0 rgba(255,255,255,.5)}
-
-/* --- the card */
+/* --- the card.
+ *
+ * Icon and count side by side across the top, and a reserved plate underneath
+ * for the action. The plate's slot is held open whether or not it has anything
+ * in it, so a card arming, or a payment landing, never moves a single pixel of
+ * anything else on the card — the first version had a price badge that jumped
+ * forty pixels across the card between two adjacent states. */
 .tr-card{
-  position:relative;flex:1 1 auto;min-height:76px;padding:6px 4px 5px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  position:relative;flex:1 1 auto;min-height:74px;padding:5px 5px 4px;
+  display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:4px;
   border-radius:12px;cursor:pointer;touch-action:none;
   background:linear-gradient(180deg,#fffcf3,#f0e2c2);
   border:2px solid rgba(90,58,30,.34);
   box-shadow:0 2px 0 rgba(90,58,30,.2);
-  transition:transform .12s ease,box-shadow .14s ease,border-color .14s ease,
-             background .14s ease,filter .14s ease;
+  /* A CARD'S STATE IS NOT ANIMATED, AND THE REASON IS A REVIEW.
+   *
+   *   "960 paid: wood gold, brick green, and sheep/wheat/ore carry a THIRD
+   *    muted-gold ring, RGB (196,153,65), while doing nothing. Identically
+   *    roled cards render two different ring colours in adjacent frames."
+   *
+   * That third ring was never a state: 196,153,65 is almost exactly four tenths
+   * of the way from the armed gold (201,143,20) to the neutral tan (189,169,139)
+   * on all three channels. Those three cards HAD been armed one tap earlier —
+   * every pile of eight could settle a two-brick ask alone — and the frame was
+   * caught part-way through a 140ms border-colour fade back to neutral. It only
+   * showed at 960 because that is the size where the renderer is slowest and a
+   * fade lasts longest in painted frames.
+   *
+   * The fade could be shortened, but a card would still be able to paint a
+   * colour that means nothing, and this row is read at a glance by a player in
+   * a hurry. A pile is either paying, or asked for, or neither, and it says so
+   * on the frame the tap lands. Only the press keeps its motion. */
+  transition:transform .1s ease;
 }
-.tr-ico{line-height:0}
-.tr-have{font:800 25px/1 var(--ff);color:#3f2a12;
-  text-shadow:0 1px 0 rgba(255,255,255,.75)}
-/* the rate this post charges for THIS resource, in the corner where a trading
-   card would carry it. It is the other half of the disabled-arrow story. */
+.tr-face{display:flex;align-items:center;justify-content:center;gap:5px;min-width:0}
+.tr-ico{line-height:0;flex:0 0 auto}
+
+/* THE TWO NUMBERS THAT DEFINE THE TRADE, IN THE BIGGEST TYPE ON THE SHEET.
+ *
+ *   "The two numbers that define the trade are the SMALLEST type on the sheet,
+ *    smaller than five inert 8s. Show the ask in the card's primary numeral as
+ *    a delta (0 -> 4) and the cost likewise (40 -> 24)."
+ *
+ * They were 11px badges riding the arrows. They are the pile count now, and the
+ * pile count ANSWERS: press up four times on brick and brick reads 0 -> 4, tap
+ * wood to pay for it and wood reads 40 -> 24. Which is the owner's own sentence
+ * about the up arrow — "that should mean that I'm adding that many resources to
+ * my stockpile" — finally drawn instead of described.
+ *
+ * `.tr-was` only exists while something is staged, so an untouched row is five
+ * plain counts and nothing else. */
+.tr-count{display:flex;align-items:baseline;gap:3px;min-width:0}
+/* THE "FROM" HALF OF THE DELTA, AND IT HAS TO BE READABLE.
+ *
+ *   "The 'from' value (the '8 ->' before the delta) is 10px at 2.9:1 contrast,
+ *    (160,138,104) on mint — the least readable element on the tightest
+ *    screen."
+ *
+ * It was #a08a68, which measures 2.6:1 against the dark end of the mint fill of
+ * an asked-for card and worse still against the gold of a paying one — under
+ * the 3:1 floor on the two backgrounds it is guaranteed to appear on, since it
+ * only ever exists while a card is staged. #7a6242 is the same brown four steps
+ * down: 4.5:1 on the mint, 5:1 on the gold, and still visibly the quieter half
+ * of the pair beside a 25px numeral. The arrow between them came up with it,
+ * for the same reason. */
+.tr-was{
+  display:none;font:800 12px/1 var(--ff);font-style:normal;color:#7a6242;
+}
+.tr-count.get .tr-was,.tr-count.give .tr-was{display:inline-flex;align-items:center}
+.tr-was::after{content:'\2192';margin-left:2px;opacity:.9}
+.tr-now{
+  font:800 25px/1 var(--ff);font-style:normal;color:#3f2a12;
+  text-shadow:0 1px 0 rgba(255,255,255,.75);
+}
+.tr-count.get .tr-now{color:#1f6a2c}
+.tr-count.give .tr-now{color:#8a5a12}
+
+/* the rate this post charges for THIS resource — drawn ONLY when it disagrees
+   with the headline rate in the title bar. At the Great Market that is never;
+   at a 2:1 wool dock it is the one card worth walking to. */
 .tr-rate{
-  position:absolute;top:4px;left:6px;
-  font:800 9px/1 var(--ff);letter-spacing:.02em;color:#96703c;
+  position:absolute;top:3px;left:5px;display:none;
+  padding:1px 4px 2px;border-radius:6px;
+  font:800 9px/1 var(--ff);letter-spacing:.02em;
+  background:var(--gold);color:#3a2208;box-shadow:0 1px 0 rgba(90,58,30,.3);
 }
+.tr-rate.on{display:inline-flex}
 
-/* nothing you hold enough of to give: the pile reads as spent, not as broken */
-.tr-col.broke .tr-have{color:#a08a68}
-.tr-col.broke .tr-ico{opacity:.5;filter:grayscale(.7)}
+/* THE ACTION PLATE — the one-tap payer, drawn as a thing you press.
+ *
+ *   "This was the owner's marquee request and it currently ships as an easter
+ *    egg: the card is a passive cream tile with an icon and a numeral, no verb,
+ *    no press affordance. Render the chip as an action — an amber pressable
+ *    pill reading e.g. PAY 16 — visible the moment the card becomes armed."
+ *
+ * A gold button face with a lip under it, the same language every other button
+ * in this game uses, carrying the verb and the exact price. CLEAR takes the
+ * same slot once the pile is committed, so the plate never moves and the undo
+ * is never hidden — and because the whole card is the button, the target for
+ * that destructive tap is the full 100x74 card and not a 14px corner badge. */
+.tr-act{
+  height:19px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  border-radius:7px;overflow:hidden;
+}
+.tr-act u{display:none;text-decoration:none;
+  font:800 10px/1 var(--ff);letter-spacing:.08em;text-transform:uppercase;
+  white-space:nowrap}
+.tr-act.on{
+  background:linear-gradient(180deg,var(--gold-l),var(--gold) 58%,var(--gold-d));
+  box-shadow:0 2px 0 #a8741a,inset 0 1px 0 rgba(255,255,255,.6);
+  color:#3a2208;
+}
+.tr-act.on u{display:inline}
+.tr-act.clear{
+  background:linear-gradient(180deg,#f6e6c4,#dfc794);
+  box-shadow:0 2px 0 rgba(90,58,30,.34),inset 0 1px 0 rgba(255,255,255,.6);
+  color:#5a3a1e;
+}
+.tr-col.armed .tr-card:active .tr-act.on,
+.tr-col.giving .tr-card:active .tr-act.on{box-shadow:0 0 0 #a8741a}
 
-/* staged: warm on the give side, green on the take side */
-.tr-col.giving .tr-card{border-color:var(--gold-d);
-  background:linear-gradient(180deg,#fff3d0,#f6dfa4)}
+/* A PILE THAT CANNOT PAY FOR ANYTHING HERE — and that is the only thing that
+   dims a card.
+ *
+ *   "He wrote 'trade 8 wood and 8 sheep for 4 brick' — a MIXED payment from two
+ *    piles, neither of which covers the full cost. Your rule makes that exact
+ *    trade look forbidden. Light any resource the player holds at least one lot
+ *    of; reserve dimming for piles that genuinely cannot contribute."
+ *
+ * So it is `held < ratio`, full stop: a fact about the pack that does not move
+ * as the ask grows, and one that always agrees with the give arrow underneath.
+ * Soft — the art fades and the count goes pale — because it is a "not this
+ * one", not an error. */
+.tr-col.dim .tr-now{color:#a08a68}
+.tr-col.dim .tr-ico{opacity:.42;filter:grayscale(.8)}
+.tr-col.dim .tr-card{background:linear-gradient(180deg,#f8f3e6,#e8dfca);
+  border-color:rgba(90,58,30,.2);box-shadow:0 2px 0 rgba(90,58,30,.12)}
+
+/* ONE RING, ONE MEANING: GOLD MEANS THIS CARD IS PAYING — AND ITS WEIGHT SAYS
+ * WHETHER IT IS OFFERING OR COMMITTED.
+ *
+ * It is on the card that could settle the deal in one tap and on the card that
+ * already is. The first version had gold and cobalt trading places between the
+ * two states of the same card, which meant the ring signified nothing at all,
+ * and the second drew both states at identical weight:
+ *
+ *   "The ask frame fires 4 gold rings plus 4 identical PAY plates — eight
+ *    equal-weight gold calls to action at once — while the card the player
+ *    actually acted on is the quietest thing on the sheet. Lighten the offer
+ *    rings so the staged card stays loudest."
+ *
+ * Which is what a pack of eights asking for two brick looks like: four piles
+ * can each settle it alone, so four piles offer, and the sheet was shouting
+ * four times over the one card the player had actually touched. An OFFER keeps
+ * the gold hairline and its gold plate — it is still unmistakably the pressable
+ * one — and the 2px collar is now reserved for a pile that is really handing
+ * cards over. Same hue, same meaning, weight tracking commitment. */
+.tr-col.armed .tr-card,
+.tr-col.giving .tr-card{border-color:var(--gold-d)}
+.tr-col.armed .tr-card{background:linear-gradient(180deg,#fffdf2,#f7ebcd);
+  box-shadow:0 2px 0 rgba(168,116,26,.5)}
+.tr-col.giving .tr-card{background:linear-gradient(180deg,#fff3d0,#f6dfa4);
+  box-shadow:0 0 0 2px rgba(201,143,20,.9),0 3px 0 rgba(90,58,30,.24)}
+.tr-col.armed .tr-card:active{transform:translateY(2px);
+  box-shadow:0 0 0 rgba(168,116,26,.5)}
+.tr-col.giving .tr-card:active{
+  transform:translateY(2px);
+  box-shadow:0 0 0 2px rgba(201,143,20,.9),0 0 0 rgba(90,58,30,.24);
+}
+/* THE PILE YOU HAVE ASKED FOR: mint fill, green hairline, and a green lip under
+   it — no collar, because it is not paying, but no longer the flattest card in
+   the row either. It is the one card on the sheet the player put there. */
 .tr-col.getting .tr-card{border-color:#4f9a5c;
-  background:linear-gradient(180deg,#eefae9,#d3ecd0)}
+  background:linear-gradient(180deg,#eefae9,#d3ecd0);
+  box-shadow:0 2px 0 rgba(37,105,47,.38)}
 
-/* THE CURSOR. There is no mouse pointer to fall back on, so the focused card
-   lifts off the row and takes a cobalt collar against the cream sheet. */
-.tr-col.cur{transform:translateY(-2px)}
+/* THE CURSOR, and it is deliberately not a state. There is no mouse pointer to
+   fall back on, so the card the keyboard is pointing at takes a dotted outline
+   — a shape no other thing on this sheet uses, in a colour already on it. It
+   used to be a 3px cobalt collar, which was heavier than the gold ring it sat
+   next to and read as a second, competing meaning; on a touch layout it sat on
+   whichever card was last tapped, for a reason a thumb player cannot infer. */
 .tr-col.cur .tr-card{
-  border-color:#123a66;
-  box-shadow:0 0 0 3px rgba(47,107,176,.9),0 4px 0 rgba(90,58,30,.25);
+  outline:2px dotted rgba(90,58,30,.6);outline-offset:2px;
 }
-.tr-col.cur .tr-arr{border-color:rgba(18,58,102,.55)}
-.tr-col.cur .tr-arr.off{border-color:rgba(90,58,30,.18)}
 
 /* a refused key press: one short shake, nothing else */
 .tr-row.nope{animation:trNope .22s ease}
@@ -796,25 +1120,38 @@
   .rs-foot .btn .sb-ico svg{width:18px;height:18px}
   .dcard{flex-basis:108px;width:108px;min-height:140px}
   .hand{min-height:140px}
-  /* Every pixel the trade sheet gives back here is a pixel the key legend in
-     the foot keeps: at 375px tall it was the line being clipped off. The card
-     gives; the ARROWS NO LONGER DO. They used to come down to a 25px plate,
-     which is the one thing on this sheet a thumb has to hit twice in a row —
-     they hold 38 now, and the 60px the pair of them cost comes out of the
-     card's minimum height and the sheet's own margins, which had 43px of slack
-     top and bottom at 375. No resource icon goes under 26. */
-  .sheet{gap:6px;padding:9px 12px 10px}
+  /* EVERY PIXEL HERE IS SPENT ON THE ARROWS, and the order of who gives it up
+     is now settled:
+       the two lane BANDS give first — they were 30px slabs of colour carrying
+         two words each, which is the cheapest decoration on the sheet;
+       the CLOSE BUTTON gives next — 48px of circle for an action the Escape
+         key, the scrim and the back gesture all also perform;
+       the FOOT button gives a little;
+       the CARD gives last, and no resource icon goes under 26.
+     The ARROWS DO NOT GIVE AT ALL. 38px was under the thumb minimum on the one
+     control a player hits four times in a row — "35px is under the 44px thumb
+     minimum, and these are tapped four times in a row" — so they hold 44 here
+     and the 10px gap between an arrow and its card holds too, because that gap
+     is the entire separation between spending one lot and spending sixteen. */
+  .sheet{gap:5px;padding:8px 11px 9px}
+  .sheet.trade .sheet-head .cbtn.small{width:40px;height:40px;min-width:40px;min-height:40px}
+  .trade .sheet-foot .btn.big{min-height:44px;font-size:13px}
+  .trade-body{gap:5px}
   .tr-row{gap:6px}
-  .tr-card{min-height:58px;padding:5px 3px 4px;gap:1px}
-  .tr-ico svg{width:28px;height:28px}
-  .tr-have{font-size:22px}
-  .tr-arr{height:38px}
-  .tr-arr.up::after{top:-11px}
-  .tr-arr.dn::after{bottom:-11px}
-  /* The bands do NOT shrink here — they are the two words this sheet exists to
-     say, and the 24px the foot's legend used to spend is paying for them. */
-  .tr-cap{font-size:12px;padding:5px 10px 6px;gap:7px}
-  .tc-live{font-size:10px;padding:2px 7px 3px}
+  .tr-col{gap:10px}
+  .tr-card{min-height:60px;padding:4px 4px 3px;gap:3px}
+  .tr-ico svg{width:26px;height:26px}
+  .tr-now{font-size:22px}
+  .tr-was{font-size:11px}
+  .tr-act{height:18px}
+  .tr-act u{font-size:9.5px;letter-spacing:.05em}
+  .tr-arr{height:44px}
+  .tr-arr.up::after{top:-9px}
+  .tr-arr.dn::after{bottom:-9px}
+  .tr-cap{font-size:11px;padding:3px 10px 4px;gap:7px;letter-spacing:.16em}
+  .tr-cap::before,.tr-cap::after{font-size:11px}
+  .tc-live{font-size:8.5px;padding:2px 6px 3px;right:7px}
+  .tc-cost{font-size:11px;padding:2px 7px 3px;left:7px}
   .rs-foot{gap:8px}
   .ew-plate{padding:7px 15px 9px;gap:9px;border-radius:14px}
   .ew-title{font-size:19px}
@@ -829,6 +1166,64 @@
   .bcard{height:92px}
   .bc-ico{margin:0}
   .bc-ico svg{width:24px;height:24px}
+}
+
+/* THE TRADE SHEET'S OWN FLOOR, AND IT IS LOWER THAN 380.
+ *
+ * These rules used to ride in the block above, which starts at 380px tall — and
+ * 375 is the height of a phone held sideways, the single most common way this
+ * game is played. So the 8px column gap meant for a 320px screen was being
+ * applied on the one screen where a reviewer measured it and said no: "the two
+ * most different actions in the sheet are 6px apart". 344 is under every phone
+ * and over every one of them turned on its side. */
+@media (max-height:344px){
+  /* 320px tall is the floor this game is built to, and the trade sheet is the
+     tallest thing in it. The arrows STILL do not move — they are the reason the
+     rest of this block exists — so the last of the slack comes out of the two
+     bands, the head and the foot, in that order. The card keeps a 26px icon and
+     a 20px numeral, which is the smallest either has ever been allowed to be.
+
+     AND IT HAS TO ADD UP TO LESS THAN THE BOX, WHICH IT DID NOT.
+
+       "The Trade button is bottomed out at 640x320. Button occupies y 263-304,
+        the sheet's inner bottom rim is ~306: 3px of clearance below the primary
+        call to action against ~10px above it."
+
+     Measured cold, the sheet wanted 309px inside a box that `max-height` clamps
+     to 300, and a flex column that overflows does not distribute the shortfall
+     politely: the whole 9px came out of `.trade-body`, whose own contents then
+     spilled straight through the bottom of it — which is why the brown band was
+     sitting ON the foot's rule and the button was pressed against the rim with
+     the sheet's own padding-bottom nowhere to be seen. Nothing was "clipped",
+     so every fit check the harness had passed while it happened.
+
+     So this block now budgets. Every trim below is one or two pixels, taken in
+     the order the note above sets out — bands, foot, card plate, sheet gap —
+     and they add up to eleven, which pays back the nine and buys the button the
+     8px of padding underneath that makes it sit in the sheet rather than on the
+     edge of it. Arrows, the 10px arrow-to-card gap, the 26px icon, the 20px
+     numeral and the 40px button are all still untouchable. */
+  .sheet.trade{padding:5px 10px 8px;gap:4px}
+  .sheet.trade .sheet-head{gap:5px}
+  .sheet.trade .sheet-title{font-size:13px;letter-spacing:.14em}
+  .sheet.trade .sheet-head .cbtn.small{width:34px;height:34px;min-width:34px;min-height:34px}
+  .sheet.trade .cbtn.small .cb-ico svg{width:15px;height:15px}
+  .trade .sheet-foot{padding-top:1px;border-top-width:1.5px}
+  .trade .sheet-foot .btn.big{min-height:40px;font-size:12px;border-radius:13px}
+  .trade-body{gap:2px}
+  .tr-cap{font-size:10px;padding:3px 9px 3px;gap:6px}
+  .tr-cap::before,.tr-cap::after{font-size:10px}
+  .tr-card{min-height:50px;padding:3px 4px 2px;gap:2px}
+  .tr-now{font-size:20px}
+  .tr-act{height:14px}
+  .tc-cost{font-size:10.5px;padding:2px 6px 3px;left:6px}
+  .tc-live{font-size:8px;padding:2px 5px 3px;right:6px}
+  /* THE GAP DOES NOT SHRINK EITHER. It went to 8 here for four pixels of
+     height, and four pixels is not worth narrowing the only thing standing
+     between "spend one lot" and "spend all of it" — they came out of the
+     sheet's own padding and the body's gap instead. */
+  .tr-arr.up::after{top:-7px}
+  .tr-arr.dn::after{bottom:-7px}
 }
 
 @media (prefers-reduced-motion:reduce){

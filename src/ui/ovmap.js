@@ -46,6 +46,30 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  */
 export const pipRadius = proj => Math.max(11, proj.s * 1.05);
 
+/**
+ * How far past the coastline a harbour sign reaches, in CSS pixels.
+ *
+ * `BOUNDS` is the box around the fifty-four intersections, which is the ISLAND
+ * and not the BOARD: the nine docks are built outward from the mid-point of a
+ * coastal edge, and their ratio boards stand at `len + signH * 0.62` with
+ * another `signH / 2` of their own height beyond that. Whoever is fitting the
+ * board into a frame has to add this on all four sides or the outermost signs
+ * are drawn under whatever furniture is standing at the edge — which is
+ * precisely what was happening, sliced off flat by the top of the chip bar at
+ * 640x320 and by the panel's own gold rail with no bar up at all.
+ *
+ * Exported rather than duplicated because every term is lifted from `dockGeom`
+ * below, and a second copy of `Math.max(15, ...)` is a second copy that gets
+ * to be wrong on its own. The `+2` is the drop shadow under the plate.
+ *
+ * PIXELS, NOT WORLD UNITS. Both terms have a pixel floor, so on a small screen
+ * the signs stop shrinking with the island and the margin they need grows as a
+ * fraction of the board — which is why the constant slack this replaced could
+ * not be right at 640x320 and 960x444 at the same time.
+ */
+export const dockOverhang = s =>
+  Math.max(15, HEX_SIZE * s * 0.74) + Math.max(15, s * 4.4) * 1.12 + 2;
+
 export function createPainter(ctx, proj) {
   const PX = x => x * proj.s + proj.ox;
   const PY = z => z * proj.s + proj.oy;

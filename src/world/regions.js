@@ -70,7 +70,27 @@ const WORN = {
   fields:    0xa98b3f,   // stubble and chaff
   pasture:   0x8a8b4a,   // cropped, trodden turf
   hills:     0x6b3216,   // spoil and wet clay
-  mountains: 0x555b66,   // rubble and rock flour
+  // ROCK FLOUR IS PALE. The name on this line was right and the value was the
+  // opposite of it: 0x555b66 is a charcoal slate, darker than the mountain
+  // terrain's own `deep` band, and it is composited over the hex floor at about
+  // 0.42 alpha once the churn and the spent wash have both landed. So the one
+  // hex on the board that was already the darkest — see the palette note in
+  // terrain.js — had a near-black plate laid over it at the exact moment it was
+  // meant to go quiet:
+  //
+  //   "In sw-wide-owned.png the ore hex at token 3 reads as a scorched black
+  //    crater against an otherwise pastel island."
+  //
+  // Worth knowing before touching any of these: this colour is used as a
+  // DISPLAY value, not a scene value. The overlay is a raw ShaderMaterial
+  // writing gl_FragColor straight into an already-encoded framebuffer, with no
+  // tone map and no output encode of its own, while `cw.setHex(..., SRGB)`
+  // stores the LINEAR component — so what actually lands on screen is the
+  // linear number treated as if it were sRGB, i.e. a good deal darker than the
+  // hex you typed. Every entry here has been eyeballed through that pipeline
+  // and the others read correctly; this one now reads as pale crushed stone,
+  // which is what a worked-out quarry floor is made of.
+  mountains: 0xbfc6d0,
   desert:    0xbc9256
 };
 
@@ -89,8 +109,45 @@ const MUTE = 0x0a1120;    // the dead wash over one you do not
 
 /* =========================================================== ground overlay */
 
-const SEGS = 12;
-const RINGS = [0.24, 0.46, 0.66, 0.775, 0.865];
+/* THE FAN IS TWICE THE MESH IT WAS, AND THAT IS A BUG FIX, NOT A FLOURISH.
+ *
+ *   "Remove the stray soft tan ground quad at ~(520,215) ... in
+ *    sw-mountains-3-cleared.png. Absent from ph-mountains-2-empty.png, so the
+ *    material is fine — this is per-hex dressing."
+ *
+ * It is not dressing. `props.js` puts exactly one object on a mountain hex (the
+ * portal), and a sweep of every mesh and every instance whose origin lands
+ * inside a mountain hex turns up the portal, the ore stacks and nothing else.
+ * What is left standing on that floor is this overlay — and this overlay is a
+ * DECAL floated a flat 0.30 above the ground, tessellated at five rings of
+ * twelve. Every terrain on the board is dead flat under it except one: a
+ * mountain carries four rolling peaks (`PEAKS` in terrain.js) up to 1.45 units
+ * high, and across a fan cell two to three units wide the straight line between
+ * two vertices can dive a good tenth of a unit under a bulge in the middle of
+ * it. Where it does, the ground wins the depth test and the wash simply is not
+ * drawn there — leaving a hard-edged polygon of un-washed hex floor a little
+ * warmer and a little brighter than the worked-out grey all round it, on the
+ * one terrain that has relief and only on the hexes whose peaks happen to fall
+ * under a cell. Which is exactly the shape, the colour and the "per-hex"
+ * behaviour reported.
+ *
+ * Measured over the whole island, 0.039% of the fan's area sat under the ground
+ * with a worst dive of 0.129 units. At twenty-four segments and nine rings it
+ * is 0.000% with a worst dive of zero, and the decal also sits CLOSER to the
+ * ground than it did — peak float drops from 0.51 to 0.39 — because a finer
+ * mesh follows the bulges instead of spanning them. It costs 5.7k triangles
+ * across nineteen hexes and not one extra draw call: it is more vertices on a
+ * buffer that was already being drawn.
+ *
+ * Two constraints on the numbers. SEGS must stay a MULTIPLE OF SIX or the ring
+ * stops landing on the hex's own corners and the light wall starts cutting them
+ * off. And the ring list is a strict SUPERSET of the one it replaces — 0.24,
+ * 0.46, 0.66, 0.775 and 0.865 are all still there — so every band the fragment
+ * shader draws off `vRim` lands on exactly the radius it used to and is merely
+ * interpolated more finely between them. Nothing about the look is being
+ * re-authored here. */
+const SEGS = 24;
+const RINGS = [0.12, 0.24, 0.35, 0.46, 0.56, 0.66, 0.72, 0.775, 0.865];
 const RIM_AT = 0.775;
 
 /* THE LIGHT WALL.

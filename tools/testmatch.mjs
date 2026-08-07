@@ -649,8 +649,20 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     const farMoved = p.res.wood !== w1;
     // 3) the HUD only offers the market prompt when you are standing at it
     const promptFar = (document.querySelector('.prompt')||{}).className||'';
-    // The sheet is one row of five cards: an up arrow stages a give, a down
-    // arrow stages a receive, and both grey out when the deal is impossible.
+    /* The sheet is one row of five cards, and the two lanes SWAPPED ENDS:
+     *
+     *   "I think the 'you give' and 'you receive' should swap sides, with the
+     *    'you receive' on the top. Since basically how many resources I have is
+     *    in the middle, so if I click the up arrow, that should mean that I'm
+     *    adding that many resources to my stockpile."
+     *
+     * So stage(res, +1) is the UP arrow and now means "put one more of this IN
+     * my pack", and stage(res, -1) is the down arrow and hands a lot over.
+     * The selectors are unchanged; what they mean is not. It also means the
+     * ORDER below matters — the sheet is asked before it is paid, and every
+     * give arrow stays dead until something has been asked for — which is why
+     * the ore is staged first in both pairs and the wood second.
+     */
     const stage=(res,dir)=>{
       const c=document.querySelector('.sheet.trade .tr-col[data-res="'+res+'"]');
       const b=c&&c.querySelector(dir>0?'.tr-arr.up':'.tr-arr.dn');
@@ -662,8 +674,8 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     g.openTrade(null);
     const sheetOpen = !!document.querySelector('.sheet.trade:not(.hid)');
     const w2=p.res.wood, o2=p.res.ore;
-    // try to stage give=wood, get=ore, then Trade
-    const staged = [stage('wood',1), stage('ore',-1)];
+    // ask for the ore, then hand over the wood that pays for it
+    const staged = [stage('ore',1), stage('wood',-1)];
     const btn=document.querySelector('.sheet.trade .sheet-foot .btn.green');
     const btnOff = btn ? btn.className.indexOf('off')>=0 : null;
     if(btn && !btn.disabled) btn.click();
@@ -680,7 +692,7 @@ await test(5, 'Trading post trades at 4:1 and requires physical proximity', asyn
     if (prompt) prompt.click();
     const uiOpen = !!document.querySelector('.sheet.trade:not(.hid)');
     const w3=p.res.wood, o3=p.res.ore;
-    const staged2 = [stage('wood',1), stage('ore',-1)];
+    const staged2 = [stage('ore',1), stage('wood',-1)];
     const btn2=document.querySelector('.sheet.trade .sheet-foot .btn.green');
     const btn2Off = btn2 ? btn2.className.indexOf('off')>=0 : null;
     // The foot's prose moved into the coloured lane bands — see ui.css .tr-cap.
@@ -1017,7 +1029,24 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
        match is already over. Put it back on its feet. */
     if (st.phase !== 'play') { st.phase='play'; st.winner=-1; }
     // --- knight ---
-    const tile = L.tiles.find(t=>t.id!==st.robberTile && t.resource);
+    /* WHICH HEX THE KNIGHT GOES ON NOW MATTERS.
+     *
+     *   "I want it to only take from the players who have a settlement or city
+     *    on the hex where you place the knight."
+     *
+     * It used to be any resource hex, because the Knight used to rob a random
+     * rival wherever it landed. Under the new rule a hex nobody has built on is
+     * a hex where nothing is taken — correct, and indistinguishable from a
+     * broken card if the check keeps asserting that somebody lost something. So
+     * pick a hex a RIVAL actually holds a corner on, and record whether one was
+     * available: that is what makes the assertion below honest. */
+    const holders = t => st.players.slice(1)
+      .filter(o => L.tiles[t.id].corners.some(c => {
+        const b = st.buildings.get(c); return b && b.owner === o.id; }))
+      .map(o => o.id);
+    const owned = L.tiles.filter(t => t.id !== st.robberTile && t.resource && holders(t).length);
+    const tile = owned[0] || L.tiles.find(t=>t.id!==st.robberTile && t.resource);
+    const victims = holders(tile);
     const rivalBefore = st.players.slice(1).map(o=>window.__C__.totalRes(o.res));
     const kBefore=p.knightsPlayed;
     const kOk = E.playKnightAt(tile.id, g);
@@ -1046,7 +1075,7 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
     window.__rb.freeAfterPlay = p.freeRoads||0;
     return { draws, seen, vpCards:p.vpCards, vpJump,
       knight:{ ok:kOk, tile:tile.id, robberTile:st.robberTile, robberOwner:st.robberOwner,
-               played:{before:kBefore, after:p.knightsPlayed},
+               played:{before:kBefore, after:p.knightsPlayed}, victims,
                rivalBefore, rivalAfter } };})()`);
 
   // Place both free roads through the real overview Confirm button. economy.js
@@ -1074,9 +1103,16 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
       freeLeft:p.freeRoads||0 };})()`);
   out.roadBuilding = rbOut;
   const k = out.knight, rb = out.roadBuilding;
-  const robbed = k.rivalAfter.some((v, i) => v < k.rivalBefore[i]);
+  /* Only the seats holding a corner on that hex may have lost anything, and if
+     no rival holds one then nobody losing anything IS the pass. Both halves are
+     asserted: the victims went down, and everybody else is untouched. */
+  const lost = k.rivalAfter.map((v, i) => k.rivalBefore[i] - v);
+  const isVictim = i => k.victims.includes(i + 1);
+  const robbedRight = k.victims.length
+    ? lost.some((d, i) => isVictim(i) && d > 0) && lost.every((d, i) => isVictim(i) || d === 0)
+    : lost.every(d => d === 0);
   const kOk = k.ok && k.robberTile === k.tile && k.robberOwner === 0
-    && k.played.after === k.played.before + 1 && robbed;
+    && k.played.after === k.played.before + 1 && robbedRight;
   const rbOk = rb.ok && rb.freeAfterPlay === 2 && rb.placedFree === 2
     && rb.roads.after === rb.roads.before + 2
     && rb.paid.wood === 0 && rb.paid.brick === 0;
@@ -1086,7 +1122,8 @@ await test(10, 'All three development cards work (Knight, Road Building, Victory
     evidence:
       `drew ${out.draws.length} cards: ${JSON.stringify(out.seen)}\n` +
       `KNIGHT  played=${k.ok} knight->tile ${k.robberTile} (owner ${k.robberOwner}), ` +
-      `knightsPlayed ${k.played.before}->${k.played.after}, rival stock ${JSON.stringify(k.rivalBefore)}->${JSON.stringify(k.rivalAfter)}\n` +
+      `knightsPlayed ${k.played.before}->${k.played.after}, holders ${JSON.stringify(k.victims)}, ` +
+      `rival stock ${JSON.stringify(k.rivalBefore)}->${JSON.stringify(k.rivalAfter)}\n` +
       `ROADBLD room=${rb.room.ok}${rb.room.ok ? '' : ` (${rb.room.reason})`} ` +
       `at ${rb.roads.before}/${rb.cap} roads after freeing ${rb.freed}\n` +
       `        played=${rb.ok} freeRoads=${rb.freeAfterPlay} placed=${rb.placedFree} ` +

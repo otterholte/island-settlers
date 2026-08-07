@@ -6,14 +6,47 @@
  *
  * A painted 2D board map over the 3D scene. Far easier to read on a phone
  * than an orbit camera, and it doubles as the placement interface: every
- * legal target pulses, one tap previews it (also driving the 3D ghost), and
- * a confirm bar commits it through rules.js.
+ * legal target pulses, one tap arms it (also driving the 3D ghost), and a
+ * second tap on the same target commits it through rules.js.
  *
  * Modes: 'view' | 'place-road' | 'place-settlement' | 'place-city'
  *      | 'place-robber' | 'draft-watch'
  *
+ * ---------------------------------------------------------------------------
+ * THE BUILD SHEET
+ * ---------------------------------------------------------------------------
+ * In ordinary play the three build modes are not a modal question any more,
+ * they are a SHEET you stand in until you are done:
+ *
+ *   "If I want to build multiple roads, I shouldn't be stuck having to build
+ *    one, then it closes then I click to open again, and click to build
+ *    another. ... if I have enough resources for multiple, it stays open and
+ *    updates when I place a road to show me the other available road placements
+ *    I can do, until there are no more. But obviously I can press x at any
+ *    time."
+ *
+ * Which is five behaviours, and each has one owner in this file:
+ *
+ *   ARM        one tap on a legal target -> `select()`, plus a line along the
+ *              top saying what the next tap does.
+ *   COMMIT     a second tap on the same target -> `commit()`. There is no
+ *              Confirm button and no Cancel button any more.
+ *   DISARM     a tap on anything that is not a target -> `select(null)`, and
+ *              the sheet stays exactly where it was.
+ *   STAY       `commit()` ends in `rearm()`, which re-reads the counts and the
+ *              legal spots and keeps the panel up while another one is
+ *              affordable — and closes it when it is not.
+ *   SWITCH     four affordability chips along the foot (`createBuyBar` in
+ *              hud-build.js) say how many roads / settlements / cities / cards
+ *              you could buy right now, grey out at nought, and re-point the
+ *              map at another piece when tapped.
+ *
+ * The draft, the Knight and the plain map are NOT build sheets — see
+ * `buildKind()` — so they keep the old one-and-done behaviour and get the whole
+ * panel for the board.
+ *
  * `draft-watch` is the opening draft's spectator state: the same board, the
- * same framing, no targets and no confirm bar. It exists so the snake draft
+ * same framing, no targets and no foot. It exists so the snake draft
  * can be *one* uninterrupted view — matchflow.js reconfigures this panel in
  * place between every pick instead of closing and reopening it, which is what
  * used to snap the 3D camera back to third-person between a player's
@@ -54,9 +87,10 @@ import {
 } from '../core/rules.js';
 import { el, button, toggle, setText, clamp, onTap } from './dom.js';
 import { icon, avatar, personPip } from './icons.js';
-import { createPainter, pipRadius } from './ovmap.js';
+import { createPainter, pipRadius, dockOverhang } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
+import { createBuyBar, buyCount } from './hud-build.js';
 import { netCommit } from '../systems/economy.js';
 
 /* Every placement hint names the double-tap, because a route nobody is told
@@ -69,6 +103,80 @@ const MODE_INFO = {
   'place-robber':      { title: 'Send the Knight', hint: 'Tap a region · tap it again to send' },
   'draft-watch':       { title: 'Opening Draft', hint: 'Watch the board' }
 };
+
+/*
+ * THE LINE ALONG THE TOP, AND WHY IT IS THE ONLY WORDS LEFT ON THIS PANEL.
+ *
+ *   "I'd also like for the cancel and confirm buttons to actually be removed
+ *    since the other logic is there already — maybe just add a small 'Click
+ *    again to confirm' at the top of the screen when pending so that I have
+ *    more visual space to work with on the bottom of the map here."
+ *
+ * `ARM_SAY` is that line: it exists only while a target is armed, it sits in
+ * the top strip nobody is aiming at (the close key is in the top LEFT corner,
+ * the zoom pad is on the left edge, the pip strip on the right), and it names
+ * the verb of the mode it is in rather than saying "confirm" — you are not
+ * confirming a form, you are building a road.
+ *
+ * `IDLE_SAY` is the same plate with nothing armed, and it is the standing
+ * answer to a separate report:
+ *
+ *   "Let them know they can tap twice to build a road, instead of having to
+ *    press confirm."
+ *
+ * The route existed and nothing on screen ever mentioned it: the sentence lived
+ * in `MODE_INFO.hint`, which has been screen-reader-only since the title plate
+ * came off the top of the board.
+ *
+ * IT USED TO TIME OUT AFTER 3.6 SECONDS AND IT NO LONGER DOES — on a build
+ * sheet. A review of the first pass photographed four states and found the line
+ * in one of them:
+ *
+ *   "Keep the hint pill present in EVERY open, non-pending state. It is missing
+ *    in build-cancelled, build-stayed and build-switch, yet present in the
+ *    state-identical build-open."
+ *
+ * Which is the right complaint and it cost nothing to be wrong about: those
+ * three frames are the same sheet, nothing armed, waiting for the same tap, and
+ * the only difference is how many seconds of wall clock had gone by. A caption
+ * that is true for as long as the panel is up should be up for as long as the
+ * panel is. The reason it was made to fade — that a permanent caption is what
+ * the confirm bar was deleted for being — is answered instead by giving it
+ * ROOM: `measure()` now reserves the line's height out of the board fit, so it
+ * stands over the panel's own top strip and not over the island (see the
+ * `padT` note there).
+ *
+ * The timeout survives for the panels that are NOT build sheets — a draft pick,
+ * a Knight's region — because those close themselves after one commit and a
+ * caption on a screen you are about to leave is furniture.
+ *
+ * `BUILT_SAY` is the fourth state, and it exists because of this:
+ *
+ *   "Add a positive build confirmation. The only feedback in build-stayed is
+ *    one 10px digit changing 3 to 2 inside a 52x38 chip."
+ *
+ * It says what landed and what is left, holds for `BUILT_SAY_SEC`, and drops
+ * back to the idle line — so the sheet always ends up saying the same thing it
+ * says at rest.
+ */
+const ARM_SAY = {
+  'place-road':       'Tap again to build',
+  'place-settlement': 'Tap again to build',
+  'place-city':       'Tap again to upgrade',
+  'place-robber':     'Tap again to send'
+};
+const IDLE_SAY = {
+  'place-road':       'Tap an edge, then tap it again',
+  'place-settlement': 'Tap a corner, then tap it again',
+  'place-city':       'Tap a settlement, then tap it again',
+  'place-robber':     'Tap a region, then tap it again'
+};
+/** What a build sheet says for a beat after a piece goes down. */
+const BUILT_NOUN = { road: 'road', settlement: 'settlement', city: 'city' };
+/** Seconds the opening line stays up on a panel that is NOT a build sheet. */
+const OPEN_SAY_SEC = 3.6;
+/** Seconds the "built" line holds before the idle line comes back. */
+const BUILT_SAY_SEC = 2.2;
 
 /* The draft rail lives here rather than in ui.css. Scoped under `.ov`. */
 const DRAFT_STYLE_ID = 'ov-draft-style';
@@ -199,10 +307,44 @@ function injectDraftStyle(doc) {
   doc.head.appendChild(s);
 }
 
+/**
+ * The build sheet's stylesheet, `./ui-build.css`.
+ *
+ * The other six sheets are registered by an `@import` block at the top of
+ * ui.css, and one line there would have been the tidy answer — but ui.css is
+ * being rewritten by another pair of hands this week and is off limits, so the
+ * sheet is registered by the `<link>` in index.html beside ui.css instead.
+ *
+ * This function is the belt to that braces, and it is here rather than in
+ * index.html's markup because a module that needs a stylesheet to be legible at
+ * all should not be silently unstyled if a merge drops one line of HTML: it
+ * adds the link ONLY when nothing is already serving it, and resolves the path
+ * off `import.meta.url` so it is correct under the project subpath the game is
+ * served from on Pages as well as from the root.
+ */
+const BUILD_CSS_ID = 'ui-build-css';
+function injectBuildStyle(doc) {
+  if (!doc || !doc.head || !doc.createElement) return;
+  if (doc.getElementById && doc.getElementById(BUILD_CSS_ID)) return;
+  try {
+    const href = new URL('./ui-build.css', import.meta.url).href;
+    const links = doc.querySelectorAll ? doc.querySelectorAll('link[rel="stylesheet"]') : [];
+    for (const l of links) {
+      if (l.href === href || /ui-build\.css(\?|$)/.test(l.getAttribute('href') || '')) return;
+    }
+    const link = doc.createElement('link');
+    link.id = BUILD_CSS_ID;
+    link.rel = 'stylesheet';
+    link.href = href;
+    doc.head.appendChild(link);
+  } catch (e) { /* a document without URL support is a document without a map */ }
+}
+
 const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
 
 export function createOverview(root, state, game) {
   injectDraftStyle(root && root.ownerDocument ? root.ownerDocument : document);
+  injectBuildStyle(root && root.ownerDocument ? root.ownerDocument : document);
 
   /* ------------------------------------------------------------- scaffold */
   const cv = el('canvas', { class: 'ov-cv' });
@@ -244,11 +386,36 @@ export function createOverview(root, state, game) {
    * simply more frame now. */
   const strip = el('div', { class: 'ov-strip' }, pips, railKey);
 
-  const selLabel = el('span', { class: 'ov-sel', text: 'Pick a spot' });
-  const cancelBtn = button('stone', { on: { click: () => cancel() } }, 'Cancel');
-  const confirmBtn = button('green off', { on: { click: () => commit() } },
-    el('span', { class: 'sb-ico', html: icon('check', 18) }),
-    el('span', { class: 'sb-lab', text: 'Confirm' }));
+  /* NO CANCEL BUTTON, NO CONFIRM BUTTON, NO RUNNING LABEL.
+   *
+   *   "I'd also like for the cancel and confirm buttons to actually be removed
+   *    since the other logic is there already."
+   *
+   * They are removed, not hidden. What each of the three was for:
+   *
+   *   CONFIRM  is the second tap on the target itself, which has been the real
+   *            route since the double-tap landed, and is now the ONLY route.
+   *            `commit()` is unchanged and is still what a rig calls.
+   *   CANCEL   is the close key in the corner ("but obviously I can press x at
+   *            any time"), and — for a target chosen by mistake rather than a
+   *            sheet opened by mistake — a tap on any empty water. See `onTap`.
+   *   THE LABEL named the corner under the finger, in a panel where the corner
+   *            under the finger is drawn at four times the size of the words.
+   *
+   * The foot of the board is now the affordability bar, which is the one thing
+   * this panel could not say any other way.
+   */
+  const buyBar = createBuyBar(state, game, { onPick: kind => pickKind(kind) });
+  const buyRow = buyBar.node;
+
+  /* The armed / opening line. It is NOT tappable and must not be: it floats
+     over the top of the board, and `#ui [data-ui] *{pointer-events:auto}` makes
+     every descendant of the panel take touches unless it says otherwise, so a
+     player aiming at a corner underneath it would hit a caption instead. The
+     `pointer-events:none` that prevents that is in ui-build.css. */
+  const sayTxt = el('b', { class: 'ovb-say-t', text: '' });
+  const sayEl = el('div', { class: 'ovb-say plate hid' }, sayTxt);
+
   /* ONE BUTTON, WHEN THE PANEL IS NOT ASKING A QUESTION.
    *
    *   "Instead of still having me watch the draft happen I should just
@@ -257,14 +424,24 @@ export function createOverview(root, state, game) {
    *    once I've reviewed the board — giving me time to create my own plan of
    *    attack once the game starts."
    *
-   * The confirm bar exists to commit a placement, so it carries a Cancel, a
-   * running label and a Confirm. A review screen has nothing to cancel and
-   * nothing to confirm; it has one thing to do. `opts.action` puts that one
-   * thing here and stands the other three down. */
-  const actionBtn = button('green big ov-act hid', { on: { click: () => fireAction() } },
+   * A placement sheet's foot carries the affordability chips, because the
+   * question it is asking is "what else can I build". A review screen is not
+   * asking anything; it has one thing to do. `opts.action` puts that one thing
+   * here and stands the chips down for as long as it is up. */
+  const actionBtn = button('green big ov-act', { on: { click: () => fireAction() } },
     el('span', { class: 'sb-lab', text: 'Start' }));
-  const bar = el('div', { class: 'ov-bar plate lift hid' },
-    cancelBtn, selLabel, confirmBtn, actionBtn);
+  /* IT GETS ITS OWN CONTAINER RATHER THAN SHARING THE OLD BAR.
+   *
+   * Every capture rig and trace tool in tools/ commits a placement with the
+   * same two lines: find `.ov-bar .btn.green`, click it if it is there, and
+   * fall back to `overview.commit()` if it is not. That fallback is what keeps
+   * them working now that Confirm is gone — but only if the selector really
+   * finds nothing. Leaving this green button inside the same bar would have it
+   * matched instead, hidden or not, and clicked with no action attached: every
+   * scripted placement in the test suite would silently stop placing anything.
+   * A separate element is the difference between "no confirm button" and "a
+   * confirm button that does nothing". */
+  const actBar = el('div', { class: 'ov-actbar plate lift hid' }, actionBtn);
 
   let action = null;
   function fireAction() {
@@ -289,7 +466,7 @@ export function createOverview(root, state, game) {
   const label = el('div', { class: 'ov-say' }, titleEl, hintEl);
   const wrap = el('div', {
     class: 'ov hid', 'data-ui': '', role: 'dialog', 'aria-label': 'Island map'
-  }, cv, label, strip, closeBtn, rail, bar);
+  }, cv, label, strip, closeBtn, rail, sayEl, buyRow, actBar);
   root.appendChild(wrap);
 
   const ctx = (cv.getContext && cv.getContext('2d')) || null;
@@ -306,6 +483,40 @@ export function createOverview(root, state, game) {
   let railRows = [];
   let railT = 0;
   let lastW = 0, lastH = 0, lastDpr = 0;
+
+  /* ------------------------------------------------------ the build sheet
+   *
+   *   "If I want to build multiple roads, I shouldn't be stuck having to build
+   *    one, then it closes then I click to open again, and click to build
+   *    another. I'd prefer that if I can only build 1 based on the resources I
+   *    have it still closes, but that if I have enough resources for multiple,
+   *    it stays open and updates when I place a road to show me the other
+   *    available road placements I can do, until there are no more."
+   *
+   * `buyT` paces the bar and the auto-close; `sayT` counts the opening line
+   * down; `sent` is the one piece of bookkeeping the network forced.
+   */
+  let buyT = 0;
+  let sayT = 0;
+  /** Height the top line's band takes out of the board fit, once measured. */
+  let sayBand = 0;
+  /** Seconds of "you built a road" left to show, and the sentence itself. */
+  let builtT = 0;
+  let builtTxt = '';
+  let boardSig = '';
+  /**
+   * Targets this sheet has already committed and is waiting on.
+   *
+   * ONLINE, A COMMITTED PLACEMENT CHANGES NOTHING LOCALLY. `netCommit` puts the
+   * build on the wire and the piece appears when the server's own event comes
+   * back, so for those sixty milliseconds the edge is still legal, still
+   * pulsing, and still under the finger that just tapped it twice — and a third
+   * tap would send a second road to the same edge. The sheet cannot assume the
+   * build succeeded, so it assumes only this: an edge it has already asked for
+   * is not a spot it may offer again. Cleared the moment the board changes
+   * shape, which is when the truth arrives from wherever it was coming from.
+   */
+  const sent = new Set();
 
   /* The rail starts CLOSED on a phone and open on a desktop, and once the
      player has touched the key their answer stands for the rest of the match.
@@ -637,8 +848,9 @@ export function createOverview(root, state, game) {
     f.w = Math.max(80, w - fx - fr);
     f.h = Math.max(80, h - 12);
 
-    // The confirm bar only exists in a placement mode; in plain view the board
-    // gets that space back so it fills the frame instead of floating in it.
+    // A foot only exists when something is standing in it; in plain view — and
+    // now in a draft pick and a Knight's region too — the board gets that space
+    // back so it fills the frame instead of floating in it.
     // The two paddings are read off the real elements rather than guessed:
     // the dock tags hang off the coast and were sliding under the title plate
     // at 375px tall, where a guessed constant is always wrong by a few pixels.
@@ -651,30 +863,100 @@ export function createOverview(root, state, game) {
      * the only thing to clear at the top is the close key in the corner — and
      * that is a corner, not a band. 12 top, 10 bottom in view mode, and the
      * side padding halved: the same island, drawn about a fifth larger. */
+    /* THE FOOT IS WHICHEVER OF THE TWO IS UP, OR NEITHER.
+     *
+     * There used to be exactly one bar down there and the question was only
+     * whether it was hidden. There are two now — the affordability chips and
+     * the single-action button of a review screen — and they are never up
+     * together. When neither is (a Knight choosing a region, a draft pick, the
+     * plain map) the board takes the whole panel back, which is a taller island
+     * than any of those three modes has ever had. */
+    /* AND THE LINE ALONG THE TOP IS CHROME TOO.
+     *
+     *   "Stop the pill occluding the board at 640x320 — it covers two 3:1 port
+     *    badges at rows 10-41. Either reserve its height in the board's fit
+     *    calculation, or float it over the sheet's gold header rail instead of
+     *    over the map."
+     *
+     * Reserved, for the same reason the foot is: the pill no longer times out
+     * on a build sheet, so "it is only up for a moment" stopped being an
+     * excuse for standing on two harbours. Measured off the real element and
+     * not guessed, because its height is a line of type in a face the player
+     * may have scaled. */
     let padT = 12;
-    let padB = (mode === 'view' && bar.classList.contains('hid')) ? 10 : 54;
+    const foot = !buyRow.classList.contains('hid') ? buyRow
+      : (!actBar.classList.contains('hid') ? actBar : null);
+    let padB = foot ? 54 : 10;
     const padX = 8;
     if (cv.getBoundingClientRect) {
       const base = cv.getBoundingClientRect();
-      if (!bar.classList.contains('hid') && bar.getBoundingClientRect) {
-        const r = bar.getBoundingClientRect();
+      if (foot && foot.getBoundingClientRect) {
+        const r = foot.getBoundingClientRect();
         if (r.height) padB = Math.max(padB, (f.y + f.h) - (r.top - base.top) + 8);
       }
+      /* RESERVED WHETHER OR NOT IT IS SHOWING, WHICH IS THE WHOLE POINT.
+       *
+       * Measuring only the visible line makes the board's scale depend on the
+       * line's visibility, and the line appears the instant a target is armed —
+       * so on a panel where it is not permanent (a draft pick, a Knight's
+       * region) the island would shrink under the finger on the arming tap and
+       * grow back on the commit, which moves every target a few pixels between
+       * the moment a rig reads a position and the moment it taps it. It moves
+       * them under a thumb, too. So the height is remembered from the last time
+       * it was up and kept reserved for as long as the mode has anything to
+       * say, and the band never changes size while a panel is open. */
+      if (!sayEl.classList.contains('hid') && sayEl.getBoundingClientRect) {
+        const r = sayEl.getBoundingClientRect();
+        if (r.height) sayBand = (r.bottom - base.top) - f.y + 8;
+      }
+      if (sayBand && IDLE_SAY[mode]) padT = Math.max(padT, sayBand);
     }
     const availW = Math.max(60, f.w - padX * 2);
     const availH = Math.max(60, f.h - padT - padB);
-    // Just enough slack for the dock tags that hang off the coast — any more
-    // and the board starts floating in dead blue again.
-    const bw = BOUNDS.width + HEX_SIZE * 1.1;
-    const bd = BOUNDS.depth + HEX_SIZE * 1.1;
-    // The fit-to-frame projection, unchanged — where the board sits with no
-    // gesture on it. ovpan.js takes it from here and writes the live `proj`.
+    /* THE BOARD IS BIGGER THAN THE ISLAND, AND THE FIT NOW KNOWS IT.
+     *
+     *   "RESERVE THE BAR'S HEIGHT IN THE BOARD FIT. There is a razor-straight
+     *    cut at y=260 slicing the bottom ~40% off both bottom port badges,
+     *    ratio text cut through, no fade or mask ... It also happens in
+     *    build-draft where the sheet's own gold rail does the cutting, so fix
+     *    the bottom inset generally, not only for the bar case."
+     *
+     * The cut was real and it was not a clip: `BOUNDS` is the box around the
+     * fifty-four INTERSECTIONS, and the nine harbour signs are drawn hanging
+     * off the coast well outside it — `len + signH * 1.12` past the mid-point
+     * of a coastal edge, which at 640x320 is 36px against the 14px of slack
+     * this fit was allowing. So the island fitted, the harbours did not, and
+     * the chip bar (or, with no bar up, the panel's own gold rail) simply stood
+     * on top of the overflow. Nothing was masking anything; the board was
+     * bigger than the frame it had been fitted into and nobody had measured it.
+     *
+     * `dockOverhang` is that measurement, taken from `dockGeom`'s own numbers
+     * so the two cannot drift. It is in CSS PIXELS, not world units, because
+     * both of its terms have a px floor — `max(15, ...)` — so on a small screen
+     * the harbours stop shrinking with the island and the slack has to grow as
+     * a fraction of it. Which is exactly why a constant could never have been
+     * right at both shipping sizes.
+     *
+     * A scale that depends on a margin that depends on the scale needs solving
+     * rather than evaluating, so: fit as before, then twice re-fit against the
+     * overhang the previous answer implies. Two passes is convergence to well
+     * under a pixel — the floors mean the function is flat where it matters —
+     * and it is bounded, which a `while` would not be. */
+    const bw = BOUNDS.width;
+    const bd = BOUNDS.depth;
     /* Fit against the TILTED height. Squashing the board to 55% and then
        still fitting it as if it were flat would waste exactly the space the
        tilt was asked for — the whole point is to see more of the island, not
-       the same amount of it lower down. */
+       the same amount of it lower down. The harbour signs stand UP rather than
+       leaning with the board (see `billboard` in ovmap.js), so their overhang
+       is not squashed and is subtracted outside the `ky` term. */
     const ky = proj.ky || 1;
-    const s = Math.min(availW / bw, availH / (bd * ky));
+    let s = Math.min(availW / (bw + HEX_SIZE * 1.1), availH / ((bd + HEX_SIZE * 1.1) * ky));
+    for (let i = 0; i < 2; i++) {
+      const ov = dockOverhang(s);
+      s = Math.min((availW - ov * 2) / bw, (availH - ov * 2) / (bd * ky));
+      if (!(s > 0)) { s = Math.min(availW / bw, availH / (bd * ky)); break; }
+    }
     pan.apply({
       s,
       ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
@@ -830,23 +1112,38 @@ export function createOverview(root, state, game) {
    *   "When I'm placing settlements, roads and cities, make it so I can double
    *    click if I want instead of needing to scroll and click Confirm."
    *
-   * The board fills the panel and the confirm bar sits under it, so choosing a
-   * corner and then committing it meant a trip from wherever the finger already
-   * was, down to a button, on every single placement — and on a phone, often a
-   * scroll to get there. The bar is still the whole truth (it names the spot,
-   * and Cancel lives on it) and it still works exactly as before; this is the
-   * shortcut for when the player already knows where the piece is going.
+   * The board fills the panel and the confirm bar used to sit under it, so
+   * choosing a corner and then committing it meant a trip from wherever the
+   * finger already was, down to a button, on every single placement — and on a
+   * phone, often a scroll to get there. It began as the shortcut for when the
+   * player already knew where the piece was going; it is now the whole route,
+   * and the button it was a shortcut past is gone.
    *
    * It is a RE-TAP, not a timed double-click: no window to hit, no difference
    * between a fast mouse double-click and two deliberate taps a second apart,
    * and it works the same under a finger as under a cursor. A tap on any OTHER
-   * legal spot just moves the selection, so the way out of a wrong choice is to
-   * pick a different one or press Cancel — the same as it always was, minus the
-   * old "tap it again to deselect", which nothing ever advertised and which
-   * this replaces.
+   * legal spot just moves the selection, and a tap on none of them takes the
+   * choice back without closing the sheet — the two ways out of a wrong choice,
+   * neither of which is a button.
    *
-   * `commit()` is the same call the Confirm button makes, so every rule check,
-   * payment and `onConfirm` hook is identical down both routes.
+   * `commit()` is the call every rig and every trace tool makes, so every rule
+   * check, payment and `onConfirm` hook is identical down both routes.
+   *
+   * A TAP ON OPEN WATER TAKES THE CHOICE BACK.
+   *
+   *   "If I press on the screen to place a road and haven't pressed to confirm
+   *    yet, and I click somewhere else on the map (that isn't another open
+   *    road), it cancels that placement for me but keeps that road building map
+   *    open."
+   *
+   * Which is the last job the Cancel button was doing, and it was doing it
+   * badly: Cancel threw away the SHEET, so taking back one mis-aimed tap cost a
+   * trip back to the build cards and a fresh open. A tap that hits no target
+   * now disarms and stays, and the way out of the sheet itself is the close key
+   * — two different sizes of "no" that used to be the same button.
+   *
+   * It is deliberately not limited to the build sheet: a draft pick and a
+   * Knight's region both used to need the bar for this, and neither has one now.
    */
   onTap(cv, e => {
     if (!openFlag || mode === 'view' || mode === 'draft-watch') return;
@@ -854,7 +1151,10 @@ export function createOverview(root, state, game) {
     if (pan.moved) return;
     const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
     const hit = pick(e.clientX - r.left, unTilt(e.clientY - r.top));
-    if (hit === null || hit === undefined) return;
+    if (hit === null || hit === undefined) {
+      if (sel !== null) select(null);
+      return;
+    }
     if (hit === sel) { commit(); return; }
     select(hit);
   });
@@ -872,29 +1172,94 @@ export function createOverview(root, state, game) {
 
   function select(id) {
     sel = id;
-    toggle(confirmBtn, 'off', sel === null);
-    if (confirmBtn.disabled !== undefined) confirmBtn.disabled = sel === null;
-    // `armed` turns the label gold once a spot is chosen, which is the cue that
-    // the re-tap route is live: something is selected, so tapping it again
-    // places it. The text still names the spot — the Confirm button beside it
-    // is the other half of the same sentence.
-    setText(selLabel, sel === null
-      ? (opts.pickLabel || 'Pick a spot')
-      : describe(sel));
-    toggle(selLabel, 'armed', sel !== null);
+    // The chosen target is drawn on the board at the size of the piece it is
+    // about to become, with a bobbing chevron over it — so the only thing left
+    // to say in words is what the next tap does, and that is the top line's job.
+    refreshSay();
     ghost();
   }
 
-  function describe(id) {
-    if (mode === 'place-robber') {
-      const t = tiles[id];
-      return `${t.terrain.toUpperCase()} ${t.number || ''}`.trim();
+  /**
+   * Is this a free-road placement, paid for by a Road Building card?
+   *
+   * `opts.free` is set by `economy.placeFreeRoads`, which is the only thing in
+   * the game that opens the map on somebody else's money.
+   */
+  function freeRoadMode() {
+    return mode === 'place-road' && !!opts.free && (state.players[0].freeRoads | 0) > 0;
+  }
+
+  /**
+   * Dress the one line of text this panel still has.
+   *
+   * Four states, in the order they beat each other:
+   *
+   *   ARMED    gold, standing, "tap again to build" — the sentence that used to
+   *            be a green button forty per cent of a screen from the finger.
+   *   BUILT    green, for `BUILT_SAY_SEC`, naming what landed and what is left.
+   *   IDLE     the double-tap reminder, up for as long as a BUILD SHEET is —
+   *            see the IDLE_SAY note at the top of this file — and for
+   *            `OPEN_SAY_SEC` on a panel that is not one.
+   *   NOTHING  only ever on a non-sheet panel whose reminder has run out.
+   *
+   * A free-road sheet's idle line is its own sentence, because a screen that
+   * looks exactly like an ordinary road build while spending a card's money is
+   * the one state on this panel that can cost the player something they cannot
+   * get back.
+   */
+  function refreshSay() {
+    const armed = sel !== null && sel !== undefined && ARM_SAY[mode];
+    const built = !armed && builtT > 0 && builtTxt;
+    const sheet = !!buildKind();
+    const idleOK = !armed && !built && IDLE_SAY[mode] && (sheet || sayT > 0);
+    const free = freeRoadMode();
+    let idle = '';
+    if (idleOK) {
+      const owed = state.players[0].freeRoads | 0;
+      idle = free
+        ? `${owed} free road${owed > 1 ? 's' : ''} — tap an edge, then tap it again`
+        : IDLE_SAY[mode];
     }
-    if (mode === 'place-road') return 'Road ready';
-    if (mode === 'place-city') return 'Upgrade this settlement';
-    const n = intersections[id];
-    const kinds = n.tiles.map(t => tiles[t].terrain).join(' · ');
-    return kinds.toUpperCase();
+    const txt = armed ? ARM_SAY[mode] : (built ? builtTxt : idle);
+    toggle(sayEl, 'arm', !!armed);
+    toggle(sayEl, 'done', !!built);
+    toggle(sayEl, 'freeroad', !!(free && !built));
+    if (!txt) {
+      toggle(sayEl, 'on', false);
+      // Long enough for the fade to run; `hid` is what actually takes it out of
+      // the layout so it can never be measured as chrome over the board.
+      setTimeout(() => toggle(sayEl, 'hid',
+        sel === null && sayT <= 0 && builtT <= 0 && !buildKind()), 220);
+      return;
+    }
+    setText(sayTxt, txt);
+    toggle(sayEl, 'hid', false);
+    /* Reading a layout property between un-hiding and un-fading is what makes
+       the fade actually run: set both in one go and the browser collapses them
+       into a single paint with no transition at all. It is the same trick
+       `replay()` in dom.js uses, and it is a forced reflow rather than a
+       `setTimeout` on purpose — a timer here is a timer that can be starved by
+       a slow frame, and this line has to be up by the time the finger that
+       armed the target has lifted. */
+    void (sayEl.offsetWidth || 0);
+    toggle(sayEl, 'on', true);
+  }
+
+  /**
+   * Take the line down without asking `refreshSay` whether it should be up.
+   *
+   * `close()` cannot go through `refreshSay`: `buildKind()` is deliberately not
+   * gated on `openFlag` (see its own note — a sheet that decided it was not a
+   * sheet while `open()` was dressing it would come up with no bar), so on the
+   * way OUT it still answers "road" for a panel that is already leaving, and
+   * the line would stay lit over a fading map.
+   */
+  function hideSay() {
+    toggle(sayEl, 'on', false);
+    toggle(sayEl, 'arm', false);
+    toggle(sayEl, 'done', false);
+    toggle(sayEl, 'freeroad', false);
+    setTimeout(() => { if (!openFlag) toggle(sayEl, 'hid', true); }, 220);
   }
 
   function ghost() {
@@ -907,6 +1272,143 @@ export function createOverview(root, state, game) {
         if (st.ghostSettlement) st.ghostSettlement(sel, 0);
       }
     } catch (err) { /* the 3D preview is optional */ }
+  }
+
+  /* --------------------------------------------------------- build sheet */
+
+  /**
+   * Which of the four purchases this panel is currently offering, or null if it
+   * is not a build sheet at all.
+   *
+   * The opening draft, a Knight's region and the plain map are all placement
+   * panels that have nothing to do with affording anything: the draft's pieces
+   * are free (`opts.setup`), and the Knight is spending a card that was already
+   * paid for. None of them gets the chips, none of them stays open on a count,
+   * and all of them therefore get the whole panel for the board — which is the
+   * one part of this change that makes the draft better too.
+   */
+  function buildKind() {
+    // Deliberately NOT gated on `openFlag`: `open()` dresses the panel before
+    // it raises it, and a sheet that decided it was not a build sheet during
+    // that window would come up with no bar and never grow one.
+    if (opts.setup || opts.draft) return null;
+    if (state.phase !== 'play') return null;
+    if (mode === 'place-road') return 'road';
+    if (mode === 'place-settlement') return 'settlement';
+    if (mode === 'place-city') return 'city';
+    return null;
+  }
+
+  /**
+   * A chip was tapped: change what the map is offering.
+   *
+   *   "so I can build a road, click the settlement button and the screen
+   *    switches to show possible settlement placements"
+   *
+   * This goes through `game.requestBuild`, which is the SAME call the HUD's
+   * build cards make — economy.js re-points it at `buy()` on attach — rather
+   * than reaching into `open()` directly. That matters for three reasons and
+   * they are all correctness, not tidiness: `buy()` is what knows a road with
+   * `freeRoads` in hand is free and routes it through the two-road placement
+   * loop; it is what refuses politely, in words, when a race has just made the
+   * purchase unaffordable between the paint and the tap; and online it is what
+   * sends the purchase to the server instead of paying for it locally. `open()`
+   * is then called from in there, sees this panel already up, and re-dresses it
+   * in place — no close, no reopen, no camera trip, and the board stays exactly
+   * where the player has dragged it.
+   *
+   * A CARD has nowhere to be placed, so nothing switches: it is bought on the
+   * spot and the bar re-counts underneath the same map. That is not a special
+   * case bolted on — it is what `buy('card')` does, and the sheet simply does
+   * not close because nothing asked it to.
+   */
+  function pickKind(kind) {
+    if (!openFlag) return false;
+    /* NEVER SWITCH THE MAP TO A BOARD WITH NOTHING ON IT.
+     *
+     *   "If a mode has zero legal targets the chip must be DISABLED with a
+     *    reason, never selected-and-empty."
+     *
+     * `buyCount` already counts legal spots as one of its three ceilings, so a
+     * chip offering a mode with nowhere to put the piece is at nought and
+     * `disabled` before a finger gets near it — this is the belt to that
+     * braces, and it is not theoretical: the count is read on a quarter-second
+     * tick and a rival's road can take the last legal corner in the gap
+     * between the paint and the tap. Refuse, shake the chip, leave the map on
+     * whatever it was already offering. */
+    const kinds = { road: 'place-road', settlement: 'place-settlement', city: 'place-city' };
+    if (kinds[kind] && !computeTargets(kinds[kind], {}).length) {
+      buyBar.flash(kind);
+      refreshBuy(true);
+      return false;
+    }
+    if (sel !== null) select(null);
+    let ok = false;
+    try {
+      ok = typeof game.requestBuild === 'function' ? game.requestBuild(kind) !== false : false;
+    } catch (e) { ok = false; }
+    if (!ok) buyBar.flash(kind);
+    refreshBuy(true);
+    return ok;
+  }
+
+  /** What the board looks like right now, cheaply. */
+  function signature() {
+    return `${state.buildings.size}|${state.roadOwner.size}|${state.phase}`;
+  }
+
+  /**
+   * Re-read the counts, and re-offer the board after something changed.
+   *
+   * The board changing under an open sheet is not an edge case, it is the
+   * normal networked path (your own build lands sixty milliseconds after you
+   * asked for it) and the normal offline one (a rival lays a road while you are
+   * deciding). Either way the set of legal spots is stale, so it is recomputed
+   * and the armed choice is kept ONLY if it survived — you should never tap
+   * twice on a corner somebody else took while you were looking at it.
+   */
+  function refreshBuy(force) {
+    const kind = buildKind();
+    toggle(buyRow, 'hid', !kind);
+    if (!kind) return;
+    const sig = signature();
+    if (sig !== boardSig || force) {
+      boardSig = sig;
+      sent.clear();
+      const next = computeTargets(mode, opts);
+      targets = next;
+      if (sel !== null && next.indexOf(sel) < 0) select(null);
+    }
+    buyBar.refresh(kind);
+  }
+
+  /**
+   * A piece just went down and the sheet wants to stay. True if it may.
+   *
+   *   "it stays open and updates when I place a road to show me the other
+   *    available road placements I can do, until there are no more."
+   *
+   * "No more" is either half of the sentence: nothing left to pay with, or
+   * nowhere left to put it. Note what is NOT consulted — whether the build
+   * actually succeeded. Online it has not happened yet and cannot be known, so
+   * the count is the count before the server answers and the sheet stays up on
+   * the strength of it; the answer arrives a frame or two later through
+   * `refreshBuy`, and if it turns out to have been the last road the sheet
+   * closes then. Guessing "closed" and being wrong costs the player the map
+   * they were about to use; guessing "open" and being wrong costs them one tap
+   * on the close key.
+   */
+  function rearm(id) {
+    const kind = buildKind();
+    if (!kind) return false;
+    if (id !== null && id !== undefined) sent.add(id);
+    if (buyCount(state, kind) <= 0) return false;
+    const next = computeTargets(mode, opts).filter(t => !sent.has(t));
+    if (!next.length) return false;
+    targets = next;
+    select(null);
+    buyBar.refresh(kind);
+    return true;
   }
 
   /* ------------------------------------------------------- open / commit */
@@ -955,13 +1457,39 @@ export function createOverview(root, state, game) {
       ? opts.action.onPress : null;
     const acting = !!action;
     if (acting) setText(actionBtn.querySelector('.sb-lab'), opts.action.label || 'Start');
-    const barred = (mode !== 'view' && mode !== 'draft-watch') || acting;
-    toggle(bar, 'hid', !barred);
-    toggle(actionBtn, 'hid', !acting);
-    toggle(confirmBtn, 'hid', acting);
-    toggle(selLabel, 'hid', acting);
+    toggle(actBar, 'hid', !acting);
     toggle(closeBtn, 'hid', mode !== 'view' && opts.cancellable === false);
-    toggle(cancelBtn, 'hid', acting || opts.cancellable === false);
+    // The chips and the review button are mutually exclusive: a screen with one
+    // thing to do is not also a shop. `refreshBuy` decides the chips' own case.
+    sent.clear();
+    boardSig = signature();
+    toggle(buyRow, 'hid', true);
+    if (!acting) refreshBuy(true);
+    /* The COUNTDOWN runs on a fresh open only, and only matters on a panel
+       that is not a build sheet: a sheet's idle line no longer times out at
+       all (see IDLE_SAY), so this is the draft pick's and the Knight's copy of
+       it. Re-dressing in place happens between two halves of a draft pick,
+       after every free road, and every time a chip switches the map to another
+       piece — a reminder that restarted its clock on all of those would be a
+       caption blinking at the player for no reason they can see. */
+    sayT = (!wasOpen && IDLE_SAY[mode]) ? OPEN_SAY_SEC : 0;
+    builtT = 0;
+    builtTxt = '';
+    /* THE X, WHEN THE ROADS ARE NOT YOURS.
+     *
+     *   "either disable the X or warn that closing forfeits the remaining free
+     *    road."
+     *
+     * It warns rather than disabling, because economy.js DEFERS an unspent debt
+     * rather than forfeiting it and main.js re-offers the map on the next clear
+     * frame — so the road is not actually lost, and taking away the only way
+     * out of a full-screen panel to protect something that is not at risk is a
+     * worse trap than the one being closed. The line at the top carries the
+     * same news in words a thumb can read; this is what a screen reader and a
+     * long-press get. */
+    closeBtn.setAttribute('aria-label', freeRoadMode()
+      ? 'Close the map — your free roads are kept and offered again'
+      : 'Close the map');
     select(null);
     if (opts.draft) buildDraftRail(opts.draft);
     else { buildRail(); refreshRail(); }
@@ -974,6 +1502,22 @@ export function createOverview(root, state, game) {
 
     openFlag = true;
     closeTimer = 0;
+    /* NOTHING ELSE OVER THE BOARD WHILE THE BOARD IS THE SCREEN.
+     *
+     *   "Suppress the 'GATHER. BUILD. WIN. / FIRST TO 12 POINTS' intro banner
+     *    while the build sheet is open, or dismiss it on open ... it covers
+     *    board rows y=175-259 — 85px, 27% of a 320px screen — hiding the bottom
+     *    hex row and its road targets, which is the exact space this rework was
+     *    meant to free."
+     *
+     * The objective card lands on GO and fades after two and a half seconds,
+     * which is right when the screen is third-person play and wrong the moment
+     * a build card raises this panel over the top of it. It belongs to
+     * matchflow.js and flowUI.js, which this agent does not own, so the class
+     * goes on the interface root and one rule in ui-build.css fades the card
+     * out for exactly as long as the map is up. Its own countdown keeps running
+     * underneath, so it is usually gone by the time the map comes down. */
+    toggle(root, 'ov-live', true);
     if (wasOpen) return true;
 
     // A fresh open starts on the whole board; re-dressing in place (the draft,
@@ -995,7 +1539,16 @@ export function createOverview(root, state, game) {
     ghost();
     targets = [];
     opts = {};
+    sent.clear();
+    sayT = 0;
+    builtT = 0;
+    builtTxt = '';
+    hideSay();
+    toggle(buyRow, 'hid', true);
     toggle(wrap, 'on', false);
+    // The objective card and anything else in the match-flow layer may have the
+    // screen back. Paired with the `toggle(root, 'ov-live', true)` in `open`.
+    toggle(root, 'ov-live', false);
     if (pan.disarm) pan.disarm();
     closeTimer = 0.26;
     if (game.camera && game.camera.setOverview) game.camera.setOverview(false);
@@ -1038,6 +1591,38 @@ export function createOverview(root, state, game) {
     // next drafter), so closing here would be a visible round trip out to the
     // third-person camera and straight back.
     if (opts.keepOpen) { select(null); targets = []; return true; }
+    /* SAY THAT IT WORKED, AND SAY WHAT IS LEFT.
+     *
+     *   "Add a positive build confirmation. The only feedback in build-stayed
+     *    is one 10px digit changing 3 to 2 inside a 52x38 chip. A player with
+     *    three rivals moving will not notice."
+     *
+     * Read BEFORE `rearm`, because `rearm` is what re-reads the counts and the
+     * sentence wants the number the player is about to have, not the one they
+     * had. Offline the piece is already down and `buyCount` is already one
+     * lower; online it is not, and the count is the pre-server figure — the
+     * same optimism `rearm` itself runs on, and wrong for at most a frame or
+     * two before `refreshBuy` corrects it. */
+    const noun = BUILT_NOUN[buildKind()];
+    if (noun) {
+      const left = buyCount(state, buildKind());
+      builtTxt = left > 0
+        ? `Built — ${left} ${noun}${left > 1 ? 's' : ''} left`
+        : `Built — that was your last ${noun}`;
+      builtT = BUILT_SAY_SEC;
+    }
+    /* AND THIS IS THE ONE THE OWNER ASKED FOR.
+     *
+     *   "I'd prefer that if I can only build 1 based on the resources I have it
+     *    still closes, but that if I have enough resources for multiple, it
+     *    stays open and updates when I place a road to show me the other
+     *    available road placements I can do, until there are no more."
+     *
+     * Both halves are `rearm()`: it returns false when the count has run out or
+     * the board has, and that is the close. Nothing about it is a mode the
+     * player has to be in or get out of — build your last affordable road and
+     * the map closes exactly as it always did. */
+    if (rearm(id)) return true;
     close();
     return true;
   }
@@ -1055,6 +1640,45 @@ export function createOverview(root, state, game) {
     hoverPulse += d;
     railT += d;
     if (railT > 0.25) { railT = 0; refreshRail(); buildPips(opts.draft || null); }
+
+    // The opening reminder times itself out on a panel that is not a build
+    // sheet; the armed line does not, because what it says is true for exactly
+    // as long as a target is armed; and the "built" line hands back to the idle
+    // line rather than to nothing.
+    if (sayT > 0) {
+      sayT -= d;
+      if (sayT <= 0) { sayT = 0; refreshSay(); }
+    }
+    if (builtT > 0) {
+      builtT -= d;
+      if (builtT <= 0) { builtT = 0; builtTxt = ''; refreshSay(); }
+    }
+
+    /* THE SHEET KEEPS ITSELF HONEST FOUR TIMES A SECOND.
+     *
+     * Everything that can empty a build sheet happens to it from outside: a
+     * Knight robs the pack, a rival takes the last legal corner, the server
+     * confirms the road that spent the last of the brick. Recomputing on commit
+     * alone would leave a bar reading `x2` over a board that can no longer
+     * offer one — so the counts and the targets are re-read on a slow tick, and
+     * the sheet stands down when there is nothing left to build.
+     *
+     * `sel === null` guards the close: a player who has already armed a target
+     * gets to finish the tap they started, and the commit refuses on its own if
+     * the money went. Yanking a panel out from under a finger mid-gesture is
+     * the one failure that feels like a bug rather than a rule. */
+    if (buildKind()) {
+      buyT += d;
+      if (buyT > 0.25) {
+        buyT = 0;
+        refreshBuy(false);
+        if (!targets.length || (sel === null && buyCount(state, buildKind()) <= 0)) {
+          close();
+          return;
+        }
+      }
+    }
+
     draw(hoverPulse);
   }
 
@@ -1107,7 +1731,29 @@ export function createOverview(root, state, game) {
            painter instead reports a code path that did not run. */
         scales: (bgx ? bgPaint : paint) ? (bgx ? bgPaint : paint).scales : null,
         /** width of the tap zone around a target, corner to corner */
-        hitPx: +(2 * hitRadius()).toFixed(1)
+        hitPx: +(2 * hitRadius()).toFixed(1),
+        /**
+         * THE PAINTED BOARD, harbour signs included, as [x0,y0,x1,y1] in canvas
+         * px. Nothing in the game reads it; it exists so a capture rig can
+         * assert that no piece of chrome — the chip bar, the top line, the
+         * panel's own rail — is standing on any of it, which is the only way to
+         * catch "the bottom 40% of two port badges is sliced off flat" without
+         * a human squinting at a screenshot. Built from `portRects()`, the same
+         * function the painter draws the signs from.
+         */
+        boardBox: (() => {
+          let x0 = PX(BOUNDS.minX), x1 = PX(BOUNDS.maxX);
+          let y0 = tiltY(PY(BOUNDS.minZ)), y1 = tiltY(PY(BOUNDS.maxZ));
+          const rects = (paint && paint.portRects) ? paint.portRects() : [];
+          for (const r of rects) {
+            x0 = Math.min(x0, r.x - r.w / 2); x1 = Math.max(x1, r.x + r.w / 2);
+            y0 = Math.min(y0, tiltY(r.y) - r.h / 2);
+            y1 = Math.max(y1, tiltY(r.y) + r.h / 2);
+          }
+          return [Math.round(x0), Math.round(y0), Math.round(x1), Math.round(y1)];
+        })(),
+        /** The harbour margin the fit is reserving on every side, in css px. */
+        dockOv: +dockOverhang(proj.s).toFixed(1)
       };
     },
     resetView() { return pan.reset(true); },

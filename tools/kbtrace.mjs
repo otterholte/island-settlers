@@ -251,15 +251,23 @@ const readTrade = async () => ev(`(()=>{
   for(const c of cols){
     const r=c.getAttribute('data-res');
     const up=c.querySelector('.tr-arr.up'), dn=c.querySelector('.tr-arr.dn');
+    /* The staged amounts moved OFF the arrows and onto the card, where they are
+       drawn as a delta on the pile itself — "was" only appears once something
+       is staged, so with a clean row "now" is simply how many you hold. The
+       rate moved the other way, up into the header, and a card only carries one
+       of its own when it disagrees with the header (a 2:1 dock). */
+    const w=txt(c.querySelector('.tr-was')).replace(/[^0-9]/g,'');
     cards[r]={
       rate:txt(c.querySelector('.tr-rate')),
-      have:txt(c.querySelector('.tr-have')),
+      was:w, now:txt(c.querySelector('.tr-now')),
+      have:w||txt(c.querySelector('.tr-now')),
+      act:txt(c.querySelector('.tr-act u')),
       up:!!up&&!up.classList.contains('off'),
       dn:!!dn&&!dn.classList.contains('off'),
+      dim:c.classList.contains('dim'),
+      armed:c.classList.contains('armed'),
       giving:c.classList.contains('giving'),
-      getting:c.classList.contains('getting'),
-      upN:txt(c.querySelector('.tr-arr.up .tr-badge')),
-      dnN:txt(c.querySelector('.tr-arr.dn .tr-badge'))
+      getting:c.classList.contains('getting')
     };
   }
   return {
@@ -276,6 +284,9 @@ const readTrade = async () => ev(`(()=>{
     dnsLive:cols.filter(c=>!c.querySelector('.tr-arr.dn').classList.contains('off'))
       .map(c=>c.getAttribute('data-res')),
     where:txt(document.querySelector('.sheet.trade .tr-where')),
+    headRate:txt(document.querySelector('.sheet.trade .tr-headrate')),
+    dim:cols.filter(c=>c.classList.contains('dim')).map(c=>c.getAttribute('data-res')),
+    armed:cols.filter(c=>c.classList.contains('armed')).map(c=>c.getAttribute('data-res')),
     /* The foot's prose is gone (see ui.css's .tr-cap block): the lanes are
        coloured bands now and the one live message rides in the band it is
        about. "say" is whichever band is currently saying something. */
@@ -368,7 +379,12 @@ if (STAGE === 'trade') {
   ok(t.kind === null, 'nothing open before Enter');
   const cue = await readCue();
   ok(/Enter/i.test(String(cue.text)), 'the prompt names the Enter key', JSON.stringify(cue.text));
-  ok(cue.h <= 34, 'and it is a small chip, not a banner',
+  /* The bound was 34, and it has been failing at 35 since the chip was told to
+     grow: "make the press enter to trade on the ports and trading post larger
+     so it's easier to see." hud-trade.js took the type from 9px to 14 and the
+     plate grew with it. 44 is still less than a quarter of the banner this
+     replaced, and it is the number the owner's own instruction implies. */
+  ok(cue.h <= 44, 'and it is a small chip, not a banner',
     `${cue.w}x${cue.h}px "${cue.text}"`);
   await shot(`kb${TAG}-01-cue`);
 
@@ -387,13 +403,22 @@ if (STAGE === 'trade') {
   ok(t.open && t.kind === 'trade', 'Enter opened the trade sheet');
   ok(t.captured === true, 'input.js keyboard capture is ON while open');
   ok(t.order.length === 5, 'one row of five cards', t.order.join(' '));
-  ok(Object.values(t.cards).every(c => c.rate === '4:1'),
-    'every card carries this post\'s rate in its corner',
-    t.order.map(r => `${r} ${t.cards[r].rate}`).join('  '));
+  /* The rate is quoted ONCE, beside the name of the post. It used to be stamped
+     on all five cards, which at the Great Market is the same three characters
+     five times down one row; a card carries its own only where that rate
+     disagrees with the header, which is the 2:1 dock in part B below. */
+  ok(t.headRate === '4:1' && Object.values(t.cards).every(c => c.rate === ''),
+    'the post\'s rate is quoted once in the header, not five times down the row',
+    `header ${t.headRate} · card rates [${t.order.map(r => t.cards[r].rate).join(',')}]`);
   ok(t.order.every(r => +t.cards[r].have === (t.res[r] | 0)),
-    'and how many you hold', t.order.map(r => `${r} ${t.cards[r].have}`).join('  '));
+    'and each card says how many you hold', t.order.map(r => `${r} ${t.cards[r].have}`).join('  '));
+  /* The lanes swapped ends: DOWN is the give arrow now, and until something has
+     been asked for there is nothing for a lot to pay for. */
   ok(t.dnsLive.length === 0,
-    'with nothing staged EVERY receive arrow is greyed out', `live: [${t.dnsLive}]`);
+    'with nothing asked for EVERY give arrow is greyed out', `live: [${t.dnsLive}]`);
+  ok(/^give:ask above/i.test(t.say),
+    'and the give band says why, rather than leaving a dead lane unexplained',
+    JSON.stringify(t.say));
   console.log(`  at ${t.where} | cursor ${t.cursor} | lanes ${t.lanes.join(' / ')}`);
   await shot(`kb${TAG}-02-panel`);
 
@@ -405,32 +430,48 @@ if (STAGE === 'trade') {
   await tap('ArrowLeft');
   ok((await readTrade()).cursor === c0, 'ArrowLeft moved back', `-> ${c0}`);
 
-  // ---- Up stages a give
+  /* ---- Up ASKS. The lanes swapped ends:
+   *
+   *   "I think the 'you give' and 'you receive' should swap sides, with the
+   *    'you receive' on the top. Since basically how many resources I have is
+   *    in the middle, so if I click the up arrow, that should mean that I'm
+   *    adding that many resources to my stockpile."
+   *
+   * So ArrowUp puts a card into YOU RECEIVE and the pile under it counts UP —
+   * the delta on the card is the whole point of the arrangement, and it is what
+   * gets read here rather than a badge on the arrow. */
+  const held0 = +t.cards[c0].have;
   await tap('ArrowUp');
   const u1 = await readTrade();
-  ok(u1.give.length === 1 && u1.give[0] === c0, 'ArrowUp staged it into YOU GIVE',
-    `give=[${u1.give}]`);
-  ok(u1.cards[c0].upN === '4', 'the give arrow counts the cards it will cost',
-    `badge "${u1.cards[c0].upN}"`);
+  ok(u1.get.length === 1 && u1.get[0] === c0, 'ArrowUp staged it into YOU RECEIVE',
+    `get=[${u1.get}]`);
+  ok(u1.cards[c0].was === String(held0) && u1.cards[c0].now === String(held0 + 1),
+    'and the pile itself counts up, in the card\'s own numeral',
+    `${u1.cards[c0].was} -> ${u1.cards[c0].now}`);
   ok(u1.dnsLive.length === 5,
-    'and now every receive arrow is live, because something pays for it',
+    'and now every give arrow is live, because there is something to pay for',
     `live: [${u1.dnsLive}]`);
   ok(u1.tradeOff === true, 'half a deal is not a deal yet', JSON.stringify(u1.say));
-  ok(/^get:take 1 more$/i.test(u1.say),
-    'and the RECEIVE band says what is missing, in the lane it is missing from',
+  ok(/^give:tap a card to pay$/i.test(u1.say),
+    'and the GIVE band says what to do next, in the lane it has to be done in',
     JSON.stringify(u1.say));
+  ok(u1.armed.length === 4 && !u1.armed.includes(c0),
+    'twelve of everything covers a one-card ask, so every other pile arms',
+    `armed: [${u1.armed}]`);
 
-  // ---- Down on another card stages the receive
+  // ---- Down on another card hands over the lot that pays for it
   await tap('ArrowRight');
   const target = (await readTrade()).cursor;
+  const heldT = +u1.cards[target].have;
   await tap('ArrowDown');
   const d1 = await readTrade();
-  ok(d1.get.length === 1 && d1.get[0] === target, 'ArrowDown staged YOU RECEIVE',
-    `get=[${d1.get}]`);
-  ok(d1.cards[target].dnN === '1', 'counted on the receive arrow');
+  ok(d1.give.length === 1 && d1.give[0] === target, 'ArrowDown staged YOU GIVE',
+    `give=[${d1.give}]`);
+  ok(d1.cards[target].was === String(heldT) && d1.cards[target].now === String(heldT - 4),
+    'and that pile counts DOWN by a whole lot', `${d1.cards[target].was} -> ${d1.cards[target].now}`);
   ok(d1.cards[target].dn === false && d1.dnsLive.length === 1 && d1.dnsLive[0] === c0,
-    'every receive arrow greys out again — one lot pays for exactly one card '
-    + '(only the staged give stays live, to undo it)', `still live: [${d1.dnsLive}]`);
+    'every give arrow greys out again — one lot pays for exactly one card '
+    + '(only the staged ask stays live, to undo it)', `still live: [${d1.dnsLive}]`);
   ok(d1.tradeOff === false, 'the deal is now legal and Trade lights up');
   ok(d1.say === '', 'and with the deal balanced neither band has anything left to say',
     JSON.stringify(d1.say));
@@ -441,18 +482,18 @@ if (STAGE === 'trade') {
   await tap('Enter', 520);
   const after = await readTrade();
   ok(after.traded > before.traded, 'Enter did the deal', `trades ${before.traded} -> ${after.traded}`);
-  ok(after.res[c0] === before.res[c0] - 4, 'four of the give resource were spent',
-    `${c0} ${before.res[c0]} -> ${after.res[c0]}`);
-  ok(after.res[target] === before.res[target] + 1, 'one of the wanted resource arrived',
+  ok(after.res[target] === before.res[target] - 4, 'four of the given resource were spent',
     `${target} ${before.res[target]} -> ${after.res[target]}`);
+  ok(after.res[c0] === before.res[c0] + 1, 'one of the wanted resource arrived',
+    `${c0} ${before.res[c0]} -> ${after.res[c0]}`);
   ok(after.kind === 'trade' && after.open, 'the sheet STAYED OPEN after trading');
   ok(after.give.length === 0 && after.get.length === 0,
     'and the row reset, ready for the next one');
 
   // ---- a second deal without leaving: Up, Left, Down, Enter
-  await tap('ArrowUp');            // stage the card the cursor is already on
+  await tap('ArrowUp');            // ask on the card the cursor is already on
   const s2 = await readTrade();
-  if (s2.give.length) {
+  if (s2.get.length) {
     await tap('ArrowLeft');
     await tap('ArrowDown');
     const r2 = await readTrade();
@@ -460,7 +501,7 @@ if (STAGE === 'trade') {
     await tap('Enter', 520);
     ok((await readTrade()).traded > after.traded,
       'and Enter traded again without ever reopening the sheet');
-  } else ok(false, 'a second give could be staged');
+  } else ok(false, 'a second ask could be staged');
   await tap('Escape', 420);
   }
 
@@ -475,12 +516,32 @@ if (STAGE === 'trade') {
   await tap('Enter', 420);
   const g = await readTrade();
   ok(g.kind === 'trade', 'Enter opened the sheet');
-  ok(g.cards.brick.up === false, 'holding 2 brick at 4:1, brick\'s GIVE arrow is dead',
-    `have ${g.cards.brick.have} rate ${g.cards.brick.rate}`);
-  ok(g.cards.wood.up === true, 'while wood, with twelve, is live');
-  ok(g.upsLive.length === 4, 'exactly the four affordable cards can be given',
-    `live: [${g.upsLive}]`);
+  /* WHAT DIMS IS A FACT ABOUT THE PACK, not about the size of the ask: you do
+     not hold one whole lot of this, so it can never pay for anything at this
+     post. Two brick at 4:1 is exactly that, and twelve of anything else is
+     exactly not. The dim and the give arrow under it always agree — a card
+     saying no over a button saying yes was the version a reviewer threw out. */
+  ok(g.cards.brick.dim === true, 'holding 2 brick at 4:1, the brick card is dimmed',
+    `have ${g.cards.brick.have} at ${g.headRate}`);
+  ok(g.cards.wood.dim === false, 'while wood, with twelve, is lit');
+  ok(g.dim.length === 1 && g.dim[0] === 'brick',
+    'and it is the only pile in the row that cannot put a lot in', `dim: [${g.dim}]`);
+  /* Ask for one WOOD — not for the brick, which is where the cursor opens (the
+     sheet lands on the scarcest pile, because that is what somebody walked to a
+     post to buy). Asking for the brick would put the brick column on the
+     receive side, and a column on the receive side keeps a live give arrow so
+     the ask can be undone, which is not the thing being measured here. */
+  for (let i = 0; i < 5 && (await readTrade()).cursor !== 'wood'; i++) await tap('ArrowRight');
+  await tap('ArrowUp');
+  const g2 = await readTrade();
+  ok(g2.cards.brick.dn === false && g2.dnsLive.length === 4 && !g2.dnsLive.includes('brick'),
+    'ask for one, and exactly the four piles that can afford a lot go live',
+    `live: [${g2.dnsLive}]`);
   await shot(`kb${TAG}-04-disabled`);
+  /* Put the row back before the next case. The ask above is still standing, and
+     an ask keeps its OWN give arrow live so it can be undone — which would make
+     the empty-pack check below read as one arrow that refused to grey out. */
+  await tap('Tab');
 
   // Empty the pack outright: nothing at all can be staged.
   await setPack({ '*': 0 });
@@ -562,9 +623,9 @@ if (STAGE === 'trade') {
   if (Array.isArray(upBtn)) {
     await clickAt(upBtn[0], upBtn[1]);
     const tapd = await readTrade();
-    ok(tapd.give.length === 1, 'tapping a give arrow stages it for a thumb too',
-      `give=[${tapd.give}]`);
-  } else ok(false, 'the give arrows are tappable');
+    ok(tapd.get.length === 1, 'tapping the top arrow asks for one, for a thumb too',
+      `get=[${tapd.get}]`);
+  } else ok(false, 'the receive arrows are tappable');
   await tap('Escape', 400);
   }
 
@@ -595,10 +656,20 @@ if (STAGE === 'trade') {
   await tap('Enter'); await frames(4);
   const dt = await readTrade();
   ok(dt.kind === 'trade', 'Enter opens the sheet at the dock too');
+  /* The rate is quoted once in the header and a card only carries its own when
+     it DISAGREES with that. At a specialised dock that is exactly the one card
+     the player crossed the island for; at a generic dock every card charges the
+     dock's rate, the header says so, and no card needs a badge at all. Both are
+     the right answer, so both count — what must never happen is the dock's rate
+     going unsaid. */
   const key = dock.resource || 'wood';
-  ok(dt.cards[key].rate === `${dock.ratio}:1`,
-    'the specialised card carries the dock\'s own rate',
-    `${key} ${dt.cards[key].rate} — "${dt.where}"`);
+  ok(dt.cards[key].rate === `${dock.ratio}:1` || dt.headRate === `${dock.ratio}:1`,
+    'the sheet quotes the DOCK\'s rate for that resource, not the market 4:1',
+    `${key} card "${dt.cards[key].rate}" · header "${dt.headRate}" — "${dt.where}"`);
+  ok(dock.resource ? dt.cards[key].rate === `${dock.ratio}:1` : dt.cards[key].rate === '',
+    'and it is on the card only where it differs from the header',
+    `${dock.resource || 'generic'} dock · card rates [`
+    + `${dt.order.map(r => dt.cards[r].rate || '-').join(',')}]`);
   await shot(`kb${TAG}-06-dockpanel`);
   await tap('Escape'); await frames(3);
   ok((await readTrade()).kind === null, 'Escape closes it at the dock as well');

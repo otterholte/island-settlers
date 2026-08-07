@@ -10,15 +10,24 @@
               scroller: this build suppresses native scrollbars globally, so
               anything that does not fit gets its own page instead.
 
-     .coach   the guided practice run. One instruction at a time on a big
-              card at the foot of the screen, plus a gold marker that lands on
-              whatever the instruction is talking about — a button, the
-              resource bar, or a point in the world. Everything else on screen
-              stays live and playable; the coach layer only takes touches on
-              its own controls.
+     .coach   the guided practice run. One instruction at a time on a badge
+              that stands at the TOP of the screen for the opening lesson and
+              the build-a-road lesson and at the FOOT of it for everything
+              else, in one of three sizes, plus a gold marker sized to whatever
+              the instruction is talking about. Everything else on screen stays
+              live and playable; the coach layer only takes touches on its own
+              controls.
 
-   Verified at 960x444 and 667x375. No file here scrolls, no webfont, no
-   image, no emoji.
+     the wardrobe
+              ...and at the foot of this file, the rules that show and hide the
+              real HUD clusters step by step. They hang off classes the tutorial
+              puts on `#ui`, so src/ui/hud.js is never edited and taking one
+              class off puts the whole interface back.
+
+   Verified at 960x444, 667x375 and 640x320, and measured against the HUD by
+   tools/tutshot.mjs at every step: the badge may not overlap the build cards
+   or the three circular keys at any size or any viewport. No file here
+   scrolls, no webfont, no image, no emoji.
 
    Owner: Tutorial (flow) agent.
    ========================================================================== */
@@ -183,18 +192,44 @@
 
 /* ==========================================================================
    The guided practice run
+   ==========================================================================
+
+   Three surfaces, and every number in here has been measured against the HUD
+   rather than guessed at:
+
+     .tut-spot    a canvas between the island and the interface. It washes the
+                  board down and punches a hole over each hex the player may
+                  collect from — see src/ui/tutspot.js for why that is a canvas
+                  and not a CSS mask.
+     .coach-card  the badge. Three sizes (big / slim / gone) and three places
+                  (top / bottom / low).
+     .coach-mark  the gold ring, sized in JS to the box it is pointing at.
+
+   ...plus the WARDROBE at the foot of this file: the rules that show and hide
+   the real HUD clusters per step, driven by classes systems/tutorial.js puts on
+   `#ui`. src/ui/hud.js is never edited and never told anything.
    ========================================================================== */
+
+/* --------------------------------------------------------------- the wash */
+.tut-spot{
+  position:absolute;inset:0;width:100%;height:100%;display:block;
+  pointer-events:none;
+}
 
 .coach{position:absolute;inset:0;z-index:26;pointer-events:none}
 .coach.hid{display:none !important}
 
 /* --- the marker ---------------------------------------------------------
    A gold ring that lands on the thing being talked about, with a bouncing
-   chevron above it. Never covers what it points at: the ring is a stroke. */
+   chevron above it. Never covers what it points at: the ring is a stroke, and
+   its diameter is written from JS to fit the box under it, so the same mark
+   reads as "this one" around a 24px arrow on the trade sheet and around a 96px
+   build card. */
 .coach-mark{
   position:absolute;left:0;top:0;width:74px;height:74px;margin:-37px 0 0 -37px;
   border-radius:50%;pointer-events:none;opacity:0;
-  transition:opacity .25s ease,transform .28s cubic-bezier(.2,1.2,.35,1);
+  transition:opacity .25s ease,transform .28s cubic-bezier(.2,1.2,.35,1),
+             width .2s ease,height .2s ease,margin .2s ease;
 }
 .coach-mark.on{opacity:1}
 /* The ring has to survive being drawn over a busy painted island, so it is a
@@ -226,16 +261,34 @@
   0%,100%{transform:translateY(0)}
   50%{transform:translateY(7px)}
 }
-.coach-mark.wide{width:112px;height:112px;margin:-56px 0 0 -56px}
 
-/* --- the instruction card ------------------------------------------------
-   Parked in the one band of the screen the HUD leaves empty: above the four
-   build cards (112px tall at 960x444, 92px at 667x375, both anchored to
-   --gB), and clear of the bottom-left ground report and the bottom-right
-   buttons. Measured, not guessed. */
+/* ==========================================================================
+   THE BADGE
+
+     "The practice run tutorial — I want the big badge that explains the step
+      to be at the top middle of the screen (currently where the resources
+      are)."
+
+     "Then for step 7, switch the tutorial to the bottom of the screen and add
+      the pack/resources counter to the top middle of the screen again. But
+      don't ever cover the build, pause and map buttons. They shouldn't overlap
+      at all."
+
+   So the card has to be able to stand in two completely different parts of the
+   screen, and the second of those comes with an absolute rule about the three
+   circular keys in the bottom-right and the four build cards along the bottom.
+
+   `--tut-side` is what makes the TOP place work. It is the horizontal room
+   reserved on BOTH sides of the badge: enough for the scoreboard in the top
+   left (226px on a full-size screen, 118px on a phone, plus its gutter) and,
+   by symmetry, more than enough for the standings and the END PRACTICE chip on
+   the right. The badge is then simply the width that is left, capped, so it can
+   never grow into either corner at any viewport this game ships at.
+   ========================================================================== */
+.coach{--tut-side:520px}
+
 .coach-card{
-  position:absolute;left:50%;bottom:calc(var(--gB,10px) + 126px);
-  transform:translateX(-50%) translateY(22px);
+  position:absolute;left:50%;
   width:min(540px,calc(100vw - 40px));
   display:flex;align-items:center;gap:clamp(8px,1.6vw,14px);
   padding:9px clamp(10px,1.8vw,15px) 10px;
@@ -247,8 +300,36 @@
   opacity:0;pointer-events:none;
   transition:opacity .28s ease,transform .28s cubic-bezier(.2,1.2,.35,1);
 }
-.coach-card.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+.coach-card.on{opacity:1;pointer-events:auto}
 .coach-card.on *{pointer-events:auto}
+
+/* --- where it stands ------------------------------------------------------
+   BOTTOM is the band this card has always lived in: above the four build
+   cards, clear of the bottom-right keys. LOW is the same band with the build
+   cards taken away (step 11), so it drops until it is one clear gap above the
+   58px circular keys — never onto them.
+   TOP is the resource pill's own slot, and the pill is hidden whenever the
+   badge is standing in it (see `tut-pack` at the foot of this file). */
+.coach-card.at-bottom{
+  bottom:calc(var(--gB,10px) + 126px);
+  transform:translateX(-50%) translateY(22px);
+}
+.coach-card.at-low{
+  bottom:calc(var(--gB,10px) + 80px);
+  transform:translateX(-50%) translateY(22px);
+}
+.coach-card.at-top{
+  top:calc(var(--gT,10px));
+  width:min(440px,calc(100vw - var(--tut-side)));
+  flex-direction:column;align-items:stretch;gap:7px;
+  transform:translateX(-50%) translateY(-18px);
+}
+.coach-card.on.at-bottom,.coach-card.on.at-low{transform:translateX(-50%) translateY(0)}
+.coach-card.on.at-top{transform:translateX(-50%) translateY(0)}
+
+/* --- what it is made of --------------------------------------------------- */
+.coach-main{display:flex;align-items:center;gap:clamp(8px,1.6vw,14px);
+  flex:1 1 auto;min-width:0}
 
 .coach-step{
   flex:0 0 auto;
@@ -259,22 +340,65 @@
   box-shadow:inset 0 2px 0 rgba(255,255,255,.75),0 3px 0 rgba(90,58,30,.45);
 }
 .coach-step b{font:800 19px/1 var(--ff);color:#3a2208}
-.coach-step u{font:700 6.5px/1 var(--ff);text-decoration:none;letter-spacing:.12em;
+.coach-step u{font:700 6.5px/1 var(--ff);text-decoration:none;letter-spacing:.1em;
   text-transform:uppercase;color:#7a5228}
 
 .coach-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
 .coach-h{
-  font:800 clamp(13px,2.3vw,18px)/1.1 var(--ff);letter-spacing:.05em;
+  font:800 clamp(12px,2.1vw,17px)/1.1 var(--ff);letter-spacing:.05em;
   text-transform:uppercase;color:var(--brown,#5a3a1e);
   text-shadow:0 1px 0 rgba(255,255,255,.8);
 }
-.coach-t{font:700 clamp(9.5px,1.55vw,12.5px)/1.34 var(--ff);color:#4d341a}
+.coach-t{font:700 clamp(9.5px,1.5vw,12px)/1.35 var(--ff);color:#4d341a}
 .coach-t em{font-style:normal;color:#8a4a12;text-shadow:0 1px 0 rgba(255,255,255,.6)}
 
+/* --- BACK and NEXT, the pair ----------------------------------------------
+     "For the tutorial let me go forward or backward in the steps instead of
+      just saying skip all of the time."
+
+   They sit together, they are the same size, and NEXT wears the gold because
+   it is also what SKIP used to be. BACK is cream and quieter, which is the
+   right weight for a control that undoes rather than progresses. A key that
+   has nowhere to go is dimmed and `disabled` rather than removed, so the row
+   never changes width under a thumb. */
 .coach-acts{flex:0 0 auto;display:flex;align-items:center;gap:7px}
-.coach-acts .btn{min-height:44px;padding:0 clamp(11px,2.2vw,18px);font-size:12px}
-.coach-skip{--f1:#e7ddc9;--f2:#d3c4a4;--f3:#bfae8a;--lip:#8f7d5c;--fg:#4a3a20;
-  font-size:9.5px !important;letter-spacing:.09em}
+.coach-card.at-top .coach-acts{justify-content:flex-end}
+.coach-acts .btn{min-height:44px;padding:0 clamp(11px,2.2vw,16px);font-size:11.5px}
+.coach-back{--f1:#f3ebd8;--f2:#ddcdaa;--f3:#c8b68f;--lip:#9a8460;--fg:#4a3a20;
+  font-size:10.5px !important}
+.coach-acts .btn.off{opacity:.34;filter:saturate(.5)}
+.coach-act{flex:0 0 auto}
+
+/* --- SLIM: what is left after OK ------------------------------------------
+     "then they click okay, then just keep the highlight of what they're
+      supposed to click so that it doesn't cover the map and just get
+      confusing."
+
+   One line, the step number, and the two nav keys. Roughly a third of the
+   height of the badge it replaces, and the title comes off entirely — the
+   player has just read it. */
+.coach-card.slim{padding:6px 9px 7px;gap:8px;border-radius:15px;
+  width:min(400px,calc(100vw - var(--tut-side)))}
+.coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(430px,calc(100vw - 40px))}
+.coach-card.slim{flex-direction:row;align-items:center}
+.coach-card.slim .coach-h{display:none}
+.coach-card.slim .coach-step{width:34px;height:34px;border-radius:11px;border-width:2px}
+.coach-card.slim .coach-step b{font-size:15px}
+.coach-card.slim .coach-step u{display:none}
+.coach-card.slim .coach-t{font-size:10.5px;line-height:1.28}
+.coach-card.slim .coach-acts .btn{min-height:38px;padding:0 10px;font-size:10px}
+.coach-card.slim .coach-act{display:none}
+.coach-card.slim .coach-rail{display:none}
+
+/* --- GONE: the ring, and nothing else -------------------------------------
+     "hide / have a much smaller out-of-the-way but clear circles/highlights to
+      follow so that you successfully make a trade without the tutorial in the
+      way."
+
+   A trade sheet is 612px wide on a 640px screen and the placement map owns its
+   own top strip and its whole bottom bar. There is no corner left, so the badge
+   does not try to find one. */
+.coach-card.gone{display:none !important}
 
 /* A quiet progress rail across the top of the card. */
 .coach-rail{
@@ -291,21 +415,6 @@
 .coach-card.good{box-shadow:0 8px 0 rgba(38,96,44,.6),0 18px 34px rgba(0,0,0,.55),
   0 0 26px rgba(72,163,85,.6),inset 0 3px 0 rgba(255,255,255,.9)}
 
-/* --- practice mode calms the rest of the interface ----------------------
-   Set on the interface root for the length of the run. The rivals are frozen,
-   so their scoreboard is noise and it is exactly where the marker needs to
-   point; the running commentary is replaced by the coach card, so the toast
-   stack would only argue with it. The element is not edited — this is a mode,
-   and it is undone the moment the run ends. Nothing that teaches is hidden:
-   the resource bar, the build cards and every button stay exactly where a real
-   match puts them. */
-/* The toast stack and the next-step line this used to dim as well are gone
-   from the game entirely, so only the standings are left to turn down. */
-#ui.tut-practice .hud-tr{
-  opacity:0 !important;pointer-events:none !important;
-  transition:opacity .3s ease;
-}
-
 /* --- the exit chip: always available, never in the way ------------------ */
 .coach-quit{
   position:absolute;right:calc(10px + var(--sar,0px));top:calc(10px + var(--sat,0px));
@@ -315,9 +424,81 @@
 }
 .coach-quit.on{opacity:.92;pointer-events:auto}
 
+/* ==========================================================================
+   THE WARDROBE — which HUD clusters exist, step by step
+
+   Every rule below is one of the owner's notes, and not one of them required a
+   line of src/ui/hud.js. systems/tutorial.js puts `tut-practice` on `#ui` for
+   the length of the run and then adds `tut-pack`, `tut-ranks`, `tut-awards` or
+   `tut-nobuild` per step; taking the root class off restores the lot.
+   ========================================================================== */
+
+/*   "You should remove the timer and the longest road / largest army sections
+ *    of the screen for now."
+ *
+ * Both come OUT of the layout rather than being turned down, because both are
+ * inside a box that should shrink around what is left: the clock is half of the
+ * gear row, and the two award lines are two thirds of the scoreboard. Dimmed,
+ * the corner would keep its full height for readouts nobody is being asked to
+ * read. `display` is also unambiguous to the capture rig — a rectangle of zero
+ * is a fact, an opacity is an opinion. */
+#ui.tut-practice .timechip{display:none !important}
+#ui.tut-practice .sc-awards{display:none !important}
+
+/*   "Don't forget to mention the largest army and the longest road and the
+ *    points associated, and where you can find that info. Don't show that
+ *    section until that step in the tutorial."
+ *
+ * ...and here it is, at its own step and not a moment before. */
+#ui.tut-practice.tut-awards .sc-awards{display:flex !important}
+
+/*   "And even hide the resource counter that would've been in the top middle of
+ *    the screen." ... "add the pack/resources counter to the top middle of the
+ *    screen again." ... "remove that pack/resource counter temporarily."
+ *
+ * One switch, thrown three times by the script. `visibility` rides along with
+ * the fade so that "hidden" is a computed fact rather than a transparent box
+ * still sitting under the badge. */
+#ui.tut-practice .hud-tc{
+  opacity:0 !important;visibility:hidden;
+  transition:opacity .28s ease,visibility 0s linear .28s;
+}
+#ui.tut-practice.tut-pack .hud-tc{
+  opacity:1 !important;visibility:visible;
+  transition:opacity .28s ease;
+}
+
+/* The standings. Off by default — the three rivals are frozen, so their score
+ * is noise for most of the run — and on for the scoring lesson:
+ *
+ *   "For step 11, add the scores on the right side of screen." */
+#ui.tut-practice .hud-tr{
+  opacity:0 !important;visibility:hidden;pointer-events:none !important;
+  transition:opacity .3s ease,visibility 0s linear .3s;
+}
+#ui.tut-practice.tut-ranks .hud-tr{
+  opacity:1 !important;visibility:visible;
+  transition:opacity .3s ease;
+}
+
+/*   "Have the build button start as collapsed, since I haven't explained it in
+ *    the tutorial yet."  ...and  "hide the build cards" for step 11.
+ *
+ * The collapse itself is real — systems/tutorial.js puts the same `hid` on the
+ * row that the BUILD key toggles — and this is the belt to that pair of braces:
+ * it keeps the row down while the run walks BACKWARD through the early steps,
+ * after the player has already opened it once. */
+#ui.tut-practice.tut-nobuild .hud-bc{
+  opacity:0 !important;visibility:hidden;pointer-events:none !important;
+  transition:opacity .25s ease,visibility 0s linear .25s;
+}
+
 /* ============================================================ compact phone
-   667x375. The sheet loses its margins and the art column narrows; nothing is
-   removed, because the whole point of the reading route is the picture. */
+   667x375 and 640x320. The sheet loses its margins and the art column narrows;
+   nothing is removed, because the whole point of the reading route is the
+   picture. The badge comes down a notch in every direction and `--tut-side`
+   halves, because the scoreboard it is clearing halves too (see the compact
+   block in ui-hud.css: `.scorecard` goes from 226px to 118px). */
 @media (max-height:500px),(max-width:1023px){
   .tut-sheet{padding:7px 10px 9px;gap:5px;height:calc(100vh - 14px);border-radius:17px}
   .tut-head{gap:7px}
@@ -329,12 +510,30 @@
   .tut-routes{gap:8px}
   .tut-route{padding:8px 8px;gap:4px}
   .tut-route .tr-art svg{width:30px;height:30px}
-  .coach-card{width:min(540px,calc(100vw - 24px));padding:7px 10px 8px;gap:9px;
-    bottom:calc(var(--gB,10px) + 110px)}
+
+  .coach{--tut-side:300px}
+  .coach-card{width:min(540px,calc(100vw - 24px));padding:7px 10px 8px;gap:9px}
+  .coach-card.at-bottom{bottom:calc(var(--gB,10px) + 110px)}
+  /* The three circular keys are 58px tall and sit on `--gB`. 72 is that plus a
+     14px gap, which is the clearance the capture rig asserts at every step. */
+  .coach-card.at-low{bottom:calc(var(--gB,10px) + 72px)}
+  .coach-card.at-top{width:min(400px,calc(100vw - var(--tut-side)));padding:8px 10px 9px}
+  .coach-card.slim{width:min(360px,calc(100vw - var(--tut-side)));padding:5px 8px 6px}
+  .coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(420px,calc(100vw - 24px))}
   .coach-step{width:42px;height:42px}
   .coach-step b{font-size:17px}
-  .coach-mark{width:64px;height:64px;margin:-32px 0 0 -32px}
-  .coach-mark.wide{width:96px;height:96px;margin:-48px 0 0 -48px}
+  .coach-acts .btn{min-height:42px;padding:0 12px}
+}
+
+/* Very short viewports — 640x320 is the floor this game ships against. The
+   badge gives up padding and leading before it gives up a word. */
+@media (max-height:380px){
+  .coach-card.at-top{padding:7px 9px 8px;gap:5px}
+  .coach-card.at-top .coach-h{font-size:12px}
+  .coach-card.at-top .coach-t{font-size:9.5px;line-height:1.3}
+  .coach-card.at-top .coach-step{width:34px;height:34px;border-radius:11px}
+  .coach-card.at-top .coach-step b{font-size:15px}
+  .coach-acts .btn{min-height:40px;padding:0 10px;font-size:10.5px}
 }
 
 @media (prefers-reduced-motion:reduce){

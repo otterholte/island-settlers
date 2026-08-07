@@ -46,6 +46,30 @@
  * hand growing a Road Building card, and `me` is `state.players[0]`. Bots
  * resolve theirs inside bots.js without ever touching this module.
  *
+ * ---------------------------------------------------------------------------
+ * WHAT THE BUILD SHEET CHANGED HERE, AND WHY IT IS NOTHING
+ * ---------------------------------------------------------------------------
+ * The placement map is now a sheet you stand in rather than a question you
+ * answer once (see the header of overview.js), and both halves of this card
+ * land on the right side of that on their own:
+ *
+ *   BETWEEN THE TWO ROADS the map used to close and re-open — economy.js still
+ *     chains the second placement 340ms after the first, and it still may,
+ *     because `overview.open` called on an already-open panel re-dresses it in
+ *     place. What is new is that the panel no longer goes anywhere in between:
+ *     `commit` keeps it up as long as another road is affordable, and a road
+ *     you have already been given is affordable. The two free roads are one
+ *     continuous view now, with no flash of third-person camera between them.
+ *
+ *   ON THE COUNT the sheet's road chip reads `x2` on an empty pack, because
+ *     `buyCount` in hud-build.js adds `freeRoads` to what the resources buy
+ *     rather than treating a free road as a discount. Two owed roads plus eight
+ *     wood and eight brick is `x4`, which is the honest number.
+ *
+ * So this module is unchanged apart from this note. It is here because the
+ * behaviour it describes is this card's behaviour, and the next person to read
+ * this file will be looking for it here.
+ *
  * Styling rides the `.kn-*` classes injected by `hud-knight.js`, so the two
  * chips are the same object in two colours; the only thing added here is the
  * stacking offset that keeps them off each other when a player holds both.

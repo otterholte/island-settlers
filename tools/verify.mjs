@@ -15,7 +15,8 @@ import {
 import { items, tileItemCount, tileRegenSeconds } from '../src/board/nodes.js';
 import {
   createMatch, legalSettlements, legalRoads, setupCurrentPlayer,
-  setupPlaceSettlement, setupPlaceRoad, scoreOf, longestRoadFor
+  setupPlaceSettlement, setupPlaceRoad, scoreOf, longestRoadFor,
+  playKnight, knightVictims, knightBlocks, canGatherTile, RES
 } from '../src/core/rules.js';
 
 let fail = 0;
@@ -244,6 +245,170 @@ ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robbe
   ok(printA === printB && a.seed === b.seed, 'a pinned seed reproduces the board exactly');
 }
 
+/* ------------------------------------------------------------- the raid
+ *
+ *   "Can you change how the knight works. I want it to only take from the
+ *    players who have a settlement or city on the hex where you placed the
+ *    knight, and only they will lose half of all of their resources. If I place
+ *    it on my own hex, I still can access that hex for resources, however I
+ *    never lose half of my own resources if I'm the one that plays the knight."
+ *
+ *   "Also make sure that it works that the knight rounds down to the nearest
+ *    full resource ... if I have 7 of something I lose 3, or if I halve 1
+ *    brick, I just keep it."
+ *
+ * Both halves are arithmetic on a board, which is exactly the sort of thing a
+ * browser cannot check and this file can. The scene is built by hand rather
+ * than drafted: `state.buildings` is written directly so the raided hex has a
+ * known rival settlement, a known rival CITY, a corner belonging to the player
+ * who sends the Knight, and a bystander parked on a hex that shares no corner
+ * with it. Placement law is not what is under test here — who pays is.
+ */
+console.log('\n--- the Knight raid ---');
+{
+  /** Put a building on a corner without going through the distance rule. */
+  const put = (st, pid, iid, type) => {
+    st.buildings.set(iid, { owner: pid, type, builtAt: 0 });
+    st.players[pid][type === 'city' ? 'cities' : 'settlements'].add(iid);
+  };
+  const bank = (o) => RES.map(r => `${r} ${o[r]}`).join(', ');
+  const sameBank = (a, b) => RES.every(r => (a[r] | 0) === (b[r] | 0));
+
+  // Two resource hexes that share no corner, so "settled on the raided hex" and
+  // "settled somewhere else entirely" are genuinely different places.
+  const home = tiles.find(t => t.resource);
+  const away = tiles.find(t => t.resource && t.id !== home.id
+    && !t.corners.some(c => home.corners.includes(c)));
+  ok(!!home && !!away, 'two hexes that share no corner exist to raid between');
+
+  /**
+   * A match held still in `play`, with:
+   *   seat 0  the Knight's sender, settled ON the raided hex
+   *   seat 1  a rival settled on the raided hex          (a victim)
+   *   seat 2  a bystander settled only on the far hex    (never a victim)
+   *   seat 3  a rival with a CITY on the raided hex      (a victim)
+   */
+  const scene = (banks) => {
+    const st = createMatch({ seed: 4242 });
+    st.phase = 'play';
+    put(st, 0, home.corners[4], 'settlement');
+    put(st, 1, home.corners[0], 'settlement');
+    put(st, 3, home.corners[2], 'city');
+    put(st, 2, away.corners[0], 'settlement');
+    st.players.forEach((p, i) => { p.res = { ...banks[i] }; });
+    st.players[0].cards.push({ type: 'knight', id: 'test-knight' });
+    st.events.length = 0;
+    return st;
+  };
+
+  const FLAT = { wood: 6, brick: 6, wool: 6, wheat: 6, ore: 6 };
+  const HOARD = { wood: 19, brick: 17, wool: 15, wheat: 13, ore: 11 };
+  // The owner's own worked example, plus the two edges either side of it.
+  const ODDS = { wood: 8, brick: 7, wool: 5, wheat: 1, ore: 0 };
+  const KEPT = { wood: 4, brick: 4, wool: 3, wheat: 1, ore: 0 };
+
+  {
+    const st = scene([FLAT, ODDS, HOARD, FLAT]);
+    const played = playKnight(st, 0, home.id);
+    ok(played, 'the Knight is sent');
+
+    // 1. a rival settled on the raided hex pays, and pays floor(n/2) per type
+    ok(sameBank(st.players[1].res, KEPT),
+      'a rival with a settlement on the raided hex loses floor(n/2) of each type',
+      bank(st.players[1].res));
+    ok(st.players[1].res.wood === 4 && st.players[1].res.brick === 4
+      && st.players[1].res.wool === 3 && st.players[1].res.wheat === 1
+      && st.players[1].res.ore === 0,
+    'the owner\'s worked example: 8->4 kept, 7->4, 5->3, 1->1 (a lone brick is kept), 0->0',
+    bank(st.players[1].res));
+
+    // 2. everybody else on the island is untouched, however much they hold
+    ok(sameBank(st.players[2].res, HOARD),
+      'a rival with nothing on that hex loses nothing, even holding 75 goods',
+      bank(st.players[2].res));
+
+    // 3. the sender never pays, even owning a corner of the hex they chose
+    ok(sameBank(st.players[0].res, FLAT),
+      'the player who played the Knight loses nothing, though they own a corner there',
+      bank(st.players[0].res));
+
+    // a city on the hex is a victim just as a settlement is
+    ok(sameBank(st.players[3].res, { wood: 3, brick: 3, wool: 3, wheat: 3, ore: 3 }),
+      'a rival with a CITY on the raided hex pays the same half',
+      bank(st.players[3].res));
+
+    // 4. the event `ui/hud-raid.js`, `main.js` and `net/mirror.js` read
+    const ev = st.events.find(e => e.type === 'knight');
+    ok(!!ev && ev.player === 0 && ev.tile === home.id && Array.isArray(ev.losses),
+      'the knight event still carries { player, tile, losses[] }');
+    ok(ev.losses.length === 2 && ev.losses.every(l => l.total > 0
+      && RES.every(r => Number.isInteger(l.lost[r]))),
+    'losses names exactly the two settled victims, each with a full five-type bill',
+    ev.losses.map(l => `${l.player}:${l.total}`).join(' '));
+    ok(ev.losses.every(l => l.total === RES.reduce((s, r) => s + l.lost[r], 0)),
+      'each bill totals its own five lines');
+    ok(!ev.losses.some(l => l.player === 0), 'the sender is not on the bill');
+    // Nothing is transferred — a raid destroys, it does not steal.
+    ok(sameBank(st.players[0].res, FLAT), 'and nothing raided is credited to the sender');
+  }
+
+  // The Knight on a hex only its sender has built on bills nobody at all.
+  {
+    const st = scene([FLAT, FLAT, FLAT, FLAT]);
+    st.buildings.delete(home.corners[0]);
+    st.buildings.delete(home.corners[2]);
+    st.players[1].settlements.delete(home.corners[0]);
+    st.players[3].cities.delete(home.corners[2]);
+    ok(knightVictims(st, 0, home.id).length === 0,
+      'a hex only the sender has built on has no victims to name');
+    playKnight(st, 0, home.id);
+    const ev = st.events.find(e => e.type === 'knight');
+    ok(ev && ev.losses.length === 0 && st.players.every(p => sameBank(p.res, FLAT)),
+      'so the raid takes nothing from anybody and the bill is empty');
+  }
+
+  // A victim holding at most one of each pays nothing and stays off the bill,
+  // which is what `net/mirror.js` expects to replay.
+  {
+    const ONES = { wood: 1, brick: 1, wool: 0, wheat: 1, ore: 0 };
+    const st = scene([FLAT, ONES, FLAT, FLAT]);
+    playKnight(st, 0, home.id);
+    ok(sameBank(st.players[1].res, ONES),
+      'a victim holding one of each keeps all of it', bank(st.players[1].res));
+    const ev = st.events.find(e => e.type === 'knight');
+    ok(ev.losses.every(l => l.player !== 1),
+      'and an all-zero bill is left off the event rather than sent as noise');
+  }
+
+  // Targeting is by the BOARD, not by who is standing where or holding what.
+  {
+    const st = scene([FLAT, FLAT, FLAT, FLAT]);
+    const victims = knightVictims(st, 0, home.id).map(o => o.id).sort();
+    ok(victims.join(',') === '1,3',
+      'knightVictims is exactly the settled rivals, in seat order', victims.join(','));
+    ok(knightVictims(st, 1, home.id).map(o => o.id).sort().join(',') === '0,3',
+      'and it excludes whoever is asking, never anybody else');
+    ok(knightVictims(st, 0, away.id).map(o => o.id).join(',') === '2',
+      'raiding the far hex bills only the player settled on the far hex');
+  }
+
+  /* The blocking half is UNCHANGED, and it always did let the sender keep
+     working the hex they blocked — "If I place it on my own hex, I still can
+     access that hex for resources". Pinned here so it stays that way. */
+  {
+    const st = scene([FLAT, FLAT, FLAT, FLAT]);
+    playKnight(st, 0, home.id);
+    ok(st.robberTile === home.id && st.robberOwner === 0,
+      'the Knight lands on the chosen hex and remembers who sent it');
+    ok(!knightBlocks(st, 0, home.id) && canGatherTile(st, 0, home.id),
+      'the player who sent the Knight can still gather from the hex they blocked');
+    ok(knightBlocks(st, 1, home.id) && !canGatherTile(st, 1, home.id),
+      'while a rival settled there is shut out of it');
+    ok(!knightBlocks(st, 1, away.id),
+      'and no other hex on the island is blocked');
+  }
+}
+
 /* ------------------------------------------------------- the quality ladder
  *
  * `systems/quality.js` decides how much graphics a machine can afford, and its
@@ -378,6 +543,54 @@ ok(s.robberTile === DESERT.id, 'the Knight starts on the desert', String(s.robbe
   S.clearSeats();
   ok(S.seatHex(1) === PLAYER_COLORS[1].hex,
     'and the opening screen gets the palette back when the match is gone');
+}
+
+/* ------------------------------------------------ two roads from anybody
+ *
+ *   "Technically there are times where even if I have the resources I can't
+ *    build a settlement, since they need to be 2 roads away from all other
+ *    hexes, just make sure that's the case."
+ *
+ * It is, and this is the check that keeps it that way. The rule reads
+ * `state.buildings`, which holds every player's pieces rather than only yours,
+ * so a RIVAL's settlement refuses the three corners around it exactly as your
+ * own does — which is the half that is easy to break and impossible to see,
+ * because the build sheet can honestly tell you a settlement is affordable and
+ * the board still offer nowhere to put it. That is not a bug in the sheet; it
+ * is this rule doing its job, and the two facts have to be tested together.
+ */
+{
+  const R = await import('../src/core/rules.js');
+  const { intersections } = await import('../src/board/layout.js');
+  const st = R.createMatch({ seed: 4242 });
+
+  st.phase = 'setup';
+  const theirs = 20;
+  R.placeSettlement(st, 1, theirs, true);          // a RIVAL builds here
+  const around = intersections[theirs].neighbors;
+
+  // Give seat 0 a road on every edge touching those corners, so the only thing
+  // left that can refuse them is the distance rule itself.
+  st.phase = 'play';
+  for (const nb of around) for (const e of intersections[nb].edges) st.roadOwner.set(e, 0);
+
+  ok(around.every(nb => !R.settlementLegal(st, 0, nb, false)),
+    "a rival's settlement refuses every corner touching it, roads or not",
+    `corners ${around.join(',')} around ${theirs}`);
+
+  const twoAway = intersections[around[0]].neighbors
+    .filter(x => x !== theirs && !around.includes(x));
+  ok(twoAway.some(x => R.settlementLegal(st, 0, x, false)),
+    'and two corners away is allowed once a road of yours reaches it',
+    `of ${twoAway.join(',')}`);
+
+  // The same rule, your own piece: nobody gets a private exemption from it.
+  const mine = R.legalSettlements(st, 0, false)[0];
+  if (Number.isInteger(mine)) {
+    R.placeSettlement(st, 0, mine, true);
+    ok(intersections[mine].neighbors.every(nb => !R.settlementLegal(st, 0, nb, false)),
+      'and your own settlement refuses its own neighbours just the same');
+  }
 }
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nAll structural checks passed.');

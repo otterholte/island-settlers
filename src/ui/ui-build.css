@@ -1,0 +1,330 @@
+/* ==========================================================================
+   Island Settlers — the build sheet.
+
+   Everything the placement map wears now that its confirm bar is gone: the
+   four affordability chips along the foot, the one line of text along the top,
+   and the little plate a review screen's single button sits in.
+
+     "I'd also like for the cancel and confirm buttons to actually be removed
+      since the other logic is there already — maybe just add a small 'Click
+      again to confirm' at the top of the screen when pending so that I have
+      more visual space to work with on the bottom of the map here."
+
+   It is registered by the <link> beside ui.css in index.html, and defensively
+   by `injectBuildStyle` in overview.js if that line ever goes missing. It is
+   NOT part of ui.css's @import block for one reason only: that file is being
+   worked on elsewhere this week.
+
+   Two rules the whole sheet is built against, both of which have bitten this
+   interface before:
+
+     `#ui *{pointer-events:none}` with `#ui [data-ui],#ui [data-ui] *{auto}`.
+     The map wrapper carries `data-ui`, so EVERY descendant of it takes touches
+     by default — including a caption floating over the board. Anything here
+     that is not meant to be tapped says `pointer-events:none` itself.
+
+     `touch-action` on a control over the island is `none` on purpose: the
+     invisible joystick lives under this panel and a browser gesture starting
+     on a chip would be the game deciding between scrolling nothing and running
+     somewhere. That is not the `pan-y` case in ui-base.css — there is no
+     scrolling panel anywhere near the board.
+
+   Owner: UI agent.
+   ========================================================================== */
+
+/* ============================================================== the chips
+ *
+ *   "on the bottom of the screen I see a box that has grouped simple visuals
+ *    showing in the most clear but visually simple straightforward way, that I
+ *    can build for example 3 more roads, or 1 settlement, 0 cities greyed out,
+ *    1 development card."
+ *
+ * One box, four tiles, nothing moving. The board underneath is already
+ * breathing — thirty road slots pulsing, a chevron bobbing over the armed one
+ * — and a foot that pulsed along with it would be the "overstimulating" this
+ * interface keeps being asked not to be. The only thing that ever animates
+ * here is a chip changing state under a thumb, and the refusal shake.
+ */
+/* THE GAP IS PART OF THE TARGET, NOT DECORATION.
+ *
+ *   "Raise chip height from 38px to at least 44px and widen the 5px inter-chip
+ *    gap. Measured: ROAD 52x38, SETTLEMENT 72x38, CITY 53x38, CARD 51x38,
+ *    identical at both viewports — the bar does not scale."
+ *
+ * 5px between two tappable things under a thumb is not a gap, it is a coin
+ * toss: the pad of an adult index finger is 8-10mm and the tiles it is landing
+ * between were 5px apart. 10px, and 46px tall at the FLOOR size rather than
+ * 38 — the media query at the bottom of this file now brings the bar down by a
+ * hair rather than by a fifth, which is the "the bar does not scale" half of
+ * the same report answered from the other end. */
+.ov .ovb{
+  position:absolute;left:50%;bottom:var(--gB,10px);
+  transform:translateX(-50%);
+  z-index:6;
+  display:flex;align-items:stretch;gap:10px;
+  padding:7px;border-radius:18px;
+  max-width:calc(100% - 96px);
+}
+
+/* Four identical squares. Equal width is only possible because the labels
+   went (see hud-build.js), and it is most of what makes the bar calm: the eye
+   reads four counts in a row instead of measuring four different boxes. */
+.ov .ovb-chip{
+  position:relative;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1px;
+  width:62px;height:50px;padding:3px 6px 4px;
+  border:1.5px solid rgba(255,201,60,.22);
+  border-radius:13px;
+  background:linear-gradient(180deg,rgba(38,78,124,.82),rgba(12,32,58,.82));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 1px 2px rgba(0,0,0,.35);
+  color:#eaf2fb;
+  font-family:var(--ff);
+  cursor:pointer;
+  touch-action:none;
+  -webkit-tap-highlight-color:transparent;
+  transition:transform .1s ease,border-color .16s ease,background .16s ease,
+             opacity .18s ease,color .18s ease;
+}
+.ov .ovb-ico{line-height:0;display:block}
+.ov .ovb-ico svg{display:block}
+/* The count is the whole message, so it is the biggest type on the tile. */
+.ov .ovb-c{display:flex;align-items:baseline;gap:1px}
+.ov .ovb-x{font:800 9px/1 var(--ff);font-style:normal;
+  color:rgba(226,238,250,.5)}
+.ov .ovb-n{font:800 17px/1 var(--ff);color:#fff;
+  text-shadow:0 1px 2px rgba(0,0,0,.55)}
+
+/* The free-roads flag. A corner tab rather than a line of body text: it is a
+   stamp on the tile saying "already paid for", and it is up only while a Road
+   Building card has actually paid. */
+.ov .ovb-flag{
+  position:absolute;top:-6px;left:50%;transform:translateX(-50%);
+  padding:1px 5px 2px;border-radius:6px;
+  font:800 7px/1 var(--ff);font-style:normal;letter-spacing:.12em;
+  color:#3a2208;background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  box-shadow:0 1px 2px rgba(0,0,0,.45);
+  white-space:nowrap;pointer-events:none;
+}
+.ov .ovb-flag.hid{display:none}
+
+/* WHICH ONE THE MAP IS SHOWING YOU. A bank of four switches with nothing
+   marking the one that is thrown is a puzzle, and the board on its own does
+   not answer it — a field of glowing corners and a field of glowing edges look
+   more alike than they should on a small screen. */
+.ov .ovb-chip.on{
+  border-color:rgba(255,201,60,.92);
+  background:linear-gradient(180deg,rgba(255,201,60,.3),rgba(120,80,14,.5));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 0 12px rgba(255,201,60,.28);
+  color:#fff6dd;
+}
+.ov .ovb-chip.on .ovb-n{color:var(--gold-l,#ffe79a)}
+
+/* NOUGHT — SOLID VERSUS HOLLOW, WHICH IS A KIND AND NOT A SHADE.
+ *
+ *   "0 cities greyed out ... I can't click the city button since it's greyed
+ *    out if I don't have enough resources."
+ *
+ * and, from the review of the first pass:
+ *
+ *   "Give disabled chips a CATEGORICAL treatment, not just opacity. Measured
+ *    p98 luminance: enabled 166, disabled 111, against a ~45 fill — about
+ *    2.8:1. All four chips are the same dark slab, so the bar reads as 'one
+ *    gold thing and three dark things' rather than '3 / 1 / 0 / 0'."
+ *
+ * That is exactly what a `grayscale + opacity` treatment buys: everything on
+ * the bar keeps the same SHAPE and only changes brightness, so at arm's length
+ * the four tiles are four dark rectangles of slightly different weights and
+ * the player has to compare them to read them. Two kinds instead of two
+ * brightnesses — a filled slab you can spend, a hollow outline you cannot —
+ * and the difference survives a squint, a glare, a colour-blind eye and a
+ * screenshot resized to a thumbnail.
+ *
+ * Greyed, never gone: what you cannot afford yet is half the reason to look at
+ * the bar, and a chip that vanished would change the shape of the bar every
+ * time the pack changed. The button is `disabled` in the markup as well, so it
+ * is inert to a thumb and reads as "unavailable" to a screen reader, and its
+ * `title` and `aria-label` carry the REASON (`whyNot` in hud-build.js). */
+.ov .ovb-chip.off{
+  background:none;
+  border:1.5px dashed rgba(196,214,234,.3);
+  box-shadow:none;
+  color:rgba(196,214,234,.5);
+  cursor:default;
+}
+.ov .ovb-chip.off .ovb-n{color:rgba(196,214,234,.55);text-shadow:none;font-weight:700}
+.ov .ovb-chip.off .ovb-x{color:rgba(196,214,234,.34)}
+/* The accents — the blue roof, the wood deck, the gold pennant, the red seal —
+   are the one thing on a hollow tile that has no business staying saturated:
+   colour is what this bar spends on "you can have this". */
+.ov .ovb-chip.off .ovb-ico [data-a]{fill:currentColor;opacity:.45}
+
+/* Free roads are a different currency, not a discount — see `buyCount` — so
+   the road chip's count can be made entirely of them. Gold is the game's word
+   for "already paid for", and the FREE tab above says which. */
+.ov .ovb-chip.free:not(.off) .ovb-n{color:var(--gold-l,#ffe79a)}
+.ov .ovb-chip.free:not(.off){border-color:rgba(255,201,60,.7)}
+
+.ov .ovb-chip:not(.off):active{transform:translateY(2px)}
+
+/* The refusal. Small, short, and silent: the chip is already hollow, so this
+   only has to say "yes, I heard you, and no". */
+.ov .ovb-chip.nope{animation:ovbNope .34s ease}
+@keyframes ovbNope{
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-3px)}
+  60%{transform:translateX(3px)}
+}
+
+/* THE PURCHASE LANDING. See the `tick` note in hud-build.js — this fires only
+   when a count goes DOWN, which is only ever this player's own build. One
+   bounce and one gold wash, over in six tenths of a second, and then the bar
+   is still again. */
+.ov .ovb-chip.tick{animation:ovbTick .6s cubic-bezier(.3,1.5,.5,1)}
+@keyframes ovbTick{
+  0%{transform:scale(1);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),
+      0 1px 2px rgba(0,0,0,.35)}
+  22%{transform:scale(1.14);
+      box-shadow:0 0 0 2px rgba(255,201,60,.9),0 0 18px rgba(255,201,60,.65)}
+  100%{transform:scale(1);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),
+      0 1px 2px rgba(0,0,0,.35)}
+}
+
+/* ================================================================ the line
+ *
+ * The only words left on the panel, and it is empty most of the time.
+ *
+ * It sits in the top strip because that is the one band of this screen nothing
+ * else is using: the close key is in the top LEFT corner, the zoom pad runs
+ * down the left edge and the player pips down the right, and the board is
+ * fitted to the middle. It must not eat a tap — see the pointer-events note at
+ * the top of this file — because the corner a player is aiming at may well be
+ * underneath it.
+ */
+.ov .ovb-say{
+  position:absolute;left:50%;top:var(--gT,10px);
+  transform:translateX(-50%) translateY(-4px);
+  z-index:6;
+  padding:5px 12px 6px;border-radius:13px;
+  opacity:0;
+  transition:opacity .18s ease,transform .18s ease;
+  max-width:min(70vw,340px);
+}
+/* THE ID IS NOT DECORATION, IT IS THE ONLY WAY TO WIN THIS.
+ *
+ * `#ui [data-ui],#ui [data-ui] *{pointer-events:auto}` in ui-base.css scores
+ * (1,1,0) and applies to every descendant of the map, this caption included —
+ * so a plain `.ov .ovb-say{pointer-events:none}` at (0,2,0) loses, and the line
+ * quietly eats every tap aimed at the strip of board behind it. Measured, not
+ * assumed: tools/buildshot.mjs reads the computed value back and fails on
+ * anything but `none`. */
+#ui .ov .ovb-say{pointer-events:none}
+.ov .ovb-say.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.ov .ovb-say-t{
+  display:block;
+  font:800 10px/1.2 var(--ff);letter-spacing:.13em;text-transform:uppercase;
+  color:rgba(226,238,250,.92);text-align:center;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+/* Armed. Gold is the standing cue everywhere else in this game that something
+   is ready to be committed, and this is the sentence that used to be a green
+   button forty per cent of a screen away from the finger. */
+.ov .ovb-say.arm{
+  border-color:rgba(255,201,60,.5);
+  box-shadow:0 8px 8px -2px rgba(0,0,0,.4),0 2px 3px rgba(0,0,0,.35),
+             inset 0 2px 0 rgba(255,255,255,.2),
+             inset 0 0 0 1.5px rgba(255,201,60,.55);
+}
+.ov .ovb-say.arm .ovb-say-t{color:var(--gold-l,#ffe79a)}
+
+/* JUST BUILT. Green is the game's word for "that worked", and it is the other
+   half of the answer to "the only feedback is one 10px digit changing 3 to 2":
+   the chip bounces down at the foot, this says what happened and what is left
+   at the top, and then it goes quietly back to the idle line. */
+.ov .ovb-say.done{
+  border-color:rgba(126,214,124,.5);
+  box-shadow:0 8px 8px -2px rgba(0,0,0,.4),0 2px 3px rgba(0,0,0,.35),
+             inset 0 2px 0 rgba(255,255,255,.2),
+             inset 0 0 0 1.5px rgba(126,214,124,.55);
+}
+.ov .ovb-say.done .ovb-say-t{color:#c9f2c4}
+
+/* FREE ROADS ARE NOT A NORMAL ROAD BUILD, AND THE SCREEN HAS TO SAY SO.
+ *
+ *   "build-freeroads-640x320.png is visually identical to a normal road build
+ *    despite the count being card-granted free roads. Say so, and either
+ *    disable the X or warn that closing forfeits the remaining free road."
+ *
+ * The X stays live — economy.js DEFERS an unspent debt rather than forfeiting
+ * it, main.js re-offers the map on the next clear frame, and taking away the
+ * only way out of a full-screen panel to protect a road the player has not
+ * lost would be a worse trap than the one being fixed. So the line carries the
+ * warning instead, in the card's own gold. */
+.ov .ovb-say.freeroad{
+  border-color:rgba(255,201,60,.42);
+  background-image:linear-gradient(180deg,rgba(255,201,60,.16),rgba(255,201,60,0));
+}
+.ov .ovb-say.freeroad .ovb-say-t{color:#ffe79a}
+
+/* ========================================================== the action bar
+ * The review screen's single button ("press start game as another button on
+ * the map screen once I've reviewed the board"), in the same place the confirm
+ * bar used to stand. It has its own container rather than sharing one with the
+ * chips because the two are never up together and because every trace tool in
+ * tools/ looks for a green button inside `.ov-bar` to decide whether a Confirm
+ * exists — see the note in overview.js. */
+.ov .ov-actbar{
+  position:absolute;left:50%;bottom:var(--gB,10px);
+  transform:translateX(-50%);
+  z-index:6;
+  display:flex;align-items:center;
+  padding:7px 11px;border-radius:17px;
+}
+
+/* ======================================================== the small screens
+ * 640x320 is the floor this game ships against, and the bar is the last thing
+ * that may take height from the island. Everything here comes down a notch;
+ * nothing comes out, because four chips minus one is not a bar of four chips.
+ */
+@media (max-height:500px),(max-width:1023px){
+  /* The bar comes down by a hair, not by a fifth. 46px is the floor a thumb
+     gets — below that the tile is smaller than the finger landing on it — and
+     the gap stays at 8px, which is the part that decides whether a near-miss
+     lands on the neighbour or on nothing. */
+  .ov .ovb{gap:8px;padding:6px;border-radius:16px;max-width:calc(100% - 86px)}
+  .ov .ovb-chip{width:58px;height:46px;padding:2px 5px 3px;border-radius:12px}
+  .ov .ovb-ico svg{width:20px;height:20px}
+  .ov .ovb-n{font-size:16px}
+  .ov .ovb-flag{font-size:6.5px;padding:1px 4px 2px}
+  .ov .ovb-say{padding:4px 10px 5px;border-radius:11px}
+  .ov .ovb-say-t{font-size:9px;letter-spacing:.1em}
+  .ov .ov-actbar{padding:5px 9px;border-radius:15px}
+}
+
+/* ============================================ nothing else over the board
+ *
+ *   "Suppress the 'GATHER. BUILD. WIN. / FIRST TO 12 POINTS' intro banner
+ *    while the build sheet is open, or dismiss it on open. In
+ *    build-open-640x320.png it covers board rows y=175-259 — 85px, 27% of a
+ *    320px screen — hiding the bottom hex row and its road targets, which is
+ *    the exact space this rework was meant to free."
+ *
+ * The objective card belongs to matchflow.js and flowUI.js, which this agent
+ * does not own, and its whole job is to land ON GO and fade — it is right
+ * where it is for the two and a half seconds it owns the screen alone. What is
+ * wrong is only the overlap: a player who taps a build card inside that window
+ * gets a placement map with a plate across the middle of the island.
+ *
+ * `overview.open` sets `ov-live` on the interface root and `close` takes it
+ * off (see overview.js), so this is scoped to exactly the window where the map
+ * is up. Specificity is the reason it works without `!important`:
+ * `#ui.ov-live .mf-obj` scores (1,1,0) against `.mf-obj.on`'s (0,2,0). The
+ * card's own countdown keeps running underneath, so it has usually taken
+ * itself away by the time the map comes down.
+ *
+ * The alternative — a `hideObjective()` call from `open()` — needs one line
+ * added to matchflow.js's returned api to expose the function flowUI.js
+ * already has. That is the tidier fix and it is reported rather than made,
+ * because that file has another owner this week. */
+#ui.ov-live .mf-obj{opacity:0;transform:translate(-50%,-14px) scale(.94);
+  pointer-events:none}

@@ -205,7 +205,12 @@ export function createKnightCue(root, state, game) {
   const safe = fn => { try { return fn(); } catch (e) { return undefined; } };
   const say = (msg, kind) => safe(() => g.hud && g.hud.toast && g.hud.toast(msg, kind))
     ?? safe(() => g.toast && g.toast(msg, kind));
-  const shout = (msg, color) => safe(() => g.hud && g.hud.announce && g.hud.announce(msg, color));
+  /* The third argument is the glyph the centre plate wears — see hud-notice.js.
+     Defaulted to 'knight' rather than passed at each call site because every
+     announcement this module ever makes is about the same card, and a default
+     is one fewer thing for the next edit to forget. */
+  const shout = (msg, color, glyph) =>
+    safe(() => g.hud && g.hud.announce && g.hud.announce(msg, color, glyph || 'knight'));
   /* The human's own Knight, always — a rival playing one never reaches this
      file. So these are allowed to buzz. See audio.js. */
   const sfx = name => safe(() => g.audio && g.audio.sfx && g.audio.sfx(name, { mine: true }));
@@ -365,8 +370,21 @@ export function createKnightCue(root, state, game) {
     const n = knightsHeld();
     const playable = state.phase === 'play';
     if (n > held) {
-      // A Knight just arrived. This is the moment the player said they missed.
-      shout('Knight Card!', '#ffc93c');
+      /* A Knight just arrived. This is the moment the player said they missed.
+       *
+       *   "Unify the notice wording ('KNIGHT CARD!' vs 'ROAD BUILDING!' vs
+       *    '+1 VICTORY POINT!') — pick one convention."
+       *
+       * The convention is WHAT YOU JUST GOT, exclaimed, and nothing else about
+       * the machinery it came in: 'Knight!', 'Road Building!', '+1 Victory
+       * Point!'. Two of those three are in files this agent may not edit —
+       * hud-road.js and systems/economy.js — so the convention was settled
+       * before we got here and this line was the one out of step. "Card" was the
+       * odd word: the plate now carries the card's glyph on a gold disc, so what
+       * KIND of thing this is is said by the picture rather than twice in the
+       * sentence. The victory point keeps its "+1" because for that one card the
+       * number is the entire content — it is what you got. */
+      shout('Knight!', '#ffc93c');
       say('Knight — the map is about to open, pick a region to block', 'good');
       sfx('award');
       // Arm the self-raising board. `held` is the HUMAN's hand, so a rival

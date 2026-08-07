@@ -627,7 +627,29 @@ const MOOD_BODY_FRAG = /* glsl */`
     // vInk carries luminance 1, so this is the fragment's own brightness in the
     // hex's colour and nothing else — one flat ink across terrain, trunk,
     // fleece and brick alike. That uniformity is what reads as "switched off".
-    vec3 dead = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.88) * 0.52;
+    //
+    // WITH THE SAME FLOOR UNDER IT THE SPENT BRANCH ALREADY HAS.
+    //
+    //   "Your pass-two grey fix only landed on highlighted/owned hexes. The two
+    //    unowned 11 mountain hexes sample RGB (38,38,42) and (46,46,48) —
+    //    neutral near-black against 189-luma sand, and the darkest elements on
+    //    the island by a clear margin."
+    //
+    // A flat x0.52 is a percentage, and the argument in the spent branch below
+    // applies here word for word: a percentage of a bright surface is a step
+    // down and a percentage of a dark one is a hole, and the ACES curve takes
+    // its deepest bite exactly where the dark one lands. Sunlit sand, ripe
+    // wheat and a white fleece are the surfaces the mute was tuned on and they
+    // still drop the full step; a fragment already down at a tenth of full
+    // brightness — the shaded flank of a peak, the dark foot under every cut
+    // block of ore, the inside of a canopy — is only taken to 0.78, which is
+    // enough to say "not yours" and not enough to say "burnt". The crossover is
+    // set on LINEAR albedo, which is what diffuseColor holds at this point in
+    // the chunk chain. Nothing changes on the hexes where the read was already
+    // working, because the eye judges "off limits" off the parts of a hex it
+    // can actually see.
+    float dDim = mix(0.52, 0.78, smoothstep(0.50, 0.08, mLum));
+    vec3 dead = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.88) * dDim;
     diffuseColor.rgb = mix(diffuseColor.rgb, dead, -mTone);
   } else if (mTone > 0.003) {
     vec3 lit = clamp(diffuseColor.rgb * vec3(1.22, 1.14, 0.95)
@@ -651,7 +673,38 @@ const MOOD_BODY_FRAG = /* glsl */`
     // nothing on it competes for attention, and the value comes down a clear
     // step. Restful bare ground with a countdown over it — which is exactly
     // what a spent hex is.
-    vec3 rest = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.74) * 0.64;
+    //
+    // WITH A FLOOR UNDER IT NOW. A flat x0.64 is a percentage, and a percentage
+    // of a bright surface is a step down while a percentage of a dark one is a
+    // hole:
+    //
+    //   "Lift the ground value from near-black to a MID GREY ... right now it
+    //    is the darkest object on the island."
+    //
+    // A cleared wheat field starts at ochre and lands at a restful tan. A
+    // cleared mountain starts on the darkest terrain on the board, in the folds
+    // and shadows of a rock surface, and 64% of nearly nothing is nothing —
+    // and then the ACES curve, whose slope is steepest exactly there, takes
+    // another bite out of it. So the multiplier is now a function of how dark
+    // the fragment already is: a bright surface — sand, ripe wheat, pasture
+    // turf, a fleece — still drops the full step to 0.64, and a surface already
+    // down at a tenth of full brightness is barely touched at 0.90. The
+    // crossover is set on LINEAR albedo, which is what diffuseColor holds at
+    // this point in the chunk chain: mountain rock sits around 0.36 and comes
+    // out at about 0.75, wheat sits near 0.6 and is left alone. (No backticks
+    // in this block — it is the body of a JS template literal and a backtick in
+    // a GLSL comment still ends the string.) The read is unchanged where
+    // it was working — the eye judges "spent" off the hexes it can actually see
+    // a change on — and the hexes that were falling through the floor stop
+    // falling.
+    //
+    // Rejected: adding a constant lift instead. That washes a spent hex toward
+    // grey milk, which is the "crushed to flat neutral stone" treatment this
+    // block was written to get rid of in the first place. A value-dependent
+    // multiply keeps the hex's own ink and its own modelling; it only refuses
+    // to multiply the darkest parts of it into the floor.
+    float rDim = mix(0.64, 0.90, smoothstep(0.55, 0.10, mLum));
+    vec3 rest = mix(diffuseColor.rgb, vec3(mLum) * vInk, 0.74) * rDim;
     diffuseColor.rgb = mix(diffuseColor.rgb, rest, mSpent * 0.88);
   }
   if (mFlash > 0.003) {

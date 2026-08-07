@@ -90,23 +90,38 @@ export function createBeds(E) {
   function startAmbience() {
     const t = E.now();
     // --- ocean swell: brown noise through a slowly opening lowpass
+    //
+    // "The audio of the ocean should be quieter in the mix." The swell (and
+    // the surf hiss riding on it, just below) were loud enough to compete
+    // with the music and sfx busses even though ambBus itself sits modest —
+    // a wide-open 420Hz lowpass lets brown noise keep most of its low-end
+    // energy through, so at 0.5 it read as considerably bigger than that
+    // number suggests. Its gain is halved here, and the LFO that makes it
+    // breathe is trimmed by the same fraction so the swell still moves the
+    // same relative amount, just from a quieter floor — present and
+    // pleasant, but no longer competing with everything else.
     const ocean = E.noiseLoop('brown', null, 0.9);
     if (ocean) {
       const lp = E.filter('lowpass', 420, 0.6);
-      const swell = E.gain(0.5);
+      const swell = E.gain(0.25);
       ocean.out.connect(lp); lp.connect(swell); swell.connect(E.ambBus);
       const l1 = E.lfo(0.055, 260, lp.frequency, t);
-      const l2 = E.lfo(0.083, 0.24, swell.gain, t);
+      const l2 = E.lfo(0.083, 0.12, swell.gain, t);
       try { ocean.src.start(t); } catch (e) { /* ignore */ }
       ambNodes.push(ocean.src, l1, l2);
     }
-    // --- surf hiss riding on top of the swell
+    // --- surf hiss riding on top of the swell — part of the same "ocean"
+    // sound to the ear, so it comes down by the same fraction as the swell
+    // above rather than being left to poke through a now-quieter bed. Wind,
+    // gulls and the village noises below are untouched: they weren't what
+    // the report was about, and they now read in proportion against a
+    // sea that isn't crowding them out anymore.
     const surf = E.noiseLoop('pink', null, 0.22);
     if (surf) {
       const bp = E.filter('bandpass', 1500, 0.7);
-      const g = E.gain(0.5);
+      const g = E.gain(0.25);
       surf.out.connect(bp); bp.connect(g); g.connect(E.ambBus);
-      const l3 = E.lfo(0.071, 0.34, g.gain, t);
+      const l3 = E.lfo(0.071, 0.17, g.gain, t);
       const l4 = E.lfo(0.041, 500, bp.frequency, t);
       try { surf.src.start(t); } catch (e) { /* ignore */ }
       ambNodes.push(surf.src, l3, l4);

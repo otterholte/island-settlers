@@ -40,6 +40,7 @@ import { createTradeCue } from './hud-trade.js';
 import { createKnightCue } from './hud-knight.js';
 import { createRoadCue } from './hud-road.js';
 import { createRaidCue } from './hud-raid.js';
+import { createNotice } from './hud-notice.js';
 import {
   regionReport, pieceCapped, hasSomewhere
 } from './hud-guide.js';
@@ -99,9 +100,61 @@ export function createHUD(root, state, game) {
    * request and it is not derivable from anything the HUD showed before: ties go
    * to the incumbent, so taking Longest Road needs strictly MORE than the holder
    * has, not equal to it. */
-  const gearBtn = button('cbtn small ghost', {
-    'aria-label': 'Settings', on: { click: () => toggleSettings() }
-  }, mk('span', 'cb-ico', icon('gear', 22)));
+  /* THE GEAR IS ALSO THE WAY OUT.
+   *
+   *   "I don't need the word Settings at the top of it, or the extra x button.
+   *    Just turn the settings icon/button into an x button while the settings
+   *    are open."
+   *
+   * The sheet used to carry a header row — the word SETTINGS and a round close
+   * button — which is thirty-eight pixels of a two-hundred-and-thirty-eight
+   * pixel panel spent telling the player the name of the thing they had just
+   * opened, and offering a second way to shut it four pixels below the first.
+   * The header is gone (see `settings` below) and this button carries the whole
+   * job: press it once and the sheet drops out of it, press it again — now
+   * wearing a cross — and it goes away. `data-ico` publishes which of the two
+   * glyphs is on it, so what it is wearing can be asserted rather than eyeballed
+   * by the capture rig in tools/hudshot.mjs.
+   */
+  /* THE CROSS IS DRAWN HERE, AND ONLY BECAUSE icons.js IS NOT MINE THIS WEEK.
+   *
+   *   "THE CLOSE (X) GLYPH IS ILLEGIBLE. The cross strokes are dark brown
+   *    rgb(42,26,12) on a navy button fill rgb(34,66,101) — contrast 1.63:1.
+   *    The closed-state gear is light cream rgb(174,184,198) at 6.28:1. The
+   *    button looks EMPTY at a glance."
+   *
+   * Measured and true. `icons.js`'s `close` is one keyline path — the shared
+   * dark outline every asset in the game is drawn WITH — and on a cream button
+   * that is exactly right, which is where it is used everywhere else (the trade
+   * sheet's close key is cream). On the HUD's dark glass disc it is ink on ink.
+   *
+   * The gear next to it in the same button solves this the way every other
+   * object in the set does: a light body with the ink keyline around it. So the
+   * cross gets the same treatment — one dark stroke laid down wide, the cream
+   * one over the top of it — and the two colours are `C.steelL` and `C.ink` from
+   * icons.js, copied rather than imported because that module is owned by
+   * another agent this week and gaining two exports is not worth the collision.
+   *
+   * The LIGHTER steel, not the gear's own #aeb8c6, and that is deliberate: a
+   * 2.9px stroke and a 22px solid body at the same colour do not read at the
+   * same weight, because a thin line picks up its surroundings from both sides.
+   * #aeb8c6 measured 4.88:1 here — over the line but with nothing to spare —
+   * where #dde4ee measures 7.6:1 against the same fill, which is the margin this
+   * glyph needs to survive being drawn at 22px on a phone. The dark under-stroke
+   * keeps it readable if the disc is ever put over something pale. */
+  const CLOSE_CROSS = 'M6.4 6.4 17.6 17.6M17.6 6.4 6.4 17.6';
+  const closeGlyph = px =>
+    `<svg class="svg-ico" viewBox="0 0 24 24" width="${px}" height="${px}" ` +
+    'aria-hidden="true" focusable="false">' +
+    `<path d="${CLOSE_CROSS}" fill="none" stroke="#2a1a0c" stroke-width="5.6" ` +
+    'stroke-linecap="round"/>' +
+    `<path d="${CLOSE_CROSS}" fill="none" stroke="#dde4ee" stroke-width="2.9" ` +
+    'stroke-linecap="round"/></svg>';
+
+  const gearIco = mk('span', 'cb-ico', icon('gear', 22));
+  const gearBtn = button('cbtn small ghost gearkey', {
+    'aria-label': 'Settings', 'data-ico': 'gear', on: { click: () => toggleSettings() }
+  }, gearIco);
 
   const vpNum = el('b', { text: '0' });
   const vpCells = [];
@@ -110,6 +163,19 @@ export function createHUD(root, state, game) {
     const c = el('i', { class: i === VICTORY_POINTS - 1 ? 'goal' : '' });
     vpCells.push(c); vpTrack.appendChild(c);
   }
+  /* The floating "+1" that lifts off the counter when a point lands. It is a
+     permanent, invisible child of the score row rather than a node created per
+     point: creating one would relayout the row it is rising out of, which is
+     the one thing a celebration must not do to the number it is celebrating.
+     See `celebrateVp` and the .vp-plus block in ui-hud.css. */
+  const vpPlus = el('span', { class: 'vp-plus', text: '+1' });
+
+  /* The trophy that flies out of the centre notice and into this counter. Also
+     permanent and also invisible until it is asked for — it is appended to the
+     HUD root rather than to the score row because it spends most of its half
+     second nowhere near the corner. See `celebrateVp`. */
+  const vpFly = el('div', { class: 'vp-fly', html: icon('trophy', 30) });
+  const vpIco = iconEl('trophy', 20);
 
   /** One award line: icon, who holds it and at what size, your own standing. */
   function awardRow(ico, label) {
@@ -133,10 +199,11 @@ export function createHUD(root, state, game) {
   const awRoad = awardRow('road', 'Longest Road');
   const awArmy = awardRow('knight', 'Largest Army');
 
+  const vpRow = el('div', { class: 'sc-vp' },
+    vpIco, vpNum,
+    el('span', { class: 'sc-goal', text: `/ ${VICTORY_POINTS}` }), vpTrack, vpPlus);
   const scoreCard = el('div', { class: 'scorecard plate' },
-    el('div', { class: 'sc-vp' },
-      iconEl('trophy', 20), vpNum,
-      el('span', { class: 'sc-goal', text: `/ ${VICTORY_POINTS}` }), vpTrack),
+    vpRow,
     el('div', { class: 'sc-awards' }, awRoad.row, awArmy.row));
   const timerTxt = el('b', { text: '0:00' });
   const timeChip = el('div', { class: 'timechip plate' }, iconEl('clock', 14), timerTxt);
@@ -283,9 +350,20 @@ export function createHUD(root, state, game) {
    * the raid card.
    */
 
-  /* --- announcements ----------------------------------------------------- */
-  const annTxt = el('div', { class: 'ann-txt' });
-  const annWrap = el('div', { class: 'announce' }, annTxt);
+  /* --- announcements -------------------------------------------------------
+   *
+   *   "The road building, knight, and victory point notices when you buy a card
+   *    are too hard to see. Can you give them a darker box behind them instead
+   *    of just laying over the board."
+   *
+   * The banner is no longer built here. hud-notice.js owns the plate, the glyph
+   * disc and the hold, because three modules put notices on it and only one of
+   * them lives in this file — see the long note at the head of that module for
+   * why that placement is what lets hud-road.js pick the plate up without being
+   * edited at all. `announce()` below is unchanged as far as every caller in the
+   * game is concerned; it has simply stopped owning the pixels. */
+  const notice = createNotice(null);
+  const annWrap = notice.node;
 
   /* --- settings ----------------------------------------------------------- */
   /* Read, not assumed. Muting used to be a local `let` that started true every
@@ -377,15 +455,34 @@ export function createHUD(root, state, game) {
   }
   const power = powerRow();
 
+  /* NO HEADER, AND NO SECOND CLOSE BUTTON.
+   *
+   *   "I don't need the word Settings at the top of it, or the extra x button.
+   *    Just turn the settings icon/button into an x button while the settings
+   *    are open."
+   *
+   * What used to sit here was a `.pop-head` row: the word SETTINGS in gold, and
+   * a 48px round close button. Together they cost about forty-four pixels off
+   * the top of a panel that, on a 444px-tall landscape phone, was already
+   * clipping LEAVE MATCH off its own bottom edge. And they were both redundant.
+   * The sheet drops out of the gear, four pixels below it, and it is the only
+   * thing on the screen shaped like a menu — nothing on it needed a title. The
+   * close button was a second copy of the control the player had just pressed,
+   * offered a thumb's width away from it.
+   *
+   * The gear above is now the whole story: press to open, press to close, and it
+   * wears a cross while the sheet is down so it reads as the way out rather than
+   * as the way back in. See `setGearGlyph`. */
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
-    el('div', { class: 'pop-head' },
-      el('span', { class: 'pop-title', text: 'Settings' }),
-      button('cbtn small ghost x', { 'aria-label': 'Close', on: { click: () => toggleSettings(false) } },
-        mk('span', 'cb-ico', icon('close', 18)))),
     soundBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node,
-    button('wide cream', { on: { click: () => toggle(howBody, 'hid', !howBody.classList.contains('hid')) } },
+    button('wide cream', { on: { click: () => {
+      toggle(howBody, 'hid', !howBody.classList.contains('hid'));
+      // The rules are eleven paragraphs; opening them is what turns this sheet
+      // into a scroller, so the edges have to be re-read the moment it happens.
+      paintSheetEdges();
+    } } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
       el('span', { class: 'sb-lab', text: 'How to Play' })),
     howBody,
@@ -407,6 +504,10 @@ export function createHUD(root, state, game) {
   hud.appendChild(tl); hud.appendChild(tc); hud.appendChild(tr);
   hud.appendChild(bc); hud.appendChild(br);
   hud.appendChild(annWrap); hud.appendChild(settings);
+  /* Last, so the flying trophy passes OVER the notice it comes out of and over
+     every other cluster on its way to the corner. It is 44px of gold for half a
+     second and it must not disappear behind the resource pill halfway there. */
+  hud.appendChild(vpFly);
   root.appendChild(hud);
 
   /* The world-anchored trade banner. It lives inside the HUD layer so it can
@@ -439,9 +540,19 @@ export function createHUD(root, state, game) {
 
   /* A rival's news is news, not an event. It gets a toast, at most one every
      ten seconds; the centre banner is reserved for things the player did. */
-  let annT = 0, lastRival = -99;
+  let lastRival = -99;
 
-  function announce(text, color) {
+  /**
+   * Put a line on the centre plate.
+   *
+   * The third argument is new and is an icon name from icons.js — 'knight',
+   * 'road', 'trophy'. It is OPTIONAL in the strongest sense: every one of the
+   * thirty-odd existing callers passes two arguments and gets exactly what it
+   * always got, now on a dark plate. Naming a glyph is what turns a sentence
+   * into a card: a Knight, two roads or a trophy on a gold disc beside the
+   * words, which is recognisable across a room before a word has been read.
+   */
+  function announce(text, color, glyph) {
     if (!text) return;
     const s = String(text);
     if (rivalNames.some(n => s.startsWith(n))) {
@@ -450,10 +561,7 @@ export function createHUD(root, state, game) {
       toast(s, 'info');
       return;
     }
-    annTxt.textContent = s;
-    if (color && annTxt.style) annTxt.style.setProperty('--ac', color);
-    replay(annWrap, 'show', 2600);
-    annT = 2.4;
+    notice.show(s, color, glyph);
   }
 
   /* ------------------------------------------------------------ resources */
@@ -494,7 +602,12 @@ export function createHUD(root, state, game) {
       if (!card) { flashCost('card'); return false; }
       // A Knight gets the centre banner from hud-knight.js, which also raises
       // the standing "play me" chip — so it deliberately says nothing here.
-      if (card.type === 'victoryPoint') announce('+1 Victory Point!', '#ffc93c');
+      //
+      // The Victory Point is the one card with nothing to play and nowhere to
+      // go: it scores the instant it is drawn and then it is over. So it takes
+      // the plate with the trophy on it, and the counter in the corner does the
+      // rest — see `celebrateVp`.
+      if (card.type === 'victoryPoint') announce('+1 Victory Point!', '#ffc93c', 'trophy');
       // Road Building says nothing here either, for the same reason: hud-road.js
       // takes the centre banner, raises its own chip and opens the map.
       else if (card.type !== 'roadBuilding') toast(`Drew ${CARD_LABEL[card.type]}`, 'good');
@@ -527,11 +640,126 @@ export function createHUD(root, state, game) {
     soundBtn.childNodes[1].textContent = 'Sound: ' + (sound ? 'On' : 'Off');
   }
 
+  /**
+   * THE SHEET SAYS WHEN THERE IS MORE OF IT.
+   *
+   *   "hud-settings-scrolled.png IS HARD-CLIPPED. '...you own a settlement or'
+   *    is cut mid-sentence at the sheet's bottom rounded corner with no fade and
+   *    no scrollbar, and the scrolled-off SOUND row is cut the same way at the
+   *    top. Add a soft fade mask at both ends, or a subtle scroll indicator, so
+   *    it reads as scrollable rather than broken."
+   *
+   * This game hides every scrollbar it has (ui-base.css), which is right for a
+   * pad-first interface and leaves a scrolling panel with nothing at all to say
+   * that it scrolls. A sentence sliced off square at a rounded corner does not
+   * read as "there is more below"; it reads as a bug.
+   *
+   * These two classes are the whole mechanism and the fade itself is CSS — see
+   * `.pop.settings.sc-above` / `.sc-below` in ui-hud.css. They are written by
+   * measurement rather than left on permanently, because a sheet with nothing to
+   * scroll must NOT have soft edges: the fade means something, and a fade on a
+   * panel that is already showing everything would be a lie told four times a
+   * match. Three pixels of slop, because a scroll container that has been
+   * bounced sits a fraction off zero.
+   */
+  function paintSheetEdges() {
+    const room = settings.scrollHeight - settings.clientHeight;
+    const at = settings.scrollTop;
+    toggle(settings, 'sc-above', at > 3);
+    toggle(settings, 'sc-below', room - at > 3);
+  }
+  if (settings.addEventListener) settings.addEventListener('scroll', paintSheetEdges);
+
   let settingsOpen = false;
+
+  /**
+   * The gear wears a cross while the sheet is down.
+   *
+   * A class would have been cheaper, but the two glyphs are drawn SVG rather
+   * than a font, so the drawing genuinely has to be swapped. `data-ico` is
+   * written alongside it so that "which glyph is on the button" is a fact that
+   * can be asserted — by tools/hudshot.mjs, and by anybody reading the DOM —
+   * instead of a shape somebody has to squint at in a screenshot.
+   */
+  function setGearGlyph(open) {
+    const want = open ? 'close' : 'gear';
+    if (gearBtn.getAttribute('data-ico') === want) return;
+    gearBtn.setAttribute('data-ico', want);
+    gearBtn.setAttribute('aria-label', open ? 'Close settings' : 'Settings');
+    // `closeGlyph` rather than icon('close') — see the note where it is drawn.
+    gearIco.innerHTML = open ? closeGlyph(22) : icon('gear', 22);
+  }
+
   function toggleSettings(force) {
     settingsOpen = force === undefined ? !settingsOpen : !!force;
     toggle(settings, 'hid', !settingsOpen);
     toggle(gearBtn, 'on', settingsOpen);
+    setGearGlyph(settingsOpen);
+    // Only measurable once it is on the screen — a `hid` panel has no height to
+    // compare against its own contents.
+    if (settingsOpen) paintSheetEdges();
+  }
+
+  /**
+   * TAP ANYWHERE ELSE AND THE SHEET GOES AWAY.
+   *
+   *   "Also make it so that if I click anywhere outside of the settings box
+   *    while the settings are open, it closes the settings box for me."
+   *
+   * Three things make this harder than it sounds in this interface, and each of
+   * them decides one line of what is below.
+   *
+   * WHERE TO LISTEN. `#ui *` is `pointer-events:none` with `#ui [data-ui]`
+   * opting back in (ui-base.css), so a press on the island does not land on any
+   * element of the HUD at all — it lands on the WebGL canvas. There is therefore
+   * no HUD-side "backdrop" element to hang this on, and adding one would mean
+   * covering the whole screen with something that eats touches, which is exactly
+   * what must not happen. The listener goes on the window instead, in the
+   * CAPTURE phase, for the same reason systems/input.js puts its own release
+   * handler there: ui/dom.js's `onTap` calls `stopPropagation` on pointerup, so
+   * a bubble-phase listener would simply never hear some of these presses.
+   *
+   * IT MUST NOT SWALLOW THE PRESS. Nothing here calls `preventDefault` or
+   * `stopPropagation`. A press on the island closes the sheet AND does whatever
+   * it was going to do to the island — that is what "click anywhere outside"
+   * means, and a tap that had to be spent twice would be a worse bug than the
+   * one being fixed.
+   *
+   * A DRAG IS NOT A TAP. `.pop` is a scrolling panel and its buttons carry
+   * `touch-action: pan-y` precisely so a finger that lands on LEAVE MATCH and
+   * pulls down scrolls the sheet instead of pressing it (see the long note in
+   * ui-base.css). That gesture ends with the finger wherever it stopped, which
+   * may well be outside the panel, and closing the settings under it would undo
+   * the very thing that block exists to allow. So the press is measured the same
+   * way `guardTaps` in ui/dom.js measures one — twelve pixels of travel, the
+   * house figure — and where it STARTED counts as much as where it ended.
+   *
+   * The gear counts as inside. Without that, pressing it while the sheet is open
+   * would close the sheet here and then its own click would toggle it straight
+   * back open, and the button would look broken.
+   */
+  const TAP_SLOP = 12;
+  let downX = 0, downY = 0, downInside = false;
+
+  const insideSheet = t =>
+    !!(t && t.nodeType === 1 && (settings.contains(t) || gearBtn.contains(t)));
+
+  function onDocDown(e) {
+    downX = e.clientX; downY = e.clientY;
+    downInside = insideSheet(e.target);
+  }
+
+  function onDocUp(e) {
+    if (!settingsOpen) return;
+    if (downInside || insideSheet(e.target)) return;
+    if (Math.abs(e.clientX - downX) > TAP_SLOP) return;
+    if (Math.abs(e.clientY - downY) > TAP_SLOP) return;
+    toggleSettings(false);
+  }
+
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    window.addEventListener('pointerdown', onDocDown, true);
+    window.addEventListener('pointerup', onDocUp, true);
   }
 
   /** Back to the opening screen. Falls back to a restart on an older `game`. */
@@ -695,6 +923,160 @@ export function createHUD(root, state, game) {
     return latch;
   }
 
+  /**
+   * A POINT LANDED. MAKE THE CORNER IMPOSSIBLE TO MISS.
+   *
+   *   "Also add an animation for the victory point, since it's adding/increasing
+   *    their point total by one — I want that animation in the point counter in
+   *    the top corner to be a lot more clear and fun when I win a victory point
+   *    card, so users who are still busy running around realize what happened."
+   *
+   * "Still busy running around" is the whole brief. The player is not looking at
+   * the top-left corner; they are looking at their settler, somewhere in the
+   * middle of the island. Nothing that only changes a numeral will ever reach
+   * them, and the numeral is exactly what this used to do — `setText(vpNum, vp)`
+   * and a pip quietly turning gold, with no transition on either.
+   *
+   * So four things fire at once, and they are four different KINDS of signal,
+   * because peripheral vision is far better at some of them than at others:
+   *
+   *   MOTION AT THE EDGE   the whole scoreboard takes one short scale bump.
+   *                        Movement in the corner of the eye is the only thing
+   *                        that reliably pulls a gaze that is somewhere else,
+   *                        and it is the one signal a player who is mid-run can
+   *                        pick up without stopping.
+   *   A BURST              a gold ring expands out of the score row and the row
+   *                        itself washes gold and fades back down. This is what
+   *                        is waiting when the gaze arrives a beat later — it
+   *                        says WHERE, not just THAT.
+   *   THE NUMBER ITSELF    the total swells to nearly half again its size, goes
+   *                        white-hot, and settles. Read at any point in that
+   *                        second it is still the right number.
+   *   A RISING +1          lifts off the counter and fades out above it. This is
+   *                        the one that answers "by how much", and it carries
+   *                        the real figure, so a city (two points) or an award
+   *                        (four) says so rather than lying.
+   *
+   * ...and the new pip on the victory track flares and drops back into the row,
+   * so the progress bar is where the eye lands last and the step it just took
+   * is the one thing still glowing. On a phone the track is not drawn at all
+   * (see the compact block in ui-hud.css) and the other four carry it alone.
+   *
+   * IT IS ONE SECOND LONG. Every animation involved is under 1.05s and none of
+   * them repeat. A player wins a handful of points a match and a celebration
+   * that outstays that is a celebration they start resenting; the brief asked
+   * for clear and fun, not for a cutscene. Nothing flashes white, nothing
+   * strobes, nothing shakes the camera — it is a gold swell in the corner of a
+   * calm interface, which is the register the rest of this game is written in.
+   *
+   * It fires on ANY increase, not only on the card. A settlement, a city and
+   * Longest Road all put points on the same counter, and a counter that
+   * celebrates one source and ignores three would be teaching the player that
+   * the corner is unreliable — which is the habit this is trying to break.
+   *
+   * ---------------------------------------------------------------------------
+   * AND IT HAD TO REACH FURTHER THAN THE CORNER
+   * ---------------------------------------------------------------------------
+   *   "MAKE THE EVENT CATCHABLE FROM SCREEN CENTRE. As shipped it is under
+   *    700ms confined to a ~170x40px corner region with no motion travelling
+   *    toward the player's gaze... Suggestion: have the trophy travel from the
+   *    centre notice pill to the counter."
+   *
+   * Which is the honest reading of "users who are still busy running around".
+   * Everything above happens where the player is NOT looking, and asking the
+   * edge of somebody's vision to notice a forty-pixel-tall row is asking a lot.
+   * The one place the eye demonstrably IS at that moment is the middle of the
+   * screen, because the notice plate has just landed there saying VICTORY POINT.
+   *
+   * So a fifth signal starts where the eye already is and goes to where the
+   * answer is: the trophy lifts off the centre plate and flies to the counter,
+   * arriving at `LAND_MS`. It is one small gold disc travelling once, for just
+   * over a third of a second — and everything in the corner is timed to ITS
+   * arrival rather than to the draw. The "+1" is the only thing up before it
+   * lands (see below); the number, the ring and the pip all break at the moment
+   * it gets there, so the burst reads as caused by the thing that flew in.
+   *
+   * ---------------------------------------------------------------------------
+   * THE +1 GOES UP BEFORE THE NUMBER MOVES
+   * ---------------------------------------------------------------------------
+   *   "FIRE THE '+1' BEFORE THE NUMBER FLIPS. Currently the count reads 4 at
+   *    t000 and the '+1' only appears at t170, so the payoff precedes the
+   *    cause."
+   *
+   * The old order was: set the numeral, then start an animation that faded a
+   * "+1" in over the next fifth of a second. Read frame by frame that is the
+   * total announcing itself and a receipt arriving afterwards.
+   *
+   * Now the "+1" is the FIRST thing on the counter — fully opaque within one
+   * frame of the draw — and the numeral is genuinely held at its old value until
+   * the trophy lands, `FLIP_S` later. Held on the HUD's own clock (see `update`)
+   * rather than on a `setTimeout`, for the same reason the notice's hold is: a
+   * match that pauses mid-celebration must not have the number flip behind the
+   * pause screen, and a HUD that is torn down must not have a stale timer reach
+   * into a detached node.
+   */
+  const FLY_MS = 1250;                   // the flying trophy's whole existence
+  const LAND_MS = 400;                   // ...and when it reaches the counter
+  const BURST_MS = 1250;                 // the corner's own celebration
+  const FLIP_S = LAND_MS / 1000;
+
+  /** Where the trophy sets off from: the centre plate, if one is up. */
+  function flyFrom() {
+    const plate = notice.plate;
+    const r = plate && plate.getClientRects && plate.getClientRects().length
+      ? plate.getBoundingClientRect() : null;
+    const box = hud.getBoundingClientRect();
+    // No notice on screen — a settlement, a city, an award. The middle of the
+    // screen at the height a notice would have been is still the best guess at
+    // where the player is looking, and it is where the eye goes anyway.
+    if (!r) return { x: box.width / 2, y: box.height * 0.36 };
+    return { x: r.x + r.width / 2 - box.x, y: r.y + r.height / 2 - box.y };
+  }
+
+  function launchTrophy() {
+    if (!vpFly.style || !vpIco.getClientRects) return;
+    const t = vpIco.getBoundingClientRect();
+    const box = hud.getBoundingClientRect();
+    if (!t.width) return;                // the corner is not on screen yet
+    const from = flyFrom();
+    const to = { x: t.x + t.width / 2 - box.x, y: t.y + t.height / 2 - box.y };
+    vpFly.style.left = (from.x - 22).toFixed(1) + 'px';
+    vpFly.style.top = (from.y - 22).toFixed(1) + 'px';
+    vpFly.style.setProperty('--fx', (to.x - from.x).toFixed(1) + 'px');
+    vpFly.style.setProperty('--fy', (to.y - from.y).toFixed(1) + 'px');
+    replay(vpFly, 'fly', FLY_MS);
+  }
+
+  /* The numeral the counter is holding back, and how long for. `to` is null
+     when nothing is pending, which is every frame but about twenty a match. */
+  let vpFlipTo = null, vpFlipT = 0;
+
+  function flipVpNow() {
+    if (vpFlipTo === null) return;
+    setText(vpNum, vpFlipTo);
+    vpFlipTo = null; vpFlipT = 0;
+  }
+
+  function celebrateVp(from, to) {
+    // A second point landing while the first is still held: show the first
+    // immediately rather than skipping a number the player never saw.
+    flipVpNow();
+    vpFlipTo = to; vpFlipT = FLIP_S;
+
+    setText(vpPlus, '+' + (to - from));
+    replay(vpPlus, 'up', BURST_MS);
+    replay(scoreCard, 'vp-gain', BURST_MS);
+    replay(vpNum, 'bump', BURST_MS);
+    for (let i = from; i < to && i < vpCells.length; i++) replay(vpCells[i], 'lit', BURST_MS);
+    launchTrophy();
+  }
+
+  /* What the counter is currently SHOWING, which is not the same as the score:
+     -1 means nothing has been painted yet, and the first paint of a match — or
+     of a client joining one already in progress — must not be celebrated as a
+     gain from zero. */
+  let vpShown = -1;
+
   function refreshAll(force) {
     const shown = displayRes();
     for (const r of RES) {
@@ -707,7 +1089,20 @@ export function createHUD(root, state, game) {
       }
     }
     const vp = scoreOf(state, me);
-    setText(vpNum, vp);
+    if (vp !== vpShown) {
+      const was = vpShown;
+      vpShown = vp;
+      // Only a real gain, in a match that is actually being played. The two
+      // settlements of the opening draft are placed by the player one after the
+      // other with the board in their face, so they need no help from the
+      // corner and would only teach them to ignore it.
+      const party = was >= 0 && vp > was && state.phase === 'play';
+      // A celebrated gain holds the numeral back until the trophy lands on it;
+      // everything else — the first paint, a client joining, a score going DOWN
+      // — writes it here and now, as it always did.
+      if (party) celebrateVp(was, vp);
+      else { vpFlipTo = null; vpFlipT = 0; setText(vpNum, vp); }
+    }
     for (let i = 0; i < vpCells.length; i++) toggle(vpCells[i], 'on', i < vp);
     refreshAwards();
     refreshRanks();
@@ -861,6 +1256,11 @@ export function createHUD(root, state, game) {
       toggle(btnPause.node, 'on', false);
     }
 
+    /* The held numeral, counted down on the same clock as everything else here
+       so that a paused match holds it rather than flipping it behind the pause
+       screen. Four hundred milliseconds, once per point. */
+    if (vpFlipT > 0) { vpFlipT -= d; if (vpFlipT <= 0) flipVpNow(); }
+
     slow += d;
     if (slow >= 0.1) { slow = 0; refreshAll(false); }
 
@@ -872,7 +1272,9 @@ export function createHUD(root, state, game) {
     timeT += d;
     if (timeT >= 0.25) { timeT = 0; setText(timerTxt, fmtTime(state.time)); }
 
-    if (annT > 0) { annT -= d; if (annT <= 0) toggle(annWrap, 'show', false); }
+    // The centre plate counts its own hold down, on this clock rather than on a
+    // timer, so a paused match cannot expire a notice behind the pause screen.
+    notice.update(d);
 
     tradeCue.update(d);
     knightCue.update(d);
@@ -910,7 +1312,13 @@ export function createHUD(root, state, game) {
     destroy() {
       if (typeof window !== 'undefined' && window.removeEventListener) {
         window.removeEventListener('keydown', onPauseKey);
+        // The outside-tap close is bound to the window, so it outlives the HUD
+        // unless it is taken off here. A stale one would reach into a detached
+        // settings sheet on every press of the NEXT match.
+        window.removeEventListener('pointerdown', onDocDown, true);
+        window.removeEventListener('pointerup', onDocUp, true);
       }
+      notice.destroy();
       tradeCue.destroy();
       knightCue.destroy();
       roadCue.destroy();

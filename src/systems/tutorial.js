@@ -21,33 +21,67 @@
  *        `deps.setPractice`, so no clock ever runs out under the player;
  *      - one instruction is on screen at a time, with a gold marker on exactly
  *        what it is talking about, and the step only advances when the player
- *        has really done the thing. Every step also carries a Skip, so the run
- *        cannot dead-end — the player cannot fail.
+ *        has really done the thing — but BACK and NEXT are always there, so the
+ *        run cannot dead-end and cannot be failed.
  *
- * Nothing here reaches past a public entry point: placements go through
- * rules.js's setup functions, and progress is read off `state`. The one thing
- * it does grant is materials — at a build step the player's pack is topped up
- * to the real COST so the lesson is "how do I build", not "go and grind".
- * That is stated on the card rather than done behind their back.
+ * The script itself is in ./tutsteps.js. This file is the machinery: what the
+ * badge is wearing, where it is standing, what the ring is on, which parts of
+ * the heads-up display exist this step, and when a step is finished.
+ *
+ * ---------------------------------------------------------------------------
+ * THE HUD IS DRESSED WITH CLASSES, NOT WITH AN API
+ * ---------------------------------------------------------------------------
+ *
+ * Five of the owner's notes are about showing and hiding parts of the heads-up
+ * display per step:
+ *
+ *   "remove the timer and the longest road / largest army sections of the
+ *    screen for now. And even hide the resource counter that would've been in
+ *    the top middle of the screen."
+ *   "Have the build button start as collapsed."
+ *   "add the pack/resources counter to the top middle of the screen again."
+ *   "remove that pack/resource counter temporarily."
+ *   "For step 11, add the scores on the right side of screen and hide the build
+ *    cards."
+ *   "Don't show that section until that step in the tutorial."
+ *
+ * Not one of them is done by reaching into src/ui/hud.js. The run puts classes
+ * on the interface root — `tut-practice`, and then `tut-pack`, `tut-ranks`,
+ * `tut-awards`, `tut-nobuild` — and the rules that hide, show and move the
+ * existing clusters live in src/ui/tutorial.css beside the coach they are
+ * dressing around. The HUD is not edited, is not told anything, and does not
+ * know the tutorial exists; and because the whole wardrobe hangs off one root
+ * class, `quit()` taking `tut-practice` off puts every cluster back exactly
+ * where a real match has it. A tutorial that crashed halfway could not leave a
+ * player with no resource pill.
+ *
+ * The one exception, and it is deliberately not an exception: the four build
+ * cards start COLLAPSED by adding the same `hid` class the BUILD key itself
+ * toggles. That is not a tutorial-only state — it is the state the player is in
+ * every time they press that key — so the step that asks them to press it is
+ * pressing the real control, not watching a class come off.
  *
  * Owner: Tutorial (flow) agent.
  */
 
-import {
-  COST, TRADE_BASE, VICTORY_POINTS, RES, RES_LABEL, TILE_REGEN
-} from '../core/constants.js';
-import { tiles, intersections, MARKET, tileAt, DESERT } from '../board/layout.js';
+import { HEX_SIZE, RES } from '../core/constants.js';
+import { tiles, intersections, tileAt, DESERT } from '../board/layout.js';
 import {
   legalSettlements, legalRoads, setupCurrentPlayer,
-  setupPlaceSettlement, setupPlaceRoad, scoreOf,
-  isTileExhausted, tileRecovery, tileItemsRemaining
+  setupPlaceSettlement, setupPlaceRoad, canGatherTile,
+  isTileExhausted, tileItemsRemaining
 } from '../core/rules.js';
 import { nearestItem } from '../board/nodes.js';
 import { toggle } from '../ui/dom.js';
 import { createBook, createCoach } from '../ui/tutorial.js';
+import { createSpotlight } from '../ui/tutspot.js';
+import { buildSteps } from './tutsteps.js';
 import { TUTORIAL_EVENT } from './flowIntro.js';
 
 const NOOP = () => {};
+
+/** Every class this module may put on `#ui`. Listed once so it can be undone. */
+const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild'];
 
 function stub() {
   return {
@@ -90,14 +124,21 @@ export function createTutorial(state, game, deps = {}) {
 
   let book = null;
   let coach = null;
+  let spot = null;
   let running = false;
   let raf = 0;
   let idx = 0;
+  /* 'brief' is the large explain-first half of a step; 'body' is the task.
+     A step with no `brief` starts, and stays, in 'body'. */
+  let phase = 'body';
   let steps = [];
   let homeTile = -1;
   let walked = 0;
   let lastX = 0, lastZ = 0;
-  const base = { gathered: 0, roads: 0, settlements: 0, traded: 0 };
+  let lastMs = 0;
+  const base = {
+    gathered: 0, roads: 0, settlements: 0, cities: 0, traded: 0, cards: 0
+  };
 
   /* -------------------------------------------------------------- the book */
 
@@ -164,18 +205,36 @@ export function createTutorial(state, game, deps = {}) {
     state.robberOwner = -1;
   }
 
-  /** The fullest resource hex the player now owns — the one we teach on. */
+  /**
+   * Every hex the player may actually pick things up on, asked the same way the
+   * island asks it.
+   *
+   * `canGatherTile` is the single source of the "yours / not yours" read: it is
+   * what src/world/mood.js polls to decide which hexes get the warm sunlit lift
+   * and the standing blue light wall from src/world/regions.js, and which ones
+   * get the duotone mute. So the wash and the gold dots drawn over these hexes
+   * are pointing at the glow the world is already drawing, and there is no way
+   * for the two to disagree about which hexes those are.
+   */
+  function workable() {
+    const out = [];
+    for (const t of tiles) {
+      if (!t.resource) continue;
+      let ok = false;
+      try { ok = canGatherTile(state, 0, t.id); } catch (e) { ok = false; }
+      if (ok) out.push(t.id);
+    }
+    return out;
+  }
+
+  /** The fullest hex the player now owns — the one we teach on. */
   function pickHomeTile() {
     let best = -1, bestScore = -1;
-    for (const iid of me.settlements) {
-      const n = intersections[iid];
-      if (!n) continue;
-      for (const tid of n.tiles) {
-        const t = tiles[tid];
-        if (!t || !t.resource) continue;
-        const score = (t.pips || 0) + tileItemsRemaining(tid) * 0.1;
-        if (score > bestScore) { bestScore = score; best = tid; }
-      }
+    for (const tid of workable()) {
+      const t = tiles[tid];
+      if (!t) continue;
+      const score = (t.pips || 0) + tileItemsRemaining(tid) * 0.1;
+      if (score > bestScore) { bestScore = score; best = tid; }
     }
     return best;
   }
@@ -212,139 +271,6 @@ export function createTutorial(state, game, deps = {}) {
     return gave;
   }
 
-  /* =================================================================== steps
-     Each step is: what to say, where to point, and how we know it happened.
-     `check` is polled on every animation frame; `action` turns the card's
-     green button on for a step that is simply read rather than done. */
-
-  function buildSteps() {
-    const homeName = () => {
-      const t = tiles[homeTile];
-      return t && t.resource ? RES_LABEL[t.resource].toLowerCase() : 'your';
-    };
-    const regenOf = () => {
-      const t = tiles[homeTile];
-      return t ? (TILE_REGEN[t.pips] || TILE_REGEN[3]) : TILE_REGEN[3];
-    };
-
-    return [
-      {
-        id: 'hello',
-        title: 'A slow run-through',
-        text: 'I will ask for one thing at a time and wait for you. Nothing here can go wrong, and the other settlers are standing still.',
-        action: 'Start'
-      },
-      {
-        id: 'walk',
-        title: 'Walk',
-        text: 'Press and drag anywhere on the LEFT half of the screen. Your settler follows your thumb.',
-        check: () => walked > 6
-      },
-      {
-        id: 'home',
-        title: 'Go to your own land',
-        text: () => `The gold ring is on a hex you own — the ${homeName()}. Walk onto it.`,
-        world: () => tileCentre(homeTile),
-        wide: true,
-        check: () => {
-          const t = tileAt(me.x, me.z);
-          return !!t && t.id === homeTile;
-        }
-      },
-      {
-        id: 'collect',
-        title: 'Run things over',
-        text: 'Everything growing here is yours. Just walk over it — no tapping, no waiting. Collect six things.',
-        world: () => itemOnHome(),
-        check: () => me.stats.gathered - base.gathered >= 6
-      },
-      {
-        id: 'sweep',
-        title: 'Clear the whole hex',
-        text: () => `Keep running until nothing is left. ${tileItemsRemaining(homeTile)} still standing.`,
-        world: () => itemOnHome(),
-        check: () => isTileExhausted(homeTile),
-        skipBy: 2
-      },
-      {
-        id: 'rest',
-        title: 'It comes back',
-        text: () => {
-          const rc = tileRecovery(homeTile, state.time || 0);
-          return rc && rc.exhausted
-            ? `The hex is bare and resting. Everything on it returns at once in ${Math.ceil(rc.secondsLeft)} seconds. Own several hexes and walk a loop around them.`
-            : `A hex you have cleared rests for about ${regenOf()} seconds, then everything on it returns at once. Own several hexes and walk a loop around them.`;
-        },
-        live: true,
-        world: () => tileCentre(homeTile),
-        wide: true,
-        action: 'Got it'
-      },
-      {
-        id: 'bag',
-        title: 'Your pack',
-        text: 'Up at the top is everything you are carrying: wood, brick, wool, wheat and ore. That is what you spend.',
-        dom: ['.resbar'],
-        action: 'Got it'
-      },
-      {
-        id: 'road',
-        title: 'Build a road',
-        text: 'I have topped your pack up. Tap BUILD, choose ROAD, then pick one of the glowing lines on the map.',
-        enter: () => topUp(COST.road),
-        dom: ['.bcard[data-kind="road"]', '.hud-bc'],
-        check: () => me.roads.size > base.roads
-      },
-      {
-        id: 'reach',
-        title: 'One more road',
-        text: 'Your network has to reach a free corner before you can settle it. Build one more road, further out.',
-        enter: () => topUp(COST.road),
-        skipIf: () => legalSettlements(state, 0).length > 0,
-        dom: ['.bcard[data-kind="road"]', '.hud-bc'],
-        check: () => legalSettlements(state, 0).length > 0
-      },
-      {
-        id: 'settle',
-        title: 'Build a settlement',
-        text: 'Topped up again. Tap BUILD, choose SETTLEMENT, then pick a glowing corner. It is worth 1 point — and it opens the hexes it touches for collecting.',
-        enter: () => topUp(COST.settlement),
-        dom: ['.bcard[data-kind="settlement"]', '.hud-bc'],
-        check: () => me.settlements.size > base.settlements
-      },
-      {
-        id: 'points',
-        title: 'That is a point',
-        text: () => `You are on ${scoreOf(state, me)} points. A city is worth 2, and the first settler to ${VICTORY_POINTS} takes the island.`,
-        live: true,
-        // The identity badge this used to point at is gone; the victory track
-        // it carried now lives at the top of the scoreboard in its place.
-        dom: ['.sc-vp', '.scorecard'],
-        action: 'Got it'
-      },
-      {
-        id: 'market',
-        title: 'Trade at the market',
-        text: () => (me.nearTrade
-          ? `You are at the market. Tap the offer, give ${TRADE_BASE} of something you have plenty of, and take the one you need.`
-          : `Walk to the Great Market in the middle of the island. It swaps ${TRADE_BASE} of anything for 1 of what you need.`),
-        live: true,
-        enter: () => { me.res.wood = Math.max(me.res.wood | 0, TRADE_BASE + 1); },
-        dom: ['.tradecue:not(.hid) .tc-card'],
-        world: () => ({ x: MARKET.x, z: MARKET.z }),
-        wide: true,
-        check: () => me.stats.traded > base.traded
-      },
-      {
-        id: 'done',
-        title: 'That is the whole game',
-        text: 'Collect on land you own, build roads to reach more of it, turn corners into settlements and cities, and trade for whatever you are short of. Go and win one.',
-        action: 'Play a Real Match',
-        onAction: () => restart()
-      }
-    ];
-  }
-
   /* ----------------------------------------------------------- geometry */
 
   function tileCentre(tid) {
@@ -359,64 +285,188 @@ export function createTutorial(state, game, deps = {}) {
     return tileCentre(homeTile);
   }
 
+  function standingOn(tid) {
+    const t = tileAt(me.x, me.z);
+    return !!t && t.id === tid;
+  }
+
+  /* ----------------------------------------------------------- the toolkit
+     Everything ./tutsteps.js is allowed to reach. Deliberately small: the
+     script says WHAT to teach, this file knows how anything is measured. */
+  const kit = {
+    state, me, game: g, base,
+    homeTile: () => homeTile,
+    workable,
+    walked: () => walked,
+    topUp, tileCentre, itemOnHome, standingOn,
+    restart: () => restart()
+  };
+
   /* ---------------------------------------------------------- the marker */
 
+  /** Screen position and size of whatever the current step is pointing at. */
   function markerFor(step) {
-    if (step.dom) {
-      for (const sel of step.dom) {
+    const sel = typeof step.dom === 'function' ? step.dom() : step.dom;
+    if (sel && sel.length) {
+      for (const s of sel) {
         let n = null;
-        try { n = document.querySelector(sel); } catch (e) { n = null; }
+        try { n = document.querySelector(s); } catch (e) { n = null; }
         if (!n) continue;
         const r = n.getBoundingClientRect();
         if (r.width < 3 || r.height < 3) continue;
         return {
           x: r.left + r.width / 2, y: r.top + r.height / 2,
-          wide: r.width > 110 || r.height > 90
+          w: r.width, h: r.height
         };
       }
     }
     if (step.world) {
       const w = step.world();
       if (!w) return null;
-      const cam = g.camera && g.camera.camera;
-      const y = (g.world && g.world.heightAt) ? g.world.heightAt(w.x, w.z) + 2.6 : 3;
-      const s = project(cam, w.x, y, w.z);
+      const s = projectGround(w.x, w.z, 2.6);
       if (!s) return null;
       const W = host.clientWidth || window.innerWidth;
       const H = host.clientHeight || window.innerHeight;
-      let px = s.x * W, py = s.y * H;
-      if (px < -140 || py < -140 || px > W + 140 || py > H + 140) return null;
+      if (s.x < -140 || s.y < -140 || s.x > W + 140 || s.y > H + 140) return null;
       // Keep the ring on screen even when the target is at the very edge of
       // the frame: a marker half off the display points at nothing.
-      px = Math.max(44, Math.min(W - 44, px));
-      py = Math.max(48, Math.min(H - 92, py));
-      return { x: px, y: py, wide: !!step.wide };
+      return {
+        x: Math.max(52, Math.min(W - 52, s.x)),
+        y: Math.max(56, Math.min(H - 96, s.y)),
+        w: 86, h: 86
+      };
     }
     return null;
   }
 
+  /** A point on the ground, in CSS pixels, or null if it is behind the camera. */
+  function projectGround(x, z, lift) {
+    const cam = g.camera && g.camera.camera;
+    const y = (g.world && g.world.heightAt) ? g.world.heightAt(x, z) + (lift || 0) : 3;
+    const s = project(cam, x, y, z);
+    if (!s) return null;
+    const W = host.clientWidth || window.innerWidth;
+    const H = host.clientHeight || window.innerHeight;
+    return { x: s.x * W, y: s.y * H };
+  }
+
+  /* ------------------------------------------------------------- the wash
+   *
+   * One hole per workable hex, and — on the step that asks for it — one gold
+   * dot in the middle of each. The radius is measured rather than guessed: a
+   * second point one hex-width away is projected as well, so the hole is the
+   * size the hex really is on screen at whatever the camera is doing.
+   */
+  function spotShape(step) {
+    if (!step || !step.spot) return null;
+    const holes = [], pips = [];
+    for (const tid of workable()) {
+      const t = tiles[tid];
+      const c = projectGround(t.x, t.z, 0.4);
+      if (!c) continue;
+      const edge = projectGround(t.x + HEX_SIZE, t.z, 0.4);
+      const r = edge ? Math.hypot(edge.x - c.x, edge.y - c.y) * 1.28 : 96;
+      holes.push({ x: c.x, y: c.y, r: Math.max(46, Math.min(320, r)) });
+      if (step.spot === 'pips') pips.push({ x: c.x, y: c.y });
+    }
+    return holes.length ? { holes, pips } : null;
+  }
+
+  /* -------------------------------------------------------- dressing the HUD */
+
+  function applyHud(step) {
+    const root = document.getElementById('ui');
+    if (!root) return;
+    const want = (step && step.hud) || {};
+    toggle(root, 'tut-pack', !!want.pack);
+    toggle(root, 'tut-ranks', !!want.ranks);
+    toggle(root, 'tut-awards', !!want.awards);
+    /* The build cards are hidden for every step before the BUILD key has been
+       explained as well as for step 11, so that walking BACK through the run
+       shows the same screen the player saw on the way down. */
+    toggle(root, 'tut-nobuild', !!want.nobuild || idx < 7);
+  }
+
+  function clearHud() {
+    const root = document.getElementById('ui');
+    if (!root) return;
+    for (const c of HUD_FLAGS) toggle(root, c, false);
+    toggle(root, 'tut-practice', false);
+  }
+
+  /** Shut the four build cards the way the BUILD key itself would. */
+  function collapseBuild() {
+    const row = document.querySelector('.build-row');
+    if (row && !row.classList.contains('hid')) toggle(row, 'hid', true);
+  }
+
   /* ------------------------------------------------------------ stepping */
 
-  function textOf(step) {
-    return typeof step.text === 'function' ? step.text() : step.text;
+  const textOf = step => (typeof step.text === 'function' ? step.text() : step.text);
+
+  /** Which size and place the badge should be in RIGHT NOW, step and screen. */
+  function chromeFor(step) {
+    let size = phase === 'brief' ? 'big' : (step.size || 'big');
+    let place = step.place || 'bottom';
+    /*
+     * A FULL-SCREEN SHEET OR THE PLACEMENT MAP TAKES THE WHOLE DISPLAY, so the
+     * badge stands down to nothing but its ring.
+     *
+     *   "just keep the highlight of what they're supposed to click so that it
+     *    doesn't cover the map and just get confusing"
+     *   "hide / have a much smaller out-of-the-way but clear circles/highlights
+     *    to follow so that you successfully make a trade without the tutorial in
+     *    the way"
+     *
+     * There is no corner to hide in on either of them and it would be dishonest
+     * to pretend otherwise: the trade sheet is 612px wide on a 640px screen,
+     * and the placement map has its own close key top-left, its own arm line
+     * top-centre and its own four chips along the whole bottom. Both surfaces
+     * already carry the words this step would be repeating — the map says TAP
+     * AGAIN TO BUILD the instant an edge is armed — so what the run adds is the
+     * ring and nothing else, and the badge comes back the moment the sheet does
+     * not own the screen any more.
+     */
+    const sheetUp = !!(g.panels && g.panels.isOpen);
+    const mapUp = !!(g.overview && g.overview.isOpen);
+    if (sheetUp || mapUp) size = 'gone';
+    return { size, place };
   }
 
   function present() {
     const step = steps[idx];
     if (!step) return;
-    if (step.skipIf && step.skipIf()) { advance(1, true); return; }
+    if (phase === 'body' && step.skipIf) {
+      let skip = false;
+      try { skip = !!step.skipIf(); } catch (e) { skip = false; }
+      if (skip) { advance(1, true); return; }
+    }
     snapshot();
-    if (step.enter) { try { step.enter(); } catch (e) { /* silent */ } }
+    if (phase === 'body' && step.enter) {
+      try { step.enter(); } catch (e) { /* silent */ }
+    }
+    applyHud(step);
+
+    const brief = phase === 'brief' && step.brief;
+    const c = chromeFor(step);
     coach.show({
       n: idx + 1,
-      title: step.title,
-      text: textOf(step),
-      action: step.action || null,
-      onAction: step.onAction || (() => advance(1)),
-      // A step that is simply read already has its own button; only a step
-      // that waits on the player needs a way past it.
-      onSkip: (step.action || step.id === 'done')
-        ? null : (() => advance(step.skipBy || 1, true))
+      of: steps.length,
+      title: brief ? step.brief.title : step.title,
+      text: brief ? step.brief.text : textOf(step),
+      /* The brief's key is always OK — it is dismissing an explanation, not
+         completing a task — and the body's is the step's own verb, if it has
+         one. A step that waits on the player has no green key at all, which is
+         what makes NEXT read as the way past it. */
+      action: brief ? 'OK' : (step.action || null),
+      onAction: brief
+        ? () => { phase = 'body'; present(); }
+        : (step.onAction || (() => advance(1))),
+      onBack: () => back(),
+      onNext: () => advance(1, true),
+      canBack: idx > 0 || phase === 'brief',
+      canNext: idx < steps.length - 1,
+      size: c.size, place: c.place
     });
     coach.progress(idx / Math.max(1, steps.length - 1));
   }
@@ -425,7 +475,9 @@ export function createTutorial(state, game, deps = {}) {
     base.gathered = me.stats.gathered;
     base.roads = me.roads.size;
     base.settlements = me.settlements.size;
+    base.cities = me.cities.size;
     base.traded = me.stats.traded;
+    base.cards = me.cards.length + (me.vpCards | 0);
     walked = 0;
     lastX = me.x; lastZ = me.z;
   }
@@ -434,6 +486,29 @@ export function createTutorial(state, game, deps = {}) {
     if (!running) return;
     if (!quiet) coach.good();
     idx = Math.min(steps.length - 1, idx + (n || 1));
+    phase = steps[idx] && steps[idx].brief ? 'brief' : 'body';
+    present();
+  }
+
+  /**
+   * BACKWARD.
+   *
+   *   "For the tutorial let me go forward or backward in the steps instead of
+   *    just saying skip all of the time."
+   *
+   * From the task half of a step with an explanation, Back goes to the
+   * explanation rather than skipping over it — that is the thing somebody
+   * pressing Back on the build-a-road step is trying to re-read. From anywhere
+   * else it is the previous step, opened at its explanation if it has one.
+   */
+  function back() {
+    if (!running) return;
+    if (phase === 'body' && steps[idx] && steps[idx].brief) {
+      phase = 'brief'; present(); return;
+    }
+    if (idx === 0) { present(); return; }
+    idx -= 1;
+    phase = steps[idx] && steps[idx].brief ? 'brief' : 'body';
     present();
   }
 
@@ -444,15 +519,28 @@ export function createTutorial(state, game, deps = {}) {
     raf = requestAnimationFrame(tick);
     holdRivals();
 
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() : Date.now();
+    const dt = lastMs ? Math.min(0.1, (now - lastMs) / 1000) : 1 / 60;
+    lastMs = now;
+
     const dx = me.x - lastX, dz = me.z - lastZ;
     walked += Math.hypot(dx, dz);
     lastX = me.x; lastZ = me.z;
 
     const step = steps[idx];
     if (!step) return;
+
+    // The screen can change under a step — a sheet opens, the map closes — so
+    // the badge re-reads what it should be wearing every frame. `chrome` is a
+    // no-op when nothing moved.
+    const c = chromeFor(step);
+    coach.chrome(c.size, c.place);
     coach.mark(markerFor(step));
-    if (step.live) coach.say(textOf(step));
-    if (step.check) {
+    if (spot) spot.set(spotShape(step), dt);
+    if (step.live && phase === 'body') coach.say(textOf(step));
+
+    if (phase === 'body' && step.check) {
       let ok = false;
       try { ok = !!step.check(); } catch (e) { ok = false; }
       if (ok) advance(1);
@@ -476,12 +564,16 @@ export function createTutorial(state, game, deps = {}) {
 
     const uiRoot = document.getElementById('ui');
     if (uiRoot) toggle(uiRoot, 'tut-practice', true);
+    collapseBuild();
 
     coach = coach || createCoach(host);
     coach.onQuit(() => restart());
+    spot = spot || createSpotlight(host);
 
-    steps = buildSteps();
+    steps = buildSteps(kit);
     idx = 0;
+    phase = steps[0] && steps[0].brief ? 'brief' : 'body';
+    lastMs = 0;
     present();
     if (!raf) raf = requestAnimationFrame(tick);
   }
@@ -498,9 +590,13 @@ export function createTutorial(state, game, deps = {}) {
     running = false;
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (coach) coach.hide();
+    if (spot) spot.clear();
     if (typeof deps.setPractice === 'function') deps.setPractice(false);
-    const uiRoot = document.getElementById('ui');
-    if (uiRoot) toggle(uiRoot, 'tut-practice', false);
+    clearHud();
+    // Whatever the run shut, the player gets back: leaving must never hand
+    // somebody a match with no build cards in it.
+    const row = document.querySelector('.build-row');
+    if (row) toggle(row, 'hid', false);
   }
 
   function destroy() {
@@ -508,6 +604,7 @@ export function createTutorial(state, game, deps = {}) {
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     running = false;
     if (coach) coach.destroy();
+    if (spot) spot.destroy();
     if (book) book.destroy();
   }
 
@@ -517,8 +614,26 @@ export function createTutorial(state, game, deps = {}) {
     get step() { return steps[idx] ? steps[idx].id : null; },
     get stepIndex() { return idx; },
     get stepCount() { return steps.length; },
-    /** Test hook: complete the current step the way the Skip button would. */
-    forceStep() { if (running) advance(steps[idx] && steps[idx].skipBy || 1, true); }
+    get phase() { return phase; },
+    /** Test hooks. `forceStep` is what the old Skip key did. */
+    forceStep() { if (running) advance(1, true); },
+    next() { if (running) advance(1, true); },
+    back() { back(); },
+    goTo(n) {
+      if (!running) return;
+      idx = Math.max(0, Math.min(steps.length - 1, n | 0));
+      phase = steps[idx] && steps[idx].brief ? 'brief' : 'body';
+      present();
+    },
+    /** Capture-rig hook: where the wash is punching holes this instant. */
+    spotAt() { return running && steps[idx] ? spotShape(steps[idx]) : null; },
+    /** Dismiss the large explain phase the way the OK key does. */
+    ok() {
+      if (!running) return false;
+      if (phase !== 'brief') return false;
+      phase = 'body'; present(); return true;
+    },
+    get coach() { return coach; }
   };
 }
 

@@ -52,7 +52,7 @@
 
 import * as THREE from 'three';
 import { tiles } from '../board/layout.js';
-import { tileItems, mulberry32 } from '../board/nodes.js';
+import { tileItems, tileItemCount, mulberry32 } from '../board/nodes.js';
 import { heightAt, APOTHEM } from './terrain.js';
 import { instanced, setInstance, triCount } from './geo.js';
 import { moodAttrFromList } from './mood.js';
@@ -128,6 +128,123 @@ const SCALE = {
 };
 const SINK = { tree: 0.10, wheat: 0.05, sheep: 0.02, claypit: 0.10, orerock: 0.09 };
 
+/* ------------------------------------------------------- density compensation
+ *
+ * How big an item stands ALSO depends on how many of them the hex holds, and
+ * the reviewer asked for this from both ends of the same problem:
+ *
+ *   "The hex at token 2 has 6-7 small pines on a large hex with a bare middle
+ *    and reads as failed to populate. Floor it around 12-15, or scale trees up
+ *    when the count is low so the hex still reads as woodland."
+ *
+ *   "~30 sheep shoulder-to-shoulder with almost no grass visible reads as a
+ *    heap of white popcorn rather than a flock ... If the count cannot safely
+ *    change, spread them and vary their scale instead so grass shows between
+ *    them."
+ *
+ * The COUNT cannot safely change. `TILE_ITEMS` in core/constants.js maps a
+ * hex's pips to how many items it holds — 5, 8, 17, 23, 28 — and that mapping
+ * is the economy: it is what makes a 6/8 hex worth building on and a 2/12 hex
+ * not, it is what the bot simulation is balanced against, and it is not this
+ * file's to move. It is also not in this pass's scope. What IS in scope is how
+ * big each of those items is drawn, and that is the same lever pointed at both
+ * complaints:
+ *
+ *   a hex with FEW items grows them, so eight trees still close a canopy;
+ *   a hex with MANY items shrinks them, so twenty-eight sheep still show grass.
+ *
+ * The curve is sqrt(REF / n), which is the honest one: item COVERAGE goes as
+ * the square of linear scale, so a square-root law holds total coverage roughly
+ * constant as the count changes, which is exactly the property "reads equally
+ * full at every count" is asking for. REF is 17 — the three-pip hex, the
+ * commonest on the board — so the middle of the range is left exactly where it
+ * was and only the ends move.
+ *
+ * The clamps are per kind, and they are asymmetric on purpose.
+ *
+ *   TREE never shrinks. A packed forest is the one thing on this island nobody
+ *   has ever complained about, so the 23 and 28 hexes are left alone entirely
+ *   and only the sparse ones are grown. The ceiling was 1.26 and it did not
+ *   carry a 1-pip hex:
+ *
+ *     "Forest hex 12 reads as failed to populate ... Enforce a minimum visual
+ *      density for a stocked forest hex AND allow placement in the tile
+ *      interior."
+ *
+ *   Two levers and both were needed. The DISTRIBUTION half is fixed in
+ *   `orderForCount` in board/nodes.js — the five trees on a 1-pip hex used to
+ *   be picked off the front of a farthest-point sequence, which put every one
+ *   of them on the rim. This is the other half: five trees spread evenly over
+ *   a hex are still only five trees, and 1.26 leaves a 5-item forest at 46% of
+ *   the canopy coverage a 17-item one carries. 1.38 is the honest square-root
+ *   answer for eight items and as far as five can usefully be pushed — a canopy
+ *   2.8 to 3.6 units wide standing 4.0 to 6.6, against a mean nearest-neighbour
+ *   gap of 3.3 units on those hexes, so the crowns touch and the hex reads as a
+ *   stand of hero pines in open woodland. Past that the trees start reading as
+ *   scenery scaled up rather than as trees, and a 1-pip hex is honestly sparse:
+ *   it is a hex that grows five trees, and no amount of scale makes it a
+ *   canopy.
+ *
+ *   SHEEP never grows past a little. A flock does not read as "one enormous
+ *   sheep" and the player asked for these to be BIGGER not so long ago, so the
+ *   ceiling is 1.12 and the work is done at the other end. On a 28-sheep hex
+ *   0.78 takes the biggest animal from about 2.5 units across to about 2.0 and
+ *   the smallest from 1.5 to 1.2, which is 39% of the fleece area gone off the
+ *   hex — and since the plantable part of a hex is only about half of it once
+ *   the road rim and the token lane are taken out, that is the difference
+ *   between animals whose footprints genuinely overlap and animals with a
+ *   collar of turf round each of them.
+ *
+ *   ORE AND BRICK SHRINK AND NEVER GROW, and that is new.
+ *
+ *     "The fully regrown ore hex is packed solid. Roughly 60 cubes cover the
+ *      tile wall-to-wall with no ground visible at all ... At lower density the
+ *      same hex is nicely spaced and clear of the rim, so this is a max-fill
+ *      placement problem, not an art problem. Cap the density so ground shows
+ *      through. Check the other terrains at max fill too."
+ *
+ *   Checked, and the brick hill is the same picture in terracotta: a 5-pip
+ *   hills hex is twenty-eight stepped stacks with no floor left between them.
+ *   The arithmetic says it has to be. A full-size ore stack covers about 3.3
+ *   square units on the widest reading of its blocks; twenty-eight of them is
+ *   92, against about 114 of plantable hexagon before the token lane takes its
+ *   quarter — so the field is asking for more ground than the hex has, and what
+ *   the eye sees is the overlap. The same sum at seventeen items comes to 56 on
+ *   the same 114 and looks exactly as it should, which is why this only ever
+ *   showed up on the 4- and 5-pip hexes.
+ *
+ *   So the same square-root law the flock uses runs on both, with the CEILING
+ *   pinned at 1.00: a hex with fewer items never grows its stacks, because
+ *   "make the bricks, wheat, ore and sheep all larger" is a note this build has
+ *   already had and the sparse hexes are where it landed best. Only the crowded
+ *   end moves — 0.78 at twenty-eight, 0.86 at twenty-three, untouched at
+ *   seventeen and below. At 0.78 a stack still stands about 1.9 units tall,
+ *   half again the height of a sheep, and thirty-nine per cent of the footprint
+ *   comes off the tile, which is the difference between a solid pile and a hex
+ *   with grey floor showing between its diggings.
+ *
+ *   The other half of that note — the cubes clipping through the raised rim —
+ *   is not a scale problem and is not fixed here. It is the plantable margin,
+ *   and it lives in `RIM_BY_KIND` in board/nodes.js.
+ *
+ *   Wheat is left alone. A 4-pip fields hex photographs with clear sand between
+ *   every sheaf, because a bound sheaf is a 1.6-unit drum where an ore stack is
+ *   a 2.8-unit apron, and the crop has already been through two size passes
+ *   against the player's own words.
+ */
+const DENSITY_REF = 17;
+const DENSITY = {
+  tree: [1.00, 1.38], sheep: [0.78, 1.12],
+  orerock: [0.78, 1.00], claypit: [0.78, 1.00]
+};
+
+function densityScale(kind, count) {
+  const band = DENSITY[kind];
+  if (!band || !count) return 1;
+  const k = Math.sqrt(DENSITY_REF / count);
+  return k < band[0] ? band[0] : k > band[1] ? band[1] : k;
+}
+
 /* Per-item size jitter, folded on top of SCALE. The board hands out
    `item.scale` in 0.86..1.22; at the old gain that spread a claypit across a
    0.86..1.18 band, and with items now twice as wide the biggest of them started
@@ -141,15 +258,72 @@ const JITTER_GAIN = 0.62;
 const TAKE = 0.26;
 const GROW = 0.52;
 
-/* What share of the harvestable trees leave a stump where they stood. Under a
-   half: enough that a worked forest still says "this was timber", not so many
-   that a cleared hex is a pincushion. Deterministic on the item id so the same
-   trees always leave the same marks, run after run. */
-const FIELD_STUMP_SHARE = 0.42;
-function leavesStump(id) {
-  let h = Math.imul(id ^ 0x9e3779b9, 2246822519);
-  h = Math.imul(h ^ (h >>> 15), 3266489917);
-  return ((h ^ (h >>> 16)) >>> 0) % 1000 < FIELD_STUMP_SHARE * 1000;
+/* How many of the harvestable trees leave a stump where they stood.
+ *
+ *   "There are a few too many stumps on the tree hexes when it's empty."
+ *   "Cut stumps to 3-4 per hex maximum. Currently ~9-10."
+ *
+ * This was a SHARE and it should never have been one. A quarter of the trees on
+ * a hex is a quarter of five on a 1-pip hex and a quarter of twenty-eight on a
+ * 5-pip one, so the two ends of the board came out at one stump and seven — and
+ * seven is not what "a few subtle stumps when its empty waiting to recharge"
+ * describes, it is a stump field. Worse, a share is a share of the whole tile
+ * with no idea where the trees are, so on a good day it left seven posts spread
+ * out and on a bad one it left seven in a huddle with half the hex bare.
+ *
+ * It is a COUNT now, capped at four, and the trees that leave one are chosen by
+ * FARTHEST-POINT from each other rather than by a hash: pick the tree nearest
+ * the middle of the hex, then repeatedly pick whichever remaining tree is
+ * furthest from every stump already chosen. Four marks spread to the corners of
+ * the tile say "somebody logged this" from across the island; four marks in a
+ * huddle say nothing at all and leave the rest of the hex looking untouched.
+ *
+ * Two on the smallest hexes, four on the biggest, three in between — the count
+ * still tracks how much timber came off, it just does it inside a band the
+ * player can look at. Everything here is derived from item POSITIONS, which are
+ * deterministic from the board seed, so the same trees leave the same marks in
+ * every browser and on every visit to the same hex; a stump that moved between
+ * two visits would read as a new object appearing.
+ *
+ * NOTE the `stump` geometry changed with this (see `stump()` in propkits.js).
+ * Four mud clods and four sawn stumps are not the same picture, and both halves
+ * of the reviewer's note — how many, and what they look like — had to move
+ * together for a cleared forest to read. */
+const STUMPS_MAX = 4;
+const STUMPS_MIN = 2;
+
+/** Which slots on one tile leave a mark: up to four, spread as widely as the
+ *  trees on that tile allow. `slots` is that tile's tree slots, in item order. */
+function pickStumps(slots) {
+  const want = Math.max(STUMPS_MIN,
+    Math.min(STUMPS_MAX, Math.round(slots.length * 0.20)));
+  if (slots.length <= want) return slots.slice();
+  const pool = slots.slice();
+  const out = [];
+  // Seed on the tree closest to the middle of its own group, so the first mark
+  // is never a lone post out on the rim.
+  let cx = 0, cz = 0;
+  for (const s of pool) { cx += s.x; cz += s.z; }
+  cx /= pool.length; cz /= pool.length;
+  let bi = 0, bd = Infinity;
+  for (let i = 0; i < pool.length; i++) {
+    const d = (pool[i].x - cx) ** 2 + (pool[i].z - cz) ** 2;
+    if (d < bd) { bd = d; bi = i; }
+  }
+  out.push(pool.splice(bi, 1)[0]);
+  while (out.length < want && pool.length) {
+    let best = 0, bestD = -1;
+    for (let i = 0; i < pool.length; i++) {
+      let d = Infinity;
+      for (const o of out) {
+        const dd = (pool[i].x - o.x) ** 2 + (pool[i].z - o.z) ** 2;
+        if (dd < d) d = dd;
+      }
+      if (d > bestD) { bestD = d; best = i; }
+    }
+    out.push(pool.splice(best, 1)[0]);
+  }
+  return out;
 }
 
 export function buildField(group, mats, opts = {}) {
@@ -208,8 +382,20 @@ export function buildField(group, mats, opts = {}) {
     list.forEach((it, i) => {
       const rng = mulberry32(60013 + it.id * 7919);
       const tile = tiles[it.tile];
-      const s = (sc[0] + rng() * (sc[1] - sc[0]))
-        * (JITTER_MID + (it.scale - 0.86) * JITTER_GAIN);
+      let s = (sc[0] + rng() * (sc[1] - sc[0]))
+        * (JITTER_MID + (it.scale - 0.86) * JITTER_GAIN)
+        * densityScale(kind, tileItemCount(it.tile));
+      // A FLOCK IS NOT A HERD OF CLONES. The board's own `it.scale` jitter is
+      // deliberately tight (0.92..1.14, see JITTER_GAIN above) so that a field
+      // of items can be counted at a glance, and for four of the five kinds
+      // that is right. It is wrong for sheep, and it is a good part of why
+      // twenty-eight of them read as "a heap of white popcorn": every animal
+      // the same size in a regular blue-noise lattice is a TEXTURE, and a
+      // texture is exactly the thing the eye stops resolving into objects.
+      // Half again as much spread, on the item's own deterministic stream so
+      // the same sheep is the same size in every browser — lambs among ewes,
+      // which is what breaks the lattice and lets the grass through.
+      if (kind === 'sheep') s *= 0.84 + rng() * 0.34;
       const v = table[variantOf(it.x, it.z, table.length)];
       const sl = {
         item: it, kind, i,
@@ -245,15 +431,26 @@ export function buildField(group, mats, opts = {}) {
    * Every harvestable tree used to leave one, and every fellable decorative
    * conifer left one on top of that — fifty-odd posts standing in a hex that is
    * supposed to read as CLEARED. A stump field is not empty, it is a different
-   * kind of busy. So only a deterministic slice of the trees leaves a mark now
-   * (`FIELD_STUMP_SHARE` here, a smaller share again for the dressing over in
-   * `stand.js`), which is enough to say "trees stood here" and nowhere near
-   * enough to fill the hex back up. Shared mesh, so it costs no extra call. */
+   * kind of busy. So only two to four trees PER HEX leave a mark now, chosen by
+   * farthest-point so they land spread out (`pickStumps` above; the dressing
+   * over in `stand.js` keeps its own smaller share for kits that can be felled,
+   * of which the recipe currently drops none). That is enough to say "trees
+   * stood here" and nowhere near enough to fill the hex back up. Shared mesh, so
+   * it costs no extra call. */
   let stumpMesh = null;
   let stumpBase = 0;
   const stumpSpare = Math.max(0, opts.extraStumps | 0);
   {
-    const treeSlots = slots.filter(s => s.kind === 'tree' && leavesStump(s.item.id));
+    const perTile = new Map();
+    for (const s of slots) {
+      if (s.kind !== 'tree') continue;
+      let b = perTile.get(s.item.tile);
+      if (!b) perTile.set(s.item.tile, b = []);
+      b.push(s);
+    }
+    const marked = new Set();
+    for (const b of perTile.values()) for (const s of pickStumps(b)) marked.add(s);
+    const treeSlots = slots.filter(s => marked.has(s));
     const total = treeSlots.length + stumpSpare;
     if (total) {
       const geo = K.stump();

@@ -19,9 +19,11 @@
  * src/ui/icons.js. Every number on a page is read out of core/constants.js
  * when the page is built, so the tutorial cannot drift from the game.
  *
- * THE COACH is the practice run's chrome: one instruction card at the foot of
- * the screen and one gold marker on whatever the instruction is about. It owns
- * no rules; systems/tutorial.js drives it.
+ * THE COACH is the practice run's chrome: one instruction badge, in one of
+ * three sizes, in one of three places on the screen, and one gold marker sized
+ * to whatever the instruction is about. It owns no rules and it chooses
+ * nothing; systems/tutorial.js drives every part of it. See the long note over
+ * `createCoach` for why a tutorial card needs three sizes at all.
  *
  * Owner: Tutorial (flow) agent.
  */
@@ -103,7 +105,12 @@ function buildPages() {
       h: 'Just run over it',
       body: [
         'There is no tapping and no waiting. Touch a tree, a sheep, a clay pile — it is in your pack that instant.',
-        'Drag anywhere on the left half of the screen to walk. Sweeping a whole hex clean takes about three seconds of running.'
+        // "Mention that you can click and drag anywhere with your finger to
+        // move, not just the left side of the screen." The joystick stopped
+        // being a left-half control a long time ago — systems/input.js takes a
+        // drag from anywhere that is not already a button — and this page was
+        // still teaching the old rule, which is worse than teaching nothing.
+        'Press and drag ANYWHERE on the screen to walk — left side, right side, straight over the island. The stick appears under your thumb.'
       ]
     },
     {
@@ -121,8 +128,12 @@ function buildPages() {
       title: 'Building',
       h: 'Roads, settlements, cities',
       body: [
-        'Tap BUILD, pick what you want, then pick a glowing spot on the map.',
-        'A road joins two corners. A settlement sits on a corner your roads reach, and is worth 1 point. A city replaces a settlement you already own and is worth 2.'
+        'Tap BUILD, pick what you want, then tap a glowing spot on the map — and tap it again to place it. There is no confirm button.',
+        // "Mention that the settlement has to be two roads away from any other
+        // settlement, even your competitors'." It is the rule that decides
+        // which corners glow, and the book never said it once.
+        'A road joins two corners. A settlement sits on a corner your roads reach, and is worth 1 point. A city replaces a settlement you already own and is worth 2.',
+        'Every settlement needs two roads of clear space between it and any other settlement on the island — your own and your rivals alike.'
       ],
       extra: () => el('div', { class: 'tut-costs' },
         el('span', { class: 'tut-cost' },
@@ -369,47 +380,110 @@ export function createBook(root, opts = {}) {
 
 /**
  * The practice run's chrome. Nothing here knows a rule: `show()` is given the
- * words, `mark()` is given a place on screen, and `progress()` a fraction.
+ * words, `mark()` is given a rectangle on screen, and `progress()` a fraction.
+ * systems/tutorial.js decides all three.
  *
- * The marker takes a viewport point in CSS pixels — systems/tutorial.js works
- * out whether that came from a DOM rectangle or from a point in the world.
+ * THREE SIZES, BECAUSE THE BRIEF IS THAT THE LESSON MUST NOT COVER THE THING
+ * IT IS TEACHING.
+ *
+ *   "On the step for building the road, show the popup for the tutorial
+ *    larger, then they click okay, then just keep the highlight of what they're
+ *    supposed to click so that it doesn't cover the map and just get
+ *    confusing."
+ *
+ *   "For the trade at the market step, explain how the market works, then have
+ *    them press okay, and hide / have a much smaller out-of-the-way but clear
+ *    circles/highlights to follow so that you successfully make a trade without
+ *    the tutorial in the way."
+ *
+ * Both of those are one shape asked for twice, so it is one mechanism:
+ *
+ *   BIG    the badge. Step number, title, two or three lines, and the nav row.
+ *          This is the thing being read, and it is the only state that is
+ *          allowed to be large.
+ *   SLIM   one line and the nav keys, in the corner. What is left after OK: the
+ *          player already knows what they are doing, and the gold ring is
+ *          carrying the "where".
+ *   GONE   nothing but the ring. Used the moment a full-screen sheet takes the
+ *          display — the trade post — because there is no corner of a 640px
+ *          screen a card can sit in without landing on the sheet the player is
+ *          being walked through.
+ *
+ * AND THREE PLACES, for the same reason:
+ *
+ *   TOP    where the resource pill normally is. The opening lesson and the
+ *          build-a-road lesson both live here, and both hide the pill while
+ *          they do — see the `tut-pack` rules in tutorial.css.
+ *   BOTTOM the band above the build cards, which is where this card has always
+ *          lived and is measured to clear.
+ *   LOW    the same band with the build cards taken away, so the badge drops
+ *          another notch and the middle of the screen — the board, and the
+ *          player standing on it — is clear.
+ *
+ * `size` and `place` arrive as plain names and become classes; the arithmetic
+ * for each is in tutorial.css, next to the numbers it has to clear.
  */
 export function createCoach(root) {
   if (!root || !root.appendChild || typeof document === 'undefined') {
     const noop = () => {};
     return {
-      show: noop, mark: noop, progress: noop, hide: noop, good: noop,
-      destroy: noop, get isOpen() { return false; }
+      show: noop, say: noop, mark: noop, progress: noop, hide: noop, good: noop,
+      chrome: noop, destroy: noop, onQuit: noop,
+      get isOpen() { return false; }, get node() { return null; }
     };
   }
 
   const stepNum = el('b', { text: '1' });
-  const stepBox = el('div', { class: 'coach-step' },
-    stepNum, el('u', { text: 'Step' }));
+  const stepOf = el('u', { text: 'Step' });
+  const stepBox = el('div', { class: 'coach-step' }, stepNum, stepOf);
 
   const headEl = el('div', { class: 'coach-h', text: '' });
   const textEl = el('div', { class: 'coach-t', text: '' });
   const body = el('div', { class: 'coach-body' }, headEl, textEl);
+  const main = el('div', { class: 'coach-main' }, stepBox, body);
 
-  let onAct = null, onSkip = null;
+  let onAct = null, onBack = null, onNext = null, onQuit = null;
 
-  const actBtn = button('green', { on: { click: () => onAct && onAct() } },
+  /*
+   * FORWARD AND BACKWARD, AND THEY ARE THE PAIR.
+   *
+   *   "For the tutorial let me go forward or backward in the steps instead of
+   *    just saying skip all of the time."
+   *
+   * The old card carried one grey SKIP and nothing else, so the only way
+   * through a run was onward and the only way to re-read a step was to start
+   * again. BACK and NEXT are a matched pair sitting together at the end of the
+   * card, and NEXT is also what SKIP used to be: on a step that is waiting for
+   * the player to do something it moves on regardless, which is what the grey
+   * key did and is why there is no longer a third one. The label a screen
+   * reader gets says so; see `show`.
+   *
+   * The green key, when a step has one, is the step's own verb — START, GOT IT,
+   * OK — and it sits between them because it is the thing to press.
+   */
+  const backBtn = button('cream coach-back', {
+    'aria-label': 'Back to the previous step',
+    on: { click: () => onBack && onBack() }
+  }, el('span', { class: 'sb-lab', text: 'Back' }));
+
+  const actBtn = button('green coach-act', { on: { click: () => onAct && onAct() } },
     el('span', { class: 'sb-lab', text: 'Got it' }));
-  const skipBtn = button('cream coach-skip', {
-    'aria-label': 'Skip this step',
-    on: { click: () => onSkip && onSkip() }
-  }, el('span', { class: 'sb-lab', text: 'Skip' }));
-  const acts = el('div', { class: 'coach-acts' }, skipBtn, actBtn);
+
+  const nextBtn = button('gold coach-next', {
+    'aria-label': 'Go on to the next step',
+    on: { click: () => onNext && onNext() }
+  }, el('span', { class: 'sb-lab', text: 'Next' }));
+
+  const acts = el('div', { class: 'coach-acts' }, backBtn, actBtn, nextBtn);
 
   const railFill = el('i');
   const rail = el('span', { class: 'coach-rail' }, railFill);
 
-  const card = el('div', { class: 'coach-card', 'data-ui': '' },
-    rail, stepBox, body, acts);
+  const card = el('div', { class: 'coach-card big at-top', 'data-ui': '' },
+    rail, main, acts);
 
   const mark = el('div', { class: 'coach-mark' });
 
-  let onQuit = null;
   const quitBtn = button('cream coach-quit', {
     'aria-label': 'Leave the practice run',
     on: { click: () => onQuit && onQuit() }
@@ -419,25 +493,58 @@ export function createCoach(root) {
   root.appendChild(layer);
 
   let shown = false;
+  let size = 'big', place = 'top';
+
+  /** Put the card in one of the three sizes and one of the three places. */
+  function chrome(nextSize, nextPlace) {
+    if (nextSize) size = nextSize;
+    if (nextPlace) place = nextPlace;
+    toggle(card, 'big', size === 'big');
+    toggle(card, 'slim', size === 'slim');
+    toggle(card, 'gone', size === 'gone');
+    toggle(card, 'at-top', place === 'top');
+    toggle(card, 'at-bottom', place === 'bottom');
+    toggle(card, 'at-low', place === 'low');
+    /* END PRACTICE lives in the top-right corner and stays there. The top
+       badge is deliberately narrow enough to clear it — see `--tut-side` in
+       tutorial.css, which reserves the same width on both sides of the screen
+       — so the two never have to negotiate. It goes away only when the badge
+       itself has, because a chip floating alone over a trade sheet is exactly
+       the litter the GONE size exists to prevent. */
+    toggle(quitBtn, 'on', shown && size !== 'gone');
+  }
 
   function show(info) {
     const o = info || {};
     toggle(layer, 'hid', false);
     toggle(card, 'good', false);
     setText(stepNum, String(o.n || 1));
+    setText(stepOf, o.of ? `of ${o.of}` : 'Step');
     setText(headEl, o.title || '');
     setText(textEl, o.text || '');
+
     onAct = typeof o.onAction === 'function' ? o.onAction : null;
-    onSkip = typeof o.onSkip === 'function' ? o.onSkip : null;
+    onBack = typeof o.onBack === 'function' ? o.onBack : null;
+    onNext = typeof o.onNext === 'function' ? o.onNext : null;
+
     toggle(actBtn, 'hid', !o.action);
     if (o.action) setText(actBtn.querySelector('.sb-lab'), o.action);
-    toggle(skipBtn, 'hid', !o.onSkip);
-    toggle(quitBtn, 'on', true);
+    toggle(backBtn, 'off', !o.canBack);
+    backBtn.disabled = !o.canBack;
+    toggle(nextBtn, 'off', !o.canNext);
+    nextBtn.disabled = !o.canNext;
+    /* A step that is waiting on the player has no green key, so NEXT is also
+       the skip — and it says so out loud where it costs nothing. */
+    nextBtn.setAttribute('aria-label', o.action
+      ? 'Go on to the next step'
+      : 'Skip this step and go on');
+
     shown = true;
+    chrome(o.size, o.place);
     requestAnimationFrame(() => toggle(card, 'on', shown));
   }
 
-  /** Live edit of the running instruction — used by the countdown step. */
+  /** Live edit of the running instruction — used by the countdown steps. */
   function say(text) { setText(textEl, text || ''); }
 
   function progress(p) {
@@ -445,11 +552,24 @@ export function createCoach(root) {
     railFill.style.width = (v * 100).toFixed(1) + '%';
   }
 
-  /** `at` is { x, y, wide } in CSS pixels, or null to clear the marker. */
-  function place(at) {
+  /**
+   * `at` is `{ x, y, w, h }` in CSS pixels — the CENTRE of the thing being
+   * pointed at and, optionally, how big it is — or null to clear the marker.
+   *
+   * The ring is sized to its target rather than coming in two fixed sizes. A
+   * 64px ring around a trade sheet's up-arrow is a lasso; a 64px ring around a
+   * build card is a belt. Fitting it to the box means the same control reads as
+   * "this one" at every size the interface has, which is the whole job of a
+   * highlight that is meant to be minimal.
+   */
+  function place2(at) {
     if (!at) { toggle(mark, 'on', false); return; }
+    const span = Math.max(Number(at.w) || 0, Number(at.h) || 0);
+    const d = Math.max(46, Math.min(158, span + 26));
+    mark.style.width = d + 'px';
+    mark.style.height = d + 'px';
+    mark.style.margin = `${-d / 2}px 0 0 ${-d / 2}px`;
     mark.style.transform = `translate(${Math.round(at.x)}px,${Math.round(at.y)}px)`;
-    toggle(mark, 'wide', !!at.wide);
     toggle(mark, 'on', true);
   }
 
@@ -471,10 +591,13 @@ export function createCoach(root) {
   }
 
   return {
-    show, say, progress, mark: place, good, hide, destroy,
+    show, say, progress, mark: place2, good, hide, chrome, destroy,
     onQuit(fn) { onQuit = fn; },
     get isOpen() { return shown; },
-    get node() { return layer; }
+    get size() { return size; },
+    get where() { return place; },
+    get node() { return layer; },
+    get card() { return card; }
   };
 }
 

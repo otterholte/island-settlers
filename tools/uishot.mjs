@@ -1373,6 +1373,36 @@ if (STAGE === 'home') {
  * the answer stops being that arrow. Then it presses one — with a real pointer,
  * at the top edge of the plate rather than the comfortable middle — and reads
  * the staged amount back off the sheet.
+ *
+ * AND THE SHEET IT IS MEASURING IS THE OTHER WAY UP NOW.
+ *
+ *   "I think the 'you give' and 'you receive' should swap sides, with the 'you
+ *    receive' on the top... I can click upwards (to add) to how many of an item
+ *    I want to trade for... The other middle tiles for the resources start to
+ *    grey out (unless I have enough of that resource to make the trade)... But
+ *    if I have 16 wood or more, and I'm trying to trade to receive 4 brick, I
+ *    can click the middle button with the image of the wood itself, and that
+ *    automatically knows I want to trade the exact amount of wood it takes."
+ *
+ * Three more things to prove, and all three are the kind of thing a screenshot
+ * cannot argue about but also cannot check:
+ *
+ *   1. RECEIVE IS ON TOP IN THE DOM, not just in the pixels. A `column-reverse`
+ *      would photograph identically and hand a screen reader the sheet upside
+ *      down, so the band order is read out of `.trade-body`'s child list and
+ *      then confirmed against the boxes.
+ *   2. ASKING FOR N GREYS OUT WHOEVER CANNOT PAY FOR IT. Four brick against a
+ *      pack of forty wood and eight of everything else: wood is the only pile
+ *      that can cover sixteen, so wood arms and the other three dim — and their
+ *      DOWN ARROWS STAY LIVE, because the owner's own example pays for four
+ *      brick out of two piles that could not each do it alone.
+ *   3. ONE TAP SPENDS EXACTLY ratio x N. Not "about right", not "enough": the
+ *      give badge, the chip that promised the price before the tap, and the
+ *      resources actually gone out of the pack after the deal all have to say
+ *      sixteen. Then the same thing again over a MIXED ask — two brick and two
+ *      ore at once — because the price of a lot comes from what you hand over
+ *      and never from what you get back, and that is the whole reason one tap
+ *      can settle an ask made of two different resources.
  */
 } else if (STAGE === 'trade') {
   await waitIntro();
@@ -1429,11 +1459,34 @@ if (STAGE === 'home') {
         live:{h:Math.round(r.height)+up+dn, over:up, under:dn},
         off:a.classList.contains('off')};
     });
+    /* THE CLOSE BUTTON, DRAWN AND LIVE, MEASURED THE SAME WAY THE ARROWS ARE.
+     *
+     *   "The close X is ~32px at 640x320, still under 44. Raise the hit area
+     *    even if the drawn circle stays small."
+     *
+     * The circle is meant to shrink on a short screen — Escape, the scrim and
+     * the back gesture all close this sheet too, so it is the least
+     * load-bearing control on it — but a target a thumb misses is still a
+     * target a thumb misses, and a miss here lands on the sheet's own head and
+     * does nothing at all. So the drawn box and the live box are read
+     * separately, the live one by walking elementFromPoint out from the centre
+     * in all four directions, exactly as the arrows' hit boxes are. */
+    const close=(()=>{
+      const b=document.querySelector('.sheet.trade .sheet-head .cbtn.small');
+      if(!b) return null;
+      const r=b.getBoundingClientRect();
+      const cx=Math.round(r.left+r.width/2), cy=Math.round(r.top+r.height/2);
+      const reach=(dx,dy)=>{let n=0;
+        for(;n<60;n++){const at=document.elementFromPoint(cx+dx*n, cy+dy*n);
+          if(!at || (at!==b && !b.contains(at))) break;}
+        return n;};
+      return {drawn:{w:Math.round(r.width),h:Math.round(r.height)},
+        live:{w:reach(-1,0)+reach(1,0)-1, h:reach(0,-1)+reach(0,1)-1}};})();
     const sheet=document.querySelector('.sheet.trade').getBoundingClientRect();
     const glyph=(()=>{const a=document.querySelector('.tr-arr.up');
       const s=getComputedStyle(a,'::before');
       return {w:parseFloat(s.borderLeftWidth)*2, h:parseFloat(s.borderBottomWidth)};})();
-    return {arrows, glyph, vh:innerHeight,
+    return {arrows, glyph, close, vh:innerHeight,
       sheet:{y:Math.round(sheet.top),bottom:Math.round(sheet.bottom),
         h:Math.round(sheet.height)},
       fits:sheet.bottom<=innerHeight+1 && sheet.top>=-1,
@@ -1450,6 +1503,18 @@ if (STAGE === 'home') {
           live:(c.querySelector('.tc-live').textContent||'').trim()};}),
       foot:(()=>{const f=document.querySelector('.trade .sheet-foot');
         return f?(f.textContent||'').trim():'';})(),
+      /* RECEIVE ON TOP, READ TWICE. Once out of the document — the order the
+         keyboard and a screen reader get, and the only order a column-reverse
+         could lie about — and once out of the boxes, because document order
+         with the paint reversed is a different bug with the same screenshot. */
+      order:(()=>{const b=document.querySelector('.trade-body');
+        return [...b.children].map(n=>!n.classList.contains('tr-cap') ? 'row'
+          : (n.classList.contains('get') ? 'receive' : 'give'));})(),
+      bands:(()=>{const g=document.querySelector('.tr-cap.get').getBoundingClientRect(),
+        w=document.querySelector('.tr-row').getBoundingClientRect(),
+        v=document.querySelector('.tr-cap.give').getBoundingClientRect();
+        return {receiveBottom:Math.round(g.bottom), rowTop:Math.round(w.top),
+          rowBottom:Math.round(w.bottom), giveTop:Math.round(v.top)};})(),
       /* The sheet hides its overflow, so "the box fits" is only half of it —
          everything in the box has to fit the box. */
       clipped:(()=>{const s=document.querySelector('.sheet.trade')
@@ -1458,18 +1523,191 @@ if (STAGE === 'home') {
             '.trade .tr-arr,.trade .tr-card,.trade .tr-cap,.trade .sheet-foot .btn')){
           const r=el.getBoundingClientRect();
           if(r.top<s.top-0.5||r.bottom>s.bottom+0.5) n++;
-        } return n;})()};})()`;
+        } return n;})(),
+      /* THE DEAL BUTTON'S OWN BREATHING ROOM, above and below.
+       *
+       *   "Button occupies y 263-304, the sheet's inner bottom rim is ~306 and
+       *    its border 307-309: 3px of clearance below the primary call to
+       *    action against ~10px above it, with only 10px of screen below the
+       *    sheet."
+       *
+       * "It fits" was already checked and it passed — the button was inside the
+       * sheet, just pressed flat against the bottom of it. So the measurement
+       * that was missing is the GAP, taken to the sheet's inner rim (past the
+       * padding, up to the inside face of the 3px border) and compared with the
+       * gap above the button, because on a 320px screen the only honest test of
+       * "is this bottomed out" is whether it is worse off than its own top edge.
+       *
+       * "slack" is the other half of the same story and it is what actually
+       * went wrong: a flex column whose contents want more room than
+       * max-height allows does not distribute the shortfall, it hands the
+       * whole of it to whichever child will shrink — here the body, which then
+       * spilled its own give band out through the bottom and onto the foot's
+       * rule. Negative slack means the sheet's padding-bottom is a fiction. */
+      deal:(()=>{const b=document.querySelector('.trade .sheet-foot .btn'),
+          s=document.querySelector('.sheet.trade'),
+          y=document.querySelector('.trade-body');
+        if(!b||!s||!y) return null;
+        const r=b.getBoundingClientRect(), q=s.getBoundingClientRect(),
+          cs=getComputedStyle(s), t=x=>Math.round(x*10)/10;
+        const rim=q.bottom-parseFloat(cs.borderBottomWidth);
+        return {
+          y:Math.round(r.top)+'-'+Math.round(r.bottom),
+          above:t(r.top-y.getBoundingClientRect().bottom),
+          below:t(rim-r.bottom),
+          slack:t(rim-parseFloat(cs.paddingBottom)-r.bottom),
+          screenBelow:Math.round(innerHeight-q.bottom)};})()};})()`;
+  /* Let the entrance transform finish before measuring anything.
+     `.sheet` sits at `scale(.97)` until `.panels` takes its `on` class, and a
+     44px arrow measured at 97% is a 43px arrow — enough to fail a thumb-target
+     check for reasons that have nothing to do with the CSS, and to fail it only
+     on the runs where the machine happened to be a beat slower. So this waits
+     for the class AND for two identical measurements in a row: the class alone
+     is not enough, because the scale is transitioned over .22s after it lands.
+
+     AND IT STILL WENT OFF ONCE IN THREE. Two equal samples 120ms apart can both
+     land on a transform that has not finished — the renderer paints this scene
+     at a couple of frames a second and a stalled transition holds one value for
+     as long as the stall lasts — so a 44px arrow came back as 43 and failed the
+     thumb check for a reason that had nothing to do with any stylesheet. The
+     scale is now read STRAIGHT OFF the sheet's own computed transform, which is
+     an exact 1 or it is not the resting state, and the height still has to
+     settle on top of that. */
+  for (let i = 0; i < 40; i++) {
+    const S = `(()=>{const s=document.querySelector('.sheet.trade');
+      if(!s) return null;
+      const m=new DOMMatrixReadOnly(getComputedStyle(s).transform);
+      return {on:!!document.querySelector('.panels.on'), scale:Math.round(m.a*1000),
+        h:Math.round(document.querySelector('.tr-arr').getBoundingClientRect().height*100)};})()`;
+    const a = await ev(S);
+    await sleep(120);
+    const b = await ev(S);
+    if (a && b && b.on && b.scale === 1000 && b.h > 100 && a.h === b.h) break;
+  }
   const m = await ev(MEASURE);
   console.log('  ARROWS ' + JSON.stringify({
     n: m.arrows.length, glyph: m.glyph, sheet: m.sheet, fits: m.fits, vh: m.vh,
-    plate: m.arrows[0] && m.arrows[0].plate, live: m.arrows[0] && m.arrows[0].live
+    plate: m.arrows[0] && m.arrows[0].plate, live: m.arrows[0] && m.arrows[0].live,
+    close: m.close
   }));
   console.log('  LANES ' + JSON.stringify({
-    caps: m.caps, legendGone: m.legendGone, foot: m.foot, clipped: m.clipped
+    caps: m.caps, legendGone: m.legendGone, foot: m.foot, clipped: m.clipped,
+    order: m.order, bands: m.bands, deal: m.deal
   }));
 
+  /* One reader for the whole sheet, because from here on every check is about
+     the RELATIONSHIP between three things — what the arrows say, what the cards
+     look like, and what is actually left in the pack — and reading them in
+     three separate round trips is how a check ends up describing two different
+     moments and calling them one. */
+  const readSheet = () => ev(`(()=>{
+    const cols=[...document.querySelectorAll('.sheet.trade .tr-col')];
+    const txt=n=>(n&&n.textContent||'').trim();
+    const has=(c,k)=>c.classList.contains(k);
+    const cards={};
+    for(const c of cols){
+      const r=c.getAttribute('data-res');
+      const up=c.querySelector('.tr-arr.up'), dn=c.querySelector('.tr-arr.dn');
+      const cnt=c.querySelector('.tr-count');
+      cards[r]={
+        /* The deal now lives in the card's own numeral as a delta, so that is
+           what gets read: "was" is empty until something is staged, "now" is
+           what the pack would be left holding. */
+        was:txt(c.querySelector('.tr-was')).replace(/[^0-9]/g,''),
+        now:txt(c.querySelector('.tr-now')),
+        dir:cnt&&has(cnt,'get')?'get':(cnt&&has(cnt,'give')?'give':''),
+        rate:txt(c.querySelector('.tr-rate')),
+        act:txt(c.querySelector('.tr-act u')),
+        upLive:!up.classList.contains('off'), dnLive:!dn.classList.contains('off'),
+        dim:has(c,'dim'), armed:has(c,'armed')};
+    }
+    return {cards,
+      dim:cols.filter(c=>has(c,'dim')).map(c=>c.getAttribute('data-res')),
+      armed:cols.filter(c=>has(c,'armed')).map(c=>c.getAttribute('data-res')),
+      getting:cols.filter(c=>has(c,'getting')).map(c=>c.getAttribute('data-res')),
+      giving:cols.filter(c=>has(c,'giving')).map(c=>c.getAttribute('data-res')),
+      dnLive:cols.filter(c=>!c.querySelector('.tr-arr.dn').classList.contains('off'))
+        .map(c=>c.getAttribute('data-res')),
+      /* The rate is quoted once, in the head. Any card carrying one as well is
+         a card whose rate DISAGREES with it, which is the only reason to. */
+      headRate:txt(document.querySelector('.sheet.trade .tr-headrate')),
+      cardRates:cols.filter(c=>txt(c.querySelector('.tr-rate')))
+        .map(c=>c.getAttribute('data-res')),
+      say:[...document.querySelectorAll('.sheet.trade .tr-cap.say')]
+        .map(c=>(c.className.indexOf('give')>=0?'give:':'get:')
+          +txt(c.querySelector('.tc-live'))).join(' | '),
+      /* THE PRICE, AS A NUMBER, IN THE BAND THAT PAYS IT. "Needs 12" before
+         anything is staged, "8 of 12" part way, "12 of 12" when it is covered.
+         Blank is a real answer — an untouched sheet has no price — so this is
+         read whether or not the band is showing it. */
+      cost:txt(document.querySelector('.sheet.trade .tr-cap.give .tc-cost')),
+      tradeOff:!!document.querySelector('.sheet.trade .sheet-foot .btn.off'),
+      res:{...window.__ISLAND__.state.players[0].res}};})()`);
+  const clickAt = async (x, y) => {
+    await send('Input.dispatchMouseEvent',
+      { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent',
+      { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  };
+  const centreOf = sel => ev(`(()=>{const n=document.querySelector(${
+    JSON.stringify(sel)}); if(!n) return null; const r=n.getBoundingClientRect();
+    return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+r.height/2)};})()`);
+  /**
+   * Aim, CHECK THE AIM, then press.
+   *
+   * A screenshot on this renderer costs five to eight seconds, and a coordinate
+   * measured before one and used after it is a coordinate measured in a
+   * different world: the sheet re-runs its entrance transform every time the
+   * panel is shown, the row's `done` animation scales it, and a click that
+   * lands two pixels outside the sheet lands on the SCRIM, whose one job is to
+   * close the panel. That is exactly how a run of this stage came back with
+   * three photographs of the island and no trade sheet in them. So every pose
+   * tap re-measures its own target and confirms with `elementFromPoint` that
+   * the target is really the thing under the cursor before it presses.
+   */
+  const tap = async sel => {
+    const p = await ev(`(()=>{const n=document.querySelector(${JSON.stringify(sel)});
+      if(!n) return null; const r=n.getBoundingClientRect();
+      const x=Math.round(r.left+r.width/2), y=Math.round(r.top+r.height/2);
+      const at=document.elementFromPoint(x,y);
+      return {x,y,hit:!!(at&&(at===n||n.contains(at)))};})()`);
+    if (!p || !p.hit) { console.log('  TAPMISS ' + sel + ' ' + JSON.stringify(p)); return p; }
+    await clickAt(p.x, p.y);
+    return p;
+  };
+  /** Refill the pack and reopen, which clears whatever the last check staged. */
+  const restock = res => ev(`(()=>{const I=window.__ISLAND__, p=I.state.players[0];
+    Object.assign(p.res, ${JSON.stringify(res)});
+    I.game.openTrade(null); return 1})()`);
+
+  /* THE SHEET AS IT ARRIVES. Nothing staged, so every give arrow along the
+     bottom is legitimately dead — you cannot hand over four wool for nothing —
+     and a whole row of grey with no reason given is the one way this redesign
+     could read as broken. The brown band has to be saying why. */
+  const idle = await readSheet();
+  console.log('  IDLE ' + JSON.stringify({
+    say: idle.say, dnLive: idle.dnLive, tradeOff: idle.tradeOff
+  }));
+  /* Send the frozen countdown away before anything is photographed. The match
+     is held the whole time a sheet is open — that is what the "Match paused"
+     chip is telling you — so flowCountdown.js's "GET READY 3" hangs there for
+     the entire stage, and it has been sitting on top of the middle card in
+     every trade screenshot this harness has ever taken. It is not part of the
+     sheet and it is not what anyone reviewing the sheet is looking at. */
+  await ev(`(()=>{const l=document.querySelector('.fc-layer');
+    if(l){l.classList.add('fc-off');l.classList.remove('on');} return !!l})()`);
+  await sleep(120);
+  /* NO SHOT HERE. Every picture this stage takes now comes out of one unbroken
+     session at the end, starting from the eight-of-everything pack a real
+     player walks in with — because a set assembled from three different packs
+     photographs three states that never followed one another, and the flow
+     cannot be read off it. */
+
   /* THE PRESS. Deliberately awkward: 3px inside the TOP edge of the plate, not
-     the middle — the edge is where an inconsistent control gives itself away. */
+     the middle — the edge is where an inconsistent control gives itself away.
+     The top arrow adds to the pile it is sitting on now, so what has to come
+     back is a RECEIVE — the card's own numeral reading `8 -> 9`, not a lot
+     staged out of the pack. */
   const press = await ev(`(()=>{const a=document.querySelectorAll('.tr-col')[0]
     .querySelector('.tr-arr.up'); const r=a.getBoundingClientRect();
     return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+3),
@@ -1482,31 +1720,258 @@ if (STAGE === 'home') {
   await send('Input.dispatchMouseEvent',
     { type: 'mouseReleased', x: press.x, y: press.y, button: 'left', clickCount: 1 });
   await sleep(300);
-  const staged = await ev(`(()=>{const b=document.querySelectorAll('.tr-col')[0]
-    .querySelector('.tr-arr.up .tr-badge');
-    return {on:!!b&&b.classList.contains('on'), text:(b&&b.textContent||'').trim()};})()`);
+  await sleep(300);
+  const pressed = await readSheet();
+  const staged = { ...pressed.cards.wood, res: 'wood' };
   console.log('  PRESS ' + JSON.stringify({ ...press, staged }));
-  /* And the card underneath is still its own button: the arrows' hit boxes now
-     cover the 4px gap on either side of it, which is dead space, and nothing
-     beyond it. If they had crept over the card this press would stage instead
-     of picking. */
+
+  /* And the card underneath is still its own button: the arrows' hit boxes
+     cover half the 10px gap on either side of it and nothing beyond it. That
+     check used to read "the tap picked and staged nothing", which is no longer
+     the right answer — a card tap PAYS now. So the two effects are told apart
+     instead: a press of the arrow moves the card's numeral UP by one card, a
+     press of the card moves it DOWN by a whole lot, and if the arrow's box had
+     crept over the card this tap would come back as the former.
+
+     The gap itself is measured here too. It is the only separation between
+     "spend one lot" and "spend all of it", and a reviewer counted it at six
+     pixels: "the two most different actions in the sheet are 6px apart". */
   const card = await ev(`(()=>{const c=document.querySelectorAll('.tr-col')[2];
     const b=c.querySelector('.tr-card'), r=b.getBoundingClientRect();
+    const up=c.querySelector('.tr-arr.up').getBoundingClientRect();
+    const dn=c.querySelector('.tr-arr.dn').getBoundingClientRect();
     return {res:c.getAttribute('data-res'),
       x:Math.round(r.left+r.width/2), y:Math.round(r.top+2),
+      gapAbove:Math.round(r.top-up.bottom), gapBelow:Math.round(dn.top-r.bottom),
       topEdgeIsTheCard:(document.elementFromPoint(Math.round(r.left+r.width/2),
         Math.round(r.top+2))||{}).closest!==undefined
         && document.elementFromPoint(Math.round(r.left+r.width/2),
           Math.round(r.top+2)).closest('.tr-card')===b};})()`);
-  await send('Input.dispatchMouseEvent',
-    { type: 'mousePressed', x: card.x, y: card.y, button: 'left', clickCount: 1 });
-  await send('Input.dispatchMouseEvent',
-    { type: 'mouseReleased', x: card.x, y: card.y, button: 'left', clickCount: 1 });
+  await clickAt(card.x, card.y);
   await sleep(250);
-  const picked = await ev(`(()=>{const c=document.querySelectorAll('.tr-col')[2];
-    return {cur:c.classList.contains('cur'),
-      stagedHere:!!c.querySelector('.tr-badge.on')};})()`);
+  const after1 = await readSheet();
+  const picked = {
+    cur: await ev(`document.querySelectorAll('.tr-col')[2].classList.contains('cur')`),
+    ...after1.cards.wool
+  };
   console.log('  CARD ' + JSON.stringify({ ...card, picked }));
+
+  /* ------------------------------------------------------- ASK, THEN GREY
+   *
+   *   "I click the up arrow four times to add 4 brick to the trade I want to
+   *    make. The other middle tiles for the resources start to grey out (unless
+   *    I have enough of that resource to make the trade), so I could click the
+   *    down arrows on items I have at least four of."
+   *
+   * Forty wood, eight wool, eight wheat, TWO ore, no brick — and the ore is the
+   * point of it. At the market's 4:1, four brick costs sixteen of whatever pays,
+   * so wood is the only pile that can settle it alone and wood is the only pile
+   * that ARMS. But wool and wheat are not dim, because eight is two lots and two
+   * lots is a real contribution; the only dim card in the row is the ore, which
+   * at two held cannot buy anything at this post at any size of ask.
+   *
+   * That distinction is the whole fix. The first version dimmed anything that
+   * could not cover the ask ALONE, and a reviewer put the owner's own sentence
+   * next to it — "he wrote 'trade 8 wood and 8 sheep for 4 brick', a MIXED
+   * payment from two piles, neither of which covers the full cost; your rule
+   * makes that exact trade look forbidden."
+   *
+   * So the load-bearing check is the agreement one: a dim card's give arrow is
+   * dead and a lit card's give arrow is live, every time, with no card left
+   * saying no while the button under it says yes. */
+  await restock({ wood: 40, brick: 0, wool: 8, wheat: 8, ore: 2 });
+  await sleep(420);
+  const brickUp = await centreOf('.tr-col[data-res="brick"] .tr-arr.up');
+  for (let i = 0; i < 4; i++) { await clickAt(brickUp.x, brickUp.y); await sleep(70); }
+  await sleep(240);
+  const ask = await readSheet();
+  console.log('  ASK ' + JSON.stringify({
+    asked: `${ask.cards.brick.was}->${ask.cards.brick.now}`, dir: ask.cards.brick.dir,
+    dim: ask.dim, armed: ask.armed, plateOnWood: ask.cards.wood.act,
+    dnLive: ask.dnLive, say: ask.say, tradeOff: ask.tradeOff, cost: ask.cost,
+    headRate: ask.headRate, cardRates: ask.cardRates
+  }));
+
+  /* --------------------------------------------------- ONE TAP, EXACT PRICE
+   *
+   *   "I can click the middle button with the image of the wood itself, and
+   *    that automatically knows I want to trade the exact amount of wood it
+   *    takes for the number of bricks I'm asking for."
+   *
+   * Five readings of the same number, and they all have to agree: the plate
+   * said PAY 16 before the tap, the card's numeral says 40 -> 24 after it, the
+   * plate now says CLEAR 16 in the same slot it said PAY in, the Trade button
+   * comes alive because the ask is exactly covered, and sixteen wood are really
+   * gone once the deal goes through.
+   *
+   * `ratio` is read off the sheet's own header rather than assumed. This stage
+   * runs at the Great Market so it is 4, but the same code reads 3 at a generic
+   * dock and 2 at a matching one, and a check that spelled 16 out longhand
+   * would pass at the market and quietly stop meaning anything at a dock. */
+  const woodCard = await centreOf('.tr-col[data-res="wood"] .tr-card');
+  const ratio = parseInt(ask.headRate, 10) || 4;
+  await clickAt(woodCard.x, woodCard.y);
+  await sleep(280);
+  const paid = await readSheet();
+  const before = { ...paid.res };
+  const dealBtn = await centreOf('.sheet.trade .sheet-foot .btn');
+  await clickAt(dealBtn.x, dealBtn.y);
+  await sleep(360);
+  const done = await readSheet();
+  console.log('  ONETAP ' + JSON.stringify({
+    ratio, promised: ask.cards.wood.act,
+    delta: `${paid.cards.wood.was}->${paid.cards.wood.now}`, dir: paid.cards.wood.dir,
+    undoPlate: paid.cards.wood.act, tradeOff: paid.tradeOff,
+    spent: before.wood - done.res.wood, gained: done.res.brick - before.brick,
+    say: paid.say, cost: paid.cost
+  }));
+
+  /* ------------------------------------------------------- ONE TAP, AND BACK
+   *
+   * The same plate, in the same slot, taking the whole payment out again. The
+   * undo used to be a 14px x badge in a corner of the card — "not a touch
+   * target, least of all for a destructive action" — and it lived in the slot
+   * the PRICE had occupied one state earlier, so the same number appeared in
+   * two different containers forty pixels apart in adjacent states. It is the
+   * card's own plate now, which makes the target the whole card. */
+  await restock({ wood: 40, brick: 0, wool: 8, wheat: 8, ore: 2 });
+  await sleep(400);
+  for (let i = 0; i < 4; i++) { await clickAt(brickUp.x, brickUp.y); await sleep(70); }
+  await sleep(180);
+  await clickAt(woodCard.x, woodCard.y);
+  await sleep(240);
+  const committed = await readSheet();
+  await clickAt(woodCard.x, woodCard.y);
+  await sleep(240);
+  const undone = await readSheet();
+  /* AND THE BAND COUNTS WHILE THE DEAL IS HALF PAID. One lot of wood against a
+     four-card ask is one quarter of the bill, and the give band has to say so
+     in figures — "4 of 16" — because this is the state the running total exists
+     for: nothing is armed, no plate anywhere quotes a price, and the only other
+     way to know what is still owed is to multiply the header by the delta on a
+     card at the far end of the row. */
+  await clickAt(
+    (await centreOf('.tr-col[data-res="wood"] .tr-arr.dn')).x,
+    (await centreOf('.tr-col[data-res="wood"] .tr-arr.dn')).y);
+  await sleep(240);
+  const part = await readSheet();
+  console.log('  UNDO ' + JSON.stringify({
+    plate: committed.cards.wood.act,
+    afterDelta: `${undone.cards.wood.was}->${undone.cards.wood.now}`,
+    stillAsked: `${undone.cards.brick.was}->${undone.cards.brick.now}`,
+    armedAgain: undone.armed, say: undone.say,
+    cost: { committed: committed.cost, undone: undone.cost, part: part.cost }
+  }));
+
+  /* ------------------------------------------------------------ MIXED ASK
+   *
+   * Two brick AND two ore, paid for with one tap on wool. The price of a lot is
+   * set by what you HAND OVER and never by what you get back — one wool lot
+   * buys one card whatever that card is — so "the exact amount it takes" for a
+   * four-card ask made of two different resources is four lots, 16 wool, and
+   * the deal comes out as two brick and two ore. Anything that tried to price
+   * the ask line by line would have had to invent bookkeeping the rules layer
+   * does not have, and would have left this deal half paid after a tap that
+   * says it pays for it. */
+  await restock({ wood: 8, brick: 0, wool: 20, wheat: 8, ore: 0 });
+  await sleep(420);
+  const oreUp = await centreOf('.tr-col[data-res="ore"] .tr-arr.up');
+  const brickUp2 = await centreOf('.tr-col[data-res="brick"] .tr-arr.up');
+  for (let i = 0; i < 2; i++) { await clickAt(brickUp2.x, brickUp2.y); await sleep(70); }
+  for (let i = 0; i < 2; i++) { await clickAt(oreUp.x, oreUp.y); await sleep(70); }
+  await sleep(220);
+  const mixAsk = await readSheet();
+  const woolCard = await centreOf('.tr-col[data-res="wool"] .tr-card');
+  await clickAt(woolCard.x, woolCard.y);
+  await sleep(280);
+  const mixPaid = await readSheet();
+  const mixBefore = { ...mixPaid.res };
+  const dealBtn2 = await centreOf('.sheet.trade .sheet-foot .btn');
+  await clickAt(dealBtn2.x, dealBtn2.y);
+  await sleep(360);
+  const mixDone = await readSheet();
+  console.log('  MIXED ' + JSON.stringify({
+    asked: { brick: `${mixAsk.cards.brick.was}->${mixAsk.cards.brick.now}`,
+      ore: `${mixAsk.cards.ore.was}->${mixAsk.cards.ore.now}` },
+    dim: mixAsk.dim, armed: mixAsk.armed, promised: mixAsk.cards.wool.act,
+    delta: `${mixPaid.cards.wool.was}->${mixPaid.cards.wool.now}`,
+    tradeOff: mixPaid.tradeOff,
+    spentWool: mixBefore.wool - mixDone.res.wool,
+    gained: { brick: mixDone.res.brick - mixBefore.brick,
+      ore: mixDone.res.ore - mixBefore.ore }
+  }));
+
+  /* --------------------------------------- A PILE PAYS WHAT IT CAN, NOT ALL
+   *
+   *   "In the ask3 frame all five cards sample inert tan at all three sizes
+   *    with an empty plate slot, even though every pile of 8 is a perfectly
+   *    legal contribution toward the 12. This kills the owner's own headline
+   *    example: he wrote 'trade 8 wood and 8 sheep for 4 brick' — a cost of 16
+   *    against two piles of 8 — so that exact trade opens in precisely this
+   *    state, with every card dead and the one-tap payer withheld."
+   *
+   * Eight of everything, three brick asked for: twelve to find and nothing in
+   * the row holding twelve. That used to arm nothing at all. Now every pile
+   * offers the two lots it has, the plate carries the eight it will really
+   * spend rather than the twelve it cannot, and the deal closes in two taps —
+   * which is the owner's mixed payment, arrived at by tapping cards.
+   *
+   * Then the middle of it is taken apart again one lot at a time, because a
+   * part payment that can only be undone WHOLE is a trap:
+   *
+   *   "Sheep is 4 of 8 spent but its down arrow is dimmed, so the only
+   *    adjustment is CLEAR 4 — all or nothing."
+   *
+   * The arrow that does it is the one ABOVE the paying card — those cards go
+   * back into the pack, which is what up has meant since the lanes flipped —
+   * and this is where that gets proved rather than asserted in a comment.
+   *
+   * Every number below is built out of `ratio`, read off the sheet's own
+   * header. At the market a pile of eight is two lots of four; at a 2:1 dock
+   * the same eight would cover the whole ask and the arithmetic still holds. */
+  await restock({ wood: 8, brick: 8, wool: 8, wheat: 8, ore: 8 });
+  await sleep(420);
+  const brickUp3 = await centreOf('.tr-col[data-res="brick"] .tr-arr.up');
+  for (let i = 0; i < 3; i++) { await clickAt(brickUp3.x, brickUp3.y); await sleep(70); }
+  await sleep(240);
+  const p3 = await readSheet();
+  /* What one pile of eight can put toward a three-card ask, at this post's
+     rate. Two lots at the market; the whole thing at a 2:1 dock. */
+  const p3lots = Math.min(3, Math.floor(8 / ratio));
+  const woodCard8 = await centreOf('.tr-col[data-res="wood"] .tr-card');
+  await clickAt(woodCard8.x, woodCard8.y);
+  await sleep(300);
+  const p3part = await readSheet();
+  const woodUp8 = await centreOf('.tr-col[data-res="wood"] .tr-arr.up');
+  await clickAt(woodUp8.x, woodUp8.y);
+  await sleep(260);
+  const p3trim = await readSheet();
+  const woolCard8 = await centreOf('.tr-col[data-res="wool"] .tr-card');
+  await clickAt(woolCard8.x, woolCard8.y);
+  await sleep(300);
+  const p3full = await readSheet();
+  const p3before = { ...p3full.res };
+  const dealBtn3 = await centreOf('.sheet.trade .sheet-foot .btn');
+  await clickAt(dealBtn3.x, dealBtn3.y);
+  await sleep(360);
+  const p3done = await readSheet();
+  console.log('  PARTPAY ' + JSON.stringify({
+    asked: `${p3.cards.brick.was}->${p3.cards.brick.now}`,
+    lotsAPileCanOffer: p3lots,
+    plates: { wood: p3.cards.wood.act, wool: p3.cards.wool.act },
+    armed: p3.armed, dim: p3.dim, needs: p3.cost, say: p3.say,
+    afterWood: { delta: `${p3part.cards.wood.was}->${p3part.cards.wood.now}`,
+      plate: p3part.cards.wood.act, cost: p3part.cost,
+      tradeOff: p3part.tradeOff, upLive: p3part.cards.wood.upLive,
+      dnLive: p3part.cards.wood.dnLive },
+    afterOneLotBack: { delta: `${p3trim.cards.wood.was}->${p3trim.cards.wood.now}`,
+      plate: p3trim.cards.wood.act, cost: p3trim.cost },
+    afterWool: { cost: p3full.cost, tradeOff: p3full.tradeOff,
+      plate: p3full.cards.wool.act },
+    spent: { wood: p3before.wood - p3done.res.wood,
+      wool: p3before.wool - p3done.res.wool },
+    gained: p3done.res.brick - p3before.brick
+  }));
 
   /* ------------------------------------------------------------ FAST TAPS
    *
@@ -1515,32 +1980,46 @@ if (STAGE === 'home') {
    *    not registering."
    *
    * Six presses 35ms apart, which is faster than a person can tap and much
-   * faster than `click` can be synthesised and confirmed. With forty wood in the
-   * pack every one of them is legal, so the badge has to read 24 (six lots of
-   * four) and nothing less. Then the same arrow held down for a second, which
-   * has to auto-repeat rather than sit there. */
-  await ev(`(()=>{const I=window.__ISLAND__, p=I.state.players[0];
-    p.res.wood=40; I.game.openTrade(null); return 1})()`);
+   * faster than `click` can be synthesised and confirmed. Every one of them has
+   * to land, and BOTH arrows get the same treatment now that the sheet is asked
+   * before it is paid: from a pack of forty, six taps up must leave the wood
+   * card reading 46, and six taps on a give arrow must leave that card down by
+   * six lots — 24 at the market's rate.
+   *
+   * The counters used to ride the arrows themselves, and the old expectation
+   * here was the badge text. It is the card's numeral now, which is a stricter
+   * reading of the same thing: the badge only ever showed the staged amount,
+   * while the numeral shows the staged amount applied to the pack, so a press
+   * that landed but did not update the pile would still be caught.
+   *
+   * Then the same arrow held down for a second, which has to auto-repeat rather
+   * than sit there. */
+  const stock40 = () => ev(`(()=>{const I=window.__ISLAND__, p=I.state.players[0];
+    p.res.wood=40;p.res.brick=40;p.res.wool=40;p.res.wheat=40;p.res.ore=40;
+    I.game.openTrade(null); return 1})()`);
+  await stock40();
   await sleep(420);
   const arrow = await ev(`(()=>{const a=document.querySelectorAll('.tr-col')[0]
     .querySelector('.tr-arr.up'); const r=a.getBoundingClientRect();
     return {x:Math.round(r.left+r.width/2), y:Math.round(r.top+r.height/2)};})()`);
-  const badge = () => ev(`(()=>{const b=document.querySelectorAll('.tr-col')[0]
-    .querySelector('.tr-arr.up .tr-badge');
-    return (b&&b.textContent||'').trim();})()`);
-  for (let i = 0; i < 6; i++) {
-    await send('Input.dispatchMouseEvent',
-      { type: 'mousePressed', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
-    await send('Input.dispatchMouseEvent',
-      { type: 'mouseReleased', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
-    await sleep(35);
-  }
+  const woodNow = () => ev(`(()=>{const n=document.querySelector(
+    '.tr-col[data-res="wood"] .tr-now'); return (n&&n.textContent||'').trim();})()`);
+  const rapid = async (pt, n) => {
+    for (let i = 0; i < n; i++) { await clickAt(pt.x, pt.y); await sleep(35); }
+  };
+  await rapid(arrow, 6);
   await sleep(240);
-  const burst = await badge();
+  const burst = await woodNow();
+  /* Six on a give arrow, against the six cards that burst just asked for. Six
+     lots at four apiece is twenty-four off a pack of forty. */
+  const giveArrow = await centreOf('.tr-col[data-res="brick"] .tr-arr.dn');
+  await rapid(giveArrow, 6);
+  await sleep(240);
+  const burstDn = await ev(`(()=>{const n=document.querySelector(
+    '.tr-col[data-res="brick"] .tr-now'); return (n&&n.textContent||'').trim();})()`);
 
   /* And the hold. Down, wait a second, up. */
-  await ev(`(()=>{const I=window.__ISLAND__;
-    I.state.players[0].res.wood=40; I.game.openTrade(null); return 1})()`);
+  await stock40();
   await sleep(360);
   await send('Input.dispatchMouseEvent',
     { type: 'mousePressed', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
@@ -1548,27 +2027,258 @@ if (STAGE === 'home') {
   await send('Input.dispatchMouseEvent',
     { type: 'mouseReleased', x: arrow.x, y: arrow.y, button: 'left', clickCount: 1 });
   await sleep(220);
-  const held = await badge();
-  const after = await badge();
+  const held = await woodNow();
+  const after = await woodNow();
   console.log('  FASTTAPS ' + JSON.stringify({
-    burst, held, settledAfterRelease: held === after
+    burst, burstDn, held, settledAfterRelease: held === after
   }));
 
+  /* Every price in here is quoted back off the sheet rather than written down.
+     The market charges 4, a generic dock 3 and a matching one 2, and a check
+     that spelled "16" out longhand would pass at the market and stop meaning
+     anything the moment this stage is pointed at a dock. */
+  const wr = parseInt(mixAsk.headRate, 10) || 4;
+  const sameSet = (a, b) => a.length === b.length
+    && [...a].sort().join(',') === [...b].sort().join(',');
+  /* The thumb minimum is 44px and this row is the reason it exists: the give
+     arrow is the one control on the sheet a player hits four times in a row. */
+  const THUMB = 44;
   console.log('  TOUCH ' + JSON.stringify({
-    plateIsAThumbTarget: m.arrows.every(a => a.plate.h >= 36 && a.plate.w >= 44),
+    plateIsAThumbTarget: m.arrows.every(a => a.plate.h >= THUMB && a.plate.w >= THUMB),
     liveBoxIsBigger: m.arrows.every(a => a.live.h >= a.plate.h),
-    theEdgePressLanded: press.onTop === true && staged.on === true,
+    /* The X may be drawn small on a short screen; it may not be TAPPED small. */
+    theCloseButtonIsAThumbTarget: !!m.close
+      && m.close.live.w >= THUMB && m.close.live.h >= THUMB,
+    anArrowIsNeverWithinAThumbOfTheCard: card.gapAbove >= 10 && card.gapBelow >= 10,
+    theEdgePressLanded: press.onTop === true && staged.dir === 'get',
+    andUpMeansIntoYourPack: staged.was === '8' && staged.now === '9',
     theWholeSheetStillFits: m.fits === true && m.clipped === 0,
-    lanesAreBands: m.caps.length === 2 && m.caps.every(c => c.h >= 24 && c.paint
-      && c.type >= 12) && /give/i.test(m.caps[0].lab) && /receive/i.test(m.caps[1].lab),
+    /* AND THE DEAL BUTTON IS NOT STANDING ON THE RIM. "It fits" passed for a
+       whole pass while the sheet was 9px over its own max-height at 320, the
+       give band was resting on the foot's rule and the primary call to action
+       had 3px under it against 10 above. So the gap is measured on both sides
+       now — a pixel of tolerance for sub-pixel layout, and never less than the
+       6px that stops a button reading as clipped. `slack` catches the cause
+       rather than the symptom: below zero means the sheet is overflowing and
+       its padding-bottom is only in the stylesheet. */
+    theDealHasRoomUnderIt: !!m.deal && m.deal.below >= 6
+      && m.deal.below >= m.deal.above - 1 && m.deal.slack >= -0.5,
+    receiveIsOnTopInTheDomAndInThePaint:
+      m.order.join('>') === 'receive>row>give'
+      && m.bands.receiveBottom <= m.bands.rowTop
+      && m.bands.giveTop >= m.bands.rowBottom,
+    lanesAreBands: m.caps.length === 2 && m.caps.every(c => c.h >= 16 && c.paint
+      && c.type >= 10) && /receive/i.test(m.caps[0].lab) && /give/i.test(m.caps[1].lab),
     theFootIsJustTheDeal: m.legendGone === true && /^trade$/i.test(m.foot),
-    sixFastTapsAllCounted: burst === '24',
-    aHeldArrowRepeats: (+held || 0) >= 12 && (+held || 0) > 4,
+    anUntouchedSheetSaysWhyItsBottomIsGrey:
+      idle.dnLive.length === 0 && /ask above/i.test(idle.say),
+    /* The fixed greying rule: lit means "this pile can contribute a lot", dim
+       means it cannot contribute anything here at all. Eight wool is two lots
+       and stays lit even though it cannot cover sixteen on its own; two ore is
+       not one lot and dims.
+       AND EVERY LIT PILE NOW CARRIES A PLATE, priced at what its own tap would
+       really spend: forty wood covers the whole sixteen, eight wool covers half
+       of it, and both say so. A pile that could contribute but showed no plate
+       was the defect that sent the last pass back. */
+    dimIsOnlyForPilesThatCannotContribute:
+      sameSet(ask.dim, ['ore']) && sameSet(ask.armed, ['wood', 'wool', 'wheat'])
+      && ask.cards.wood.act === `Pay ${ratio * 4}`
+      && ask.cards.wool.act === `Pay ${ratio * 2}`
+      && ask.cards.ore.act === ''
+      && ask.cards.brick.dir === 'get' && ask.cards.brick.now === '4',
+    andEveryCardAgreesWithTheArrowUnderIt:
+      Object.keys(ask.cards).every(r => ask.cards[r].dir === 'get'
+        || ask.cards[r].dim !== ask.cards[r].dnLive),
+    theRateIsQuotedOnceNotFiveTimes:
+      /^\d+:1$/.test(ask.headRate) && ask.cardRates.length === 0,
+    theOneTapSpendsExactlyRatioTimesN:
+      ask.cards.wood.act === `Pay ${ratio * 4}`
+      && paid.cards.wood.now === String(before.wood - ratio * 4)
+      && paid.cards.wood.dir === 'give'
+      && paid.tradeOff === false
+      && (before.wood - done.res.wood) === ratio * 4
+      && (done.res.brick - before.brick) === 4,
+    /* Same slot, same plate, opposite verb — and the ask survives the undo. */
+    andOneTapTakesItBackOutAgain:
+      committed.cards.wood.act === `Clear ${ratio * 4}`
+      && undone.cards.wood.dir === '' && undone.cards.wood.now === '40'
+      && undone.cards.brick.now === '4'
+      && sameSet(undone.armed, ['wood', 'wool', 'wheat']),
+    andCoversAMixedAskWholeRatherThanByLine:
+      mixAsk.cards.wool.act === `Pay ${wr * 4}`
+      && mixPaid.cards.wool.dir === 'give'
+      && (mixBefore.wool - mixDone.res.wool) === wr * 4
+      && (mixDone.res.brick - mixBefore.brick) === 2
+      && (mixDone.res.ore - mixBefore.ore) === 2,
+    /* THE PRICE IS A NUMBER ON THE SHEET, NOT AN INFERENCE FROM ONE.
+     *
+     *   "In trade-960x444-ask3.png the number 12 appears NOWHERE on the sheet —
+     *    the header says 4:1, the card says 8 -> 11, and that is all."
+     *
+     * NEEDS 16 with the ask standing and nothing paying, 4 OF 16 with one lot
+     * of the four in, 16 OF 16 once the deal is covered — and nothing at all on
+     * a sheet nobody has touched, because an untouched sheet has no price.
+     * Every figure comes off `ratio`, which is read out of the sheet's own
+     * header, so this check means the same thing at a 3:1 dock and a 2:1 one. */
+    theGiveBandStatesThePriceInFigures:
+      idle.cost === '' && ask.cost === `Needs ${ratio * 4}`
+      && paid.cost === `${ratio * 4} of ${ratio * 4}`
+      && part.cost === `${ratio} of ${ratio * 4}`
+      && mixAsk.cost === `Needs ${wr * 4}`,
+    /* THE ONE-TAP PAYER IS NOT WITHHELD WHEN NO SINGLE PILE COVERS THE BILL.
+     *
+     *   "This kills the owner's own headline example — 'trade 8 wood and 8
+     *    sheep for 4 brick' is a cost of 16 against two piles of 8, so that
+     *    exact trade opens with every card dead and the one-tap payer
+     *    withheld."
+     *
+     * Eight of everything, three brick asked: every pile that holds a lot arms
+     * and its plate is priced at what that tap really spends. Then the tap
+     * spends exactly that, the band counts it, the Trade button stays off
+     * because the deal is genuinely half done, and the band tells the player to
+     * tap a card rather than steering them back to the arrows. */
+    aPilePaysWhatItCanRatherThanNothing:
+      sameSet(p3.armed, ['wood', 'wool', 'wheat', 'ore']) && p3.dim.length === 0
+      && ['wood', 'wool', 'wheat', 'ore']
+        .every(r => p3.cards[r].act === `Pay ${ratio * p3lots}`)
+      && p3.cost === `Needs ${ratio * 3}` && /tap a card/i.test(p3.say)
+      && p3part.cards.wood.dir === 'give'
+      && p3part.cards.wood.now === String(8 - ratio * p3lots)
+      && p3part.cards.wood.act === `Clear ${ratio * p3lots}`
+      && p3part.cost === `${ratio * p3lots} of ${ratio * 3}`
+      && p3part.tradeOff === (p3lots < 3),
+    /* ...and the second tap finishes it, out of a different pile, for real. */
+    andASecondCardFinishesTheMixedPayment:
+      p3full.cost === `${ratio * 3} of ${ratio * 3}` && p3full.tradeOff === false
+      && (p3done.res.brick - p3before.brick) === 3
+      && (p3before.wood - p3done.res.wood)
+        + (p3before.wool - p3done.res.wool) === ratio * 3,
+    /* A part payment comes back out one lot at a time, from the arrow above the
+       card — not only whole, through CLEAR. */
+    aPartPaidPileTrimsOneLotAtATime:
+      p3part.cards.wood.upLive === true
+      && p3trim.cards.wood.act === `Clear ${ratio * (p3lots - 1)}`
+      && p3trim.cards.wood.now === String(8 - ratio * (p3lots - 1))
+      && p3trim.cost === `${ratio * (p3lots - 1)} of ${ratio * 3}`,
+    sixFastTapsAllCounted: burst === '46' && burstDn === '16',
+    aHeldArrowRepeats: (+held || 0) >= 44,
     andStopsWhenReleased: held === after,
-    theCardKeptItsOwnTaps: card.topEdgeIsTheCard === true
-      && picked.picked === undefined && picked.cur === true && !picked.stagedHere
+    theCardKeptItsOwnTaps: card.topEdgeIsTheCard === true && picked.cur === true
+      && picked.dir === 'give' && picked.now === String(8 - ratio)
   }));
-  await shot(`trade-${TAG}`);
+
+  /* ------------------------------------------------------------- THE SET
+   *
+   * ONE UNBROKEN SESSION, FROM THE PACK A REAL PLAYER WALKS IN WITH. The last
+   * set was assembled out of three different stockpiles — eight of everything
+   * in one frame, forty wood in the next — so the frames photographed states
+   * that never followed one another and the flow could not be read off them.
+   * Nothing below restocks. Eight of each, once, and then SIX pictures of the
+   * same afternoon:
+   *
+   *   idle    nothing asked, so the whole give lane is legitimately dead and
+   *           the brown band is carrying the only explanation of why.
+   *   main    two brick asked for. Two brick costs eight, and eight is exactly
+   *           what every other pile holds, so four gold PAY 8 plates come up at
+   *           once — the marquee feature, finally looking like something a
+   *           thumb would press.
+   *   paid    one tap on wood. 8 -> 0 on the card, CLEAR 8 in the same slot the
+   *           price was in, Trade lit.
+   *   ask3    cleared, then three brick instead. Three brick costs twelve and
+   *           nothing here holds twelve — which used to arm nothing at all and
+   *           leave twelve arrow taps as the only route. Every pile now offers
+   *           the two lots it has, at PAY 8 apiece, and NEEDS 12 in the band
+   *           says what those eights are being measured against.
+   *   part    THE MIDDLE TERM, and the frame this set was missing:
+   *             "Every frame supplied so far is either nothing-paid or
+   *              exactly-complete, so the middle term of the running total,
+   *              which was this pass's headline claim, is still unevidenced."
+   *           One tap on wood. Eight of the twelve found, 8 OF 12 in the band,
+   *           and the Trade button still off because the deal is genuinely half
+   *           done.
+   *   mixed   one tap on sheep for the last four. Two lots of wood and one of
+   *           sheep — the owner's own worked example — reached in two taps on
+   *           two cards, neither of which could have covered it alone.
+   */
+  const BRICK_UP = '.tr-col[data-res="brick"] .tr-arr.up';
+  const WOOD_CARD = '.tr-col[data-res="wood"] .tr-card';
+  const WOOL_CARD = '.tr-col[data-res="wool"] .tr-card';
+
+  /* RUN THE OPENING ALL THE WAY OUT BEFORE THE CAMERA COMES OUT.
+   *
+   * `flow.update` is the one system main.js keeps ticking while a sheet is open
+   * — everything else is held, which is what the "Match paused" chip promises —
+   * so matchflow's start-line countdown carries on behind the sheet, and when
+   * it reaches GO, `enterPlay` closes every panel that is not the scoreboard.
+   * A capture on this renderer costs five to eight seconds, so a run that takes
+   * five of them spends long enough with the sheet up for that to land in the
+   * middle of the set: this stage came back once with three photographs of the
+   * island and no trade sheet in any of them.
+   *
+   * Twenty seconds of flow with the panel shut puts the countdown, the GO and
+   * the objective card properly behind us. It also means the frozen "GET READY
+   * 3" that has sat on top of the middle card in every trade screenshot this
+   * harness ever took is gone because it FINISHED, rather than because it was
+   * hidden. */
+  await ev(`(()=>{const g=window.__ISLAND__.game;
+    if(g.panels&&g.panels.close)g.panels.close();
+    for(let k=0;k<1200;k++) g.flow.update(1/60);
+    return 1})()`);
+  await sleep(250);
+  console.log('  OPENING ' + JSON.stringify({
+    phase: await ev(`window.__ISLAND__.state.phase`),
+    countdownUp: await ev(`!!document.querySelector('.fc-layer:not(.fc-off)')`)
+  }));
+
+  /* A capture stalls the renderer for the better part of ten seconds, and the
+     synthetic `click` that follows a dispatched mouseup can come out the far
+     side of that stall — late enough that `pressable`'s 700ms
+     already-counted-this-one window has expired and the arrow counts the tap
+     twice. So every frame is followed by a settle long enough for anything the
+     capture deferred to land, and every step says out loud what the sheet is
+     holding, so a set that drifts says so in the log instead of in the pixels. */
+  const frame = async (tag) => {
+    await shot(tag ? `trade-${TAG}-${tag}` : `trade-${TAG}`);
+    await sleep(900);
+    const s = await readSheet();
+    console.log(`  POSE:${tag || 'ask2'} ` + JSON.stringify({
+      wood: `${s.cards.wood.was}->${s.cards.wood.now}`,
+      brick: `${s.cards.brick.was}->${s.cards.brick.now}`,
+      wool: `${s.cards.wool.was}->${s.cards.wool.now}`,
+      armed: s.armed, tradeOff: s.tradeOff, say: s.say, cost: s.cost,
+      plates: Object.fromEntries(Object.keys(s.cards)
+        .map(r => [r, s.cards[r].act]).filter(e => e[1]))
+    }));
+    return s;
+  };
+
+  await restock({ wood: 8, brick: 8, wool: 8, wheat: 8, ore: 8 });
+  await sleep(450);
+  await frame('idle');
+
+  for (let i = 0; i < 2; i++) { await tap(BRICK_UP); await sleep(120); }
+  await sleep(300);
+  await frame(null);
+
+  await tap(WOOD_CARD);
+  await sleep(320);
+  await frame('paid');
+
+  await tap(WOOD_CARD);                           // CLEAR, same plate
+  await sleep(220);
+  await tap(BRICK_UP);                            // ...and a third brick
+  await sleep(320);
+  await frame('ask3');
+
+  /* Two taps, not twelve. The first one is the whole point of this pass: a pile
+     of eight against a bill of twelve pays its eight instead of refusing. */
+  await tap(WOOD_CARD);
+  await sleep(340);
+  await frame('part');
+
+  await tap(WOOL_CARD);
+  await sleep(340);
+  await frame('mixed');
 
 /* ----------------------------------------------------------------- vpwin
  *

@@ -101,6 +101,42 @@ export const ITEM_KIND = {
 const INNER = HEX_SIZE * Math.sqrt(3) / 2;   // centre -> edge
 const RIM = 2.05;                            // keep clear of roads / buildings
 
+/*
+ * ...AND ON TWO TERRAINS THE MARGIN IS WIDER, BECAUSE THE ITEM IS.
+ *
+ *   "At the bottom-right several cubes clip through and overhang the raised
+ *    rim. At lower density the same hex is clear of the rim, so this is a
+ *    max-fill placement problem ... enforce the same inner-margin inset the
+ *    lower-density shot already respects."
+ *
+ * `RIM` is measured to an item's CENTRE, and it has always been one number for
+ * all five terrains — which is only defensible while the five items are the
+ * same size, and they have not been for three passes. At 2.05 the outermost
+ * position a hex will hand out sits at hexFrac 0.737, and the painted lip of
+ * the tile starts at ROAD_STRIP_INNER 0.81, so an item has 0.073 of hex — 0.57
+ * world units — of body to spend before it is standing on the rim. A sheep is
+ * 0.66 across at the fleece on a crowded hex and gets away with it. An ore
+ * stack's cut blocks reach 1.02 and a brick stack's reach 0.85, so both of them
+ * hang over the lip and both of them do it in hard right angles at ankle
+ * height, where the intersection with the rim geometry is unmissable. (A tree
+ * reaches further still and is left alone on purpose: a canopy overhanging a
+ * path is a canopy overhanging a path, and it happens two units off the ground.)
+ *
+ * So the margin for those two terrains is the honest sum instead: 0.20 of hex
+ * held back from the lip plus the widest block the item actually carries. That
+ * puts every cube and every brick course inside hexFrac 0.79 at every item
+ * count the board deals, including the 1-pip hexes where the stacks are full
+ * size. It costs the mountain 22% of its plantable area and the hill 17%, which
+ * on the crowded hexes is more than paid for by the density cap in
+ * world/nodelife.js and on the sparse ones is absorbed by `orderForCount`
+ * below, which was already pulling those few items toward the middle.
+ *
+ * Deterministic — it is a constant per terrain, nothing is sampled off it — so
+ * `tools/boardsync.mjs` still sees one field from one seed in every process.
+ * The other three terrains are byte-identical to what the last pass shipped.
+ */
+const RIM_BY_KIND = { orerock: 2.72, claypit: 2.52 };
+
 /** Inside a pointy-top hex, shrunk by `margin` on every edge? */
 function insideHex(lx, lz, margin) {
   const dx = Math.abs(lx), dz = Math.abs(lz);
@@ -110,23 +146,126 @@ function insideHex(lx, lz, margin) {
   return HEX_SIZE * INNER - HEX_SIZE * 0.5 * dx - INNER * dz > INNER * margin * 1.15;
 }
 
+/* ------------------------------------------- the number token's screen shadow
+ *
+ *   "I don't ever want a resource to hide behind the little number floating
+ *    tile above the hex. It can be partially covered, but never more than 30%
+ *    of that resource that I'm running around to pick up can be hidden.
+ *    Otherwise I get lost and can't find it."
+ *
+ * The token is a camera-facing billboard standing on the hex's own axis
+ * (`buildTokens` in world/island.js), it is depth-tested like everything else,
+ * and it writes depth — so anything standing BEHIND it is simply gone. That is
+ * a placement problem, not a rendering one, and this is the only place in the
+ * codebase that decides where a pickable thing stands. Hence the fix lives
+ * here, in the scatter, and costs nothing at run time.
+ *
+ * THE ARITHMETIC, because every number below is derived rather than eyeballed.
+ *
+ * Disc geometry. `island.js` builds the quad at half-width R = APOTHEM*0.152 /
+ * DISC_FRAC = 1.3776 world units and the painted disc fills DISC_FRAC = 0.86 of
+ * it, so the disc's authored radius is 1.1847. The vertex stage multiplies the
+ * quad by k = clamp((d/30)^0.62, 0.70, 1.55) for distance and divides its
+ * height by lean = cos(view elevation) to undo the camera's squash — which
+ * means that whatever the pitch, the disc lands on screen as a TRUE CIRCLE of
+ * radius r = 1.1847*k measured in the screen plane. The play camera orbits at
+ * 48..66 units, so k runs 1.30..1.55; take the worst, r = 1.836.
+ *
+ * Where things land on screen. With the camera pitched down by E, a point at
+ * height y and horizontal offset u directly away from the camera projects to
+ * screen height y*cos(E) + u*sin(E). The disc's centre sits at the token base
+ * (ground + 1.15) plus R*k/lean, so its screen height above the hex floor is
+ * 1.15*cos(E) + R*k = 2.87 at the play pitch of 50 degrees: a band running from
+ * 1.04 to 4.71. Every item on the hex — a sheep tops out at 1.9 world units, a
+ * tree at 4.8 — projects into some part of that band from somewhere on the hex,
+ * so NO amount of raising or lowering the token gets the field out from behind
+ * it. It would take a base lift of about 8.8 units, and a token floating three
+ * storeys over the island is a worse bug than the one being fixed.
+ *
+ * Which half is at risk. Solving "is this item point further from the camera
+ * than the disc pixel in front of it" reduces exactly to u > 0: the disc is a
+ * vertical plane through the hex axis, so the near half of every hex draws OVER
+ * the token and is never hidden at all. Only the far half needs anything.
+ *
+ * So the escape is sideways, and 30% is the budget. Integrating the disc circle
+ * against each item's projected footprint over the full sweep of positions,
+ * instance scales (SCALE * JITTER in world/nodelife.js) and camera pitches the
+ * game uses — play 50, overview 55, celebration 38, free-look 16..78 — the
+ * smallest lateral clearance that holds the hidden share at or under 30% is
+ * 2.10 units at the play camera and 2.17 at the shallowest free-look pitch.
+ * The sheep sets it: it is the shortest item, so it is the one the disc can
+ * swallow whole. TOKEN_LANE_HALF is 2.25, which is that worst case plus a
+ * little for the perspective spread this flat-projection model drops.
+ *
+ * The lane is left open all the way to the back edge of the hex rather than
+ * stopping at the depth where items climb clear of the disc (u = 6.08 at the
+ * play pitch, past the far rim at the shallowest free-look one), because that
+ * costs nothing: the hex has already narrowed to a point by then. It also runs
+ * TOKEN_LANE_FRONT = 0.8 units in FRONT of the axis, because an item is a
+ * volume and a tree standing just short of the centre still has its back half
+ * behind the plane.
+ *
+ * What it costs: 27% of the hex's plantable area, which sounds severe and is
+ * the one thing here you cannot see. The lane is the token's own screen shadow
+ * — from the camera the game actually plays at, the token is drawn on top of
+ * it. The dressing in world/props.js is NOT excluded from it (grass and ferns
+ * are not things you run at), so it fills with ground cover and reads as a
+ * clearing under the sign rather than as a bald stripe.
+ *
+ * It is direction-dependent, and that is deliberate: PLAY_YAW in
+ * systems/camera.js is 0, so the camera always sits on +Z and "away" is always
+ * -Z. A radial keep-out cannot work — it was the first thing tried, and the
+ * maths above says it would have to swallow the whole hex.
+ */
+const TOKEN_LANE_HALF = 2.25;
+const TOKEN_LANE_FRONT = 0.80;
+
+/** False for the strip of hex the number token covers from the play camera. */
+function clearOfToken(lx, lz) {
+  return lz >= TOKEN_LANE_FRONT || lx <= -TOKEN_LANE_HALF || lx >= TOKEN_LANE_HALF;
+}
+
 /**
  * Mitchell best-candidate scatter: for each new item, throw a handful of darts
  * and keep the one furthest from everything already placed. Gives an even,
  * blue-noise field with no clumps and no visible grid — which is what makes a
  * hex readable as "full" and sweepable in one pass.
+ *
+ * The dart budget went 40 -> 70 when the token lane above started rejecting
+ * darts: a quarter of the hex is now off limits, and a candidate that runs out
+ * of tries is a candidate that never gets placed, which would quietly shorten
+ * the item pool below what a 5-pip hex asks for.
+ *
+ * THE CANDIDATE COUNT WENT 14 -> 26, and that is the "spread them" half of:
+ *
+ *   "~30 sheep shoulder-to-shoulder with almost no grass visible reads as a
+ *    heap of white popcorn rather than a flock ... spread them and vary their
+ *    scale so grass shows between them."
+ *
+ * Mitchell best-candidate converges on Poisson-disc spacing as the candidate
+ * count rises, and 14 is not many when a twenty-eight item hex has already had
+ * a quarter of its area taken away by the token lane: the WORST gap in the
+ * field — which is the one the eye finds, because it is the pair of sheep that
+ * are touching — is set by the unluckiest of twenty-eight draws, not by the
+ * average. Measured over twelve boards, going to 26 lifts the tightest pair
+ * on a 5-pip pasture from 1.25 units apart to 1.37 — about 10% — and costs a
+ * few milliseconds once at boot. It cannot change how
+ * many items land (every candidate is still accepted) and it stays perfectly
+ * deterministic from the seed, which `tools/boardsync.mjs` checks: the same
+ * board deals the same field in every browser and in the match worker, and a
+ * pickup replayed by item id has to land on the same object everywhere.
  */
-function scatterField(rng, count) {
+function scatterField(rng, count, margin = RIM) {
   const pts = [];
   for (let i = 0; i < count; i++) {
     let best = null, bestD = -1;
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < 26; k++) {
       let lx = 0, lz = 0, guard = 0;
       do {
         lx = (rng() * 2 - 1) * INNER;
         lz = (rng() * 2 - 1) * HEX_SIZE;
-      } while (!insideHex(lx, lz, RIM) && guard++ < 40);
-      if (!insideHex(lx, lz, RIM)) continue;
+      } while ((!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)) && guard++ < 70);
+      if (!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)) continue;
       let d = Infinity;
       for (const p of pts) {
         const dd = (p.lx - lx) * (p.lx - lx) + (p.lz - lz) * (p.lz - lz);
@@ -137,6 +276,119 @@ function scatterField(rng, count) {
     if (best) pts.push(best);
   }
   return pts;
+}
+
+/**
+ * How much clear ground a point has between itself and the nearest edge of the
+ * PLANTABLE hexagon — the tile hexagon shrunk by `RIM` on all six sides, which
+ * is the region `insideHex(lx, lz, RIM)` accepts. Zero on the boundary,
+ * about 5.74 at the centre.
+ *
+ * Straight out of the same three half-plane tests `insideHex` runs, divided
+ * through by the length of each plane's normal so the answer is in world units:
+ * the flat-to-flat planes are |lx| = INNER, and the slanted pair are
+ * 0.5|lx| + (INNER/HEX_SIZE)|lz| = INNER.
+ */
+function edgeClear(lx, lz, margin = RIM) {
+  const dx = Math.abs(lx), dz = Math.abs(lz);
+  const a = INNER - dx;
+  const b = INNER - 0.5 * dx - (INNER / HEX_SIZE) * dz;
+  return (a < b ? a : b) - margin;
+}
+
+/**
+ * Choose WHICH of the pool's positions a hex actually stands its items on.
+ *
+ *   "Forest hex 12 reads as failed to populate. It has 6 conifers, every one
+ *    hugging the rim, with a completely bare interior. Your pass-two density
+ *    compensation scaled the trees but did not fix the distribution. Enforce a
+ *    minimum visual density for a stocked forest hex AND allow placement in the
+ *    tile interior — the number token only occupies the top-centre, so the
+ *    middle of the hex is available."
+ *
+ * The bare middle was not the token lane and it was not the count. It was the
+ * SCATTER ORDER. `scatterField` lays a 32-point pool by Mitchell
+ * best-candidate — each new point is the one of 26 darts furthest from
+ * everything already down — and `tileItemCount` then draws the first
+ * TILE_ITEMS[pips] of them, which is 5 on a 2/12 hex. The first point of a
+ * farthest-point sequence is a uniform dart and every point after it is, by
+ * construction, as far from its predecessors as the region allows: in a convex
+ * region that means the CORNERS. Measured over twenty boards the first five
+ * points of a pool average hexFrac 0.625 with the outermost at 0.72, against a
+ * plantable maximum of about 0.74 — five trees in a ring round the rim with
+ * nothing between them, which is exactly what "failed to populate" describes.
+ * Sixteen points in the effect has washed out and a 4/5-pip hex is the even
+ * blue-noise field it looks like; this only ever bit the hexes with the fewest
+ * items, which are also the ones that can least afford it.
+ *
+ * The pool is left exactly as it was — it is good blue noise and the dense
+ * hexes are built on it — and only the ORDER changes: greedy farthest-point
+ * again, but scored against the tile's WALL as well as against the points
+ * already chosen. A candidate is worth
+ *
+ *     min( distance to the nearest chosen point, WALL_PULL * edgeClear )
+ *
+ * so a position pressed up against the plantable boundary scores nothing at all
+ * while there is open interior to be had, and the first item on a hex lands in
+ * the middle rather than wherever the first dart fell. The two terms swap over
+ * on their own as the count rises: on a five-item hex the spacing term is worth
+ * five units and the wall term decides everything, while on a twenty-eight-item
+ * hex the spacing term is down at two and every position more than a unit
+ * inside the boundary is scored on spacing alone — which is why 28 of a 32-pool
+ * comes out all but unchanged, minus the four most rim-hugging positions.
+ *
+ * WALL_PULL is 2.2 because that is where a 5-item hex settles onto a ring at
+ * hexFrac 0.45: far enough out to spread over the tile, far enough in that the
+ * canopy reads as standing ON the hex rather than around its edge.
+ *
+ * AND IT IS ONLY RUN ON THE HEXES THAT NEED IT, which is not caution, it is
+ * arithmetic. A prefix of a Mitchell sequence is by construction the
+ * best-SPREAD subset of that pool — every point after it went into a tighter
+ * gap than the one before — so re-picking the subset by any other rule can only
+ * cost nearest-neighbour distance. Measured over twenty boards, running this on
+ * a 28-item pasture takes the tightest pair from 1.32 units to 1.20 and buys
+ * nothing at all in return, because a 28-item hex was never rim-biased in the
+ * first place: its mean radius is 0.553 either way. It fills the tile because
+ * it has enough items to fill the tile. And "~30 sheep shoulder-to-shoulder
+ * with almost no grass visible" is a complaint this build has already had once,
+ * so a 9% cut in the worst gap for no gain is not a trade, it is a regression.
+ *
+ * Under half a pool it runs the other way and runs hard. On a 5-item hex the
+ * mean radius drops from 0.625 to 0.403 and the outermost item comes in from
+ * 0.72 to 0.52, while the tightest pair only falls from 4.35 units to 3.26 —
+ * still more than a third of the hex between neighbours. That is the difference
+ * between a ring of trees round a bald patch and a stand of trees on a hex, and
+ * it costs spacing nobody could see. Everything from 17 items up is
+ * byte-identical to what the last pass shipped.
+ *
+ * Deterministic — no rng is touched — so `tools/boardsync.mjs` still sees the
+ * same field from the same seed in every process, which is what a pickup
+ * replayed by item id depends on.
+ */
+const WALL_PULL = 2.2;
+
+function orderForCount(pts, live, margin = RIM) {
+  if (!(live > 0) || live * 2 > pts.length) return pts;
+  const pool = pts.slice();
+  const chosen = [];
+  while (chosen.length < live && pool.length) {
+    let pick = 0, bestScore = -Infinity;
+    for (let i = 0; i < pool.length; i++) {
+      const p = pool[i];
+      let near = Infinity;
+      for (const c of chosen) {
+        const d = Math.hypot(c.lx - p.lx, c.lz - p.lz);
+        if (d < near) near = d;
+      }
+      const wall = edgeClear(p.lx, p.lz, margin) * WALL_PULL;
+      const score = near < wall ? near : wall;
+      if (score > bestScore) { bestScore = score; pick = i; }
+    }
+    chosen.push(pool.splice(pick, 1)[0]);
+  }
+  // The unused tail keeps its pool order: nothing reads it, but a hex whose
+  // pips were re-dealt upward has to find sane positions waiting for it.
+  return chosen.concat(pool);
 }
 
 /* ==================================================================== items */
@@ -159,8 +411,15 @@ export const itemsByTile = new Map();
  */
 function layTile(tile, ti, pool) {
   const rng = mulberry32(90210 + ti * 7717 + tile.number * 313);
-  const pts = scatterField(rng, TILE_ITEM_POOL);
   const kind = ITEM_KIND[tile.terrain];
+  // How far in from the tile edge this terrain's item may stand, which is a
+  // function of how wide that item actually is. See `RIM_BY_KIND`.
+  const margin = RIM_BY_KIND[kind] || RIM;
+  // The pool is laid first and then re-ORDERED for the number of items this
+  // hex actually stands up, so the live prefix is a spread of the whole tile
+  // rather than a ring round its rim. See `orderForCount`.
+  const pts = orderForCount(scatterField(rng, TILE_ITEM_POOL, margin),
+    TILE_ITEMS[tile.pips] || 0, margin);
   const list = pool || [];
   pts.forEach((p, i) => {
     const it = list[i] || {

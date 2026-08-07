@@ -3,9 +3,27 @@
  *
  *   buildProps(scene) -> { group, update(dt), playHarvest(id), setDepleted(id, b) }
  *
- * This file owns the DRESSING: layered forests, undergrowth, fallen logs,
- * boulders, wheat fields, fences, hay, crates, clay works, rock spires, mine
- * portals, ore carts and rails — the backdrop the harvestable field stands in.
+ * This file owns the DRESSING: ground cover, a decorative crop, a few boulders
+ * on the sand, a paddock fence, two bales on a wheat field, one clay quarry with
+ * one shovel stuck in the ground beside it, and one mine portal — the backdrop
+ * the harvestable field stands in.
+ *
+ * IT OWNS NOTHING THAT LOOKS LIKE A RESOURCE, and that is now a hard rule
+ * rather than a preference:
+ *
+ *   "There should be no Phantom trees, only pickable resources, and the few
+ *    subtle stumps when its empty waiting to recharge."
+ *
+ * A decorative conifer standing next to a harvestable one, a decorative boulder
+ * standing next to a harvestable ore lump — each was a thing the player ran at
+ * and got nothing from, and because the dressing answers the harvest through
+ * `stand.js` each one also vanished the moment the last REAL item on its hex was
+ * taken, which is what made them read as phantoms rather than as scenery. Every
+ * kit on a resource hex is now either ground-height cover (grass, ferns, the
+ * straw mat under the wheat) or a single unmistakable landmark far larger than
+ * any item (the mine portal, the clay works). Nothing in between. If a new kit
+ * would sit in the same size band and the same colour family as the item its hex
+ * grows, it does not go on that hex.
  *
  * The FIELD itself — the three hundred trees, sheep, clay heaps, wheat bundles
  * and ore chunks you actually run over and pick up — lives in `nodelife.js`,
@@ -29,7 +47,7 @@
 
 import * as THREE from 'three';
 import { HEX_SIZE } from '../core/constants.js';
-import { tiles, MARKET, SPAWNS } from '../board/layout.js';
+import { tiles, MARKET, SPAWNS, cornerOffset } from '../board/layout.js';
 import { tileItems, mulberry32 } from '../board/nodes.js';
 import { heightAt, hexFrac, normalAt, PROP_MAX_FRAC } from './terrain.js';
 import { instanced, setInstance, triCount, merge } from './geo.js';
@@ -72,8 +90,39 @@ const RESPONSIVE = new Set([
  */
 const STATIC_MERGE = new Set([
   'mine', 'cart', 'rail', 'timber', 'clayWorks', 'spire',
-  'crate', 'hay', 'deadwood', 'fence'
+  'crate', 'hay', 'deadwood', 'fence', 'shovel'
 ]);
+
+/*
+ * Kits that are GROUND rather than objects. Everything in here is ankle-high,
+ * has no silhouette worth the name and is meant to be run over — so it is the
+ * only dressing allowed inside the discs `makePlacer` reserves at the six
+ * corners of every hex for the settlements, cities and banners the players may
+ * build there. A road laid over grass reads as a road in a field; a road laid
+ * over a hay bale reads as a bug, and has now been photographed as one twice.
+ */
+const GROUND_COVER = new Set(['grass', 'flower', 'wheat', 'undergrowth']);
+
+/*
+ * The corner keep-out a RELAXED placement pass falls back to, rather than
+ * switching the corners off altogether.
+ *
+ * Every landmark on this island has a floor under its count — two fence panels
+ * on a paddock, at least one bale on a wheat field — and every one of those
+ * floors is held by a pass that gives something up in order to always land. The
+ * hills' stones used to be on that list and are not any more; what stands there
+ * now is one quarry and one shovel, both of them SCORED rather than sampled, so
+ * both land on every hill by construction and neither needs a relaxed pass at
+ * all. Giving up the corners
+ * ENTIRELY was the first version of this and it is more than has to be given:
+ * measured over forty boards it let a bale's body come within 2.57 units of a
+ * hex vertex, which is inside the 2.72 curtain wall of a city built there. At
+ * 3.00 the same fallback keeps the body 3.01 clear — outside the wall, just
+ * inside the reach of the city's outermost banner — and costs almost nothing,
+ * because the ground it gives back is the ground the relaxed pass wanted
+ * anyway. Full keep-out first; this only when that came up short.
+ */
+const RELAX_CIVIC = 3.00;
 
 /* ------------------------------------------------------------- materials */
 
@@ -119,6 +168,7 @@ const STATIC_KITS = {
   boulder:      { make: K.boulder,      mat: 'solid', cast: true },
   spire:        { make: K.spire,        mat: 'solid', cast: true },
   clayWorks:    { make: K.clayWorks,    mat: 'solid', cast: true },
+  shovel:       { make: K.shovel,       mat: 'solid', cast: true },
   fence:        { make: K.fence,        mat: 'solid', cast: true },
   crate:        { make: K.crateStack,   mat: 'solid', cast: true },
   mine:         { make: K.mineEntrance, mat: 'solid', cast: true },
@@ -129,13 +179,16 @@ const STATIC_KITS = {
 
 /* Per-tile dressing recipe. Counts are per tile of that terrain.
  *
- * These are all a third down on what they were, because the hex is no longer
- * seven sparse copses in a sea of scenery — it now carries ten to twenty-two
- * REAL, takeable items of its own. A forest tile stands about twenty
- * harvestable trees plus twenty-five decorative ones: still a solid canopy, but
- * the majority of it is now the thing you came for, which is the entire point.
- * Every backdrop conifer you cannot chop is a triangle spent lying to the
- * player about what they are allowed to touch.
+ * THE RULE THIS LIST NOW OBEYS: on a hex that grows something, the dressing is
+ * either ground you run over or one landmark you could never mistake for a
+ * pickup. Nothing in the item's size band, nothing in the item's colour family,
+ * nothing with the item's silhouette. "Every backdrop conifer you cannot chop is
+ * a triangle spent lying to the player about what they are allowed to touch" has
+ * been the note at the top of this block for a while; the counts below are the
+ * first version that actually believes it, because thinning a lie does not make
+ * it true. The forest lost all twenty-five of its decorative trees, the mountain
+ * lost every stone and every brown offcut, the brick hill lost its crumbs, the
+ * pasture lost ten of its thirteen fences.
  *
  * The OFF-TERRAIN entries stay culled. A clay hill with spruces on it, a
  * mountain with packing crates, a wheat field with a broadleaf: each was a
@@ -145,9 +198,7 @@ const STATIC_KITS = {
  * FOR on those hexes. A fields tile no longer needs ninety-two decorative wheat
  * tufts to read as gold — the harvestable plants do most of that on their own —
  * and every tuft standing between them is a triangle spent hiding the thing the
- * player came for. Wheat, pasture grass and mountain rubble are down
- * accordingly; the forest, which the player says already reads correctly, is
- * untouched.
+ * player came for.
  *
  * The one that moved AGAIN is wheat, and it has now moved twice. The item was a
  * squat sheaf, then a 2.2-unit standing plant, and is now a 2.8-to-3.9-unit one
@@ -161,8 +212,39 @@ const STATIC_KITS = {
  * hiding the thing the player came for. The loose green grass stays almost
  * entirely gone: stubble under a gold crop was the one thing breaking the mass. */
 const RECIPE = {
-  forest:    { conifer: 13, coniferShort: 8, broadleaf: 4, deadwood: 3,
-               undergrowth: 12, grass: 26, rockSmall: 3 },
+  // A FOREST HEX HAS NO TREES ON IT EXCEPT THE ONES YOU CAN CHOP.
+  //
+  //   "The wood has Phantom trees, where there is visually a tree there, and I
+  //    go to collect it and it doesn't exist, and then I find the real final
+  //    tree that is a resource I'm able to collect, and once its collected the
+  //    phantom tree then disappears. There should be no Phantom trees, only
+  //    pickable resources, and the few subtle stumps when its empty waiting to
+  //    recharge."
+  //
+  // That is a precise description of a real defect, and this line was the whole
+  // of it. Twenty-five decorative conifers, short pines and broadleaves stood on
+  // every forest hex alongside about twenty harvestable ones. They are stacked
+  // cones on a trunk; so is `fieldTree`. The only difference between "runs at it
+  // and gets wood" and "runs at it and gets nothing" was a slightly lighter
+  // green — a tell worth nothing at all at play distance while the settler is
+  // moving. And because the dressing is wired into `stand.js`, which spends the
+  // whole decorative pool as the hex's fill fraction drops, the last real tree
+  // taken is the frame every remaining fake one topples and vanishes. The
+  // player's second sentence is not a coincidence, it is the mechanism.
+  //
+  // Deadwood goes with them: a stump with a fallen log beside it is tree-shaped,
+  // it is brown, and on a hex whose resource is WOOD it is exactly the "is this
+  // a thing I can take?" question we are trying to stop asking. The three loose
+  // pebbles go too — three of anything that small is litter, not scenery.
+  //
+  // What is left is ground: ferns and grass, ankle-high, that nobody has ever
+  // mistaken for a tree, and that crop down to a mat when the hex is worked out.
+  // A cleared forest is then bare floor plus the handful of stumps
+  // `nodelife.js` leaves, which is precisely what was asked for. The cost is
+  // that a low-numbered forest hex now carries eight trees instead of thirty —
+  // it reads as open woodland rather than as a canopy. That is the trade the
+  // report demands, and honest sparseness beats a lie about what you can pick.
+  forest:    { undergrowth: 9, grass: 22 },
   // A WHEAT FIELD IS THE CROP AND THE GROUND, AND NOTHING ELSE.
   //
   //   "Make the wheat/hay hexes more empty and yet look like non visually
@@ -184,11 +266,93 @@ const RECIPE = {
   // it becomes a flat wash on the ground with nothing standing up out of it.
   // Two hay bales stay: they are the one prop that says FARM without saying
   // anything else, and they read at any distance.
-  fields:    { wheat: 34, hay: 2, grass: 2, rockSmall: 1 },
-  pasture:   { grass: 44, flower: 12, fence: 4, undergrowth: 6, rockSmall: 3,
-               hay: 2 },
-  hills:     { clayWorks: 3, rockSmall: 8, boulder: 3, grass: 22,
-               undergrowth: 5, crate: 2, deadwood: 1 },
+  //
+  // The two green grass tufts and the single small rock are gone. One pebble and
+  // two blades on a whole hex is not scenery, it is the "crumbs" reading the
+  // player used about the brick tile — too small to mean anything and just big
+  // enough to make you look at it.
+  // The two bales have moved out of this list and are placed by hand below,
+  // for the reason the paddock's bale, the quarry, the mine portal and the
+  // brick hill's stones all had to move out of it before them: a prop a report
+  // COUNTS cannot be left to a rejection sampler.
+  fields:    { wheat: 34 },
+  // A PADDOCK IS A FEW BITS OF FENCE. THAT IS THE WHOLE OF IT.
+  //
+  //   "Just please remove the hay bales from the sheep hexes entirely."
+  //
+  // So the bale is gone — not moved, not shrunk, gone — and pasture dressing is
+  // now two or three fence panels plus the grass and flowers below. Nothing
+  // replaces it and nothing is added back to compensate: the note at the top of
+  // this file is "I want it to be calming and cute, not overstimulating", and
+  // the honest reading of an owner who has asked for LESS on four consecutive
+  // passes is that an emptied paddock with three fence panels standing in the
+  // grass is the picture he wants, not a paddock with a substitute prop in it.
+  // The panels are large enough to carry it: each one is a three-rail ladder
+  // 2.1 to 2.3 units long and 1.34 to 1.50 tall (see `fence()` in propkits.js
+  // and `STYLE.fence` below), which is head and shoulders over the flock and
+  // the tallest thing left on the hex once the sheep are taken.
+  //
+  // The `hay` kit itself stays alive because the WHEAT FIELD still hand-places
+  // two of them; there is no orphaned code here to delete, only one placement
+  // block below that has gone.
+  //
+  // The paragraphs below are the record of how the fences got to two or three.
+  //
+  //   "The sheep hexes have way too many fences that are just a visual mess —
+  //    I think they should be more of like maybe 2 or 3 slightly larger fences,
+  //    and a single bale of hay."
+  //
+  // There were THIRTEEN: nine laid on the arc below plus four more scattered by
+  // the recipe, each a pair of near-black posts and a rail. The four loose ones
+  // were the worst of it — a fence panel standing on its own in the middle of a
+  // field is a mess in a way that a run of fence along the edge is not — so the
+  // recipe's share is gone entirely and the arc is down to three, each one half
+  // again as big (see `STYLE.fence`). Three larger panels on the rim read as an
+  // enclosure at a glance; thirteen small ones read as scaffolding.
+  //
+  // The rest of the trim is the same principle: the flowers come down because a
+  // pasture is grass with flowers IN it rather than a wildflower meadow, and the
+  // three pebbles and six ferns go because neither of them was saying anything a
+  // sheep hex needs said. The bale then went the same way, one pass later.
+  pasture:   { grass: 32, flower: 8 },
+  // THE BRICK HEX: GRASS, ONE QUARRY AND ONE SHOVEL.
+  //
+  //   "Also remove the small rocks from the brick hexes, instead have a small
+  //    shovel."
+  //
+  // THE STONES ARE GONE. Not thinned from three to one — gone, the whole scored
+  // ring and its two relaxed passes with them. They were the last survivors of
+  // an older brief ("I want maybe a few simple stones") and three passes of
+  // work went into making them land reliably; none of that is a reason to keep
+  // something the owner has now asked twice to have taken off. A hill carries
+  // the quarry as its landmark and that is enough weight for one hex.
+  //
+  // In their place, ONE small shovel — see `shovel()` in propkits.js for the
+  // geometry and the block further down this file for where it stands. One,
+  // because the owner has asked for less on every pass since this job started
+  // and because two tools beside one pit is a toolshed rather than a detail.
+  //
+  // The crumbs this hex started with were eight `rockSmall` — a 0.36-unit
+  // pebble, instanced eight times — plus two crates and a deadwood vignette,
+  // which between them put thirteen small dark objects on a hex whose actual
+  // resource is a stack of terracotta bricks. Every one of them was noise at the
+  // exact size the thing you came for draws at, and the hex has been getting
+  // quieter ever since.
+  //
+  // The grass comes down so the dug hillside shows through, and
+  // then it comes down again by half:
+  //
+  //   "Remove the satellite shards parked beside the big stones (keep one clean
+  //    stone each) and halve the ~15 olive grass sprigs."
+  //
+  // Fourteen tufts of green grass on a hex whose whole surface is wet terracotta
+  // is fourteen small high-contrast marks on the one terrain that has no green
+  // in it anywhere else — complementary hue, scattered at pebble size, which is
+  // the "crumbs" reading arriving in a different colour. Seven is enough to say
+  // the hillside is not sterile and few enough that the dug clay is what you
+  // see. The shards beside the stones went with them, and then the stones went
+  // too; seven sprigs is now the entire contents of this line.
+  hills:     { grass: 7 },
   // A MOUNTAIN IS A MINING HILL. NOTHING TREE-SHAPED STANDS ON IT.
   //
   //   "Also remove the trees from the ore hex. I want it to look more like a
@@ -223,9 +387,41 @@ const RECIPE = {
   //
   // The harvestable ore no longer has to fight any of this: it is a stack of
   // hard-edged cut CUBES, and there is not another right angle on the tile.
-  mountains: { spire: 3, boulder: 3, rockSmall: 5, timber: 1, grass: 5 },
-  desert:    { rockSmall: 8, boulder: 3, crate: 3, grass: 8, hay: 2,
-               deadwood: 2, coniferShort: 1 }
+  //
+  // AND NOW IT IS BARE.
+  //
+  //   "The ore is similar. There are lots of phantom stones, and weird small
+  //    miscellaneous items and brown pieces of something obscure. I'd prefer if
+  //    the ore hex when empty just looked like a fully empty, slightly subtly
+  //    textured grey hex, nothing else really on it."
+  //
+  // Every noun in that sentence maps to something on this line. The "phantom
+  // stones" were the three boulders and five rubble pieces — grey lumps on a
+  // grey hex whose resource is a grey lump, so the player ran at them and got
+  // nothing, which is the wood complaint again in a different colour. The "weird
+  // small miscellaneous items" were the three spires, tall enough to read as
+  // objects and short enough not to read as landscape. The "brown pieces of
+  // something obscure" were the timber pile of pit props and the ore cart on its
+  // rails — 0.59 and 0.93 units tall, brown, and at play distance genuinely
+  // unidentifiable. Halving all of it last time was the wrong move: the answer
+  // was never a smaller number of the same objects.
+  //
+  // So the recipe is empty and the rails and cart below are gone with it. The
+  // mine portal is the one thing kept, and only just: it is 3.4 units tall and
+  // 5.3 wide, it stands at the hex rim rather than in the middle of the ground
+  // you run over, it is the single object that says what this hex IS, and at
+  // that size nobody has ever tried to pick it up. Everything the player named
+  // is gone; worked out, the hex is bare grey rock with one portal on its edge,
+  // which is "nothing else really on it" read as generously as it can be.
+  mountains: { },
+  // The desert holds the market, and `makePlacer` keeps an 11-unit circle clear
+  // around it, so most of this hex was never going to grow anything anyway.
+  // What did land on the rim was a lone conifer — a phantom tree by any
+  // definition, on the one hex where a tree makes no sense at all — plus three
+  // crates, two hay bales and a deadwood log competing with the island's
+  // centrepiece from six units away. A few stones and some scrub is all a
+  // desert needs to not be a blank tan disc.
+  desert:    { rockSmall: 3, boulder: 2, grass: 6 }
 };
 
 /* ------------------------------------------------------------ tint variants
@@ -252,7 +448,22 @@ const TINTS = {
   boulder:      [[1.00, 1.00, 1.00], [0.82, 0.86, 0.94], [1.12, 1.05, 0.93], [0.72, 0.73, 0.77]],
   spire:        [[1.00, 1.00, 1.00], [0.84, 0.88, 0.96], [1.10, 1.06, 1.00]],
   deadwood:     [[1.00, 1.00, 1.00], [0.88, 0.84, 0.78], [1.12, 1.06, 0.94]],
-  clayWorks:    [[1.00, 1.00, 1.00], [1.10, 0.96, 0.88], [0.88, 0.84, 0.82]],
+  // HELD NEAR 1, and that is now load-bearing rather than taste. The quarry's
+  // whole pass this time was landing its lip at about luma 92 against a
+  // hillside of 79 — "ground+20-30%", to the number — and a +10% variant on top
+  // of that puts one hill in three straight back over 100, which is the bright
+  // ring the owner asked to have taken off. Three or four per cent of hue swing
+  // is all the variation a kit that exists three times on a board needs.
+  clayWorks:    [[1.00, 1.00, 1.00], [1.04, 0.99, 0.95], [0.96, 0.97, 0.99]],
+  // Held near 1 for the same reason, and tighter still — but for a different
+  // reason than it used to be. The shovel used to be deliberately duller than
+  // the clay it is stuck in; the owner asked for "normal shovel colors", so it
+  // is steel and wood now and it is MEANT to be the bright thing on a worked-out
+  // hex. That makes the variation matter more, not less: a +8% swing on a steel
+  // blade is a visibly different metal, and three of them on one island would
+  // read as three different tools. Three per cent is all a kit that exists three
+  // or four times on a whole board needs to stop looking stamped.
+  shovel:       [[1.00, 1.00, 1.00], [1.03, 1.00, 0.96], [0.97, 0.98, 1.00]],
   crate:        [[1.00, 1.00, 1.00], [1.10, 1.00, 0.88], [0.86, 0.82, 0.78]],
   fence:        [[1.00, 1.00, 1.00], [1.12, 1.02, 0.90], [0.86, 0.82, 0.76]],
   timber:       [[1.00, 1.00, 1.00], [1.10, 1.00, 0.88], [0.88, 0.84, 0.80]]
@@ -266,9 +477,42 @@ const TINTS = {
    forest tile read as scattered copses with lawn between them. */
 const FOOT = {
   conifer: 0.54, coniferShort: 0.48, broadleaf: 0.72, deadwood: 0.85,
-  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.24, hay: 0.62,
-  rockSmall: 0.32, boulder: 0.95, spire: 0.90, clayWorks: 1.30, fence: 0.95,
-  crate: 0.70, mine: 2.40, cart: 0.75, rail: 0.70, timber: 0.85,
+  // The bale grew by a third, so its exclusion disc grows with it — the half
+  // extent of the kit is 0.68 and it is instanced up to 1.30, which is 0.88 of
+  // actual bale plus a little collar so nothing ever stands inside one. It is
+  // only ever asked for on a wheat field now; the paddock's bale is gone.
+  undergrowth: 0.42, grass: 0.26, flower: 0.30, wheat: 0.24, hay: 0.96,
+  // The pasture's three panels are hand-placed and reserve three small discs
+  // along their own length instead of one fat one, so this entry is only the
+  // fallback for a recipe that asks for loose fences. None does any more.
+  // clayWorks is down from 1.75 with the kit itself: the widest course is 1.34
+  // at unit scale and it is instanced at up to 1.06, so 1.42 is the real
+  // footprint and 1.55 is that plus a hand's breadth. Asking for 1.75 of
+  // clearance on a hex holding twenty-three brick stacks was a large part of
+  // why this thing kept being pushed out onto the rim in the first place.
+  // boulder is 0.88 rather than 0.92 because that is what the kit measures now
+  // the satellite shard has been cut off the side of it (see `boulder()` in
+  // propkits.js): the lead stone alone is 1.38 across at unit scale and is
+  // instanced to at most 1.25, so 0.86 is its true half width.
+  // `mine` comes down with the kit itself (see `mineEntrance` in propkits.js):
+  // the portal is 1.62 across at unit scale and is instanced at 1.22, so 0.99
+  // is its true half width and 1.30 is that plus a collar. It was 2.40 for a
+  // frame nearly twice this wide. Nothing on a mountain reads it — the recipe
+  // for that terrain is empty and this only ever keeps other PROPS off — but a
+  // footprint that lies about a landmark's size is how the next pass over this
+  // file gets its arithmetic wrong.
+  // `shovel`'s footprint follows its instance scale, which the owner doubled.
+  // The kit leans 0.42 radians off vertical, so at unit scale its grip end
+  // reaches 0.54 sideways of the blade and the crossbar adds 0.14 on top: 0.68
+  // of lean from the blade, halved about the piece's own middle is 0.34, and
+  // 0.45 was that plus a collar. At the doubled scale that is 0.90, and it has
+  // to be stated here rather than left at 0.45 — a footprint that lies about a
+  // landmark's size is precisely how the scorer below ends up parking a tool
+  // through a brick stack. It is still thin enough to find a spot beside the
+  // quarry on a hex holding twenty-eight of them, which is why a tool rather
+  // than another rock was the right thing to put here.
+  rockSmall: 0.32, boulder: 0.88, spire: 0.90, clayWorks: 1.55, fence: 1.30,
+  crate: 0.70, mine: 1.30, cart: 0.75, rail: 0.70, timber: 0.85, shovel: 0.90,
   // Every field item reserves a disc so no backdrop prop ever sprouts through
   // a sheep or a tree you are supposed to be able to see and run at. There are
   // up to twenty-two of them per hex, blue-noise spaced about 2.3 apart, so
@@ -300,7 +544,39 @@ const FOOT = {
  * decorative crop down to 34 tufts, the ground between them still closes into a
  * warm straw mat rather than open beach.
  */
-const ITEM_FOOT = { fields: 0.92 };
+/*
+ * ...and on a PASTURE it moved because the sheep did.
+ *
+ * `FOOT.item` is 1.12 and it is a generous keep-out rather than a measurement:
+ * it was set so a tuft of grass never sprouts out of the top of a two-unit-wide
+ * brick stack. The density compensation in `nodelife.js` has taken about 39% of
+ * the fleece area off a 28-sheep hex, so 1.12 of exclusion around every one of
+ * twenty-eight animals is now reserving a good deal of ground that has nothing
+ * standing on it — and on the hex where space is tightest, that is the
+ * difference between a paddock that can find two bearings for a fence panel and
+ * one that can only find a single lone one. 0.95 is a shrunk sheep measured
+ * across its fleece and halved, plus a little, which is what this number is
+ * supposed to be rather than the blanket figure the brick stack set.
+ */
+/*
+ * ...and on a BRICK HILL it moved because the hex is the most crowded one that
+ * still has to find room for something the player is meant to look at.
+ *
+ * 0.92 is the honest measurement for what a brick stack actually occupies: the
+ * spoil cone under it is 1.28 across and the widest course is 0.94, so 0.64 is
+ * the real footprint and 0.92 leaves a quarter of a unit of collar on top of
+ * it. 1.12 was never about the brick — it was about a tuft of GRASS sprouting
+ * out of the top of one, and there are seven tufts left on a hill now instead
+ * of fourteen.
+ *
+ * The stones this number was last tuned for are gone ("remove the small rocks
+ * from the brick hexes"), and it is kept at 0.92 rather than being put back to
+ * the blanket 1.12 because what is left on the hex needs it just as much: seven
+ * grass sprigs go through `take`, and the shovel that replaced the stones is
+ * scored against these same discs. An honest collar is what lets a small prop
+ * stand on open clay instead of being pushed to the rim.
+ */
+const ITEM_FOOT = { fields: 0.92, pasture: 0.95, hills: 0.92 };
 
 /* Scale ranges, ground sink and how far each kit tilts with the slope. */
 const STYLE = {
@@ -317,17 +593,112 @@ const STYLE = {
   // GROUND. At 0.55 to 1.25 world units it is a straw mat the sheaves stand on
   // top of, and nothing in it ever competes for the eye.
   wheat:        { s: [0.80, 1.25], sink: 0.04, tilt: 0.25, yaw: true },
-  hay:          { s: [0.80, 1.25], sink: 0.06, tilt: 0.35, yaw: true },
+  // Up a third, because the kit under it grew and because a bale has to survive
+  // the number token and a corner banner standing near it. At this scale a bale
+  // is 1.43 to 1.77 units across and stands about 1.5 high — waist-high on the
+  // settler, comfortably the biggest single object on an emptied wheat field,
+  // and still nowhere near the 3.4-unit mine portal or the 2.8-unit clay working
+  // that are the island's actual landmarks. The scale is unchanged now that the
+  // paddock's bale is gone: the two that are left stand on ploughed ochre, where
+  // the same size does the same job.
+  hay:          { s: [1.05, 1.30], sink: 0.06, tilt: 0.30, yaw: true },
   rockSmall:    { s: [0.55, 1.35], sink: 0.12, tilt: 0.85, yaw: true },
-  // Capped well under the harvestable ore lump, which runs 0.86..1.00 on a
-  // geometry two and a half times longer than this one. Smooth dome versus
-  // jagged oval does most of the separating; size does the rest.
-  boulder:      { s: [0.62, 1.10], sink: 0.20, tilt: 0.65, yaw: true },
+  // The cap this used to sit under is gone, because the thing it was capped
+  // against is gone: it was held to 0.62..1.10 so that it could never be
+  // mistaken for the harvestable ore lump it shared a mountain with, and no
+  // mountain carries a boulder any more. It was then grown to 0.85..1.25 for
+  // the brick hill's "few simple stones", which is a hex it no longer stands on
+  // either. What is left is the DESERT and the shoreline collar, and the size
+  // suits both: a 0.79-to-1.16-high dome is a shape on a blank tan disc, and on
+  // the waterline it is the lead rock of a cluster with `rockSmall` huddled
+  // round it. Nothing on either of those grows anything, so there is nothing
+  // for it to be confused with in the first place.
+  boulder:      { s: [0.85, 1.25], sink: 0.20, tilt: 0.65, yaw: true },
+  // SMALL, AND THE NUMBER IS THE POINT.
+  //
+  //   "Also remove the small rocks from the brick hexes, instead have a small
+  //    shovel."
+  //
+  // "A small shovel" is the entire specification and the adjective is the half
+  // that is easy to lose, because the thing being replaced was not small: the
+  // stones ran 0.85 to 1.25 and the owner still called the pass before them
+  // crumbs, so "bigger than a crumb" and "small" are both in the brief and only
+  // one of them is written down. The tie-breaker is the quarry. A hills hex is
+  // allowed exactly one landmark and it already has it, so whatever stands
+  // beside it has to lose to it at a glance.
+  //
+  // The kit is 1.27 units tall at unit scale, so this band puts it at 1.07 to
+  // 1.19 on the ground: about two fifths the width of the 2.6-to-3.0-unit
+  // quarry it stands beside, and under the 1.5-to-2.3-unit brick stacks it
+  // shares the hex with. The band is narrow on purpose — three or four hills on
+  // a board should carry the same tool, not three sizes of it, which is the
+  // argument the mine portal's fixed 1.22 already makes.
+  //
+  // `yaw: false` because the yaw is chosen for legibility rather than for
+  // variety (see the hills block below), and `drop` is handed an explicit `sy`
+  // so the shaft is never stretched: the kit's whole read is a straight stick at
+  // a known angle, and a random 0.88..1.18 on Y bends that angle.
+  //
+  // Barely sunk. The blade is authored running 0.15 BELOW the kit's own origin
+  // — it is driven into the clay, not resting on it — so sinking the instance on
+  // top of that starts eating the tread, which is the one horizontal tick that
+  // tells the lower half from the shaft. The tilt is small for the same reason
+  // the portal's is: a tool stuck in the ground stands the way somebody left it,
+  // not the way the hillside leans.
+  /* DOUBLED. "Make the shovel 2x the size and normal shovel colors." The kit
+     itself is untouched — the blade, tread, socket, shaft and grip were tuned
+     against each other and doubling them here keeps every one of those ratios
+     while making the whole tool read at play distance instead of at a walk-up.
+     Its footprint doubles with it, below, or the placer would keep finding it
+     spots that no longer fit. */
+  shovel:       { s: [1.68, 1.88], sink: 0.02, tilt: 0.12, yaw: false },
   spire:        { s: [0.75, 1.60], sink: 0.20, tilt: 0.45, yaw: true },
-  clayWorks:    { s: [0.80, 1.25], sink: 0.08, tilt: 0.30, yaw: true },
-  fence:        { s: [0.92, 1.12], sink: 0.10, tilt: 0.45, yaw: true },
+  // The one landmark on a brick hex, so it has to be legible from across the
+  // island and still not be a distraction. The kit is inherently flat — a spoil
+  // bank thrown up round a two-step cut — so it is grown sideways rather than
+  // upwards: at this scale it is a 2.6-to-3.0-unit working standing 0.45 to
+  // 0.70 at its lip, against the 1.5-to-2.3-unit brick stacks it shares the hex
+  // with. It reads as ground that has been DUG, which is exactly the right kind
+  // of quiet for a thing that is not part of the game — and since the block of
+  // cut clay came off it (see `clayWorks` in propkits.js) there is nothing left
+  // on it a player could run at.
+  //
+  // The sink comes off with the block. The kit's own outer bank now runs half a
+  // unit below its origin so the hillside's painted undulation cannot leave a
+  // lit edge hanging in the air; sinking it on top of that would start eating
+  // the lip.
+  //
+  // DOWN from 1.25..1.45, and that is a consequence of where it now stands
+  // rather than of how it looks. The old scale put a 3.9-unit-wide kit on the
+  // hex RIM, so a third of its footprint hung over the ramp into the tan border
+  // strip and its base was buried in the raised edge — "its base buried in /
+  // clipped by the raised hex rim". Inside the tile, on ground that is dead
+  // flat out to hexFrac 0.80, nothing clips; but the interior is also where the
+  // brick stacks are, so the kit has to be small enough that the placer can
+  // find it a home there. 2.7 units is that size.
+  clayWorks:    { s: [0.92, 1.06], sink: 0.02, tilt: 0.25, yaw: true },
+  // "maybe 2 or 3 slightly larger fences". There are two or three of them now
+  // instead of thirteen, so each one has to carry the whole idea of an
+  // enclosure on its own — and after the reviewer's pass, each one is a
+  // three-rail LADDER 2.1 units long and 1.34 tall rather than a single bar on
+  // two knee-high posts (see `fence()` in propkits.js). At this scale that is a
+  // 2.1-to-2.3-unit panel standing 1.34 to 1.50 high: shoulder height on the
+  // settler, head and shoulders over the flock, and a good half again the mass
+  // of the panel it replaces even though the multiplier came DOWN. The
+  // multiplier had to come down, because the geometry grew and the panel still
+  // has to find a bearing on a hex holding twenty-eight animals.
+  fence:        { s: [1.00, 1.12], sink: 0.10, tilt: 0.40, yaw: true },
   crate:        { s: [0.78, 1.26], sink: 0.06, tilt: 0.40, yaw: true },
-  mine:         { s: [1.05, 1.25], sink: 0.10, tilt: 0.10, yaw: false },
+  // The band is a fallback only — the portal is hand-dropped below at a fixed
+  // 1.22 so three mountains on one board are the same landmark and not three
+  // sizes of it. At that scale the kit is 1.98 units wide and 1.68 tall, and it
+  // photographs between 9% and 11% of the hex's flat-to-flat width depending on
+  // which side of the hex it lands and how the peaks under it lift it toward
+  // the lens — against the 19-20% the last version measured. "Just make the
+  // large mine entrance on the ore hexes much smaller." Sunk a touch deeper
+  // than before because the frame is shorter and the sill has less of its own
+  // height to hide the ground in.
+  mine:         { s: [1.15, 1.25], sink: 0.06, tilt: 0.10, yaw: false },
   cart:         { s: [0.85, 1.00], sink: 0.06, tilt: 0.35, yaw: true },
   rail:         { s: [0.90, 1.05], sink: 0.05, tilt: 0.80, yaw: false },
   timber:       { s: [0.85, 1.20], sink: 0.06, tilt: 0.40, yaw: true }
@@ -347,7 +718,7 @@ function makePlacer(tile, rng) {
   const itemFoot = ITEM_FOOT[tile.terrain] !== undefined
     ? ITEM_FOOT[tile.terrain] : FOOT.item;
   for (const it of tileItems(tile.id)) {
-    blocked.push({ x: it.x, z: it.z, r: itemFoot });
+    blocked.push({ x: it.x, z: it.z, r: itemFoot, item: true });
   }
   // Keep the market clear — on EVERY tile, not just the desert it stands on.
   // The plaza floor reaches 6.6 and its steps 7.95, but the real problem was the
@@ -361,9 +732,101 @@ function makePlacer(tile, rng) {
       blocked.push({ x: s.x, z: s.z, r: 2.4 });
     }
   }
+  /* THE SIX CORNERS ARE NOT DRESSING GROUND. THEY BELONG TO THE PLAYERS.
+   *
+   *   "On hex 12 a hay bale at the bottom-left vertex is bisected by the purple
+   *    road quad, with the bale poking out below it and a black banner pole
+   *    passing vertically through its right side."
+   *
+   * That is the second time a bale has been photographed cut in half at a hex
+   * vertex, and the last pass fixed the wrong half of it: it pulled the bale in
+   * off the ROAD STRIP, which is a band along each EDGE and which the dressing
+   * was already clear of. What actually stands at a vertex is a settlement, and
+   * a settlement is not a strip — it is a 3.5-unit pad of cottages (SET_RADIUS
+   * 1.78 in buildtown.js), or a 5.5-unit city (CITY_RADIUS 2.72) with a curtain
+   * wall, two towers and three banners on it, and both of them fly a pole over
+   * three units tall. None of that exists at build time, which is exactly why
+   * this has to be geometric: WHERE those pieces can stand is fixed by the
+   * board, even though whether they do is not.
+   *
+   * 3.55 is the city's outermost banner — its pole sits at CITY_RADIUS*0.94 and
+   * the cloth hangs 0.57 past that, so 3.10 — plus a hand's breadth, and the
+   * prop's own footprint is added on top of it by `clear`. A bale therefore
+   * keeps 4.51 units between its centre and the corner, which at the play
+   * camera's pitch puts its base a clear head above the roofline of anything
+   * built there rather than tangled in it.
+   *
+   * It is NOT applied to ground cover, and that is deliberate rather than
+   * lazy. Grass, ferns, flowers and the stubble mat are ankle-high things you
+   * run over; a road laid across them or a village pad set down on them reads
+   * as a road and a village standing in a field, which is correct. Six bald
+   * discs at the corners of every hex would be a far louder defect than the one
+   * being fixed. What has to stay clear is anything with a SILHOUETTE — a bale,
+   * a stone, a fence panel, the quarry, the portal — because those are the
+   * things that get cut in half.
+   *
+   * Nor is it applied by the last-resort passes below. Each of those exists
+   * because some 5-pip hex has nowhere at all left to stand a landmark, and a
+   * pasture with no fence or a hill with one stone is a worse picture than a
+   * bale near a corner that may never be built on. Strict first, corners
+   * respected; only if that comes up short does the civic ring come off. */
+  const CIVIC_R = 3.55;
+  for (let i = 0; i < 6; i++) {
+    const c = cornerOffset(i);
+    blocked.push({ x: tile.x + c.x, z: tile.z + c.z, r: CIVIC_R, civic: true });
+  }
+  /* Shared by `take` and by the hand-placed pieces (the pasture's fence arc and
+     the hills' clay works), which used to skip the test entirely and could
+     therefore stand a fence panel straight through a sheep. One predicate, one
+     answer.
+
+     `itemR` overrides the radius used for the ITEM discs only, and exists
+     because those discs are a generous keep-out rather than a measurement:
+     `FOOT.item` is 1.12 so that a tuft of grass never sprouts out of the top of
+     a brick stack, while the widest sheep on the island is 1.42 across at its
+     fleece. A thin fence panel riding the outer rim of a hex only has to miss
+     the animal, not the animal's whole exclusion collar, and at 1.12 there is
+     no bearing on a twenty-eight sheep pasture where a panel fits at all.
+
+     `civicR` does the same for the six CORNER discs and works the same way: 0
+     switches them off for ground cover, and the relaxed passes hand it 3.00 —
+     a city's curtain wall plus a hand — so a landmark that could not be placed
+     under the full keep-out still never ends up with its body inside a city
+     pad. */
+  function clear(x, z, foot, itemR, civicR) {
+    for (const b of blocked) {
+      let r = b.r;
+      if (b.item && itemR !== undefined) r = itemR;
+      else if (b.civic && civicR !== undefined) r = civicR;
+      const dx = b.x - x, dz = b.z - z;
+      const rad = r + foot;
+      if (dx * dx + dz * dz < rad * rad) return false;
+    }
+    return true;
+  }
+
   return {
     blocked,
-    take(count, foot, maxF = PROP_MAX_FRAC) {
+    clear,
+    /* `itemR` narrows the keep-out used for the ITEM discs only, exactly as in
+       `clear` above, and exists so a kit that is not allowed to fail can have a
+       second, tighter go at a hex the first pass found no room on. Nothing is
+       ever allowed to overlap an item even then; what is given up is the collar
+       of clear ground around it.
+
+       `noLane` keeps the kit out of the strip the number token covers, and any
+       prop the player is meant to SEE has to ask for it. The lane is item-free
+       by construction (`clearOfToken` in board/nodes.js), which makes it the
+       only wide open ground on a hex holding twenty-three of anything — so a
+       uniform sampler, which is what this is, drops a disproportionate share of
+       its accepted darts there and the prop ends up parked behind the token
+       disc where nothing can be looked at. Ground cover does not care and does
+       not ask; a decorative stone the report is counting cares a great deal.
+       The test is the lane's own definition widened by the kit's radius, so the
+       prop is not merely outside the strip, it is clear of it.
+
+       `civicR` narrows the six corner discs — see the block that pushes them. */
+    take(count, foot, maxF = PROP_MAX_FRAC, itemR, noLane = false, civicR) {
       const out = [];
       const lim = HEX_SIZE * maxF;
       let guard = 0;
@@ -377,13 +840,9 @@ function makePlacer(tile, rng) {
         const x = tile.x + Math.cos(a) * rr * lim;
         const z = tile.z + Math.sin(a) * rr * lim;
         if (hexFrac(x - tile.x, z - tile.z) > maxF) continue;
-        let clash = false;
-        for (const b of blocked) {
-          const dx = b.x - x, dz = b.z - z;
-          const rad = b.r + foot;
-          if (dx * dx + dz * dz < rad * rad) { clash = true; break; }
-        }
-        if (clash) continue;
+        if (noLane && z - tile.z < 0.80 + foot
+          && Math.abs(x - tile.x) < 2.25 + foot) continue;
+        if (!clear(x, z, foot, itemR, civicR)) continue;
         out.push({ x, z });
         blocked.push({ x, z, r: foot });
       }
@@ -441,49 +900,549 @@ export function buildProps(scene) {
     const recipe = RECIPE[tile.terrain] || {};
     dropTile = tile.id;
 
-    // mine portal first so it owns the best spot on a mountain
+    // The mine portal first, so it owns the best spot on a mountain — and it is
+    // now the ONLY thing on a mountain, which changes where the best spot is.
+    //
+    //   "I'd prefer if the ore hex when empty just looked like a fully empty,
+    //    slightly subtly textured grey hex, nothing else really on it."
+    //
+    // It used to stand at bearing `away` — pointing out of the island — and
+    // face that way, on the theory that a mine is cut into a hillside and a
+    // hillside faces the sea. Two things were wrong with that, and both of them
+    // only became visible once every other prop came off the hex.
+    //
+    // IT SHOWED ITS BACK. `PLAY_YAW` in systems/camera.js is 0, so the camera
+    // always sits on +Z. A portal on the far side of the island faces -Z, and
+    // the back of this kit is two black boxes (the adit, which is meant to be
+    // seen THROUGH the timber frame) with plain plank behind them. On a hex
+    // that still had thirty other objects on it that was a detail; on an empty
+    // grey hex it is a featureless black slab standing on the rim, and a black
+    // slab is the last thing a hex that just got its value lifted out of the
+    // floor needs. It faces +Z now, on every mountain, so what the player sees
+    // is always the timbered mouth.
+    //
+    // IT STOOD WHERE THE ORE STANDS. Bearing `away` is a different bearing on
+    // every mountain and about half of them put the portal on the near rim,
+    // between the camera and the field. Held on the BACK of the hex it is
+    // behind everything the player runs at, and it lands in the strip the
+    // number token shadows — which `clearOfToken` in board/nodes.js keeps free
+    // of items by construction, so the one place on the hex where a landmark
+    // can never hide a pickup. Nudged off the hex's own axis by a radian,
+    // alternating side by tile id — enough that the number token, whose painted
+    // disc is about 1.8 world units across at the play camera, is not sitting in
+    // the middle of a 5.3-unit portal, and enough that three mountains on one
+    // board are not three identical photographs.
+    //
+    // AND IT CAME IN OFF THE RIM WITH THE KIT, 0.48/0.44 to 0.44/0.40. That is
+    // about three quarters of a unit, and it buys two things at once. The
+    // portal is half the size it was (see `mineEntrance` in propkits.js), so
+    // parked out at 0.48 it read as something abandoned on the edge of the tile
+    // rather than as a working cut into it; and 0.44/0.40 is what puts 5.14
+    // units between it and the nearest hex vertex, which is more than the
+    // 4.85 a city's outermost banner plus this kit's own footprint needs. The
+    // portal is dropped by hand rather than through `take`, so it is the one
+    // landmark on the island the corner discs in `makePlacer` cannot police for
+    // us — it has to be placed clear by construction.
     if (tile.terrain === 'mountains') {
-      const away = Math.atan2(tile.z, tile.x) || 0.3;
-      // a Y rotation of (PI/2 - away) turns a model's local +Z to face `away`
-      const yaw = Math.PI / 2 - away;
-      const mx = tile.x + Math.cos(away) * HEX_SIZE * 0.40;
-      const mz = tile.z + Math.sin(away) * HEX_SIZE * 0.40;
+      const bear = -Math.PI / 2 + (tile.id % 2 ? 1.00 : -1.00);
+      const mx = tile.x + Math.cos(bear) * HEX_SIZE * 0.44;
+      const mz = tile.z + Math.sin(bear) * HEX_SIZE * 0.40;
+      // ry = 0 leaves the model's local +Z pointing at world +Z, which is the
+      // camera. The small skew is variety, not aim.
+      const yaw = (tile.id % 2 ? -0.16 : 0.16);
       placer.blocked.push({ x: mx, z: mz, r: FOOT.mine });
-      drop('mine', mx, mz, rng, { ry: yaw, s: 1.1, sy: 1.1 });
-      // Rails running out of the portal, and one cart on them. Both thinned
-      // with the rest of the mountain dressing: five rail segments and two
-      // carts was a working railway on a hex that is supposed to read at a
-      // glance as "rock, a mine, and the ore you came for".
-      for (let i = 0; i < 3; i++) {
-        const d = HEX_SIZE * 0.40 - (2.2 + i * 2.05);
-        const rx2 = tile.x + Math.cos(away) * d;
-        const rz2 = tile.z + Math.sin(away) * d;
-        if (hexFrac(rx2 - tile.x, rz2 - tile.z) > PROP_MAX_FRAC) continue;
-        placer.blocked.push({ x: rx2, z: rz2, r: FOOT.rail });
-        drop('rail', rx2, rz2, rng, { ry: yaw });
-      }
-      for (let i = 0; i < 1; i++) {
-        const d = HEX_SIZE * 0.40 - (3.6 + i * 4.1);
-        const cx = tile.x + Math.cos(away) * d;
-        const cz = tile.z + Math.sin(away) * d;
-        if (hexFrac(cx - tile.x, cz - tile.z) > PROP_MAX_FRAC) continue;
-        placer.blocked.push({ x: cx, z: cz, r: FOOT.cart });
-        drop('cart', cx, cz, rng, { ry: yaw });
+      drop('mine', mx, mz, rng, { ry: yaw, s: 1.22, sy: 1.22 });
+      // THE RAILS AND THE CART ARE GONE. They were the "brown pieces of
+      // something obscure" by name: a 0.14-unit sleeper and a 0.93-unit tub,
+      // laid in a line running from the portal into the middle of the ground
+      // the player has to sweep. At play distance neither one resolved into
+      // anything — they were three brown dashes and a brown box on grey rock —
+      // and they sat exactly where the ore does, so they read as items that
+      // could not be picked up. A mine portal on its own says mine perfectly
+      // well; the railway was set dressing for a story nobody was reading.
+    }
+
+    // A paddock is three larger panels on the rim, not thirteen small ones.
+    //
+    //   "The sheep hexes have way too many fences that are just a visual mess."
+    //
+    // Nine on this arc plus four dropped loose by the recipe. Nine at 0.30
+    // radians apart on a 5.0-unit radius is a panel every 1.5 units with a
+    // 1.7-unit panel to fill it: a continuous wooden wall around three quarters
+    // of the hex, in the darkest value on the tile, standing between the camera
+    // and the sheep. Three at 0.78 radians is a panel every 3.9 units — three
+    // distinct bits of fence with clear grass between them, which is how a
+    // paddock actually reads, and how it stays a backdrop rather than a barrier.
+    //
+    // Two more things were wrong with the arc and both of them show up the
+    // moment there are only three panels left to carry it.
+    //
+    // IT WAS NOT TANGENTIAL. `ry = a + PI/2` looks like the right yaw and is
+    // not: a Y rotation of theta sends a model's local +X to world
+    // (cos theta, -sin theta), so lining the panel up along the tangent
+    // (-sin a, cos a) needs theta = -(a + PI/2). At the old yaw each panel sat
+    // at an angle to the ring that changed with its bearing, so nine of them
+    // came out as nine differently-skewed planks rather than as one fence —
+    // which is a good part of what "just a visual mess" was describing.
+    //
+    // IT IGNORED THE FLOCK. The arc pushed straight into `blocked` without ever
+    // testing it, so a panel could and did stand through a sheep. It is tested
+    // now, and tested at three points along its own length rather than as one
+    // fat disc at its centre: a fence is a 2.7-unit plank about a fifth of a
+    // unit thick, and a circle big enough to contain it would refuse every
+    // position on a hex holding twenty-eight items.
+    //
+    // Picked by FARTHEST-POINT, not by walking. A twenty-eight sheep pasture
+    // only leaves a handful of bearings on the whole ring where a panel fits at
+    // all, and they arrive in clumps — so "walk round and take the first three
+    // that are 1.2 radians apart" placed ONE fence on a quarter of the pastures
+    // measured over twelve boards. Collecting every bearing that fits and then
+    // repeatedly taking the one furthest from what is already down turns that
+    // into three fences on nine pastures out of ten and two on most of the rest,
+    // spread as widely as the flock allows. `PANEL` is the panel's own half
+    // length, so the three samples are its two ends and its middle.
+    //
+    // THE RINGS CAME IN OFF THE RIM, and that is the reviewer's note:
+    //
+    //   "Keep them off the hex rim where they merge with the border, and clamp
+    //    the minimum to 2 panels so no pasture ever shows a single lone panel."
+    //
+    // They used to ride hexFrac 0.78 and 0.70. 0.78 is the outermost row the
+    // prop zone allows and the tan road strip starts at 0.81, so a panel out
+    // there stood with its posts a few centimetres from the border line, in a
+    // dark plank colour, along the same direction the border runs — and at the
+    // play camera's shallow pitch the two merged into one dark edge. Worse, the
+    // tile top is only flat out to about 0.80 and starts ramping to the
+    // neighbour after that, so the outer panel sat on the beginning of the
+    // slope. 0.66 and 0.56 put both rings on flat green well inside the hex,
+    // where a fence casts its own shadow onto grass and reads as a thing
+    // standing IN a field. `hexFrac` is homogeneous in the offset, so one divide
+    // lands the panel exactly on a ring whatever bearing it is on, and the ring
+    // is an irregular hexagon rather than a circle — which is why this is not
+    // simply `HEX_SIZE * k`.
+    //
+    // THE MINIMUM IS TWO. One panel on its own is not an enclosure, it is a
+    // plank somebody dropped; and because the ring moved inward, where the
+    // flock is denser, a lone panel became MORE likely rather than less. So if
+    // the ordinary pass ends up with fewer than two, a relaxed pass runs: the
+    // sheep collar drops from 1.22 to 1.02 (the widest sheep is 1.42 across at
+    // its fleece, so 1.02 plus the panel's own 0.20 still clears an animal), two
+    // more rings are offered, and the angular separation bar comes off. There is
+    // always at least one bearing that works even then — the strip the number
+    // token shadows (`clearOfToken` in board/nodes.js) is item-free by
+    // construction and crosses every ring at the back of the hex — so the
+    // relaxed pass cannot come up empty while the strict one found anything.
+    if (tile.terrain === 'pasture') {
+      const a0 = rng() * Math.PI * 2;
+      const PANEL = 1.10;
+      const chosen = [];
+      const sweep = (rings, itemR, room2, foot = 0.20, steps = 72, civicR) => {
+        const fit = [];
+        for (const ring of rings) {
+          for (let i = 0; i < steps; i++) {
+            const a = a0 + i * (Math.PI * 2 / steps);
+            const rad = ring / hexFrac(Math.cos(a), Math.sin(a));
+            const fx = tile.x + Math.cos(a) * rad;
+            const fz = tile.z + Math.sin(a) * rad;
+            const tx = -Math.sin(a), tz = Math.cos(a);
+            const pts = [-PANEL, 0, PANEL].map(o => [fx + tx * o, fz + tz * o]);
+            if (pts.every(p => placer.clear(p[0], p[1], foot, itemR, civicR))) {
+              fit.push({ a, fx, fz, pts });
+            }
+          }
+        }
+        while (fit.length && chosen.length < 3) {
+          let best = null, bestD = -1;
+          for (const c of fit) {
+            let d = Math.PI;
+            for (const k of chosen) {
+              let da = Math.abs(c.a - k.a) % (Math.PI * 2);
+              if (da > Math.PI) da = Math.PI * 2 - da;
+              if (da < d) d = da;
+            }
+            if (d > bestD) { bestD = d; best = c; }
+          }
+          // Two panels closer than this read as one bent fence with a kink in
+          // it, which is worse than two panels. The bar is lower for the SECOND
+          // panel than for the third, because one lone panel does not read as a
+          // paddock at all — two a little close together beats one on its own,
+          // and three a little close together does not beat two well spread.
+          const room = chosen.length >= 2 ? 0.62 : room2;
+          if (!best || (chosen.length && bestD < room)) break;
+          chosen.push(best);
+          for (const p of best.pts) placer.blocked.push({ x: p[0], z: p[1], r: 0.55 });
+          drop('fence', best.fx, best.fz, rng, { ry: -(best.a + Math.PI / 2) });
+        }
+      };
+      // The strict pass keeps the panels clear of the corner discs; the two
+      // relaxed passes below do not, because a pasture showing one lone plank
+      // is a worse picture than a panel standing near a corner that may never
+      // be built on. See the civic block in `makePlacer`.
+      sweep([0.66, 0.56], 1.12, 0.45);
+      if (chosen.length < 2) sweep([0.72, 0.62, 0.50, 0.40], 0.95, 0.20, 0.20, 72, RELAX_CIVIC);
+      // Last resort, and it fires on about one pasture in fifty: a 5-pip hex
+      // holding twenty-eight sheep that also sits inside the market's 11-unit
+      // exclusion circle and carries a player spawn on its rim. Measured over
+      // twelve boards, that combination is the only thing that beats the pass
+      // above. Here the panel is measured against what a sheep ACTUALLY
+      // occupies — 0.85 at the widest fleece the density compensation now
+      // allows — plus a plank half-thickness of 0.10, on six rings at five
+      // degrees. Nothing is allowed to overlap an animal even here; what is
+      // given up is the collar of clear ground around it, which is a smaller
+      // price than a paddock with one plank lying in it.
+      if (chosen.length < 2) {
+        sweep([0.76, 0.68, 0.60, 0.52, 0.44, 0.36], 0.86, 0.12, 0.10, 120, RELAX_CIVIC);
       }
     }
 
-    // pasture fences follow a lazy arc so they read as an enclosure
-    if (tile.terrain === 'pasture') {
-      const a0 = rng() * Math.PI * 2;
-      const rad = HEX_SIZE * 0.56;
-      for (let i = 0; i < 9; i++) {
-        const a = a0 + i * 0.30;
-        const fx = tile.x + Math.cos(a) * rad;
-        const fz = tile.z + Math.sin(a) * rad;
-        if (hexFrac(fx - tile.x, fz - tile.z) > PROP_MAX_FRAC) continue;
-        placer.blocked.push({ x: fx, z: fz, r: FOOT.fence });
-        drop('fence', fx, fz, rng, { ry: a + Math.PI / 2 });
+    // TWO BALES ON A WHEAT FIELD, BOTH OF THEM WHERE THEY CAN BE SEEN.
+    //
+    //   "A second hay bale is jammed at the bottom rim in
+    //    sw-fields-3-cleared.png and the purple road ribbon cuts through it.
+    //    Nudge it clear."
+    //
+    // The bales used to come out of `RECIPE.fields` through `take()`, which
+    // throws darts at the whole prop zone out to hexFrac 0.78 and keeps
+    // whatever fits. 0.78 is measured to a CENTRE: a bale is 1.43 to 1.77 units
+    // across and reserves 0.96, so one dropped out there reaches 0.90, a third
+    // of it standing on the ramp into the tan border strip at 0.81 with a road
+    // drawn straight over the top of it. Held to 0.58 the far side lands at
+    // 0.70 and the whole bale sits on the crop, where a bale belongs.
+    //
+    // And it is kept out of the number token's strip, which is the trap that
+    // catches every uniform sampler on this island. `clearOfToken` in
+    // board/nodes.js leaves that strip item-free by construction, so on a
+    // twenty-eight sheaf field it is very nearly the only ground a 0.96-radius
+    // disc can land on at all — both bales went behind the token disc and a
+    // cleared wheat hex photographed as completely bare. Two relaxed passes
+    // stand behind the strict one so the field never comes out with none: the
+    // ring opens to 0.66 and then 0.70 and the sheaf's collar comes down toward
+    // its true half width, but the bale is never allowed to overlap a sheaf and
+    // never allowed into the token's shadow.
+    //
+    // AND IT IS KEPT OFF THE VERTICES, WHICH IS THE HALF THAT WAS MISSED.
+    //
+    //   "On hex 12 a hay bale at the bottom-left vertex is bisected by the
+    //    purple road quad, with the bale poking out below it and a black banner
+    //    pole passing vertically through its right side."
+    //
+    // Ring 0.58 is measured on `hexFrac`, which is a hexagon: along a CORNER
+    // bearing that is 5.22 units out of 9.00, so the bale could stand 3.78 from
+    // a vertex — inside a city's curtain wall (2.72) and well inside the reach
+    // of a village's banner. The corner discs in `makePlacer` push it to 4.51,
+    // which clears both. The two relaxed passes fall back to RELAX_CIVIC, which
+    // still keeps the bale's body outside a city's curtain wall — a field with
+    // one bale on it is a worse picture than a bale near a corner, but not so
+    // much worse that the bale should be allowed inside the walls.
+    if (tile.terrain === 'fields') {
+      const bales = placer.take(2, FOOT.hay, 0.58, undefined, true);
+      if (bales.length < 2) {
+        for (const p of placer.take(2 - bales.length, FOOT.hay, 0.66, 0.74, true, RELAX_CIVIC)) {
+          bales.push(p);
+        }
       }
+      if (bales.length < 2) {
+        // Last resort on a 5-pip field: the sheaf's collar comes down to its
+        // own half width. 0.58 plus the bale's 0.96 still clears an actual
+        // sheaf; the ring does not move again, because 0.66 is already where a
+        // 0.88-radius bale reaches 0.77 and the road strip starts at 0.81.
+        for (const p of placer.take(2 - bales.length, FOOT.hay, 0.66, 0.58, true, RELAX_CIVIC)) {
+          bales.push(p);
+        }
+      }
+      // ...AND ON A 5-PIP FIELD ALL THREE OF THEM STILL COME BACK EMPTY.
+      //
+      // The block above claims "the field never comes out with none". It is not
+      // true and never was: run over forty boards, a 5-pip fields hex gets two
+      // bales 16% of the time, one 43% of the time, and NOTHING AT ALL the
+      // other 41%. (Measured with the corner discs on and off — the numbers are
+      // identical either way, so this is not something this pass caused. It is
+      // something this pass's census in `tools/shoot.mjs` finally shows.)
+      //
+      // The reason is arithmetic and no amount of relaxing fixes it. Twenty-
+      // eight sheaves blue-noise spaced about 2.1 apart leave gaps of roughly a
+      // unit; a bale reserves 0.96 and a sheaf's own butt is 0.85 across at the
+      // widest scale, so two of them cannot both stand in one gap however
+      // generously the collars are trimmed. On the crowded hexes there is
+      // honestly room for ONE bale, and the thing worth guaranteeing is one
+      // rather than two — a cleared field with a bale on it reads as a farm and
+      // a cleared field with nothing on it reads as a mud patch.
+      //
+      // So the floor drops to one and is placed the way every other landmark on
+      // this island that is not allowed to fail is placed: scored over rings
+      // instead of sampled, taking the roomiest bearing there is. Same three
+      // terms as the paddock's bale — slack, a lean toward the camera, and the
+      // token lane scored as disqualifying-unless-there-is-nothing-else — and
+      // the same guarantee, which is that a scorer always returns something.
+      if (!bales.length) {
+        let best = null;
+        for (const ring of [0.58, 0.48, 0.38]) {
+          for (let i = 0; i < 48; i++) {
+            const a = i * (Math.PI * 2 / 48);
+            const rad = ring / hexFrac(Math.cos(a), Math.sin(a));
+            const bx = tile.x + Math.cos(a) * rad;
+            const bz = tile.z + Math.sin(a) * rad;
+            let slack = Infinity;
+            for (const b of placer.blocked) {
+              // 0.66 is a sheaf measured across its own butt end and halved,
+              // which is what the bale actually has to miss; ITEM_FOOT.fields
+              // is 0.92 and is a collar of clear ground on top of that.
+              const need = (b.item ? 0.66 : b.r) + FOOT.hay;
+              const d = Math.hypot(b.x - bx, b.z - bz) - need;
+              if (d < slack) slack = d;
+            }
+            const lx = bx - tile.x, lz = bz - tile.z;
+            const inLane = lz < 0.80 + FOOT.hay && Math.abs(lx) < 2.25 + FOOT.hay;
+            const score = Math.min(slack, 1.00) + (inLane ? -2.20 : 0)
+              + Math.sin(a) * 0.60 + (ring === 0.58 ? 0.18 : 0);
+            if (!best || score > best.score) best = { score, bx, bz };
+          }
+        }
+        if (best) {
+          placer.blocked.push({ x: best.bx, z: best.bz, r: FOOT.hay });
+          bales.push({ x: best.bx, z: best.bz });
+        }
+      }
+      for (const p of bales) drop('hay', p.x, p.z, rng);
+    }
+
+    // THE PADDOCK'S BALE USED TO BE PLACED HERE, AND IT IS GONE.
+    //
+    //   "Just please remove the hay bales from the sheep hexes entirely."
+    //
+    // What stood here was a scored ring placement — forty-eight bearings on two
+    // rings, weighted by clearance, biased toward +Z so the number token and a
+    // corner banner could not stand in front of it — put in specifically because
+    // the rejection sampler kept parking the bale dead centre behind the tile
+    // flag. It worked, and the owner still does not want a bale on a sheep hex,
+    // which settles it: the whole block is deleted rather than tuned. A pasture
+    // is its fence panels, its grass and its flock now.
+    //
+    // Nothing is put in its place. That is a decision and not an omission — the
+    // standing note on this file is "I want it to be calming and cute, not
+    // overstimulating", and swapping one waist-high prop for a different
+    // waist-high prop would be answering "remove it" with "here is another one".
+    // The one thing worth watching is whether an emptied paddock now reads as
+    // BARE with only two or three fence panels on it; that is a judgement for a
+    // photograph rather than for this comment, and the sweep captures it.
+    //
+    // The `hay` kit itself is still alive and still hand-placed — on the wheat
+    // field, thirty lines above. There is no orphan here to sweep up.
+
+    // ONE CLAY QUARRY, PLACED ON PURPOSE.
+    //
+    //   "something that is one item that looks like a clay quarry but not in a
+    //    distracting visual way."
+    //
+    // It used to be three of them dropped by the rejection sampler wherever they
+    // happened to fit, which is how you get three quarries in a huddle on one
+    // side of a hill and none at all on the next hill along — the sampler needs
+    // a 2.42-unit clearance for this kit and a twenty-three item brick hex does
+    // not always have one. Three is a pattern and none is a missing landmark;
+    // exactly one, on the rim, facing out of the island, is a landmark. Same
+    // treatment the mine portal gets on a mountain, and for the same reason.
+    // SCORED, not walked. "Try bearings in order and take the first that fits"
+    // is how the mine portal is placed and it is wrong for this one, because
+    // this one has no privileged spot to start from and no right to fail: a
+    // brick hex with no quarry on it is a brick hex missing the thing the
+    // player asked for. A hill holding twenty-three stacks, sitting one hex
+    // from the market's 11-unit exclusion circle, with a player spawn on its
+    // outer rim, has no bearing on any ring that satisfies a fixed clearance —
+    // and on the boards measured, exactly one hill in thirty-six was like that.
+    //
+    // So every bearing on two rings is SCORED by how much room it has beyond
+    // what the kit needs, that score is capped (past about a unit of slack more
+    // room stops mattering), and a thumb goes on the scale. Where there is room
+    // the quarry lands where the scoring wants it; where there is not, it lands
+    // in the roomiest place there is. It always lands.
+    //
+    // AND THE THUMB NOW PUSHES THE OTHER WAY.
+    //
+    //   "Currently a small terracotta cone with its base buried in / clipped by
+    //    the raised hex rim ... Move it into the tile interior."
+    //
+    // The rings were 0.72 and 0.60 with a +0.35 bonus for the outer one and
+    // another +0.30 for facing off the island, which between them made "on the
+    // rim, looking outward" win almost every time. That was a deliberate choice
+    // and it was wrong on the geometry: `heightAt` holds a tile top dead flat
+    // only out to about hexFrac 0.80 and then ramps down across the tan border
+    // strip to the neighbour, and the raised painted lip of the hex sits right
+    // in that band. A 3.9-unit-wide kit centred at 0.72 reaches 0.90 on its
+    // outer side — over the lip, on the ramp — so its far edge sank into the
+    // rim while its near edge stayed up on the flat. That is the clipping.
+    //
+    // 0.50 and 0.38 put the whole kit, at every bearing, inside the flat. The
+    // outward-facing bonus goes with it: an object in the middle of a hex has
+    // no "outward" that means anything, and pointing the block on its lip at the
+    // sea was only ever a story about a quarry cut into a hillside — which this
+    // is no longer, because it is a pit now and a pit has no facing. The yaw
+    // comes from the bearing anyway, so the block still lands on a different
+    // side of the pit on every hill.
+    if (tile.terrain === 'hills') {
+      const away = Math.atan2(tile.z, tile.x) || 0.3;
+      let best = null;
+      for (const ring of [0.50, 0.38]) {
+        for (let i = 0; i < 36; i++) {
+          const a = away + i * (Math.PI * 2 / 36);
+          const rad = ring / hexFrac(Math.cos(a), Math.sin(a));
+          const cx = tile.x + Math.cos(a) * rad;
+          const cz = tile.z + Math.sin(a) * rad;
+          let slack = Infinity;
+          for (const b of placer.blocked) {
+            // 1.05 rather than FOOT.item's 1.12 for the brick stacks: the works
+            // is a flat cut step, not something that sprouts out of one.
+            const need = (b.item ? 1.05 : b.r) + FOOT.clayWorks;
+            const d = Math.hypot(b.x - cx, b.z - cz) - need;
+            if (d < slack) slack = d;
+          }
+          // THE TOKEN'S SHADOW IS A TRAP FOR ANY SCORER THAT MAXIMISES ROOM.
+          // The roomiest ground on every hex is the strip the number token
+          // covers, because `clearOfToken` in board/nodes.js keeps items out of
+          // it by construction — so a bare "most clearance wins" score put the
+          // quarry directly behind the token disc on hill after hill, which is
+          // the one place on the tile where a landmark cannot be looked at. A
+          // smooth +Z lean was not enough on a 28-item hill, where every bearing
+          // outside the lane scores negative slack and the lane still wins by a
+          // length. So the lane is scored as what it is: disqualifying, unless
+          // there is literally nothing else, in which case the penalty is
+          // finite and something still lands. The test is the lane's own
+          // definition widened by the kit's radius, so the quarry is not merely
+          // out of the strip, it is clear of it.
+          const lx = cx - tile.x, lz = cz - tile.z;
+          const inLane = lz < 0.80 + FOOT.clayWorks
+            && Math.abs(lx) < 2.25 + FOOT.clayWorks;
+          const score = Math.min(slack, 1.20) + (inLane ? -2.20 : 0)
+            + Math.sin(a) * 0.30 + (ring === 0.50 ? 0.25 : 0);
+          if (!best || score > best.score) best = { score, a, cx, cz };
+        }
+      }
+      let pitDisc = null;
+      if (best) {
+        pitDisc = { x: best.cx, z: best.cz, r: FOOT.clayWorks };
+        placer.blocked.push(pitDisc);
+        drop('clayWorks', best.cx, best.cz, rng, { ry: Math.PI / 2 - best.a });
+      }
+
+      // ONE SMALL SHOVEL, LEFT STUCK IN THE GROUND BESIDE THE QUARRY.
+      //
+      //   "Also remove the small rocks from the brick hexes, instead have a
+      //    small shovel."
+      //
+      // Everything the stones used to be — a count, a floor under that count,
+      // two relaxed passes to hold the floor, a per-hex size that shrank with
+      // the crowding — is deleted. One prop needs none of it. What it needs is
+      // the three things the quarry and the mine portal each needed, so this is
+      // written the same way they are:
+      //
+      //   IT IS SCORED, NOT SAMPLED. A rejection sampler is allowed to come back
+      //   with nothing, and the whole history of this hex is landmarks that came
+      //   back with nothing on the 5-pip hills — the ones the player spends the
+      //   most time on. Every bearing on two rings is scored and the best one
+      //   wins, so a shovel lands on every hill on every board, by construction.
+      //
+      //   IT IS MEASURED FROM THE QUARRY, NOT FROM THE HEX. "As if left stuck in
+      //   the ground beside the quarry" is a relationship between two objects,
+      //   not a position on a tile, so the rings are radii about the PIT: 2.10
+      //   is a fifth of a unit outside the quarry's own 1.55 disc plus the
+      //   shovel's 0.45, which puts the blade about half a unit clear of the
+      //   spoil bank — near enough to read as one scene, far enough that the
+      //   two silhouettes do not merge. 2.45 is the fallback when the near ring
+      //   is all brick. The quarry's own disc is skipped when the clearance is
+      //   scored, because being close to it is the POINT here; every other disc
+      //   on the hex still counts in full.
+      //
+      //   IT LEANS TOWARD THE CAMERA SIDE OF THE PIT. `sin(a)` biases the
+      //   bearing to +Z, where `PLAY_YAW` in systems/camera.js puts the camera,
+      //   so the quarry's spoil bank is never standing between the lens and the
+      //   tool. The token lane is scored as disqualifying-unless-there-is-
+      //   nothing-else for the same reason it is for the quarry: it is the
+      //   roomiest ground on the hex and the one place a small prop cannot be
+      //   looked at.
+      //
+      // hexFrac is checked as a hard skip rather than as a penalty. A shovel
+      // 2.45 units out from a quarry that is itself at 0.50 can reach the ramp
+      // into the tan border strip, and a tool half-sunk in the hex rim is the
+      // defect the quarry itself was moved inboard to fix. 0.70 plus this kit's
+      // 0.05 of hexFrac footprint is 0.75, clear of the 0.81 where the roads
+      // start. Bearings pointing back toward the middle of the hex always pass,
+      // so the skip can never empty the candidate list.
+      if (pitDisc) {
+        let tool = null;
+        for (const ring of [2.10, 2.45]) {
+          for (let i = 0; i < 48; i++) {
+            const a = i * (Math.PI * 2 / 48);
+            const sx = pitDisc.x + Math.cos(a) * ring;
+            const sz = pitDisc.z + Math.sin(a) * ring;
+            if (hexFrac(sx - tile.x, sz - tile.z) > 0.70) continue;
+            let slack = Infinity;
+            for (const b of placer.blocked) {
+              if (b === pitDisc) continue;
+              const d = Math.hypot(b.x - sx, b.z - sz) - (b.r + FOOT.shovel);
+              if (d < slack) slack = d;
+            }
+            const lx = sx - tile.x, lz = sz - tile.z;
+            const inLane = lz < 0.80 + FOOT.shovel
+              && Math.abs(lx) < 2.25 + FOOT.shovel;
+            const score = Math.min(slack, 0.90) + (inLane ? -2.20 : 0)
+              + Math.sin(a) * 0.45 + (ring === 2.10 ? 0.30 : 0);
+            if (!tool || score > tool.score) tool = { score, sx, sz };
+          }
+        }
+        if (tool) {
+          placer.blocked.push({ x: tool.sx, z: tool.sz, r: FOOT.shovel });
+          // THE YAW IS CHOSEN FOR LEGIBILITY, NOT FOR VARIETY, and it is the
+          // same argument the mine portal makes two hundred lines above — with
+          // one term the portal did not need.
+          //
+          // The kit leans along its own local X and its blade is a flat plate
+          // whose face is the local X-Y plane, so the yaw decides two things at
+          // once: how much of the cant the camera sees, and how much light the
+          // blade catches. `PLAY_YAW` in systems/camera.js is 0 and the camera
+          // always sits on +Z, so a yaw near 0 shows the full lean and the full
+          // plate — and that was the first version of this line, and it
+          // photographed at luma 21-28 on a hillside of 62.
+          //
+          // The reason is the one `clayWorks` learned the hard way: "a
+          // horizontal normal on the arc turned away from the key light catches
+          // nothing at all". The blade's face normal IS horizontal — a Y
+          // rotation cannot tip it — so all it has is its dot with the sun, and
+          // `SUN_DIR` in world/sky.js is (-0.577, 0.707, 0.408). A blade facing
+          // straight down +Z gets 0.408 of that at best and 0.19 once the small
+          // skew is in; turned to (-0.577, 0, 0.816) it gets 0.67, which is
+          // three and a half times the direct light for a plate that still
+          // presents 0.82 of its area to the lens. So the blade is aimed BETWEEN
+          // the camera and the sun, which is the only place a vertical plate can
+          // be both seen and lit.
+          //
+          // -0.62 radians is that bearing. The mirrored variant is PI minus it:
+          // the blade is a box, so the far face reads identically and the lean
+          // flips to the other side, which is what keeps three hills on one
+          // board from being three copies of the same photograph.
+          const yaw = (tile.id % 2) ? -0.62 : Math.PI - 0.62;
+          const ss = STYLE.shovel.s;
+          const s = ss[0] + rng() * (ss[1] - ss[0]);
+          // `sy` is pinned to `s` — see STYLE.shovel. A tool is a rigid object;
+          // the free vertical jitter every other kit gets would bend the cant.
+          drop('shovel', tool.sx, tool.sz, rng, { ry: yaw, s, sy: s });
+        }
+      }
+
+      // THE STONES USED TO STAND HERE, AND THEY DO NOT ANY MORE.
+      //
+      //   "Also remove the small rocks from the brick hexes."
+      //
+      // What was deleted was a scored ring at hexFrac 0.62 with two relaxed
+      // passes behind it, a floor of two, and a per-hex size that shrank with
+      // the crowding so a 5-pip hill got smaller stones rather than fewer of
+      // them. All of that machinery existed to make "a few simple stones"
+      // actually be a few, and it worked; it is gone because the hex is not
+      // supposed to have stones on it any longer, not because it failed. The
+      // hills recipe above is now grass and nothing else, and everything with a
+      // silhouette on this hex — the quarry and the shovel — is placed by the
+      // two scorers above.
+      //
+      // `boulder` and `STYLE.boulder` survive because the desert and the
+      // shoreline collar still use them. Nothing here is orphaned.
     }
 
     // biggest silhouettes claim their ground first, undergrowth fills the gaps
@@ -493,7 +1452,12 @@ export function buildProps(scene) {
     for (const kit of order) {
       const n = recipe[kit];
       if (!n) continue;
-      for (const p of placer.take(n, FOOT[kit])) drop(kit, p.x, p.z, rng);
+      // Ground cover switches the corner discs off entirely; anything with a
+      // silhouette keeps them. See `GROUND_COVER` at the top of this file.
+      const g = GROUND_COVER.has(kit) ? 0 : undefined;
+      for (const p of placer.take(n, FOOT[kit], PROP_MAX_FRAC, undefined, false, g)) {
+        drop(kit, p.x, p.z, rng);
+      }
     }
   });
 
@@ -736,6 +1700,36 @@ export function buildProps(scene) {
     drawCalls,
     regions,
     pickup,
+
+    /* Build-time census of the dressing: kit -> how many pieces actually landed.
+     * Worth publishing because the recipe is a REQUEST, not a result. `take()`
+     * is a rejection sampler and the pasture's fence arc can decline every
+     * bearing it tries, so "the recipe asks for three fences" and "three fences
+     * are standing" are different claims — and the first version of the
+     * three-fence paddock quietly placed nought of them, because the clearance
+     * disc it was testing against was wider than any gap in a twenty-eight
+     * sheep flock. A capture rig can read this and say so. */
+    kitCounts: (() => {
+      const c = {};
+      for (const kit in bucket) c[kit] = bucket[kit].length;
+      return c;
+    })(),
+
+    /* The same census cut per hex, which is the cut that actually answers the
+     * question the reports ask. "Ten fences across four pastures" is a fine
+     * number that can still mean one pasture with four panels round it and one
+     * with none, and a pasture with none is a pasture that stopped being a
+     * paddock. tileId -> { kit: count }; hexes with no dressing are absent. */
+    tileCounts: (() => {
+      const c = {};
+      for (const kit in bucket) {
+        for (const o of bucket[kit]) {
+          if (o.tile < 0) continue;              // the shoreline collar
+          (c[o.tile] || (c[o.tile] = {}))[kit] = ((c[o.tile] || {})[kit] || 0) + 1;
+        }
+      }
+      return c;
+    })(),
 
     /** Kept so main.js's `gained` handler keeps working. The field reconciles
      *  itself off the item flags, so both of these are now no-ops. */

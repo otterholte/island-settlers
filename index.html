@@ -19,6 +19,13 @@
 <link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png" />
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <link rel="stylesheet" href="./src/ui/ui.css" />
+<!-- The build sheet — the placement map's affordability chips and its one line
+     of text. It would normally join the @import block at the top of ui.css with
+     the other five sheets; it is linked here instead because ui.css is being
+     rewritten elsewhere this week and a one-line merge into it would be a
+     one-line merge conflict. src/ui/overview.js adds this same link itself if
+     it ever finds the sheet missing, so the map can never come up unstyled. -->
+<link rel="stylesheet" href="./src/ui/ui-build.css" />
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>

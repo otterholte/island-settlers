@@ -361,7 +361,22 @@ export function knightBlocks(state, pid, tileId) {
   // never leaves the desert, and the desert yields nothing to anybody anyway —
   // but a restored or replayed match must not be able to strand a live block.
   if (!knightsOn()) return false;
-  // The player who last moved the Knight may still work the blocked region.
+  /*
+   * The player who last moved the Knight may still work the blocked region.
+   *
+   * This was already true when the owner asked for it —
+   *
+   *   "If I place it on my own hex, I still can access that hex for resources"
+   *
+   * — so nothing here changed, and this note exists so the next person to read
+   * the raid rules does not "fix" it back. `state.robberOwner` is set by
+   * `playKnight` at the moment of placement (and mirrored onto a networked
+   * client by `net/mirror.js`), so the exemption follows the Knight rather than
+   * the hex: send it somewhere else and the previous region opens up for
+   * everybody again, because `robberTile` has moved with it. The blocking half
+   * of the card is otherwise untouched by the retargeting above — every OTHER
+   * player is still shut out of this hex, whether or not they were robbed.
+   */
   return state.robberTile === tileId && state.robberOwner !== pid;
 }
 
@@ -541,6 +556,27 @@ export function drawCard(state, pid, free = false) {
   return card;
 }
 
+/**
+ * Who a Knight sent to `tileId` by `pid` would actually rob, in seat order.
+ *
+ * Exported because it is the whole of the new targeting rule in one place: a
+ * caller that wants to know what a placement is worth — a bot weighing hexes,
+ * a test, the board map — should ask this rather than re-deriving it and
+ * drifting out of step with `playKnight`. It reads the board, never `state.res`,
+ * so it is safe to call speculatively before the card is committed.
+ */
+export function knightVictims(state, pid, tileId) {
+  const out = [];
+  for (const o of state.players) {
+    // "I never lose half of my own resources if I'm the one that plays the
+    // knight" — the player who sent the Knight is skipped BEFORE the ownership
+    // test, so owning a corner of the raided hex cannot rob them of anything.
+    if (o.id === pid) continue;
+    if (playerOwnsTile(state, o.id, tileId)) out.push(o);
+  }
+  return out;
+}
+
 export function playKnight(state, pid, targetTile) {
   const p = state.players[pid];
   const idx = p.cards.findIndex(c => c.type === 'knight');
@@ -551,30 +587,87 @@ export function playKnight(state, pid, targetTile) {
   state.robberTile = targetTile;
   state.robberOwner = pid;
 
+  /*
+   * WHO THE RAID TOUCHES — the hex, not the island.
+   *
+   *   "Can you change how the knight works. I want it to only take from the
+   *    players who have a settlement or city on the hex where you placed the
+   *    knight, and only they will lose half of all of their resources. If I
+   *    place it on my own hex, I still can access that hex for resources,
+   *    however I never lose half of my own resources if I'm the one that plays
+   *    the knight."
+   *
+   * The old rule billed EVERY rival on the island at once, wherever they were
+   * standing and whatever the Knight had landed on. That made the choice of hex
+   * a decision about one thing only — which region to switch off — while the
+   * robbery half of the card fired identically no matter where you put it, so
+   * dropping the Knight on an empty corner of the map hurt exactly as much as
+   * dropping it on the leader's best mountain. The placement now decides both:
+   * the victims are precisely the players who are SETTLED on the raided hex,
+   * which is the same "owns a settlement or a city on one of its corners" test
+   * that decides who may work a hex in the first place (`playerOwnsTile`), so
+   * the answer to "who does this hurt" is legible from the board. Everybody
+   * else on the island is untouched, however much they are holding.
+   *
+   * The player who sent the Knight is never a victim, even when they own a
+   * corner of the hex they chose — see `knightVictims`, which skips them
+   * outright. Their access to that hex is a separate matter and is handled by
+   * `knightBlocks`, which has always let the Knight's owner keep working the
+   * region they blocked; the owner's "I still can access that hex for
+   * resources" is that rule, and it is left exactly as it was.
+   */
   const losses = [];
-  for (const o of state.players) {
-    if (o.id === pid) continue;
+  for (const o of knightVictims(state, pid, targetTile)) {
     const lost = {};
     let any = 0;
     for (const r of RES) {
-      // Half of every resource type, ROUNDED UP, off every rival at once.
-      //
-      // The round-up lands on each of the five types independently, so the real
-      // bite is a good deal more than "half": a rival holding 5 of everything
-      // loses 3 of each and keeps 40%, and an odd single unit is always lost
-      // whole. Destroyed, not stolen — nothing is credited to `p`. There is no
-      // card-count threshold, and this is the ONLY mechanic in the game that
-      // takes back a resource somebody has already banked.
-      //
-      // The per-player breakdown below rides out on the `knight` event and is
-      // drawn by `ui/hud-raid.js`. For a long time nothing read it, and a bot
-      // Knighting the human out of most of their pack arrived as a horn and
-      // five counters quietly dropping — which left the player unsure the
-      // mechanic existed at all.
-      const drop = Math.min(o.res[r], Math.ceil(o.res[r] / 2));
+      /*
+       * Half of each resource type, ROUNDED DOWN, taken independently.
+       *
+       *   "Also make sure that it works that the knight rounds down to the
+       *    nearest full resource, so if I have 8 ore and 5 wheat, I go to 4 ore,
+       *    and 3 remaining wheat (only losing two wheat), since half of 5 is
+       *    2.5, and we round down, meaning if I have 7 of something I lose 3,
+       *    or if I halve 1 brick, I just keep it."
+       *
+       * The rounding is on the amount TAKEN, not the amount kept, which is the
+       * whole point of the report: 8 -> lose 4, 7 -> lose 3 and keep 4, 5 ->
+       * lose 2 and keep 3, and a lone brick is never worth taking at all. It
+       * used to be `Math.ceil`, so every one of those went the other way and an
+       * odd single unit was always lost whole — a rival holding 5 of each of
+       * the five types dropped 3 of each and kept 40%, which is why the card
+       * read as far worse than "half" to the people on the receiving end.
+       * `Math.floor` on each type separately now errs the victim's way five
+       * times over, so a raid is at worst exactly half and usually a little
+       * less. No `Math.min` clamp is needed any more: floor(n/2) <= n for every
+       * n >= 0, where ceil(n/2) needed watching.
+       *
+       * Destroyed, not stolen — nothing is credited to `p`. There is still no
+       * card-count threshold, and this is still the ONLY mechanic in the game
+       * that takes back a resource somebody has already banked.
+       */
+      const drop = Math.floor((o.res[r] || 0) / 2);
       o.res[r] -= drop; any += drop; lost[r] = drop;
     }
+    /*
+     * The per-player breakdown rides out on the `knight` event below and is
+     * drawn by `ui/hud-raid.js`, which names every resource each seat dropped.
+     * The payload shape is unchanged — `{ player, tile, losses:[{player, lost,
+     * total}] }` — because `ui/hud-raid.js`, `main.js` and `net/mirror.js` all
+     * read it and none of them are ours to edit. What changed is only WHO is in
+     * the list: it is now the settled victims rather than all three rivals, and
+     * it can legitimately be empty when the Knight lands on a hex nobody but
+     * its sender has built on.
+     *
+     * A victim who happened to lose nothing (they hold at most one of each) is
+     * still left out of the list, exactly as before. `mirror.js` replays this
+     * array to subtract the same amounts on a client, so an all-zero entry
+     * would be pure noise on the wire and on the card.
+     */
     if (any) losses.push({ player: o.id, lost, total: any });
+    // Only the people actually raided drop what they were carrying. This
+    // counter used to be zeroed on every rival alive; a player on the far side
+    // of the island has not been robbed and has no reason to show an empty pack.
     o.carried = 0;
   }
   emit(state, 'knight', { player: pid, tile: targetTile, losses });

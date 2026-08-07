@@ -101,11 +101,23 @@ ws.addEventListener('message', ev => {
   }
 });
 
-const send = (method, params = {}) => new Promise(res => {
+/*
+ * 30s was the budget here and it is not enough on a shared box either. The
+ * `sweep` stage's setup block imports two modules into the page, claims a hex
+ * through the real rules and installs eight driver functions on `window`, all
+ * inside one awaited evaluate — and when that came back `undefined` the run did
+ * not stop. It carried on and photographed a hex it had never swept, which is
+ * how `ph-hills-1-last.png` came back showing twenty-eight standing items with
+ * "LAST" printed over it. A rig whose timeout produces a plausible-looking
+ * wrong photograph is worse than one that produces none, so the budget goes to
+ * two minutes to match `SHOT_MS` below. Nothing here is on a hot path; the only
+ * cost of a long timeout is how long a genuinely broken eval takes to admit it.
+ */
+const send = (method, params = {}, timeoutMs = 120000) => new Promise(res => {
   const id = ++msgId;
   pending.set(id, res);
   ws.send(JSON.stringify({ id, method, params }));
-  setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ __err: 'timeout' }); } }, 30000);
+  setTimeout(() => { if (pending.has(id)) { pending.delete(id); res({ __err: 'timeout' }); } }, timeoutMs);
 });
 
 const ev = async (expr, awaitPromise = false) => {
@@ -114,9 +126,40 @@ const ev = async (expr, awaitPromise = false) => {
   return r?.result?.value;
 };
 
+/*
+ * A CAPTURE IS ALLOWED TO BE SLOW, AND IT HAS TO BE.
+ *
+ * `Page.captureScreenshot` used to ride the shared 30-second `send` timeout,
+ * and the failure mode when it ran out was silent in the worst possible way: a
+ * line saying `shot sw-forest-1-full FAILED` scrolled past in a run of forty
+ * frames, no file was written, and the PNG the last pass left on disk stayed
+ * there — so the next reader compares a fresh capture of one hex against a
+ * stale one of another and cannot tell.
+ *
+ * Thirty seconds is not a generous budget on this box. SwiftShader renders this
+ * scene at about four frames a second on two cores, a 960x444 capture is five
+ * seconds of that on its own, and the whole point of a rig like this is that
+ * several of them run while other work is going on. Under contention from one
+ * other headless render the same frame takes upwards of a minute, which is not
+ * a defect in the frame.
+ *
+ * So the capture gets its own two-minute budget and one retry. Two minutes is
+ * chosen against the outer `timeout 300` these are launched under: a stage
+ * takes about a minute of setup, so one retry still fits. The retry costs
+ * nothing when the first attempt works, and the failure is LOUD when both fail
+ * — a run that could not photograph what it was asked to photograph should not
+ * look like a run that did.
+ */
+const SHOT_MS = 120000;
+const shotFailures = [];
 const shot = async (name) => {
-  const r = await send('Page.captureScreenshot', { format: 'png' });
-  if (!r?.data) { console.log(`  shot ${name} FAILED`); return; }
+  let r = await send('Page.captureScreenshot', { format: 'png' }, SHOT_MS);
+  if (!r?.data) {
+    console.log(`  shot ${name} slow — retrying`);
+    await sleep(2000);
+    r = await send('Page.captureScreenshot', { format: 'png' }, SHOT_MS);
+  }
+  if (!r?.data) { console.log(`  shot ${name} FAILED`); shotFailures.push(name); return; }
   const buf = Buffer.from(r.data, 'base64');
   writeFileSync(resolve(OUT, `${name}.png`), buf);
   console.log(`  shot ${name}.png (${(buf.length / 1024).toFixed(0)} KB)`);
@@ -246,6 +289,45 @@ if (STAGE === 'intro') {
    *   --phase=b   cleared out with the clock running, then further into it
    *   --phase=c   the regrowth beat and the refilled hex
    *   --phase=wide  the owned / off-limits contrast across the whole island
+   *   --phase=farside a cleared hex from the front and then from BEHIND, which
+   *                 is the only framing that catches a landmark authored
+   *                 against the play camera's fixed +Z bearing
+   *   --phase=proof THE PHANTOM TEST — see below
+   *
+   * THE PHANTOM TEST
+   * ----------------
+   * "There should be no Phantom trees, only pickable resources ... once its
+   *  collected the phantom tree then disappears."
+   *
+   * A phantom is a prop that LOOKS like a resource, cannot be picked up, and
+   * then vanishes anyway the moment the hex's last real item is taken — because
+   * the dressing answers the hex's fill fraction through `world/stand.js`, so
+   * emptying the hex spends the whole decorative pool at once. That is a defect
+   * you cannot see in any single still: a full hex and an empty hex both look
+   * fine on their own, and the bug lives entirely in the DIFFERENCE between two
+   * frames.
+   *
+   * So this phase photographs exactly that difference, from a camera that does
+   * not move between the two exposures:
+   *
+   *   ph-<terrain>-1-last    the hex swept down to its LAST standing item
+   *   ph-<terrain>-2-empty   the same camera, immediately after that item is
+   *                          taken and the hex has gone dormant
+   *
+   * Read them side by side. Exactly one object may leave the hex between the
+   * two frames — the item that was picked up. Anything else that is standing in
+   * the first and gone in the second is a phantom, and it is a phantom whatever
+   * it looked like. The settler is parked well off the tile for both exposures
+   * so nothing is hidden behind them and the two frames differ in one thing
+   * only.
+   *
+   * The console census printed with each frame is the same claim in numbers:
+   * `field` is the harvestable items (units / standing / animating), `dress` is
+   * the responsive dressing the stand holds on that hex broken down BY ROLE,
+   * and `props` is every decorative kit standing on it. A hex whose `dress`
+   * roles contain no `fell` has nothing on it that can topple, and a `props`
+   * list with nothing tree-shaped or stone-shaped in it has nothing on it that
+   * could be mistaken for the crop in the first place.
    */
   const TERRAIN = arg('terrain', 'forest');
   const PHASE = arg('phase', 'a');
@@ -302,9 +384,53 @@ if (STAGE === 'intro') {
           badge:(g?g.readout():[]).filter(x=>x.tile===t.id)[0],
           field:window.__ISLAND__.world.props.field.debug(t.id),
           dress:g&&g.debug?g.debug(t.id):null};};
+      // Park the settler well off the tile so a capture can photograph the hex
+      // and nothing else. world/stand.js uses the nearest player as the origin
+      // its sweep clears outward from, which is a presentation detail only — by
+      // the time this is called the hex is already at the fill fraction we want.
+      // (No backticks anywhere inside this block: it is itself the body of a
+      // template literal, and a backtick in a comment still ends the string.)
+      window.__STANDOFF__=()=>{p.x=t.x-19; p.z=t.z-13; p.vx=0; p.vz=0;
+        game.avatars[0].group.position.set(p.x,0,p.z); return 1;};
+      // Everything standing on this hex, in one object: the harvestable field,
+      // the dressing the stand is holding (by role), and the decorative kits.
+      // Sweep DOWN TO a target number of standing items rather than taking a
+      // fixed count. Pickup is contact-based on a 2.4-unit radius and the field
+      // is blue-noise spaced about 2.1 apart, so walking onto one item takes
+      // two or three of its neighbours with it — "take 27 of 28" empties the
+      // whole hex. This walks, re-reads the truth, and stops.
+      window.__SWEEPTO__=(target)=>{let guard=0;
+        window.__UNBLOCK__();
+        while(window.__N__.tileItemsRemaining(t.id)>target&&guard++<200){
+          const it=window.__N__.nearestItem(p.x,p.z,{tile:t.id});
+          if(!it) break;
+          p.x=it.x; p.z=it.z; p.sweptAt=-1;
+          window.__R__.tickWorld(state,1/60); game.gathering.update(1/60);
+        }
+        game.avatars[0].group.position.set(p.x,0,p.z);
+        game.avatars[0].setCarry(p.res);
+        return {left:window.__N__.tileItemsRemaining(t.id),
+                full:window.__N__.tileItemCount(t.id)};};
+      window.__CENSUS__=()=>{const W=window.__ISLAND__.world.props;
+        return {items:window.__N__.tileItemsRemaining(t.id),
+          full:window.__N__.tileItemCount(t.id),
+          field:W.field.debug(t.id),
+          dress:W.regions&&W.regions.debug?W.regions.debug(t.id):null,
+          props:W.tileCounts[t.id]||{}};};
       window.__CAM__=(d,hh,fov,aim)=>{const{camera}=window.__ISLAND__;
         window.__ISLAND__.game.camera.update=()=>{};
         camera.position.set(t.x+1.5,hh,t.z+d); camera.lookAt(t.x,aim||5.5,t.z);
+        camera.fov=fov; camera.updateProjectionMatrix(); return 1;};
+      // The same shot from the OTHER side of the hex. The play camera never
+      // goes here — PLAY_YAW in systems/camera.js is 0 and it always sits on
+      // +Z — which is exactly why it is worth photographing: a landmark that is
+      // authored against one fixed viewpoint is a landmark whose back nobody
+      // has ever looked at, and the quarry is a ring of geometry whose far arc
+      // is back-face culled from the front. Same distance, same lens, mirrored
+      // bearing.
+      window.__CAMFAR__=(d,hh,fov,aim)=>{const{camera}=window.__ISLAND__;
+        window.__ISLAND__.game.camera.update=()=>{};
+        camera.position.set(t.x-1.5,hh,t.z-d); camera.lookAt(t.x,aim||5.5,t.z);
         camera.fov=fov; camera.updateProjectionMatrix(); return 1;};
       return 'hex '+t.id+' '+t.terrain+' pips='+t.pips+
         ' items='+window.__N__.tileItemCount(t.id);
@@ -323,8 +449,55 @@ if (STAGE === 'intro') {
       return import('/src/board/layout.js').then(L=>({
         mine:L.tiles.filter(t=>t.resource&&R.playerOwnsTile(st,0,t.id)).map(t=>t.id),
         total:L.tiles.filter(t=>t.resource).length }));})()`, true)));
+    /*
+     * THE LANDMARK CENSUS, once per board, on the one phase that photographs
+     * the whole island at once.
+     *
+     * `world/props.js` publishes `tileCounts` precisely so a rig can make this
+     * claim in numbers rather than in adjectives, and until now nothing read
+     * it. Every landmark on this island is placed by a sampler or a scorer that
+     * is allowed to come up short — the pasture's fence arc can decline every
+     * bearing on a twenty-eight sheep flock, the hills' stones can find no gap
+     * wide enough, and both of them have shipped at nought before. Each one
+     * carries a floor for that reason (two panels, two stones, two bales), and
+     * a floor nobody measures is a floor nobody knows is holding.
+     *
+     * It matters more now than it did, because this pass took ground away from
+     * all three: the six corner discs in `makePlacer` reserve the vertices of
+     * every hex for the settlements and cities the players may build there, so
+     * the strict pass has about a third less hex to aim at than it used to.
+     * The relaxed passes drop those discs again exactly so the floors keep
+     * holding — and this line is how you check that they do, on whatever board
+     * the run happened to deal, without opening a single PNG.
+     *
+     * Printed as terrain:pips -> the kits that stand on that hex, so a short
+     * count can be read straight off against how crowded the hex is.
+     */
+    console.log('  landmarks ' + JSON.stringify(await ev(`(()=>{
+      const W=window.__ISLAND__.world.props, C=W.tileCounts||{};
+      // 'boulder' and 'hay' stay on this list even though neither is supposed
+      // to stand on a resource hex any more — the stones came off the brick
+      // hills and the bale came off the pastures — precisely so a run that
+      // starts putting them back somewhere prints the evidence. A census that
+      // only lists what you expect cannot tell you when you are wrong.
+      const KEEP=['hay','fence','boulder','shovel','clayWorks','mine','rockSmall','spire'];
+      return import('/src/board/layout.js').then(L=>{
+        const out={};
+        for(const t of L.tiles){
+          if(!t.resource) continue;
+          const got=C[t.id]||{}, row={};
+          for(const k of KEEP) if(got[k]) row[k]=got[k];
+          out[t.terrain+'/'+t.pips+'#'+t.id]=row;
+        }
+        return out;});})()`, true)));
   } else {
     await ev(`window.__CAM__(${+arg('dist', 22)}, ${+arg('eye', 15)}, ${+arg('fov', 38)}, ${+arg('aim', 5.5)})`);
+    // --park=1 walks the settler off the tile before anything is photographed.
+    // The avatar carries a column of resource cards stacked over its head that
+    // is taller than a conifer, and parked at the near rim — which is where the
+    // sweep leaves it — that column stands directly between this camera and the
+    // hex. Fine for a shot ABOUT the settler; useless for a shot about a hex.
+    if (arg('park', '0') === '1') await ev(`__STANDOFF__()`);
     await sleep(+arg('settle', 2800));
     if (PHASE === 'pop') {
       // One item, taken on contact, photographed while the chip is still in the
@@ -345,10 +518,70 @@ if (STAGE === 'intro') {
       await sleep(1600);
       await shot(`sw-${TERRAIN}-2-swept`);
       console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
+    } else if (PHASE === 'proof') {
+      // Down to the last handful, settler parked off the tile, camera locked.
+      console.log('  sweep ' + JSON.stringify(await ev(`__SWEEPTO__(${+arg('left', 5)})`)));
+      await ev(`__STANDOFF__()`);
+      await sleep(+arg('gap', 3000));
+      console.log('  LAST  ' + JSON.stringify(await ev(`__CENSUS__()`)));
+      await shot(`ph-${TERRAIN}-1-last`);
+      // ...and now the rest of them, with nothing else touched.
+      console.log('  take  ' + JSON.stringify(await ev(`__SWEEPTO__(0)`)));
+      await ev(`__STANDOFF__()`);
+      await sleep(+arg('gap', 3000));
+      console.log('  EMPTY ' + JSON.stringify(await ev(`__CENSUS__()`)));
+      await shot(`ph-${TERRAIN}-2-empty`);
+    } else if (PHASE === 'farside') {
+      /*
+       * THE LANDMARK FROM BEHIND, on an emptied hex.
+       *
+       *   "sw-hills-5-quarry-farside.png was requested but never written to
+       *    disk. Re-shoot it — the far-side angle is the quarry's weakest read,
+       *    and from ph-hills-2-empty.png the pit currently looks like a thin
+       *    cream crescent rather than a dug pit."
+       *
+       * The crescent was the whole of that defect and it is a back-face
+       * problem: every wall `geo.js` builds is a closed tube pointing OUTWARD,
+       * so a ring of them shows the camera its near arc and culls its far one.
+       * Turn the camera round and the arc that was drawn is the one that
+       * vanishes — which makes this the one framing that cannot be satisfied by
+       * a kit that only works from +Z. Shot with the hex swept clean, because
+       * an empty hex is where a decorative landmark has nowhere to hide.
+       */
+      console.log('  sweep ' + JSON.stringify(await ev(`__SWEEPTO__(0)`)));
+      await ev(`__STANDOFF__()`);
+      // Long enough for twenty-three pickup badges and their flying chips to
+      // finish: a frame full of +1s is a photograph of a harvest, and this pair
+      // is supposed to be a photograph of a landmark on an emptied hex.
+      await ev(`window.__STEP__(${Math.round(+arg('skip', 5) * 60)})`);
+      await sleep(+arg('rest', 2600));
+      await shot(`sw-${TERRAIN}-5-quarry-farside-near`);
+      // TAKE IT DOWN AGAIN BEFORE THE SECOND EXPOSURE. `tickWorld` runs off the
+      // frame loop as well as off `__STEP__`, and a capture on SwiftShader
+      // spends the better part of a minute between two shots — longer than
+      // TILE_REGEN for every hex on the board except the 1-pip ones. So the hex
+      // quietly refills while the first frame is being encoded, and the far-side
+      // exposure comes back showing a hex full of brick.
+      console.log('  resweep ' + JSON.stringify(await ev(`__SWEEPTO__(0)`)));
+      // The standoff parks the settler at (-19, -13) from the hex, which is
+      // behind the front camera and directly in front of this one. Mirror it.
+      await ev(`(()=>{const{state,game}=window.__ISLAND__,t=window.__T__;
+        const p=state.players[0]; p.x=t.x+19; p.z=t.z+13; p.vx=0; p.vz=0;
+        game.avatars[0].group.position.set(p.x,0,p.z); return 1;})()`);
+      await ev(`__CAMFAR__(${+arg('dist', 22)}, ${+arg('eye', 15)}, ${+arg('fov', 38)}, ${+arg('aim', 5.5)})`);
+      await sleep(+arg('gap', 2200));
+      await shot(`sw-${TERRAIN}-5-quarry-farside`);
+      console.log('  ' + JSON.stringify(await ev(`__CENSUS__()`)));
+
     } else if (PHASE === 'b') {
       console.log('  sweep ' + JSON.stringify(await ev(`__SWEEP__(40)`)));
       await ev(`window.__STEP__(60)`);
-      await sleep(2400);
+      // The sweep walks the settler item to item, so it undoes any parking done
+      // before it — park again, and give the pickup FX time to finish. A frame
+      // full of flying chips and +1 badges is a photograph of a HARVEST, and
+      // this pair is supposed to be a photograph of an emptied hex.
+      if (arg('park', '0') === '1') await ev(`__STANDOFF__()`);
+      await sleep(+arg('rest', 2400));
       await shot(`sw-${TERRAIN}-3-cleared`);
       console.log('  ' + JSON.stringify(await ev(`__REC__()`)));
       await ev(`window.__STEP__(${Math.round(+arg('skip', 16) * 60)})`);
@@ -700,13 +933,18 @@ console.log('  stats ' + JSON.stringify(s));
 const errs = exceptions.length;
 const warns = consoleLines.filter(l => l.level === 'error' || l.level === 'warning');
 console.log(`${errs} exception(s), ${warns.length} console error/warning(s)`);
+// A frame that was asked for and never written is a hole in the evidence, and
+// it used to be one line in the middle of the log. Say it again at the end,
+// where the run's verdict is read.
+if (shotFailures.length) console.log('  MISSING SHOTS: ' + shotFailures.join(', '));
 for (const e of exceptions.slice(0, 8)) console.log('  EXC ' + String(e.text).split('\n')[0].slice(0, 180));
 for (const l of warns.slice(0, 10)) console.log('  ' + l.level.toUpperCase() + ' ' + l.text.slice(0, 180));
 
 const reportPath = resolve(OUT, 'report.json');
 let prev = {};
 try { prev = JSON.parse(readFileSync(reportPath, 'utf8')); } catch { /* first run */ }
-prev[STAGE] = { stats: s, exceptions, warnings: warns, w: W, h: H, at: new Date().toISOString() };
+prev[STAGE] = { stats: s, exceptions, warnings: warns, missingShots: shotFailures,
+  w: W, h: H, at: new Date().toISOString() };
 writeFileSync(reportPath, JSON.stringify(prev, null, 2));
 
 ws.close(); chrome.kill('SIGKILL');

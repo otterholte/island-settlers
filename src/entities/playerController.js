@@ -20,7 +20,7 @@
 import {
   PLAYER_SPEED, PLAYER_ACCEL, INTERACT_RADIUS, TRADE_RADIUS
 } from '../core/constants.js';
-import { clampToIsland, MARKET } from '../board/layout.js';
+import { clampToIsland, tileAt, MARKET } from '../board/layout.js';
 import { nearestItem } from '../board/nodes.js';
 import { nearestPortFor, canGatherTile } from '../core/rules.js';
 import { useHeightSampler } from './ground.js';
@@ -28,6 +28,94 @@ import { useHeightSampler } from './ground.js';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 const RUN_THRESHOLD = 0.6;      // world units/sec before we call it running
+
+/**
+ * THE SHORE TURNS YOU. IT NEVER HOLDS YOU.
+ *
+ *   "There seem to be items that I can occasionally get stuck by running into
+ *    with my character, like the settlements, or cities, or the little posts
+ *    sticking out of the ground for where settlements can be built. I should
+ *    never get stuck but always run through without an issue."
+ *
+ * Nothing a player builds has ever been solid. There is no collision anywhere
+ * in this game against a settlement, a city, a road or one of the little posts
+ * that marks a buildable corner — `moveWithSlide` below is the ONLY thing that
+ * has ever refused a settler a step, and all it knows about is the water. So
+ * the buildings in that report are innocent bystanders, and the temptation to
+ * go hunting for a structure radius to delete would have found nothing.
+ *
+ * What the player is actually hitting is the coastline, at exactly the places
+ * they named. The island is the union of nineteen hexes, so its outline is a
+ * zigzag, and every corner of that zigzag is an INTERSECTION — which is to say
+ * a settlement spot with a post standing on it, and later a settlement, and
+ * later a city. Eighteen of them are the outward-pointing tip of a single hex,
+ * where the land narrows to a 120-degree wedge with water on both sides of it.
+ * Run at the post on one of those tips and you run into a funnel.
+ *
+ * The old slide could not get you out of a funnel. It tried the step, then the
+ * step with the X kept and the Z dropped, then the X dropped and the Z kept —
+ * three candidate directions, all axis-aligned — and when the wedge walls took
+ * all three it fell through to "stay where you are and throw away nine tenths
+ * of your speed". Hold the stick and it did that again the next step, and the
+ * next: the settler stands in the corner vibrating while the player pushes.
+ * That is the "stuck", and the reason it felt like the buildings' fault is that
+ * a building is always standing on the exact spot where it happens.
+ *
+ * The replacement asks a much better question. Not "can I keep my X or my Z"
+ * but "what is the smallest turn that lets me keep running at full speed" — a
+ * fan of candidate headings either side of the one the stick asked for, tried
+ * from the smallest deflection outwards. Against a straight shore the answer is
+ * a few degrees and the settler hugs it; into a funnel the answer is a big turn
+ * and the settler sweeps out along the wall it came in past. Both are motion.
+ * There is no branch left that keeps a settler where it is while the stick is
+ * pushing, which is the whole of the promise made above.
+ *
+ * Four degrees is fine enough that a hugged shore reads as smooth rather than
+ * as a settler stepping between eight compass headings, and the fan runs to a
+ * full half turn so that a settler somehow standing on the very point of a tip
+ * can still walk back the way it came. Each magnitude is tried in a fixed order
+ * — the positive rotation before its mirror image, always — because this file
+ * runs twice, once in front of the player and once inside
+ * `server/matchworker.mjs`, and the two copies have to take the same step from
+ * the same input every time or the server will spend the match correcting a
+ * prediction that was never wrong. The tie only comes up on an exactly head-on
+ * approach to a straight shore, where the two answers are mirror images of each
+ * other and the only thing that matters is that both machines pick the same one.
+ */
+const SLIDE_FAN = (() => {
+  const fan = [];
+  for (let deg = 4; deg <= 180; deg += 4) {
+    const a = (deg * Math.PI) / 180;
+    const c = Math.cos(a), s = Math.sin(a);
+    fan.push(c, s);
+    if (deg < 180) fan.push(c, -s);
+  }
+  return fan;
+})();
+
+/**
+ * How far inside the water's edge a sliding settler is held, in world units.
+ *
+ * Sliding along the shore means running exactly parallel to it, and a step that
+ * runs exactly parallel to a hex edge from a point exactly on that hex edge is
+ * a coin toss in floating point: half the time the landing point rounds to the
+ * water side and the fan rejects the one heading that was actually right. The
+ * first version of this fix did exactly that and the settler still could not
+ * get out of the wedge at a coastal post — it was refused the two headings that
+ * run along the walls, took a heading most of a half turn away from the stick
+ * instead, and spent every frame having that reversal fought back out of it by
+ * the accelerator. Full speed on paper, a crawl in the hand, which is not what
+ * was asked for.
+ *
+ * So a sliding step lands five centimetres inland of where it was aimed, along
+ * the line to the middle of the hex the settler is standing on. A settler at
+ * full pelt inside the fixed 60 Hz step this file is driven at covers 0.2 of a
+ * unit, so the margin is a twentieth of one stride — far too small to see or to
+ * feel through the stick — and it is comfortably more than the four-degree
+ * fan can throw a stride sideways (0.014). The heading that hugs the coast is
+ * chosen now for the honest reason that it is the smallest turn that works.
+ */
+const SHORE_MARGIN = 0.05;
 
 /**
  * `opts.pid` names the seat this controller drives. It is 0 in the browser and
@@ -85,26 +173,66 @@ export function createPlayerController(state, settler, gameCamera, input, world,
   }
 
   function moveWithSlide(nx, nz) {
-    const full = clampToIsland(nx, nz);
-    if (!full.clamped) { p.x = nx; p.z = nz; return; }
+    // `tileAt` rather than `clampToIsland` for the test: they answer the same
+    // question — is this point on the island — but the clamp also runs an
+    // eighteen-step bisection back toward a tile centre to produce a landing
+    // spot, and the fan below asks the question up to eighty-nine times in a
+    // step it is about to reject anyway. We only want the bisection once, in
+    // the fallback that never fires.
+    if (tileAt(nx, nz)) { p.x = nx; p.z = nz; return; }
 
     const dx = nx - p.x, dz = nz - p.z;
-    const ax = Math.abs(dx) > 1e-7 ? clampToIsland(nx, p.z) : null;
-    const az = Math.abs(dz) > 1e-7 ? clampToIsland(p.x, nz) : null;
-    const okX = ax && !ax.clamped;
-    const okZ = az && !az.clamped;
+    if (Math.abs(dx) < 1e-7 && Math.abs(dz) < 1e-7) return;
 
-    if (okX && okZ) {
-      if (Math.abs(dx) >= Math.abs(dz)) { p.x = nx; p.vz *= 0.25; }
-      else { p.z = nz; p.vx *= 0.25; }
-    } else if (okX) {
-      p.x = nx; p.vz *= 0.25;
-    } else if (okZ) {
-      p.z = nz; p.vx *= 0.25;
-    } else {
-      p.x = full.x; p.z = full.z;
-      p.vx *= 0.1; p.vz *= 0.1;
+    // The hex the settler is standing on points inland: its middle is the one
+    // direction from here that is unambiguously away from every edge of it, so
+    // it is what SHORE_MARGIN leans the landing point along. If the settler is
+    // somehow already off the island there is no such hex and the margin goes
+    // to zero, which leaves the fan testing exactly the point it will move to —
+    // still correct, just without the tie-break.
+    const here = tileAt(p.x, p.z);
+    let bx = 0, bz = 0;
+    if (here) {
+      const ix = here.x - p.x, iz = here.z - p.z;
+      const il = Math.hypot(ix, iz);
+      if (il > 1e-6) { bx = (ix / il) * SHORE_MARGIN; bz = (iz / il) * SHORE_MARGIN; }
     }
+
+    // Turn, do not slow down. The step keeps its full length through the
+    // rotation and the velocity is rotated with it, so a settler running along
+    // the coast is running, not creeping: the old slide dropped the blocked
+    // axis's speed to a quarter and the settler ground to a walk every time the
+    // shore was anything other than square to the stick. The player's own words
+    // for what they want here are "always run through without an issue", and a
+    // settler that keeps its speed and changes its heading is the closest this
+    // geometry can get to running through the corner it is standing in.
+    for (let i = 0; i < SLIDE_FAN.length; i += 2) {
+      const c = SLIDE_FAN[i], s = SLIDE_FAN[i + 1];
+      const rx = dx * c - dz * s + bx, rz = dx * s + dz * c + bz;
+      if (!tileAt(p.x + rx, p.z + rz)) continue;
+      p.x += rx; p.z += rz;
+      const vx = p.vx, vz = p.vz;
+      p.vx = vx * c - vz * s;
+      p.vz = vx * s + vz * c;
+      return;
+    }
+
+    // Ninety directions and not one of them is land. Standing on the island
+    // this cannot happen — the fan covers a full half turn either side, so at
+    // worst the settler retraces the step that put it here — but a NaN stick, a
+    // reshuffled board under a settler's feet or a teleport from the network
+    // layer could all present a position that is already in the water, and the
+    // one thing this file must never do is leave the settler with no way out.
+    // So take the clamp's landing spot, and point the velocity at the direction
+    // that move actually went (which is inland, toward a tile centre) instead of
+    // leaving it aimed at the sea with a tenth of its speed the way the old
+    // dead-stop branch did. Next step the settler is on land and running.
+    const full = clampToIsland(nx, nz);
+    const mx = full.x - p.x, mz = full.z - p.z;
+    p.x = full.x; p.z = full.z;
+    const m = Math.hypot(mx, mz);
+    const spd = Math.hypot(p.vx, p.vz);
+    if (m > 1e-7 && spd > 1e-7) { p.vx = (mx / m) * spd; p.vz = (mz / m) * spd; }
   }
 
   function updateIntent() {

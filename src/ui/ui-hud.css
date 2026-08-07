@@ -33,6 +33,29 @@
 }
 .tl-row{display:flex;align-items:center;gap:8px}
 
+/* THE GEAR KEY IS THE ONE GLASS BUTTON THAT MUST NOT BE GLASS.
+ *
+ *   "On phone-hud-settings-open.png it is worse — the button is
+ *    semi-transparent and board terrain and a boat mast show through behind the
+ *    glyph (3.17:1). Make the button fill opaque on phone."
+ *
+ * `.cbtn.ghost` in ui-base.css is a dark GLASS disc — its three fill stops are
+ * 55-95% alpha — and on the action rail that is right: PAUSE sits over open sea
+ * and the island moving faintly behind it is part of why the rail feels like it
+ * is floating on the world rather than nailed over it.
+ *
+ * This one is different and the difference is the glyph. The other ghost keys
+ * carry a word under a big icon; this one is a single thin cross drawn in two
+ * strokes, and a mast passing behind a 2.9px stroke does not dim the button —
+ * it breaks the shape of the only thing on it. So the same three stops, made
+ * opaque, from the resource pill's own gradient: the button is the same colour
+ * it always was over a dark hex and now it is that colour everywhere. Written
+ * here rather than in ui-base.css because that file is shared with every other
+ * ghost button in the game and only this one has a hairline glyph on it. */
+.hud .tl-row .cbtn.ghost{
+  --f1:#4b779f;--f2:#12304f;--f3:#08192e;
+}
+
 /* --- the scoreboard -------------------------------------------------------
    Where the identity badge used to be. That chip said "You", in blue, next to
    a blue avatar, under the word BLUE — the one fact on screen the player could
@@ -42,19 +65,44 @@
    would take to take one off them. */
 .scorecard{
   display:flex;flex-direction:column;gap:0;width:226px;padding:0;
-  border-radius:13px;overflow:hidden;
+  border-radius:13px;
+  /* NOT `overflow:hidden` any more. The "+1" that lifts off the counter when a
+     point lands rises out through the top of this box, and clipping it to the
+     card would have left it fading behind the score row it was announcing. The
+     one thing the clip was protecting is the score row's own gradient, and that
+     rounds its own top corners now — see `.sc-vp` below. */
+  overflow:visible;
 }
 .sc-vp{
+  position:relative;
   display:flex;align-items:center;gap:6px;padding:7px 10px 8px;
+  border-radius:12px 12px 0 0;
   border-bottom:1px solid rgba(255,255,255,.10);
   background:linear-gradient(180deg,rgba(255,201,60,.14),rgba(255,201,60,0));
 }
 .sc-vp .ico{line-height:0;flex:0 0 auto}
+/* THE SWELL IS NOT ALLOWED TO REACH THE "/ 12".
+ *
+ *   "At t170 the oversized white numeral OCCLUDES the '/' of '/ 12'. Reserve
+ *    the layout width, or scale the number about a baseline that does not
+ *    overlap the denominator."
+ *
+ * Both, because either alone is a near miss. The room is RESERVED — `min-width`
+ * holds a two-digit box open at rest and `margin-right` adds the four pixels the
+ * swell needs — and the swell is scaled about the BASELINE (`50% 100%`) rather
+ * than about the middle of the glyph, so what growth there is goes upward into
+ * the row's own padding instead of sideways into the denominator. The peak came
+ * down from 1.44 to 1.34 in the same pass: at 22px and two digits, 1.44 was
+ * four pixels wider than the gap it had to live in and no origin would have
+ * saved it. */
 .sc-vp b{font:800 22px/1 var(--ff);color:var(--gold);
+  display:inline-block;                 /* so the bump below can scale it */
+  min-width:26px;text-align:center;margin-right:4px;
+  transform-origin:50% 100%;
   -webkit-text-stroke:2px rgba(10,18,30,.85);paint-order:stroke fill;
   text-shadow:0 2px 4px rgba(0,0,0,.5)}
 .sc-goal{font:800 10px/1 var(--ff);letter-spacing:.08em;
-  color:rgba(255,222,140,.72);margin:4px 3px 0 -1px}
+  color:rgba(255,222,140,.72);margin:4px 3px 0 0}
 .sc-vp .vp-track{margin-left:auto}
 
 .sc-awards{display:flex;flex-direction:column;gap:3px;padding:6px 9px 8px}
@@ -103,6 +151,206 @@
   box-shadow:inset 0 0 0 1px rgba(255,201,60,.55)}
 .vp-track i.goal.on{background:linear-gradient(180deg,#fff3cf,var(--gold));
   box-shadow:0 0 9px rgba(255,201,60,.9)}
+
+/* ================================================= a point just landed ====
+ *
+ *   "I want that animation in the point counter in the top corner to be a lot
+ *    more clear and fun when I win a victory point card, so users who are still
+ *    busy running around realize what happened."
+ *
+ * Six signals on ONE timeline, and the timeline is 1.25s. See the long note on
+ * `celebrateVp` in hud.js for what each one is for; what matters here is that
+ * they are all cut to the same clock, because the first version of this was six
+ * animations of six different lengths all starting at once, which is a flash
+ * rather than an event.
+ *
+ * THE CLOCK. 0ms the trophy leaves the centre of the screen and the "+1" is
+ * already up in the corner. 400ms — 32% — the trophy arrives, and that is the
+ * beat: the numeral flips (held back in hud.js until exactly then), the ring
+ * breaks out of the row, the wash peaks and the new pip flares. From there
+ * everything decays together and is done at 1.25s. Nothing repeats, nothing
+ * strobes, and the corner is at rest well before the player could get bored of
+ * it — they win a handful of points a match and this has to still be welcome
+ * the fifth time.
+ *
+ * The whole card takes ONE short bump, twice: a small lift as the trophy sets
+ * off and a second on impact. Movement at the edge of vision is the only signal
+ * that reliably pulls a gaze that is out in the middle of the island, and it is
+ * deliberately a swell rather than a shake — calm, not alarming. */
+.scorecard.vp-gain{animation:vpCard 1.25s cubic-bezier(.2,.9,.3,1)}
+@keyframes vpCard{
+  0%{transform:scale(1)}
+  10%{transform:scale(1.03)}
+  24%{transform:scale(1)}
+  36%{transform:scale(1.06)}
+  56%{transform:scale(.995)}
+  100%{transform:scale(1)}
+}
+/* THE ROW GOES WARM, NOT DIRTY.
+ *
+ *   "THE VP FLASH COLOUR IS MUDDY. The row washes to rgb(115,110,75) — a drab
+ *    khaki. Against the navy panel it registers as the panel getting dirty, not
+ *    as a gold celebration, and the trophy icon and number both wash out on it.
+ *    Use a warm gold/amber tint that keeps them readable, or a gold rim-glow
+ *    plus a brightness lift rather than a flat fill swap."
+ *
+ * The khaki was arithmetic, not taste: 66% of #ffc93c laid flat over this
+ * panel's navy averages the two into something with as much green in it as red,
+ * and mid-grey-green over blue is precisely the colour of a dirty window.
+ *
+ * So this is the rim-glow version. The fill is warmer and deeper (amber over
+ * gold, and the bottom stop no longer fades to nothing so the row lifts as a
+ * whole), the row carries a gold hairline and an outer halo at the peak — the
+ * part that reads as CELEBRATION rather than as tint — and a small brightness
+ * and saturation lift makes the trophy and the numeral brighter along with it
+ * instead of drowning them. Measured over the same panel this now peaks around
+ * rgb(208,158,51): red well clear of green, which is the difference between
+ * gold and khaki. */
+.scorecard.vp-gain .sc-vp{animation:vpWash 1.25s ease-out}
+@keyframes vpWash{
+  0%{background:linear-gradient(180deg,rgba(255,201,60,.14),rgba(255,201,60,0));
+    box-shadow:none;filter:none}
+  10%{background:linear-gradient(180deg,rgba(255,186,46,.52),rgba(255,150,26,.20));
+    box-shadow:inset 0 0 0 1px rgba(255,228,158,.5);filter:brightness(1.06)}
+  36%{background:linear-gradient(180deg,rgba(255,186,46,.86),rgba(255,146,22,.44));
+    box-shadow:inset 0 0 0 1.4px rgba(255,232,170,.9),0 0 22px rgba(255,168,38,.55);
+    filter:brightness(1.14) saturate(1.12)}
+  70%{background:linear-gradient(180deg,rgba(255,186,46,.34),rgba(255,150,26,.12));
+    box-shadow:inset 0 0 0 1px rgba(255,228,158,.28);filter:brightness(1.04)}
+  100%{background:linear-gradient(180deg,rgba(255,201,60,.14),rgba(255,201,60,0));
+    box-shadow:none;filter:none}
+}
+/* ...and a single gold ring breaks out of the row ON IMPACT — held at nothing
+   for the first third of a second while the trophy is still in the air, so what
+   expands out of the corner is the arrival and not the draw. One ring, once. */
+.scorecard.vp-gain .sc-vp::after{
+  content:'';position:absolute;inset:-2px;border-radius:14px;
+  border:2px solid var(--gold);pointer-events:none;opacity:0;
+  animation:vpRing 1.25s ease-out;
+}
+@keyframes vpRing{
+  0%,28%{opacity:0;transform:scale(.9)}
+  34%{opacity:.95;transform:scale(.94)}
+  76%{opacity:.2}
+  100%{opacity:0;transform:scale(1.2)}
+}
+/* The number itself. It is still the OLD total until 32% of this animation —
+   hud.js holds the text back — so the swell has to hold at rest until then and
+   break on the same frame the trophy lands and the digit changes. It goes
+   white-hot over the gold wash with its dark keyline turned up, which is what
+   keeps it readable on a row that is briefly the same colour as it is. */
+.sc-vp b.bump{animation:vpNum 1.25s cubic-bezier(.2,1.5,.35,1)}
+@keyframes vpNum{
+  0%,30%{transform:scale(1);color:var(--gold);
+    -webkit-text-stroke-color:rgba(10,18,30,.85)}
+  46%{transform:scale(1.34);color:#fffdf2;
+    -webkit-text-stroke-color:rgba(6,12,22,.96)}
+  70%{transform:scale(1.02);color:#fff3cf}
+  100%{transform:scale(1);color:var(--gold);
+    -webkit-text-stroke-color:rgba(10,18,30,.85)}
+}
+/* THE "+1" IS FIRST, AND IT STAYS ON ITS OWN PANEL.
+ *
+ *   "THE VICTORY-POINT '+1' FLOATER IS WRONG. It is plain white with no dark
+ *    outline, and it travels OUTSIDE the panel onto the gear button at t170 and
+ *    t340, and onto bare tan board terrain... Make it trophy-gold with a dark
+ *    outline or shadow, and keep its travel inside or immediately above the VP
+ *    panel's own bounds so it never collides with the gear or the timer."
+ *
+ * It used to rise thirty-eight pixels out of a thirty-seven pixel row, which put
+ * it clean out of the scoreboard and into the button row above — where it was
+ * white lettering with no keyline over a gold gear and, on a wide layout, over
+ * open sand. Two separate reasons the one signal that says BY HOW MUCH could not
+ * be read.
+ *
+ * Now it launches from inside the row and comes to rest against the panel's own
+ * top edge: twenty pixels of travel, all of it over the scoreboard's dark fill.
+ * It is trophy-gold with the same 2px ink keyline the total wears, so it reads
+ * over the gold wash underneath it as well as over the navy, and it is fully
+ * opaque within one frame — it is the CAUSE, and it is on screen before the
+ * number it is explaining moves. */
+.vp-plus{
+  position:absolute;left:62px;top:12px;
+  font:800 18px/1 var(--ff);letter-spacing:.02em;color:#ffd766;
+  -webkit-text-stroke:2.2px rgba(8,14,24,.95);paint-order:stroke fill;
+  text-shadow:0 1px 6px rgba(0,0,0,.6),0 0 12px rgba(255,201,60,.8);
+  opacity:0;pointer-events:none;
+}
+.vp-plus.up{animation:vpPlus 1.25s cubic-bezier(.2,.9,.3,1)}
+@keyframes vpPlus{
+  0%{opacity:0;transform:translateY(4px) scale(.72)}
+  4%{opacity:1;transform:translateY(2px) scale(1.06)}
+  24%{opacity:1;transform:translateY(-6px) scale(1.02)}
+  36%{opacity:1;transform:translateY(-9px) scale(1.2)}
+  72%{opacity:.92;transform:translateY(-14px) scale(1)}
+  100%{opacity:0;transform:translateY(-17px) scale(.96)}
+}
+/* The step the track just took, flaring and dropping back into the row, so the
+   progress bar is where the eye lands last and the new cell is the one thing
+   still glowing. On the impact beat with everything else. Hidden entirely on a
+   phone — the compact block drops the whole track — which is why the other
+   signals have to stand on their own. */
+.vp-track i.lit{animation:vpPip 1.25s cubic-bezier(.2,1.4,.35,1)}
+@keyframes vpPip{
+  0%,30%{transform:scaleY(1);background:linear-gradient(180deg,var(--gold-l),var(--gold-d));
+    box-shadow:0 0 0 rgba(255,201,60,0)}
+  44%{transform:scaleY(2.4) translateY(-2px);background:#fffdf2;
+    box-shadow:0 0 13px 3px rgba(255,201,60,.95)}
+  68%{transform:scaleY(1.25) translateY(0)}
+  100%{transform:scaleY(1);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 5px rgba(255,201,60,.6)}
+}
+
+/* THE TROPHY THAT CROSSES THE SCREEN.
+ *
+ *   "MAKE THE EVENT CATCHABLE FROM SCREEN CENTRE. As shipped it is under 700ms
+ *    confined to a ~170x40px corner region with no motion travelling toward the
+ *    player's gaze... Suggestion: have the trophy travel from the centre notice
+ *    pill to the counter."
+ *
+ * This is that. hud.js measures the centre plate and the corner counter and
+ * writes the journey into --fx / --fy; everything else is here. It is the same
+ * gold disc the notice plate wears, so what lands in the corner is visibly the
+ * thing that was just in the middle of the screen — and it arrives at 32% of the
+ * burst, which is the frame the number flips on.
+ *
+ * The path is not a straight line. `cubic-bezier(.34,.02,.2,1)` leaves fast and
+ * settles, the disc tips a few degrees as it goes, and it shrinks into the
+ * counter rather than stopping dead on it — travel that decelerates into its
+ * target is read as ARRIVING somewhere, where linear travel is read as a thing
+ * flying past. */
+.vp-fly{
+  position:absolute;left:0;top:0;width:44px;height:44px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:13px;
+  background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  border:1.5px solid rgba(90,58,30,.85);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.55),0 4px 12px rgba(0,0,0,.5),
+             0 0 22px rgba(255,201,60,.55);
+  opacity:0;pointer-events:none;z-index:7;
+}
+.vp-fly svg{width:30px;height:30px}
+.vp-fly.fly{animation:vpFly 1.25s cubic-bezier(.34,.02,.2,1)}
+@keyframes vpFly{
+  0%{opacity:0;transform:translate(0,0) scale(.55) rotate(-8deg)}
+  6%{opacity:1;transform:translate(0,0) scale(1.06) rotate(-6deg)}
+  32%{opacity:1;
+    transform:translate(var(--fx,0),var(--fy,0)) scale(.5) rotate(6deg)}
+  /* Gone the instant it lands. What happens next is the corner's job, and a
+     disc still sitting on the counter would be standing on the answer. */
+  40%,100%{opacity:0;
+    transform:translate(var(--fx,0),var(--fy,0)) scale(.38) rotate(8deg)}
+}
+
+/* One switch turns the whole celebration off. Nothing in it carries meaning
+   that the numeral does not already carry, so a player who has told their
+   device they do not want motion loses nothing by it. The flying trophy is the
+   first thing to go — it is the one signal that crosses the whole screen. */
+@media (prefers-reduced-motion:reduce){
+  .scorecard.vp-gain,.scorecard.vp-gain .sc-vp,.scorecard.vp-gain .sc-vp::after,
+  .sc-vp b.bump,.vp-plus.up,.vp-track i.lit,.vp-fly.fly{animation:none}
+  .vp-fly{display:none}
+}
 
 .timechip{
   display:flex;align-items:center;gap:5px;height:24px;padding:0 9px 0 7px;
@@ -513,22 +761,103 @@
 .tradecue.out .tc-card{animation:tcOut .22s ease forwards}
 @keyframes tcOut{to{opacity:0;transform:translate(-50%,-100%) translateY(5px)}}
 
-/* --- big centre announcement --------------------------------------------- */
+/* --- the centre notice, and the dark box it stands on ---------------------
+ *
+ *   "The road building, knight, and victory point notices when you buy a card
+ *    are too hard to see. Can you give them a darker box behind them instead of
+ *    just laying over the board, since it's really hard to see unless you know
+ *    where to look."
+ *
+ * This was gold lettering with a text-shadow and NOTHING ELSE, laid straight
+ * over the island. Measured on a real board at 960x444 (tools/hudshot.mjs
+ * --stage=notice, run against the previous build) "Knight Card!" came out at
+ * 3.54:1 against what happened to be behind it, and the banner as a whole was
+ * 1.40:1 against the board beside it — which is to say it had no edge at all,
+ * and whether it could be read was decided by which hex it happened to land on.
+ * Gold type over a wheat field is gold type over gold, and "unless you know
+ * where to look" is precisely what that produces. The same three notices measure
+ * 11.4-11.6:1 for the lettering now, on a plate 24-28 times darker than the
+ * board it is standing on, where the old banner managed 1.5 times.
+ *
+ * So it is a real object now, in the same material as every other container in
+ * the game: a near-opaque dark plate, a gold hairline, a drop shadow that lifts
+ * it off the board, and — when the caller names a card — a gold disc carrying
+ * that card's own glyph, so a Knight is recognisable before a word is read.
+ *
+ * NO BACKDROP FILTER, deliberately. Every other plate in the interface blurs
+ * what is behind it, and this one appears without warning, mid-match, over a
+ * live 3D scene — which is exactly the "a NEW blurred surface allocates a new
+ * buffer on the spot" case that ui-base.css blames for the black-screen flashes.
+ * At 93-96% opacity there is nothing left to see through anyway.
+ *
+ * hud-notice.js builds it; hud.js, hud-knight.js and hud-road.js all reach it
+ * through `hud.announce`, so all three notices are on this plate and only one
+ * of them had to be told about it. */
 .announce{
   position:absolute;left:0;right:0;top:31%;display:flex;justify-content:center;
-  opacity:0;
+  padding:0 16px;opacity:0;
 }
 .announce.show{animation:annIn 2.6s cubic-bezier(.2,.9,.3,1) forwards}
+.ann-card{
+  display:flex;align-items:center;gap:13px;
+  padding:10px 22px 11px;max-width:min(80vw,540px);
+  border-radius:17px;
+  /* FULLY OPAQUE, and the last four per cent are not decoration.
+   *
+   *   "The harbour 'x5 x9' label faintly shows through the lower centre of all
+   *    three notice pills (channel delta 2-6); make the pill fully opaque or
+   *    raise it above that label in z-order."
+   *
+   * Measured, and at six channels out of 255 it is the kind of thing you only
+   * see once somebody has told you it is there — and then you cannot stop seeing
+   * it. The plate was 94-96% because a hair of the island showing through felt
+   * like it belonged to the world; what it actually does is put a second, ghost
+   * message inside the one message in the game that has half a second to be
+   * read. The colours are unchanged, the alpha is gone, and the plate's tie to
+   * the island is now carried entirely by the coloured halo below. */
+  background:linear-gradient(180deg,
+    #0e2037 0%,
+    #081426 46%,
+    #030a15 100%);
+  border:1px solid rgba(2,7,15,.95);
+  box-shadow:
+    0 12px 26px rgba(0,0,0,.55),
+    0 3px 5px rgba(0,0,0,.45),
+    inset 0 2px 0 rgba(255,255,255,.16),
+    inset 0 0 0 1px rgba(255,201,60,.30),
+    inset 0 -12px 18px rgba(0,0,0,.34);
+}
+/* The plate borrows the notice's own colour for a soft outer halo, so a Knight
+   and a Victory Point are not the same object twice. Kept faint: this is a
+   glow around a dark box, not a neon sign. */
+@supports (color:color-mix(in srgb,red 50%,transparent)){
+  .ann-card{box-shadow:
+    0 12px 26px rgba(0,0,0,.55),
+    0 3px 5px rgba(0,0,0,.45),
+    0 0 26px color-mix(in srgb,var(--ac,#ffc93c) 26%,transparent),
+    inset 0 2px 0 rgba(255,255,255,.16),
+    inset 0 0 0 1px rgba(255,201,60,.30),
+    inset 0 -12px 18px rgba(0,0,0,.34)}
+}
+/* The card's own glyph, on the same gold disc the standing chips wear so the
+   plate and the chip it is about read as one thing. */
+.ann-ico{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;border-radius:11px;
+  background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  border:1.5px solid rgba(90,58,30,.85);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.55),0 2px 5px rgba(0,0,0,.45);
+}
+.ann-ico svg{width:24px;height:24px}
 .ann-txt{
-  padding:8px 26px 10px;text-align:center;
+  text-align:center;
   font:800 27px/1.05 var(--ff);letter-spacing:.07em;text-transform:uppercase;
   color:var(--ac,#ffc93c);
-  -webkit-text-stroke:1.5px rgba(12,20,34,.9);
-  text-shadow:0 3px 0 rgba(10,18,30,.55),0 6px 22px rgba(0,0,0,.6);
-}
-@supports (color:color-mix(in srgb,red 50%,transparent)){
-  .ann-txt{text-shadow:0 3px 0 rgba(10,18,30,.55),0 6px 22px rgba(0,0,0,.6),
-    0 0 26px color-mix(in srgb,var(--ac,#ffc93c) 60%,transparent)}
+  /* The stroke and the hard drop-shadow were doing the plate's job before the
+     plate existed. Both come down now that there is something behind the
+     letters: over-outlined type on a dark box reads as muddy, not as bold. */
+  -webkit-text-stroke:1px rgba(6,14,26,.75);paint-order:stroke fill;
+  text-shadow:0 2px 0 rgba(6,14,26,.55);
 }
 @keyframes annIn{
   0%{opacity:0;transform:scale(.7)}
@@ -553,10 +882,84 @@
   border-radius:16px;
   animation:popIn .18s ease-out;
 }
+/*
+ * IT IS ALLOWED TO COVER THE SCOREBOARD.
+ *
+ *   "Fix the settings dropdown from within the game. It should be able to cover
+ *    the longest road and largest army element, since no one is looking at that
+ *    at the same time as having the settings open."
+ *
+ * On anything phone-sized, ui.css pushes this panel down to `--gT + 104px` with
+ * the comment "Pushed down to clear the scoreboard" — which is the behaviour
+ * being complained about, described exactly. Clearing the scoreboard costs the
+ * sheet forty-eight pixels off the top AND another forty-eight off its own
+ * max-height, and at 960x444 that was measured putting LEAVE MATCH below the
+ * fold of its own panel with no scrollbar in this game to say so. Two rows of
+ * award figures that nobody reads while they are changing the sound setting were
+ * being protected at the cost of the last button in the menu.
+ *
+ * This rule wins by SPECIFICITY rather than by order: ui.css is imported after
+ * this file and is owned by another agent, so `.hud .pop` (0,2,0) is what beats
+ * its `.pop` (0,1,0) inside that media block without editing it. The sheet drops
+ * straight out of the gear again, everywhere, at every size.
+ */
+.hud .pop{
+  top:calc(var(--gT) + 56px);
+  max-height:min(74vh,calc(100dvh - var(--gT) - var(--gB) - 64px));
+}
+/* COVERING means covering. The shared `.plate` fill is 94% opaque over a blur,
+   which is right for a bar with the island moving behind it and wrong for a
+   panel that is deliberately standing on top of the scoreboard: the gold award
+   numerals underneath read straight through it as ghosting behind the menu
+   text. The settings sheet gets the same gradient at full opacity — same
+   colours, same bevel, nothing to see through. */
+.hud .pop.settings{
+  background:linear-gradient(180deg,#1e426c 0%,#102a4a 46%,#07162a 100%);
+  /* With nothing left to see through, the blur is pure cost — and it is the
+     expensive kind: a NEW blurred surface appearing over a live 3D scene is
+     precisely the allocation ui-base.css blames for the black-screen flashes,
+     and this panel appears mid-match by definition. */
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+}
 @keyframes popIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1}}
-.pop-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.pop-title{font:800 12px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;color:var(--gold-l)}
 .pop .sb-ico{line-height:0}
+
+/* IT LOOKS SCROLLABLE BECAUSE IT IS.
+ *
+ *   "hud-settings-scrolled.png IS HARD-CLIPPED. '...you own a settlement or' is
+ *    cut mid-sentence at the sheet's bottom rounded corner with no fade and no
+ *    scrollbar, and the scrolled-off SOUND row is cut the same way at the top.
+ *    Add a soft fade mask at both ends, or a subtle scroll indicator, so it
+ *    reads as scrollable rather than broken."
+ *
+ * A mask rather than an overlay, for two reasons. An overlay would have to be a
+ * child of a scrolling box, which means it scrolls with the content and has to
+ * be re-pinned every frame; and a fade to a FLAT colour is a lie the moment the
+ * panel is over something bright — the plate is opaque and its top edge is a
+ * gradient, so there is no single colour to fade into. A mask fades the panel
+ * itself, gradient and all, and it is painted against the border box rather than
+ * the scrolled content, so it stays put while the words move under it.
+ *
+ * Eighteen pixels, which is a little more than one line of the rules text: enough
+ * that a sentence visibly dissolves rather than being guillotined, not so much
+ * that a row you were reading goes dim. And the two ends are independent, driven
+ * by `paintSheetEdges` in hud.js — the top only softens once something has
+ * actually gone up past it, so a sheet sitting at the top of its own scroll keeps
+ * a crisp edge under the gear it dropped out of. */
+.hud .pop.settings.sc-below{
+  -webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 18px),transparent 100%);
+  mask-image:linear-gradient(180deg,#000 calc(100% - 18px),transparent 100%);
+}
+.hud .pop.settings.sc-above{
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 18px);
+  mask-image:linear-gradient(180deg,transparent 0,#000 18px);
+}
+.hud .pop.settings.sc-above.sc-below{
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 18px,
+    #000 calc(100% - 18px),transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0,#000 18px,
+    #000 calc(100% - 18px),transparent 100%);
+}
 
 /* Two switches, one per hand. See the .hud-br note above for why this is a pair
    of sides rather than a single four-way preset. Laid out as a label and a
@@ -629,8 +1032,26 @@
    * 226x104 down to about 104x44: a fifth of the area it was, and it stopped
    * being a panel and became a readout. */
   .hud .scorecard{width:auto;max-width:118px;border-radius:10px}
-  .hud .sc-vp{padding:2px 6px 3px;gap:3px;border-bottom-width:0}
+  .hud .sc-vp{padding:2px 6px 3px;gap:3px;border-bottom-width:0;border-radius:9px 9px 0 0}
   .hud .sc-vp b{font-size:15px;-webkit-text-stroke-width:1.6px}
+  /* The rising "+1" follows the numeral it comes out of: the trophy shrinks to
+     13px and the padding halves, so the launch point moves left with it. The
+     phone is also the one layout with no victory track at all (below), so this
+     and the gold wash are carrying the whole announcement here. */
+  .hud .vp-plus{left:42px;top:7px;font-size:15px;-webkit-text-stroke-width:1.8px}
+  /* Nine pixels of travel instead of seventeen. The row is 22px tall here, not
+     37, and the rule is the same as on the big layout: the "+1" may reach the
+     panel's own top edge and it may not cross it — the clock chip is directly
+     above this one at phone size and there is nowhere else for it to go. */
+  .hud .vp-plus.up{animation-name:vpPlusSmall}
+  @keyframes vpPlusSmall{
+    0%{opacity:0;transform:translateY(3px) scale(.72)}
+    4%{opacity:1;transform:translateY(1px) scale(1.06)}
+    24%{opacity:1;transform:translateY(-3px) scale(1.02)}
+    36%{opacity:1;transform:translateY(-5px) scale(1.2)}
+    72%{opacity:.92;transform:translateY(-8px) scale(1)}
+    100%{opacity:0;transform:translateY(-10px) scale(.96)}
+  }
   .hud .sc-vp .ico svg{width:13px;height:13px}
   .hud .sc-goal{font-size:7.5px;margin:2px 0 0 -1px}
   .hud .vp-track{display:none}
@@ -692,6 +1113,17 @@
 
   .hud .hud-br{gap:6px}
 
+  /* The rising "+1" and the swelling total, at the size this layout draws them:
+     the numeral box is narrower, so the room reserved for the swell comes down
+     with it and the "+1" launches from further left. */
+  .hud .sc-vp b{min-width:18px;margin-right:3px}
+
+  /* The plate shrinks with the type it carries, but never below the point where
+     it stops reading as a box: 8px of padding either side of the lettering is
+     what keeps the gold hairline clear of the letters at 22px. */
+  .hud .ann-card{padding:8px 17px 9px;gap:10px;border-radius:15px;max-width:min(86vw,460px)}
+  .hud .ann-ico{width:32px;height:32px;border-radius:9px}
+  .hud .ann-ico svg{width:21px;height:21px}
   .hud .ann-txt{font-size:22px}
 
 
@@ -701,6 +1133,40 @@
   .hud .tc-cta{font-size:12.5px;letter-spacing:.11em;gap:7px}
   .hud .tc-key{font-size:12.5px;padding:3px 6px 4px}
   .hud .tc-rate{font-size:16px;padding-left:9px}
+}
+
+/* ============================================ the sheet stops at the cards
+ *
+ *   "THE SETTINGS SHEET COVERS THE ROAD BUILD CARD ON PHONE. In
+ *    phone-hud-settings-open.png (667x375) only a sliver of the Road card's cost
+ *    row peeks out below LEAVE MATCH. Covering the awards cluster is sanctioned;
+ *    covering a build action is not."
+ *
+ * Both halves of that are right and they are the same rule seen twice: the sheet
+ * may stand on a READOUT, because nobody reads the award figures while they are
+ * changing the sound, and it may not stand on a CONTROL, because a build card is
+ * a thing the player might be reaching for.
+ *
+ * WHY IT ONLY HAPPENS HERE, and why this block is bounded on both axes. The
+ * build row is centred: four 70px cards and three 5px gaps is 295px, so its left
+ * edge is (100vw - 295) / 2. The sheet is 238px wide at an 18px gutter, so its
+ * right edge is 256px. Those two meet at about 807px of viewport width — above
+ * that the sheet and the cards never share a column at all, which is why the
+ * 960x444 capture has always been clean and only the 667x375 one is not. 820px
+ * is that figure with a margin, and the height bound is the phone layout's own.
+ *
+ * THE ARITHMETIC. Top of the sheet is `--gT + 56`; the cards stand `--gB` off
+ * the floor and are 98px tall in the shortest layout; 8px is the gap left
+ * between the two so they read as separate objects rather than as one stack.
+ * At 667x375 that leaves the sheet 177px, which is SOUND, both control rows and
+ * the top of HOW TO PLAY, with LEAVE MATCH a short scroll below — and the soft
+ * fade at the bottom edge (see `.sc-below` above) is what says so. That is the
+ * trade and it is the right way round: a menu that admits it continues, against
+ * a build card that cannot be pressed. */
+@media (max-height:500px) and (max-width:820px){
+  .hud .pop.settings{
+    max-height:calc(100dvh - var(--gT) - var(--gB) - 162px);
+  }
 }
 
 /* Very short viewports: reclaim vertical space without shrinking any object.

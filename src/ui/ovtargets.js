@@ -71,7 +71,20 @@ export function createTargets(ctx, proj, paint, state) {
   /* ------------------------------------------------------------- the sizes */
 
   /**
-   * The choose-a-spot ring.
+   * How many corner rings the last frame painted. Written by `drawTargets`,
+   * read by `targetR` — see the note there for why the ring has two sizes.
+   */
+  let ringCount = 0;
+
+  /**
+   * A field of corners is CROWDED above this many; below it, it is a shortlist.
+   * The opening draft offers 40-54 legal corners; a build sheet offers one to
+   * about eight, and has never once offered sixteen.
+   */
+  const CROWD = 16;
+
+  /**
+   * The choose-a-spot ring, at one of two sizes.
    *
    * A corner target is a ring rather than a disc, and stays hollow, because
    * fifty-odd of them are legal at the opening of a draft and a field of solid
@@ -81,15 +94,38 @@ export function createTargets(ctx, proj, paint, state) {
    * 0.38 of the corner spacing, which at 667x375 put a 22px ring on a 29px
    * spacing and the board vanished under them; 0.21 halved that. The player
    * still found them too prominent — "make the little gold circles a little
-   * smaller" — so this is 0.15 with the floor dropped from 6.5 to 4.6, which
-   * lands a 9.2px ring at 667x375 against the 13px it was, and 10.5px against
-   * 14.7px at 960x444.
+   * smaller" — so the CROWDED size is 0.15 with the floor dropped from 6.5 to
+   * 4.6, which lands a 9.2px ring at 667x375 against the 13px it was.
    *
-   * What the finger gets is unchanged: `hitRadius()` owns the hit test and
-   * still claims a 52px zone around every corner, nearest wins, so shrinking
-   * the paint costs no tappability at all.
+   * WHICH IS HALF THE SIZE OF THE PIECE IT IS INVITING, AND ON A SHORTLIST
+   * THAT IS INVISIBLE. A review of the build sheet tapped the settlement chip
+   * and photographed the result:
+   *
+   *   "THE SETTLEMENT CHIP SWITCHES THE MAP TO AN EMPTY BOARD ... five are the
+   *    REMOVAL of white road ghosts ... Nothing was added. The chip reads 'x1'
+   *    and is selected with a gold ring, the road candidates are cleared, and
+   *    the player is left staring at a board with zero highlights."
+   *
+   * Nothing was broken: `legalSettlements` had returned two corners and both
+   * were painted. They were painted as 9px rings on a board whose number discs
+   * are 26px and whose road invitations are 14.5px slabs, so a diff of the two
+   * frames could not tell them from compression noise — and neither could a
+   * player. The road slot already carries this argument in its own comment
+   * ("an invitation that is thinner than the thing it invites you to build
+   * reads as a hairline"); the corner ring was exempt from it by accident.
+   *
+   * So on a SHORTLIST the ring is sized off `pipRadius` — the settlement that
+   * will stand on the spot — at 0.74 of it: unmissable beside a road slab, and
+   * still visibly smaller than a placed piece so the two can never be read as
+   * the same thing. On a CROWDED board nothing changes at all, which is the
+   * board the player was looking at when they asked for smaller circles.
+   *
+   * What the finger gets is unchanged either way: `hitRadius()` owns the hit
+   * test and still claims a 52px zone around every corner, nearest wins.
    */
-  const targetR = () => Math.max(4.6, HEX_SIZE * proj.s * 0.15);
+  const targetR = () => (ringCount > 0 && ringCount <= CROWD
+    ? Math.max(pipRadius(proj) * 0.74, HEX_SIZE * proj.s * 0.15)
+    : Math.max(4.6, HEX_SIZE * proj.s * 0.15));
 
   /**
    * The coloured core of a road target, in css px.
@@ -517,6 +553,12 @@ export function createTargets(ctx, proj, paint, state) {
 
   function drawTargets(view) {
     const { mode, targets, sel, hover } = view;
+    /* Set BEFORE the early return, not after: `targetR()` is also read from
+       outside this file (overview's `metrics`, and the capture rig through it),
+       and a stale count left over from the last mode would have it reporting a
+       ring size that nothing on screen is drawn at. */
+    ringCount = (!targets || mode === 'place-road' || mode === 'place-robber')
+      ? 0 : targets.length;
     if (!targets || !targets.length) return;
     const pulse = view.pulse || 0;
     const beat = 0.5 + 0.5 * Math.sin(pulse * 4.2);

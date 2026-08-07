@@ -152,8 +152,38 @@ export function onRoadStrip(x, z) {
 }
 
 /* ------------------------------------------------------- mountain skyline */
-/* Real pointed peaks stacked on top of the 3.4 mountain elevation. Placed
-   deterministically, kept inside f <= 0.86 so they never touch a road. */
+/* Rolling rock stacked on top of the 3.4 mountain elevation. Placed
+   deterministically, kept inside f <= 0.86 so they never touch a road.
+ *
+ * THESE USED TO BE REAL POINTED PEAKS, up to 3.35 units of extra height on a
+ * 4.4-unit radius, which put the summit of a mountain hex at 6.9 to 7.1 — a
+ * cone very nearly as tall as the hex is wide. Three things followed from that
+ * and all three of them are in the reviewer's note about this hex:
+ *
+ *   IT WAS THE DARKEST OBJECT ON THE ISLAND. A cone that steep has most of its
+ *   surface turned away from a single key light, so the majority of the hex was
+ *   painted in the palette's dark bands AND then shaded down again by the
+ *   Lambert term. The palette lift above fixes the paint; nothing fixes the
+ *   shading except a shallower slope.
+ *
+ *   IT WAS NOT "A FULLY EMPTY, SLIGHTLY SUBTLY TEXTURED GREY HEX". That is the
+ *   owner's own description of what an emptied ore hex should be, and a black
+ *   pyramid is not a subtle texture, it is the single largest object on the
+ *   board. "Nothing else really on it" cannot be satisfied by taking props away
+ *   while the GROUND is a monument.
+ *
+ *   IT MADE THE SNOW BUG POSSIBLE. Only the top of a 6.9-unit peak cleared the
+ *   old 5.2 snow threshold in island.js, and it cleared it at about a dozen
+ *   isolated grid vertices — which is where the pale paper cut-outs came from.
+ *
+ * So the same four bumps stay in the same places, at roughly half the height
+ * and a wider radius each: a mountain hex is now gently rumpled ground with a
+ * high side, topping out around 5.2 instead of 7.1, and the slope you actually
+ * run up is about a third of what it was. It still reads as the raised, broken,
+ * rocky hex on the board — it is 1.5 units of elevation above its neighbours
+ * before any of this is added — and it no longer reads as a crater. Heights
+ * only ever DROP here, so nothing that was standing clear of the terrain can
+ * start intersecting it. */
 
 function rngFrom(seed) {
   let a = seed >>> 0;
@@ -170,10 +200,10 @@ tiles.forEach((t, i) => {
   if (t.terrain !== 'mountains') return;
   const rng = rngFrom(9901 + i * 7717);
   const spec = [
-    { d: 1.6, h: 3.35, r: 4.4 },
-    { d: 4.2, h: 2.15, r: 3.1 },
-    { d: 4.6, h: 1.70, r: 2.6 },
-    { d: 5.4, h: 1.15, r: 2.2 }
+    { d: 1.6, h: 1.45, r: 5.2 },
+    { d: 4.2, h: 1.00, r: 3.8 },
+    { d: 4.6, h: 0.80, r: 3.2 },
+    { d: 5.4, h: 0.55, r: 2.7 }
   ];
   const a0 = rng() * Math.PI * 2;
   spec.forEach((s, k) => {
@@ -322,8 +352,72 @@ export const PALETTE = {
                cliff: 0x6f6440, cliffTop: 0x8e8055 },
   hills:     { deep: 0x7a3319, low: 0xa64f26, mid: 0xc9743c, high: 0xe29c5f,
                cliff: 0x6d3c20, cliffTop: 0x9c5e34 },
-  mountains: { deep: 0x4a515c, low: 0x6b7480, mid: 0x8f97a3, high: 0xbcc3cd,
-               cliff: 0x474d57, cliffTop: 0x767d88 },
+  // WARM GREY STONE, not charcoal and not soot.
+  //
+  //   "Lift the ground value from near-black to a MID GREY in the same tonal
+  //    family as the full ore hex, subtly textured. Right now it is the darkest
+  //    object on the island — the ore hex reads as a scorched black crater
+  //    against an otherwise pastel island."
+  //
+  // Every band goes up a clear step and the SPAN between them narrows, and the
+  // second half of that is the part that matters. This palette used to run
+  // 0x4a51 to 0xbcc3 — the widest tonal spread of any terrain on the board, on
+  // the terrain whose surface is also the most broken up by peaks and folds. So
+  // a mountain hex was a mid grey with large very dark areas in it, and then
+  // three separate multiplies landed on top: the duotone mute on a hex you do
+  // not own (x0.52 of value), the spent crush on one you have cleared (x0.64
+  // before the last pass put a floor under it — see mood.js), and the ACES tone
+  // curve, which has its steepest slope in exactly the shadow range those two
+  // push it into. `deep` at 0x4a515c came out of that stack as very nearly
+  // black, and `deep` is what the folds and the shaded sides of every peak are
+  // painted with.
+  //
+  // AND THE LIFT DID NOT REACH THE HEXES THAT NEEDED IT.
+  //
+  //   "Your pass-two grey fix only landed on highlighted/owned hexes. In
+  //    sw-wide-owned.png the two unowned 11 mountain hexes sample RGB
+  //    (38,38,42) and (46,46,48) — neutral near-black against 189-luma sand,
+  //    and the darkest elements on the island by a clear margin. For comparison
+  //    the unowned forest is (36,68,29) and unowned clay (95,49,33), and both
+  //    still read as forest and clay. Raise the mountain terrain albedo so an
+  //    UNHIGHLIGHTED ore hex lands around 60-70 luma, and warm it slightly so
+  //    it reads as grey stone rather than soot."
+  //
+  // Worth being precise about WHY the mountain alone falls through. Forest and
+  // clay tops are dead flat, so every fragment on them is lit at very nearly
+  // the same N.L and the whole hex prints at one value. A mountain carries four
+  // rolling peaks (`PEAKS` above), so a good third of its surface is a slope
+  // turned away from the key light — and those slopes are also, by the noise
+  // that drives the tonal bands, the ones most likely to be painted `deep`.
+  // Dark paint times dark shading times the x0.52 off-limits mute is where
+  // (38,38,42) comes from, and no amount of lifting `mid` touches it: what has
+  // to come up is the BOTTOM of the palette.
+  //
+  // So `deep` goes 0x5f6772 -> 0x7b7873, nearly where `low` used to sit, and
+  // the family CLOSES UP from both ends at once — 0x7b..0xa8 against the old
+  // 0x5f..0xc2, a span cut by more than half. A mountain hex is now one mid
+  // stone value with shading and a little noise playing over it, which is also
+  // the literal reading of "a fully empty, slightly subtly textured grey hex".
+  //
+  // The top had to come down as hard as the bottom came up, and that is a
+  // constraint the unowned hex does not show you. A hex you DO own gets the lit
+  // treatment in mood.js — x1.22 red, x1.14 green, plus a flat 0.06 lift, plus
+  // the additive owner glow — and a `mid` up at 0x9ba3af went through that
+  // stack and came out as warm cream: a full owned ore hex photographed as pale
+  // sand with white boxes standing on it, and the ore stacks (0x6f7783 to
+  // 0xa9b2be on a cut face, with a 0x363b43 foot under every block) stopped
+  // reading as objects lit against a floor. At 0x949189 the same fragment lands
+  // at a mid grey with the stacks a clear step above it, and the unowned hex is
+  // unaffected because the mute crushes the top of the range anyway.
+  //
+  // And it is WARMED, but only just — r about eight points above b. A
+  // neutral-to-cool grey at low value is the colour of soot, and the same value
+  // with a hint of ochre in it is the colour of weathered stone; push it any
+  // further and the owned lift, which is itself warm, carries the hex into the
+  // sand family it has to stay clear of (the desert is 0xbc9256 and the tan
+  // border strip 0xc9a970, both at three times this saturation).
+  mountains: { deep: 0x7b7873, low: 0x878480, mid: 0x949189, high: 0xa8a49b,
+               cliff: 0x5d5a55, cliffTop: 0x817d76 },
   desert:    { deep: 0xbc9256, low: 0xd6b075, mid: 0xeacf9b, high: 0xf9e9c4,
                cliff: 0x93764c, cliffTop: 0xc0a273 }
 };

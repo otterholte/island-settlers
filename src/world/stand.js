@@ -7,13 +7,30 @@
  * ---------------------------------------------------------------------------
  * WHY THIS EXISTS
  * ---------------------------------------------------------------------------
- * A forest hex carries about twenty harvestable trees (`nodelife.js`) AND about
- * twenty-eight decorative conifers, ferns and grass tufts on top of them. Take
- * every harvestable tree and, if only those twenty answer, a "clear cut" is a
- * full forest with twenty gaps in it — which is exactly the read the player
- * complained about. So the DRESSING is part of the stand too: every responsive
- * prop on a hex is a unit in one pool, and the hex's own fill fraction spends
- * that whole pool alongside the real items.
+ * A hex carries its harvestable items (`nodelife.js`) AND a mat of ground cover
+ * on top of them. Take every item and, if only those answer, a worked-out hex is
+ * a full green field with twenty gaps in it — which is exactly the read the
+ * player complained about. So the DRESSING is part of the stand too: every
+ * responsive prop on a hex is a unit in one pool, and the hex's own fill
+ * fraction spends that whole pool alongside the real items.
+ *
+ * WHAT IS LEFT IN THAT POOL IS NOW ONLY GROUND COVER, and that is the point.
+ * The pool used to include twenty-five decorative conifers on every forest hex,
+ * and the mechanism described here is precisely what turned them into the bug
+ * the player reported:
+ *
+ *   "I go to collect it and it doesn't exist, and then I find the real final
+ *    tree that is a resource I'm able to collect, and once its collected the
+ *    phantom tree then disappears."
+ *
+ * A tree that cannot be picked up but that falls over the instant the hex is
+ * emptied is not scenery — it is a broken pickup, and no amount of tuning the
+ * fell animation was ever going to fix that. `props.js` no longer puts anything
+ * tree-shaped, stone-shaped or item-sized on a hex that grows trees, stone or
+ * items, so this file now only ever crops grass, flattens ferns and cuts straw.
+ * The `fell` role and its stump machinery are kept intact below because they
+ * cost nothing when no kit claims them and because a future decorative tree on
+ * a hex that grows NOTHING (a shoreline copse, say) would want them back.
  *
  * Two rules make it read:
  *
@@ -51,15 +68,58 @@ const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
  *   fell     topples and is replaced by a stump
  *   crop     cut down to stubble
  *   flatten  mashed into the ground
+ *   vanish   shrinks away to nothing — carted off, not cut
  *   wilt     colour only — it was never the crop
  */
 export const ROLE = {
+  // The three `fell` entries are deliberately left in place even though the
+  // forest recipe no longer drops a single decorative tree: they are the
+  // reference for what a fellable kit looks like, they cost nothing when no
+  // instance claims them, and deleting them would take the stump plumbing in
+  // `countFellable` with them. `propHash01` decides nothing on an empty list.
   forest: {
     conifer: 'fell', coniferShort: 'fell', broadleaf: 'fell',
     undergrowth: 'flatten', grass: 'crop', flower: 'crop'
   },
   fields: {
-    wheat: 'crop', grass: 'crop', undergrowth: 'flatten', flower: 'crop'
+    // THE STUBBLE IS CARTED OFF NOW RATHER THAN CUT, and this is the third and
+    // last attempt at the same problem:
+    //
+    //   "The cleared and countdown states disagree. sw-fields-3-cleared has ~40
+    //    dark pointy stubble tufts plus dozens of pale straw flecks inside the
+    //    rim; sw-fields-4-countdown at the same hex is clean bare soil.
+    //    Reconcile them and kill the crumb rash."
+    //
+    // They are the SAME thirty-four tufts in both frames, and the disagreement
+    // is that one was photographed while they were still going down. `crop`
+    // squashes a prop on Y and widens it on X/Z — CROP.wheat is [1.45, 0.09] —
+    // and a `blade` is a flat tapered card, so a card caught anywhere in the
+    // middle of that animation is a WIDE, HALF-HEIGHT, EDGE-ON TRIANGLE. That
+    // is the "dark pointy stubble tuft": not a bug in the count and not a
+    // difference between the two hexes, but the shape the kit passes through on
+    // its way down, held on screen for as long as the props nearest the settler
+    // take to settle. Widening as it flattens was a deliberate choice — it
+    // merges the tufts into one continuous mat at the END of the animation —
+    // and it is exactly what makes the MIDDLE of the animation look like a
+    // field of forty dark fins.
+    //
+    // There is no tuning of [1.45, 0.09] that fixes that, because the bad frame
+    // is not the destination, it is the road. So the destination changes: the
+    // tufts shrink away to nothing instead, on both axes at once. Every frame
+    // of that is a smaller tuft, which reads as FEWER tufts — honest, quiet,
+    // and identical in kind to what the hex looks like when it finishes. The
+    // two frames now agree because there is no intermediate shape left to
+    // disagree about, and the pale straw flecks go with the dark fins: they
+    // were the same cards catching the sun on their lit side.
+    //
+    // What it costs is the "warm straw mat" a worked field used to keep, and
+    // that is the right trade twice over. The player asked for these hexes to be
+    // "more empty" and the reviewer photographed the empty version and called it
+    // correct; and the mat was never doing the work it was defended for anyway,
+    // since at a twelfth of standing height it was already a flat wash rather
+    // than anything you could see. The ground under it is the fields terrain's
+    // own ploughed ochre, which says farmland perfectly well on its own.
+    wheat: 'vanish', grass: 'crop', undergrowth: 'flatten', flower: 'crop'
   },
   pasture: {
     grass: 'crop', flower: 'crop', undergrowth: 'flatten'
@@ -151,8 +211,11 @@ const WORN_MUL = {
 };
 
 /* Chunky, not graceful. Pickup is instant, so the world around it has to move
-   at the same speed: a struck prop is down inside half a second. */
-const RATE = { fell: 5.2, crop: 6.2, flatten: 6.2, wilt: 3.4 };
+   at the same speed: a struck prop is down inside half a second.
+   `vanish` is the quickest of the lot on purpose — nothing about a tuft
+   shrinking away is worth watching, and the shorter it is on screen the less
+   chance a capture or a glance catches the hex mid-change. */
+const RATE = { fell: 5.2, crop: 6.2, flatten: 6.2, vanish: 7.4, wilt: 3.4 };
 
 function match() {
   const g = typeof globalThis !== 'undefined' ? globalThis : null;
@@ -247,7 +310,7 @@ export function buildStand(group, dressing, stumps) {
 
   /* Biggest silhouettes first inside a hex: when three props go at once it
      should be the trees you notice, not the grass. */
-  const WEIGHT = { fell: 0, flatten: 1, crop: 2, wilt: 3 };
+  const WEIGHT = { fell: 0, flatten: 1, crop: 2, vanish: 2, wilt: 3 };
   for (const rec of regions) rec.items.sort((a, b) => WEIGHT[a.role] - WEIGHT[b.role]);
 
   const active = new Set();
@@ -276,6 +339,16 @@ export function buildStand(group, dressing, stumps) {
       s = it.s * (1 - gone);
       sy = it.sy * (1 - gone);
       writeStump(it, clamp01((c - 0.40) / 0.34));
+    } else if (c > 0.0005 && it.role === 'vanish') {
+      // Uniform on all three axes, so the tuft keeps its own proportions the
+      // whole way down and never passes through a shape it does not otherwise
+      // have. It stops at 2% rather than 0 because the instance stays in the
+      // batch and has to be able to come back: `release` runs this in reverse
+      // when the hex refills, and a zero-scale matrix is a matrix with no
+      // orientation left in it.
+      const k = 1 - c * 0.98;
+      s = it.s * k;
+      sy = it.sy * k;
     } else if (c > 0.0005 && (it.role === 'crop' || it.role === 'flatten')) {
       const k = CROP[it.kit] || [0.9, 0.26];
       s = it.s * (1 + (k[0] - 1) * c);
