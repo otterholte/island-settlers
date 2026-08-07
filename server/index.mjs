@@ -122,6 +122,28 @@ const server = createServer((req, res) => {
     return json(res, 200, {
       ok: true,
       protocol: PROTOCOL_VERSION,
+      /*
+       * WHICH BUILD IS THIS?
+       *
+       *   "Can you fix it for me so if it doesn't already, Railway auto deploys
+       *    when you commit changes."
+       *
+       * It already did. What was missing was any way to KNOW that: every time
+       * the server changed, the answer to "has production got it yet" was an
+       * inference from an uptime counter, and an uptime counter cannot tell a
+       * fresh deploy of the right commit from a fresh restart of the wrong one.
+       * That is how a redeploy ends up on somebody's to-do list for three
+       * commits in a row.
+       *
+       * Railway injects these at build time from the GitHub connection, so they
+       * are the platform's own record of what it checked out rather than
+       * anything this repo asserts about itself. Absent locally and absent under
+       * a plain `docker run`, which is the honest answer there — hence `null`
+       * rather than a fake.
+       */
+      commit: (process.env.RAILWAY_GIT_COMMIT_SHA || '').slice(0, 7) || null,
+      branch: process.env.RAILWAY_GIT_BRANCH || null,
+      deployedAt: process.env.RAILWAY_DEPLOYMENT_ID ? new Date(started).toISOString() : null,
       uptimeSec: Math.round((Date.now() - started) / 1000),
       ...hub.stats,
       matchCap: matches.max,

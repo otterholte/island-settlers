@@ -48,7 +48,7 @@
  * Owner: net agent.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rmSync, mkdirSync } from 'node:fs';
@@ -225,6 +225,49 @@ try {
   check('01. server boots and answers /health',
     health.ok === true && health.protocol === PROTOCOL_VERSION,
     `protocol v${health.protocol}, matchCap ${health.matchCap}`);
+
+  /*
+   * IS THE THING I AM TESTING THE THING I JUST WROTE?
+   *
+   *   "Can you fix it for me so if it doesn't already, Railway auto deploys when
+   *    you commit changes."
+   *
+   * Railway does auto-deploy, and it did all along. The reason that was in doubt
+   * for three commits running is that there was no way to ASK: the only signal
+   * was an uptime counter, which cannot tell a fresh deploy of the right commit
+   * from a fresh restart of the wrong one. So `/health` reports the commit
+   * Railway checked out, and this compares it with the commit in the working
+   * tree — turning "did it deploy yet" from a thing somebody remembers to check
+   * into a thing that fails a suite.
+   *
+   * Only in `--remote`. Against a local server there is no deployment and
+   * nothing to be out of date with, and asserting otherwise would fail every
+   * ordinary run for no reason.
+   *
+   * It reports rather than fails when the local tree has moved on: running this
+   * against production from a branch you have not pushed is a normal thing to
+   * do, and it is not the server's fault. What it will not let you do is
+   * conclude a fix is live when the box is running something else.
+   */
+  if (REMOTE) {
+    let local = '';
+    try {
+      local = execSync('git rev-parse --short=7 HEAD', { cwd: ROOT })
+        .toString().trim();
+    } catch (e) { /* not a checkout; skip the comparison */ }
+    const live = health.commit || null;
+    if (!live) {
+      console.log('  NOTE  the live server reports no commit — it predates the '
+        + 'build stamp in server/index.mjs, so it is at most as new as that change');
+    } else if (!local) {
+      console.log(`  NOTE  live server is on ${live}; no local checkout to compare with`);
+    } else if (live === local) {
+      check('01b. and it is running the commit in this working tree', true, live);
+    } else {
+      console.log(`  NOTE  live server is on ${live}, this tree is on ${local} — `
+        + 'either the deploy has not landed yet or this tree is unpushed');
+    }
+  }
 
   A = await connect('alice');
   B = await connect('bob');
