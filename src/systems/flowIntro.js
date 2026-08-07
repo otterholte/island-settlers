@@ -688,7 +688,7 @@ export function buildIntro(state, onBegin) {
     raidState.classList.toggle('on', cur);
     raidState.textContent = cur ? 'On' : 'Off';
     raidNote.textContent = cur
-      ? 'A Knight takes half of every rival\u2019s goods and blocks a region'
+      ? 'A Knight halves the goods of whoever is built on the hex, and blocks it'
       : 'No Knight cards \u00b7 nothing blocks a region \u00b7 no Largest Army';
     raidNote.classList.toggle('off', !cur);
   }

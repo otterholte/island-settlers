@@ -180,7 +180,15 @@ for (let i = 0; i < 120; i++) {
 if (!booted) { console.error('GAME DID NOT BOOT\n' + chromeErr.slice(-400)); ws.close(); chrome.kill('SIGKILL'); process.exit(1); }
 console.log(`booted ${W}x${H} in ${((Date.now() - T0) / 1000).toFixed(1)}s`);
 
-for (let i = 0; i < 60; i++) {
+/* 100 SECONDS, NOT 15.
+ *
+ * Measured on this container: the opening screen raises itself anywhere from
+ * 7.8s to 57s after the game object exists, depending on what else is running —
+ * SwiftShader builds the whole island on the main thread and the island got
+ * heavier this round. The old 15s ceiling turned a slow boot into "the tutorial
+ * never started", which is the most misleading failure a rig can report,
+ * because it points at the feature instead of at the clock. */
+for (let i = 0; i < 400; i++) {
   const on = await ev(`(()=>{const n=document.querySelector('.mf-intro');
     return !!(n&&n.classList.contains('on'));})()`);
   if (on === true) break;
@@ -190,8 +198,31 @@ await sleep(400);
 
 /* The route a player really takes: TUTORIAL on the opening screen, then
    PRACTICE RUN in the book. Nothing here calls startPractice() directly. */
+/* WAIT FOR THE CONTROL, DO NOT COUNT MILLISECONDS AT IT.
+ *
+ * These were two fixed sleeps, and they were fine until the island got heavier:
+ * under SwiftShader the opening screen now raises itself about 7.8s after the
+ * game object exists, and the rules book animates in on top of that. A fixed
+ * 500ms tap at the PRACTICE RUN key lands on a scrim that has not finished
+ * opening, the tap goes nowhere, and every measurement after it reports a
+ * tutorial that never started — which reads exactly like a broken tutorial and
+ * is a broken harness. Poll for the thing being there and having a size. */
+async function waitFor(sel, secs = 12) {
+  const until = Date.now() + secs * 1000;
+  while (Date.now() < until) {
+    const box = await ev(`(()=>{const n=document.querySelector('${sel}');
+      if(!n) return null; const r=n.getBoundingClientRect();
+      return (r.width>4&&r.height>4)?{w:Math.round(r.width),h:Math.round(r.height)}:null;})()`);
+    if (box) return box;
+    await sleep(200);
+  }
+  return null;
+}
+
+if (!await waitFor('.mf-tut', 60)) { console.error('the opening screen never raised'); process.exit(1); }
 await tapSel('.mf-tut');
-await sleep(500);
+if (!await waitFor('.tut-route.play', 30)) { console.error('the rules book never opened'); process.exit(1); }
+await sleep(250);
 await tapSel('.tut-route.play');
 await sleep(1100);
 console.log('  STILL ' + await ev(NO_MOTION));
@@ -503,7 +534,23 @@ console.log('  WASH ' + JSON.stringify(await ev(`(()=>{
     Math.max(0,Math.min(cv.height-1,Math.round(y*dpr))),1,1).data[3];
   const t=window.__ISLAND__.game.tutorial;
   const sh=t.spotAt()||{holes:[],pips:[]};
-  const inside=sh.holes.map(h=>a(h.x,h.y));
+  /* NOT THE CENTRE — THE GOLD PIP IS THERE.
+   *
+   * A step whose spot is 'pips' drops a 13px gold dot at each hole's centre,
+   * which is the
+   * exact pixel this used to sample: it read the dot's own alpha of 255 and
+   * reported the wash as never cut, on every hole that had a pip. The wash was
+   * correct the whole time and this cost a pass to find.
+   *
+   * Sample at 35% of the radius instead. The hole's gradient is fully opaque
+   * out to 62% of its radius, so 35% is comfortably inside the cut, and every
+   * hole here is at least 46px so the sample sits at least 16px from a dot that
+   * is 6.5px across. Four bearings, take the clearest, so a pip that happens to
+   * be drawn a hair off-centre cannot poison the reading either. */
+  const inside=sh.holes.map(h=>{
+    const off=h.r*0.35;
+    return Math.min(a(h.x+off,h.y), a(h.x-off,h.y), a(h.x,h.y+off), a(h.x,h.y-off));
+  });
   // A point as far from every hole as the frame allows.
   let worst=null,best=-1;
   for(let x=12;x<innerWidth;x+=24)for(let y=12;y<innerHeight;y+=24){

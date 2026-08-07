@@ -289,7 +289,7 @@ export function createRaidCue(root, state, game) {
       who.appendChild(el('b', { text: knight ? knight.name : 'A rival' }));
       who.appendChild(el('span', {
         text: total > 0
-          ? ' played a Knight — half of everything you held is gone'
+          ? ' played a Knight on your hex — half of everything you held is gone'
           : ' played a Knight — you had nothing to lose'
       }));
       fillBill(mine && mine.lost, '−');
@@ -307,8 +307,23 @@ export function createRaidCue(root, state, game) {
       }
       setText(ttl, 'Knight Sent');
       who.innerHTML = '';
-      who.appendChild(el('span', { text: 'Your Knight takes half of everything from ' }));
-      who.appendChild(el('b', { text: `all ${Math.max(1, all.length)} rivals` }));
+      /* NAME THE NEIGHBOURS, NOT "ALL RIVALS".
+       *
+       *   "I want it to only take from the players who have a settlement or
+       *    city on the hex where you place the knight."
+       *
+       * This said "all N rivals" because the old Knight robbed indiscriminately.
+       * Under the new rule the card's whole skill is aiming it, so the one thing
+       * this line must report is WHO it actually caught — and it is the only
+       * place the player finds that out. `all` is already the list of seats that
+       * lost something, so the count is honest by construction; the wording just
+       * had to stop asserting that everybody did. */
+      who.appendChild(el('span', { text: 'Your Knight takes half from ' }));
+      who.appendChild(el('b', {
+        text: all.length === 1
+          ? (state.players[all[0].player] || {}).name || 'one rival'
+          : `${all.length} on that hex`
+      }));
       fillBill(sum, '−');
       setText(totalNum, `−${total}`);
       setText(totalLab, total === 1 ? 'good destroyed' : 'goods destroyed');

@@ -24,7 +24,7 @@
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL, LONGEST_ROAD_MIN, LARGEST_ARMY_MIN,
+  CARD_LABEL, LONGEST_ROAD_MIN, LARGEST_ARMY_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_VP,
   canAfford, missingFrom
 } from '../core/constants.js';
 
@@ -57,10 +57,14 @@ const HOW_TO_ALL = [
   ['Regions', 'Sweep a hex clean and the whole field rests, then comes back at once. The bars under the resource pill show what is still standing.'],
   ['Build', 'Each card fills as you gather. When it glows gold you can afford it — tap it, then pick a glowing spot.'],
   ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
-  ['Awards', 'Longest Road is 4 points, Largest Army 2.'],
+  /* Read from the constants rather than typed, because they have both moved
+     once already — Longest Road went 4 -> 3 when the target went 13 -> 12 — and
+     a rules card that quietly keeps quoting the old number is worse than one
+     that does not mention it. */
+  ['Awards', `Longest Road is ${LONGEST_ROAD_VP} points, Largest Army ${LARGEST_ARMY_VP}.`],
   ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.'],
   ['Cards', 'A Knight opens the whole board so you can pick the region it shuts down. Road Building opens the map and lays two roads for nothing.'],
-  ['The Knight', 'Playing one takes HALF of every resource off every rival at once — and it is gone, not stolen. The hex you then send it to gives nothing to anybody but you.'],
+  ['The Knight', 'Send it to a hex and everyone with a settlement or city THERE loses half of every resource they hold, rounded down and gone rather than stolen. Nobody else pays, and nor do you. The hex then gives nothing to anybody but you.'],
   ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
 ];
 

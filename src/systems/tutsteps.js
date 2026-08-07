@@ -62,7 +62,15 @@ import {
 const OPENING = {};                                   // pack, awards, clock: gone
 const WITH_PACK = { pack: true };
 const SCORING = { pack: true, ranks: true, nobuild: true };
-const EVERYTHING = { pack: true, ranks: true, awards: true };
+/* The awards step, and the reason it carries `nobuild` like the scoring steps
+   do. Its badge sits `low` — it has to, because it is pointing at the two rows
+   that have just appeared in the top-left corner and it must not stand in front
+   of them — and `low` on a 375px screen puts its foot 26px INSIDE the build
+   cards. That is the owner's one hard rule about this badge, in his words:
+   "but don't ever cover the build pause and map buttons. they shouldn't overlap
+   at all." Nothing on this step asks the player to build, so the four cards
+   stand down for it exactly as they do for step 11. */
+const EVERYTHING = { pack: true, ranks: true, awards: true, nobuild: true };
 /* The last card. Everything that was introduced stays introduced, and the four
    build cards stand down so the closing badge can sit as low as step 11's. */
 const DONE = { pack: true, ranks: true, awards: true, nobuild: true };
@@ -417,7 +425,25 @@ export function buildSteps(t) {
     {
       id: 'knight',
       title: CARD_LABEL.knight,
-      text: 'Every rival loses HALF of what they are carrying — gone, not stolen — and you send the Knight onto a hex to shut it down for everybody but you. Hold one and a chip stands up and opens the board.',
+      /*
+       * THIS TEXT HAD TO CHANGE WITH THE RULE, AND ALMOST DID NOT.
+       *
+       *   "I want it to only take from the players who have a settlement or
+       *    city on the hex where you place the knight, and only they will lose
+       *    half of all of their resources. If I place it on my own hex, I still
+       *    can access that hex for resources, however I never lose half of my
+       *    own resources if I'm the one that plays the knight."
+       *
+       * The old line said "every rival loses half", which was true of the old
+       * Knight and is now simply wrong — it robbed one rival wherever it landed
+       * and it robs the hex's neighbours now. A tutorial that teaches a rule the
+       * game does not have is worse than no tutorial, because the player will
+       * trust it and then be surprised by their own board, so the wording names
+       * the three things the new rule actually turns on: WHO (only the seats
+       * built on that hex), HOW MUCH (half of every resource, rounded down),
+       * and the exemption that makes it worth aiming (never you).
+       */
+      text: 'Land it on a hex and everyone with a settlement or city THERE loses half of everything they carry — rounded down, so five becomes three. Nobody else is touched, and you never pay it yourself. The hex stops giving to them while it stands.',
       action: 'Got it',
       size: 'big', place: 'low', hud: SCORING,
       dom: ['.kn-cue:not(.rb-cue):not(.hid)', '.bcard[data-kind="card"]']

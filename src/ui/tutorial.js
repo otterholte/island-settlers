@@ -163,7 +163,7 @@ function buildPages() {
       title: 'Development Cards',
       h: 'Three cards, one price',
       body: [
-        `${CARD_LABEL.knight}: every rival loses HALF of every resource they hold — gone, not stolen — and you move the Knight onto a hex to shut it down.`,
+        `${CARD_LABEL.knight}: land it on a hex and everyone with a settlement or city THERE loses half of every resource they hold, rounded down. Nobody else is touched, and you never pay it yourself.`,
         `${CARD_LABEL.roadBuilding}: two roads, free.`,
         `${CARD_LABEL.victoryPoint}: one point, straight away.`
       ],
@@ -351,7 +351,26 @@ export function createBook(root, opts = {}) {
     open = true;
     toggle(layer, 'hid', false);
     if (route === 'read') showRead(0); else showMenu();
-    requestAnimationFrame(() => toggle(layer, 'on', open));
+    /*
+     * A REFLOW, NOT A FRAME.
+     *
+     * `.tut` is opacity 0 and `pointer-events: none` until `.on` lands, and
+     * `.on` was being set from a requestAnimationFrame callback — the usual
+     * trick for making a CSS transition actually run instead of being collapsed
+     * into the same style recalculation.
+     *
+     * It is the wrong trick on a slow machine, because rAF is the FRAME LOOP,
+     * and this game already fights for frames on the hardware it was reported
+     * from: measured under a software rasteriser, the book stayed invisible and
+     * unclickable for seconds after PRACTICE RUN was pressed, and on the worst
+     * runs never came up at all. A player would see the tutorial button do
+     * nothing. Forcing a reflow gets the same guarantee — the browser has
+     * committed opacity 0 before opacity 1 is asked for, so the transition still
+     * plays — without making the interface's usability depend on the renderer
+     * keeping up. `hud-end.js` uses `void offsetWidth` for the same reason.
+     */
+    void layer.offsetWidth;
+    toggle(layer, 'on', open);
   }
 
   function close() {
@@ -541,7 +560,13 @@ export function createCoach(root) {
 
     shown = true;
     chrome(o.size, o.place);
-    requestAnimationFrame(() => toggle(card, 'on', shown));
+    // Same reasoning as `show()` above: the coach card is the thing the player
+    // reads on every step, and a step whose words arrive a frame late on a
+    // machine that draws twice a second is a step that arrives half a second
+    // late. Reflow, then class, so the fade still plays and the words do not
+    // wait on the renderer.
+    void card.offsetWidth;
+    toggle(card, 'on', shown);
   }
 
   /** Live edit of the running instruction — used by the countdown steps. */

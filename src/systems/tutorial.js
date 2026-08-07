@@ -365,8 +365,35 @@ export function createTutorial(state, game, deps = {}) {
       const c = projectGround(t.x, t.z, 0.4);
       if (!c) continue;
       const edge = projectGround(t.x + HEX_SIZE, t.z, 0.4);
-      const r = edge ? Math.hypot(edge.x - c.x, edge.y - c.y) * 1.28 : 96;
-      holes.push({ x: c.x, y: c.y, r: Math.max(46, Math.min(320, r)) });
+      const r = Math.max(46, Math.min(320,
+        edge ? Math.hypot(edge.x - c.x, edge.y - c.y) * 1.28 : 96));
+      /*
+       * ONLY WHAT IS ACTUALLY ON SCREEN.
+       *
+       *   "Actually point out clearly and minimally to all three, while
+       *    increasing the darkness level of the other hexes you can't pick up
+       *    from."
+       *
+       * "All three" means all three the player can SEE. This runs from a close
+       * third-person camera, and on a 375px-tall phone most of a player's own
+       * land is behind them or past the edge of the frame — `projectGround`
+       * happily returns a coordinate for a hex a hundred pixels off the left of
+       * the screen, and a hole punched there erases nothing while its gold dot
+       * is drawn on a pixel nobody will ever look at.
+       *
+       * Worse, it lies to anything reading the shape back: the capture rig
+       * clamps a sample to the canvas edge, reads the wash at full strength and
+       * reports the hole as never cut. That is what sent this pass looking for a
+       * compositing bug that was not there.
+       *
+       * So a hole has to have some of itself inside the frame to count. The
+       * margin is the hole's own radius, because a hex whose centre is just off
+       * the edge still washes and lights a real part of the screen.
+       */
+      const onScreen = c.x > -r && c.x < innerWidth + r
+        && c.y > -r && c.y < innerHeight + r;
+      if (!onScreen) continue;
+      holes.push({ x: c.x, y: c.y, r });
       if (step.spot === 'pips') pips.push({ x: c.x, y: c.y });
     }
     return holes.length ? { holes, pips } : null;
