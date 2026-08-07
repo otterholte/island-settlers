@@ -160,7 +160,7 @@ export function createHUD(root, state, game) {
     'aria-label': 'Settings', 'data-ico': 'gear', on: { click: () => toggleSettings() }
   }, gearIco);
 
-  const vpNum = el('b', { text: '0' });
+  let vpNum = el('b', { text: '0' });
   const vpCells = [];
   const vpTrack = el('span', { class: 'vp-track' });
   for (let i = 0; i < VICTORY_POINTS; i++) {
@@ -179,7 +179,10 @@ export function createHUD(root, state, game) {
      HUD root rather than to the score row because it spends most of its half
      second nowhere near the corner. See `celebrateVp`. */
   const vpFly = el('div', { class: 'vp-fly', html: icon('trophy', 30) });
-  const vpIco = iconEl('trophy', 20);
+  let vpIco = iconEl('trophy', 20);
+  /* What the trophy flies INTO and what gets the gain flash. Both were the
+     left-corner card; they are the standings row for seat 0 now. */
+  let vpBox = null;
 
   /** One award line: icon, who holds it and at what size, your own standing. */
   function awardRow(ico, label) {
@@ -203,11 +206,29 @@ export function createHUD(root, state, game) {
   const awRoad = awardRow('road', 'Longest Road');
   const awArmy = awardRow('knight', 'Largest Army');
 
-  const vpRow = el('div', { class: 'sc-vp' },
-    vpIco, vpNum,
-    el('span', { class: 'sc-goal', text: `/ ${VICTORY_POINTS}` }), vpTrack, vpPlus);
-  const scoreCard = el('div', { class: 'scorecard plate' },
-    vpRow,
+  /*
+   * THE LEFT CORNER STOPS COUNTING POINTS.
+   *
+   *   "On the point and longest road and largest army counter on the left side
+   *    of the screen, get rid of my point counter, since the victory points are
+   *    already counted on the right side of the screen. Instead just make the
+   *    numbers and icons for the largest army and longest road slightly bigger.
+   *    This means the +1 when I get a victory point animation should be on the
+   *    points on the right side."
+   *
+   * He is right that it was said twice: the standings in the top right carry a
+   * trophy and a number for every seat including his own, so the left corner was
+   * a second, larger copy of one row of it — and the two had to be read against
+   * each other to be sure they agreed.
+   *
+   * So the card keeps only the thing that is NOT said anywhere else: who holds
+   * the two awards, at what length or count, and how far off you are. The
+   * elements the score row was built from are still constructed above, because
+   * the celebration machinery below is written against them; they are simply
+   * never put on screen, and `vpNum` is re-pointed at the standings row for
+   * seat 0 the moment the standings exist. See `celebrateVp`.
+   */
+  const scoreCard = el('div', { class: 'scorecard plate big-awards' },
     el('div', { class: 'sc-awards' }, awRoad.row, awArmy.row));
   const timerTxt = el('b', { text: '0:00' });
   const timeChip = el('div', { class: 'timechip plate' }, iconEl('clock', 14), timerTxt);
@@ -253,13 +274,31 @@ export function createHUD(root, state, game) {
       class: 'rk' + (p.id === 0 ? ' me' : ''), 'data-p': p.id,
       style: { '--c': p.color.css, '--cl': p.color.light }
     }, av, nameEl, award,
-      el('span', { class: 'rk-vp' }, p.id === 0 ? iconEl('trophy', 16) : null, vp));
+      el('span', { class: 'rk-vp' },
+        p.id === 0 ? iconEl('trophy', 16) : null, vp,
+        /* Your own row carries the celebration now that the left corner does not
+           count points any more. Permanent and invisible until it is asked for,
+           for the same reason it was in the old score row: creating a node per
+           point would relayout the row it is rising out of, which is the one
+           thing a celebration must not do to the number it is celebrating. */
+        p.id === 0 ? vpPlus : null));
     /* `hex` is what the row is CURRENTLY wearing. These rows are built at boot,
        from the default palette, and a networked match re-seats everybody a few
        seconds later — see `refreshRanks`. Keeping the painted value beside the
        row is what lets that be noticed. */
     return { p, row, vp, award, nameEl, av, hex: p.color.hex };
   });
+
+  /* The numeral the celebration bumps and holds back is the standings' own now.
+     `vpNum` and `vpIco` were built for a score row that no longer exists; every
+     line of `celebrateVp`, `flipVpNow` and `launchTrophy` below is written
+     against them, so rather than rewrite all three, they are re-pointed here at
+     the elements that ARE on screen. `vpCells` stays empty — there is no
+     twelve-cell track any more, and the loop that lights it simply has nothing
+     to walk. */
+  vpNum = rankRows[0].vp;
+  vpIco = rankRows[0].row.querySelector('.rk-vp .ico') || rankRows[0].row;
+  vpBox = rankRows[0].row;
   const rankList = el('div', { class: 'ranks' }, rankRows.map(r => r.row));
   const tr = el('div', { class: 'hud-tr plate' }, rankList);
 
@@ -1069,7 +1108,7 @@ export function createHUD(root, state, game) {
 
     setText(vpPlus, '+' + (to - from));
     replay(vpPlus, 'up', BURST_MS);
-    replay(scoreCard, 'vp-gain', BURST_MS);
+    replay(vpBox || scoreCard, 'vp-gain', BURST_MS);
     replay(vpNum, 'bump', BURST_MS);
     for (let i = from; i < to && i < vpCells.length; i++) replay(vpCells[i], 'lit', BURST_MS);
     launchTrophy();

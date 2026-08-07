@@ -287,6 +287,10 @@ export function createTradeSheet(state, game, opts = {}) {
   let portId = null;
   let focus = 0;
   let ready = false;
+  /* What the foot button was last painted as. See the note where it is built:
+     the paint is written only on a change, because this refresh runs at 5Hz and
+     rewriting a class every sync cancels a press already in flight. */
+  let wasReady = null;
   /* A refusal that came back from the rules layer on the last confirm. It is
      shown once, in the give band, and cleared by the next thing the player
      does. It used to be written into a `why` element that was deleted with the
@@ -499,10 +503,32 @@ export function createTradeSheet(state, game, opts = {}) {
     giveCost, el('b', { text: 'You give' }), giveLive);
   const capGet = el('span', { class: 'tr-cap get' },
     el('b', { text: 'You receive' }), getLive);
-  const tradeBtn = button('big green off', {
-    'aria-label': 'Confirm the trade', on: { click: () => confirm() }
-  }, el('span', { class: 'sb-ico', html: icon('swap', 22) }),
-     el('span', { class: 'sb-lab', text: 'Trade' }));
+  /*
+   * ONE BUTTON, TWO JOBS, AND NEVER A DEAD ONE.
+   *
+   *   "Instead of having a greyed out trade button, could it just be a different
+   *    coloured and labelled button until it's a valid trade — like before, it's
+   *    grey and says cancel or clear or something, then when it's a valid trade
+   *    it shows up as the green trade button."
+   *
+   * The foot of this sheet spent most of its life switched off, which is the
+   * one state a full-width button at the bottom of a modal should never be in:
+   * it is the biggest thing on the panel and it was saying nothing except "not
+   * yet". Now it always does something. While the deal is incomplete it is a
+   * stone CLEAR that empties the staging and gives the player their one-tap way
+   * back out of a half-built trade; the moment the deal balances it turns into
+   * the green TRADE. The label, the colour and the icon all change together, so
+   * there is no state where the words and the paint disagree.
+   *
+   * `disabled` is gone from it entirely. The only time it truly cannot act is
+   * when nothing is staged AND nothing is asked — and then CLEAR clearing an
+   * empty sheet is a harmless no-op, which is a better answer than a grey slab.
+   */
+  const tradeIco = el('span', { class: 'sb-ico', html: icon('swap', 22) });
+  const tradeLab = el('span', { class: 'sb-lab', text: 'Clear' });
+  const tradeBtn = button('big stone', {
+    'aria-label': 'Clear the trade', on: { click: () => (ready ? confirm() : clearAll()) }
+  }, tradeIco, tradeLab);
 
   /* Document order IS the interaction order: receive band, row, give band. The
      uishot trade stage asserts it from the DOM rather than from the pixels,
@@ -589,14 +615,46 @@ export function createTradeSheet(state, game, opts = {}) {
   function canStep(r, dir, R) {
     if (!R.ok) return false;
     if (state.phase !== 'play') return false;
+    /*
+     * IT WORKS FROM EITHER END NOW.
+     *
+     *   "The trading should work the other way too, where I can start the trade
+     *    by also clicking the down arrow and it works the opposite way, where I
+     *    can then hit the remaining icons for the other resources to pick up
+     *    those resources in bulk, or I can click the up arrows to receive those
+     *    resources up to the amount that I'm able to based on what I'm giving
+     *    away. So if I start by pressing up to gain, then I'm limited with how
+     *    many presses down on the other resources I can press to give. But if I
+     *    start by pressing down to give, I'm limited in the amount of up arrow
+     *    presses I can do to receive."
+     *
+     * The sheet used to insist on one order. `owed() < 1` refused every give
+     * arrow until something had been asked for, so a player who thought "I have
+     * far too much wood, what can I get for it" met five dead controls and no
+     * explanation. There was never a rule requiring that order — `stage` is
+     * signed and the confirm only cares that the two sides balance — it was
+     * just the order the sheet happened to be written in.
+     *
+     * Both directions now say the same thing in their own terms: you may take
+     * one more step if the deal that step creates is still PAYABLE. Going up,
+     * payable means the lots already staged plus what the untouched piles could
+     * still find. Going down, payable means you actually hold another full lot.
+     * Which produces the limits he describes without either side being special:
+     * ask first and the gives are capped by the ask, give first and the asks are
+     * capped by the gives plus whatever else the pack could add.
+     */
     if (dir > 0) {
       if (stage[r] < 0) return true;                    // un-stage a give
       const skip = new Set(RES.filter(q => stage[q] > 0));
       skip.add(r);
-      return totalGet() + 1 <= payCapacity(R, skip);    // somebody could pay
+      // Lots already committed count toward the ask; the rest has to be findable
+      // in the piles nobody is receiving. This is the only line that had to
+      // change for give-first to work — without it, staging four wood and then
+      // asking for the brick it pays for was refused, because the wood was no
+      // longer in `payCapacity` and its lots were not credited anywhere.
+      return totalGet() + 1 <= totalGive() + payCapacity(R, skip);
     }
     if (stage[r] > 0) return true;                      // un-stage an ask
-    if (owed() < 1) return false;                       // nothing to pay for
     const ratio = R.ratio[r] || TRADE_BASE;
     return (me.res[r] | 0) >= ratio * (lotsGiven(r) + 1);
   }
@@ -636,14 +694,37 @@ export function createTradeSheet(state, game, opts = {}) {
    * a part-payment up is the give arrow underneath, one lot at a time.
    */
   function payOffer(r, R) {
-    const none = { lots: 0, cost: 0, whole: false };
+    const none = { lots: 0, cost: 0, whole: false, take: false };
     if (!R.ok || state.phase !== 'play') return none;
+    if (stage[r] !== 0) return none;
     const n = owed();
-    if (n < 1 || stage[r] !== 0) return none;
     const ratio = R.ratio[r] || TRADE_BASE;
+
+    /*
+     * THE BULK TAP POINTS WHICHEVER WAY THE DEAL IS FACING.
+     *
+     *   "I can then hit the remaining icons for the other resources to pick up
+     *    those resources in bulk... and the glowing icons work both ways for
+     *    quick bulk trades."
+     *
+     * `owed()` is `asked - given`, so its SIGN is the direction the sheet is
+     * currently pointing, and it is the only thing this needs to read. Positive
+     * means an ask is outstanding and a tap on a pile should PAY it, which is
+     * what this always did. Negative means goods are on the table with nothing
+     * claimed against them, and a tap should TAKE — as many of that resource as
+     * the credit already staged will buy.
+     *
+     * The `take` flag is what the card reads to label its plate "Take 3" rather
+     * than "Pay 12", so the same control never says one thing and do the other.
+     */
+    if (n < 0) {
+      const lots = -n;                       // one lot of credit buys one card
+      return { lots, cost: lots, whole: true, take: true };
+    }
+    if (n < 1) return none;
     const lots = Math.min(n, Math.floor((me.res[r] | 0) / ratio));
     if (lots < 1) return none;
-    return { lots, cost: lots * ratio, whole: lots === n };
+    return { lots, cost: lots * ratio, whole: lots === n, take: false };
   }
 
   /**
@@ -726,7 +807,9 @@ export function createTradeSheet(state, game, opts = {}) {
     const offer = payOffer(r, R);
     if (offer.lots > 0) {
       refusal = '';
-      stage[r] -= offer.lots;
+      // `take` means the sheet is facing the other way — goods are already on
+      // the table and this tap claims against them. Same control, opposite sign.
+      stage[r] += offer.take ? offer.lots : -offer.lots;
       sync();
       ping('pick');
       return true;
@@ -752,6 +835,15 @@ export function createTradeSheet(state, game, opts = {}) {
   }
 
   const anythingStaged = () => RES.some(r => stage[r] !== 0);
+
+  /**
+   * Everything back to nothing — what the foot button does while the deal is
+   * incomplete. `stage` is SIGNED, so one pass over it clears both halves at
+   * once: what was asked for and what was staged to pay for it. That is why
+   * this is a one-line alias rather than two loops — worth saying out loud,
+   * because a reader who assumes two separate stores will go looking for the
+   * second one. */
+  function clearAll() { return clearStage(); }
 
   /* ------------------------------------------------------------------ view */
 
@@ -819,8 +911,11 @@ export function createTradeSheet(state, game, opts = {}) {
          is not twelve. Read it against the NEEDS 12 in the band underneath and
          the plate is telling you it is a part payment without having to say the
          word. */
+      /* And "Take" when the sheet is facing the other way — goods already on
+         the table, this tap claiming against them. One plate, one verb, and the
+         verb is always the one the tap performs. */
       const act = give > 0 ? `Clear ${spent}`
-        : (offer.lots > 0 ? `Pay ${offer.cost}` : '');
+        : (offer.lots > 0 ? `${offer.take ? 'Take' : 'Pay'} ${offer.cost}` : '');
       setText(c.actLab, act);
       toggle(c.act, 'on', !!act);
       toggle(c.act, 'clear', give > 0);
@@ -832,7 +927,9 @@ export function createTradeSheet(state, game, opts = {}) {
          every 5Hz sync is the same class of hazard `disabled` was. */
       const lab = give > 0 ? `Take back ${spent} ${RES_LABEL[r]}`
         : (offer.lots > 0
-          ? `Pay ${offer.cost} ${RES_LABEL[r]} ${offer.whole ? 'for' : 'toward'} the trade`
+          ? (offer.take
+            ? `Take ${offer.cost} ${RES_LABEL[r]} for what you have staged`
+            : `Pay ${offer.cost} ${RES_LABEL[r]} ${offer.whole ? 'for' : 'toward'} the trade`)
           : RES_LABEL[r]);
       if (c.label !== lab) { c.label = lab; c.card.setAttribute('aria-label', lab); }
 
@@ -871,8 +968,18 @@ export function createTradeSheet(state, game, opts = {}) {
     setText(headRate, `${base}:1`);
 
     ready = R.ok && !short && tt >= 1 && tg === tt && state.phase === 'play';
-    toggle(tradeBtn, 'off', !ready);
-    if (tradeBtn.disabled !== undefined) tradeBtn.disabled = !ready;
+    /* Green TRADE when the deal balances, stone CLEAR while it does not — see
+       the note where the button is built. Written only on a CHANGE, because
+       this runs at 5Hz and rewriting a class every sync is the same hazard that
+       `disabled` was on the arrows: it cancels a press already in flight. */
+    if (wasReady !== ready) {
+      wasReady = ready;
+      toggle(tradeBtn, 'green', ready);
+      toggle(tradeBtn, 'stone', !ready);
+      tradeIco.innerHTML = icon(ready ? 'swap' : 'close', 22);
+      setText(tradeLab, ready ? 'Trade' : 'Clear');
+      tradeBtn.setAttribute('aria-label', ready ? 'Confirm the trade' : 'Clear the trade');
+    }
 
     /* The two live lines, each in the lane it is about, and each written as a
        tip rather than as an error. Blank whenever the row has already said it,

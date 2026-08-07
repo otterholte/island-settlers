@@ -91,6 +91,7 @@ import { createPainter, pipRadius, dockOverhang } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
 import { createBuyBar, buyCount } from './hud-build.js';
+import { BUILD_KINDS } from './hud-guide.js';
 import { netCommit } from '../systems/economy.js';
 
 /* Every placement hint names the double-tap, because a route nobody is told
@@ -1398,16 +1399,70 @@ export function createOverview(root, state, game) {
    * they were about to use; guessing "open" and being wrong costs them one tap
    * on the close key.
    */
+  /**
+   * After a build lands: can this sheet stay up, and pointing at what?
+   *
+   *   "If I opened the map for building by clicking the road button and I run
+   *    out of resources to keep building roads but I do have enough resources to
+   *    buy a development card or build a city, the build section should stay
+   *    open. The same goes for if I open the other buttons. So if I click the
+   *    settlement and I build one, and I can still build another settlement or
+   *    even buy a card, or build a road with my remaining resources, it should
+   *    stay open."
+   *
+   * The first version asked one question — can I still afford another of the
+   * kind I am holding — and closed on the first no. That is the right question
+   * for a sheet that is about roads; it is the wrong question for a sheet that
+   * is about BUILDING, which is what the chip bar turned it into. Spending your
+   * last brick on a road and being thrown out of a screen that is still offering
+   * you a city and a card is the sheet arguing with its own bottom row.
+   *
+   * So: stay on the current kind while it still has somewhere to go, and
+   * otherwise walk the bar for anything else that is affordable AND has a legal
+   * target, in the order the chips are drawn so the move is predictable. Only
+   * when the whole bar is dead does the sheet come down — which is the same
+   * moment the bar would be four greyed chips, and there is nothing to stay open
+   * for.
+   *
+   * `sent` is per-kind by construction: it holds target ids, and a road id and a
+   * corner id never collide, so switching kinds cannot accidentally hide a spot.
+   */
   function rearm(id) {
     const kind = buildKind();
     if (!kind) return false;
     if (id !== null && id !== undefined) sent.add(id);
-    if (buyCount(state, kind) <= 0) return false;
-    const next = computeTargets(mode, opts).filter(t => !sent.has(t));
-    if (!next.length) return false;
+
+    const stillHere = k => {
+      if (buyCount(state, k) <= 0) return null;
+      if (k === 'card') return [];            // a card needs no spot on the board
+      const m = k === 'road' ? 'place-road'
+        : k === 'settlement' ? 'place-settlement' : 'place-city';
+      const next = computeTargets(m, opts).filter(t => !sent.has(t));
+      return next.length ? next : null;
+    };
+
+    // The kind in hand first — switching under the player when they could have
+    // carried on would be as surprising as closing under them.
+    let use = kind, next = stillHere(kind);
+    if (!next) {
+      for (const { kind: k } of BUILD_KINDS) {
+        if (k === kind) continue;
+        const alt = stillHere(k);
+        if (alt) { use = k; next = alt; break; }
+      }
+    }
+    if (!next) return false;
+
+    if (use !== kind) {
+      // A card is bought, not placed: take it and let the bar re-count, but do
+      // not leave the map pointing at a kind nothing can be done with.
+      if (use === 'card') { buyBar.refresh(kind); return true; }
+      pickKind(use);
+      return true;
+    }
     targets = next;
     select(null);
-    buyBar.refresh(kind);
+    buyBar.refresh(use);
     return true;
   }
 

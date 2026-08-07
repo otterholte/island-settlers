@@ -289,14 +289,31 @@ const GROW = 0.52;
  * Four mud clods and four sawn stumps are not the same picture, and both halves
  * of the reviewer's note — how many, and what they look like — had to move
  * together for a cleared forest to read. */
-const STUMPS_MAX = 4;
-const STUMPS_MIN = 2;
+/*
+ * RAISED AGAIN, ON THE OWNER'S SECOND LOOK.
+ *
+ *   "Add a few more stumps to the empty tree hexes."
+ *
+ * Two and four were the answer to the opposite complaint — nine or ten posts
+ * reading as a stump field — and they went too far the other way once every
+ * DECORATIVE tree had also been deleted. A cleared forest with two marks on it
+ * does not read as a forest that was logged; it reads as a hex that never had
+ * anything on it, which is exactly the "failed to populate" note the wide shot
+ * drew earlier for the same reason.
+ *
+ * Four to seven, still by farthest-point so they spread rather than huddle, and
+ * still a count rather than a share so a 1-pip hex and a 5-pip hex both land
+ * inside the band. Seven is where the last pass measured the complaint starting,
+ * so the ceiling sits one under it.
+ */
+const STUMPS_MAX = 6;
+const STUMPS_MIN = 4;
 
 /** Which slots on one tile leave a mark: up to four, spread as widely as the
  *  trees on that tile allow. `slots` is that tile's tree slots, in item order. */
 function pickStumps(slots) {
   const want = Math.max(STUMPS_MIN,
-    Math.min(STUMPS_MAX, Math.round(slots.length * 0.20)));
+    Math.min(STUMPS_MAX, Math.round(slots.length * 0.30)));
   if (slots.length <= want) return slots.slice();
   const pool = slots.slice();
   const out = [];

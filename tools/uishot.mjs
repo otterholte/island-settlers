@@ -1641,7 +1641,14 @@ if (STAGE === 'home') {
          Blank is a real answer — an untouched sheet has no price — so this is
          read whether or not the band is showing it. */
       cost:txt(document.querySelector('.sheet.trade .tr-cap.give .tc-cost')),
-      tradeOff:!!document.querySelector('.sheet.trade .sheet-foot .btn.off'),
+      /* The foot is a two-state control now rather than a greyed one — see the
+         note on theFootIsJustTheDeal. "Off" therefore means "not yet the green
+         Trade", which is what every assertion downstream actually meant, and it
+         is read off the paint and the word together so the two can never drift
+         apart without a failure. */
+      tradeOff:(()=>{const b=document.querySelector('.sheet.trade .sheet-foot .btn');
+        if(!b) return true;
+        return !(b.classList.contains('green') && /trade/i.test(b.textContent||''));})(),
       res:{...window.__ISLAND__.state.players[0].res}};})()`);
   const clickAt = async (x, y) => {
     await send('Input.dispatchMouseEvent',
@@ -1935,6 +1942,10 @@ if (STAGE === 'home') {
   for (let i = 0; i < 3; i++) { await clickAt(brickUp3.x, brickUp3.y); await sleep(70); }
   await sleep(240);
   const p3 = await readSheet();
+  console.log('  P3CARDS ' + JSON.stringify(
+    Object.fromEntries(Object.entries(p3.cards).map(([k, v]) => [k, v.act]))));
+  console.log('  P3WHY ' + JSON.stringify({
+    armed: p3.armed, dim: p3.dim, cost: p3.cost, say: p3.say }));
   /* What one pile of eight can put toward a three-card ask, at this post's
      rate. Two lots at the market; the whole thing at a 2:1 dock. */
   const p3lots = Math.min(3, Math.floor(8 / ratio));
@@ -2069,9 +2080,26 @@ if (STAGE === 'home') {
       && m.bands.giveTop >= m.bands.rowBottom,
     lanesAreBands: m.caps.length === 2 && m.caps.every(c => c.h >= 16 && c.paint
       && c.type >= 10) && /receive/i.test(m.caps[0].lab) && /give/i.test(m.caps[1].lab),
-    theFootIsJustTheDeal: m.legendGone === true && /^trade$/i.test(m.foot),
-    anUntouchedSheetSaysWhyItsBottomIsGrey:
-      idle.dnLive.length === 0 && /ask above/i.test(idle.say),
+    /* The foot is a two-state control now, not a greyed one:
+         "Instead of having a greyed out trade button, could it just be a
+          different coloured and labelled button until it's a valid trade — like
+          before, it's grey and says cancel or clear or something, then when
+          it's a valid trade it shows up as the green trade button."
+       So the resting sheet says CLEAR and a balanced one says TRADE, and the
+       thing to assert is that it is never dead. */
+    theFootIsJustTheDeal: m.legendGone === true && /^(trade|clear)$/i.test(m.foot),
+    /* Never a dead slab: at rest it is a live stone CLEAR, not a greyed Trade.
+       `idle.tradeOff` cannot say this — it means "not the green Trade", which is
+       correct and true at rest — so this reads the word instead. */
+    theFootIsNeverADeadSlab: /^clear$/i.test(m.foot),
+    /* And the give arrows are live from the start, because a trade may now be
+       started from either end:
+         "The trading should work the other way too, where I can start the trade
+          by also clicking the down arrow."
+       The old assertion here was that all five were DEAD at rest, which is
+       exactly the behaviour that was just removed. */
+    aTradeCanBeStartedFromEitherEnd:
+      idle.dnLive.length === 5 && /ask above|tap a card/i.test(idle.say),
     /* The fixed greying rule: lit means "this pile can contribute a lot", dim
        means it cannot contribute anything here at all. Eight wool is two lots
        and stays lit even though it cannot cover sixteen on its own; two ore is

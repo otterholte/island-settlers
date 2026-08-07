@@ -1051,7 +1051,20 @@ export function buildProps(scene) {
             }
           }
         }
-        while (fit.length && chosen.length < 3) {
+        /* ONE PANEL, ON THE OWNER'S SECOND LOOK.
+         *
+         *   "You can get rid of the fences in the sheep, just keep one fence
+         *    instead of three."
+         *
+         * Three was the answer to thirteen, and it was the right answer to that
+         * question; this is a different one. With the hay bale gone from the
+         * paddock as well, one panel is the whole of a pasture's dressing, and
+         * the selection below still matters for the one it picks — it takes the
+         * bearing with the most room around it, so the panel lands on open grass
+         * rather than half inside the flock. The angular-separation rule under
+         * this loop is dead code at a count of one and is left standing because
+         * the number is the kind of thing that moves again. */
+        while (fit.length && chosen.length < 1) {
           let best = null, bestD = -1;
           for (const c of fit) {
             let d = Math.PI;
@@ -1079,7 +1092,7 @@ export function buildProps(scene) {
       // is a worse picture than a panel standing near a corner that may never
       // be built on. See the civic block in `makePlacer`.
       sweep([0.66, 0.56], 1.12, 0.45);
-      if (chosen.length < 2) sweep([0.72, 0.62, 0.50, 0.40], 0.95, 0.20, 0.20, 72, RELAX_CIVIC);
+      if (chosen.length < 1) sweep([0.72, 0.62, 0.50, 0.40], 0.95, 0.20, 0.20, 72, RELAX_CIVIC);
       // Last resort, and it fires on about one pasture in fifty: a 5-pip hex
       // holding twenty-eight sheep that also sits inside the market's 11-unit
       // exclusion circle and carries a player spawn on its rim. Measured over
@@ -1090,7 +1103,7 @@ export function buildProps(scene) {
       // degrees. Nothing is allowed to overlap an animal even here; what is
       // given up is the collar of clear ground around it, which is a smaller
       // price than a paddock with one plank lying in it.
-      if (chosen.length < 2) {
+      if (chosen.length < 1) {
         sweep([0.76, 0.68, 0.60, 0.52, 0.44, 0.36], 0.86, 0.12, 0.10, 120, RELAX_CIVIC);
       }
     }
@@ -1135,18 +1148,28 @@ export function buildProps(scene) {
     // one bale on it is a worse picture than a bale near a corner, but not so
     // much worse that the bale should be allowed inside the walls.
     if (tile.terrain === 'fields') {
-      const bales = placer.take(2, FOOT.hay, 0.58, undefined, true);
-      if (bales.length < 2) {
-        for (const p of placer.take(2 - bales.length, FOOT.hay, 0.66, 0.74, true, RELAX_CIVIC)) {
+      /* ONE BALE, NOT TWO.
+       *
+       *   "Just have one hay bale in the empty hay hex."
+       *
+       * Which also retires the 5-pip problem the long note below records: two
+       * bales could not be fitted between twenty-eight sheaves at 2.1 spacing,
+       * so a busy field came out with one 43% of the time and none 41% of the
+       * time. Asking for one makes the first pass succeed on every field, and
+       * the fallbacks below become what they were always meant to be — a last
+       * resort rather than the usual route. */
+      const bales = placer.take(1, FOOT.hay, 0.58, undefined, true);
+      if (bales.length < 1) {
+        for (const p of placer.take(1 - bales.length, FOOT.hay, 0.66, 0.74, true, RELAX_CIVIC)) {
           bales.push(p);
         }
       }
-      if (bales.length < 2) {
+      if (bales.length < 1) {
         // Last resort on a 5-pip field: the sheaf's collar comes down to its
         // own half width. 0.58 plus the bale's 0.96 still clears an actual
         // sheaf; the ring does not move again, because 0.66 is already where a
         // 0.88-radius bale reaches 0.77 and the road strip starts at 0.81.
-        for (const p of placer.take(2 - bales.length, FOOT.hay, 0.66, 0.58, true, RELAX_CIVIC)) {
+        for (const p of placer.take(1 - bales.length, FOOT.hay, 0.66, 0.58, true, RELAX_CIVIC)) {
           bales.push(p);
         }
       }

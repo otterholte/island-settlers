@@ -134,6 +134,33 @@
 }
 .aw-need.hid{display:none}
 
+/*
+ * THE AWARDS ARE THE WHOLE CARD NOW, SO THEY GROW INTO IT.
+ *
+ *   "Get rid of my point counter, since the victory points are already counted
+ *    on the right side of the screen. Instead just make the numbers and icons
+ *    for the largest army and longest road slightly bigger."
+ *
+ * The score row above these two used to set the card's width and take the top
+ * third of its height; with it gone the card would otherwise just be the same
+ * small type in a shorter box. `slightly` is the operative word — the icon goes
+ * 18 to 24, the number to beat 15 to 19, and the two supporting lines up about
+ * a point and a half each. Enough to read at arm's length on a phone, not
+ * enough to turn a quiet corner readout into a second scoreboard, which is the
+ * thing that was just deleted for being a second scoreboard.
+ */
+.scorecard.big-awards .sc-awards{gap:5px;padding:8px 11px 9px}
+.scorecard.big-awards .aw-row{gap:9px}
+.scorecard.big-awards .aw-ico svg{width:24px;height:24px}
+.scorecard.big-awards .aw-lab{font-size:9.5px}
+.scorecard.big-awards .aw-size{font-size:19px}
+.scorecard.big-awards .aw-holder{font-size:11px;max-width:104px}
+.scorecard.big-awards .aw-mine{font-size:11px}
+.scorecard.big-awards .aw-need{font-size:11px;padding:3px 6px 4px}
+/* The card's own top corners were square because the score row rounded them.
+   It is the first thing in the box now. */
+.scorecard.big-awards{border-radius:12px}
+
 /* The road to twelve, drawn as twelve steps. The last cell is the finish
    post, outlined even when empty so the target is always visible. */
 .vp-track{display:flex;align-items:flex-end;gap:1px}
@@ -269,9 +296,16 @@
  * over the gold wash underneath it as well as over the navy, and it is fully
  * opaque within one frame — it is the CAUSE, and it is on screen before the
  * number it is explaining moves. */
+/* The +1 lives in the STANDINGS row now, not in a left-corner score row that
+   no longer exists — "this means the +1 when I get a victory point animation
+   should be on the points on the right side". `.rk-vp` is the little trophy and
+   number at the right-hand end of your own row, so the plus is anchored to that
+   box's right edge and rises out of it; anchoring it to a fixed left offset the
+   way the old score row did would have put it on top of your name. */
+.rk-vp{position:relative}
 .vp-plus{
-  position:absolute;left:62px;top:12px;
-  font:800 18px/1 var(--ff);letter-spacing:.02em;color:#ffd766;
+  position:absolute;right:-2px;bottom:100%;margin-bottom:1px;
+  font:800 16px/1 var(--ff);letter-spacing:.02em;color:#ffd766;
   -webkit-text-stroke:2.2px rgba(8,14,24,.95);paint-order:stroke fill;
   text-shadow:0 1px 6px rgba(0,0,0,.6),0 0 12px rgba(255,201,60,.8);
   opacity:0;pointer-events:none;
