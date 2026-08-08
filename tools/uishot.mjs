@@ -2899,8 +2899,14 @@ if (STAGE === 'home') {
    */
   console.log('  AWARDS ' + JSON.stringify(await ev(`(()=>{
     const I=window.__ISLAND__;
-    I.state.players.forEach((p,i)=>{ p.knights=i===1?13:12; });
-    I.state.players[0].hasLongestRoad=false;
+    /* 'knights' was never a field — the counter Largest Army reads is
+       'knightsPlayed' (core/rules.js), so this stress test has been quietly
+       measuring an empty board since it was written. With the real field set,
+       the row renders the widest thing the game can produce: 12 against 13. */
+    I.state.players.forEach((p,i)=>{ p.knightsPlayed=i===1?13:12;
+      p.longestRoadLen=i===1?13:12; });
+    I.state.largestArmyHolder=1;
+    I.state.longestRoadHolder=1;
     for(let i=0;i<12;i++) I.game.hud.update(1/60);
     const plate=document.querySelector('.scorecard .sc-awards')
       ||document.querySelector('.sc-awards');

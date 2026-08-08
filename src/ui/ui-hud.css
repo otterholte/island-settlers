@@ -114,25 +114,37 @@
 .aw-top{display:flex;align-items:baseline;gap:5px}
 .aw-lab{font:800 8.5px/1 var(--ff);letter-spacing:.15em;text-transform:uppercase;
   color:rgba(226,240,255,.62);white-space:nowrap}
-/* The holder's SIZE, which is the number to beat. Biggest thing on the line. */
+
+/* ------------------------------------------------------- YOURS vs THE RECORD
+ *
+ *   "I want it to look more like the mobile version in the numbers, with the
+ *    white smaller number being your score and the large yellow number being
+ *    the record right now."
+ *
+ * One pair, one place, both layouts. It rides at the end of the label's line so
+ * the eye reads NAME ... 1 › 4 across, and the size difference does the work
+ * the words used to: small and white is you, big and gold is the thing to beat.
+ * `baseline` alignment rather than centre, because two numerals of different
+ * sizes sitting on the same line look wrong any other way. */
+.aw-pair{display:flex;align-items:baseline;gap:3px;margin-left:auto;flex:0 0 auto}
+.aw-mine{font:800 10.5px/1 var(--ff);letter-spacing:0;color:#eaf3ff;
+  text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.aw-row.ours .aw-mine{color:var(--gold-l,#ffe79a)}
+.aw-vs::before{content:'\203A';font:800 10px/1 var(--ff);
+  color:rgba(226,240,255,.38);font-style:normal}
 .aw-size{font:800 15px/1 var(--ff);font-style:normal;color:var(--gold);
-  margin-left:auto;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+  text-shadow:0 1px 3px rgba(0,0,0,.6)}
 .aw-row.unheld .aw-size{color:rgba(233,243,255,.38)}
+
 .aw-bot{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
 /* Coloured to the holder, the way every other reference to a player is. */
 .aw-holder{font:800 9.5px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;
   color:var(--c,#e9f3ff);text-shadow:0 1px 2px rgba(0,0,0,.7);
-  overflow:hidden;text-overflow:ellipsis;max-width:92px}
-.aw-mine{font:800 9.5px/1 var(--ff);letter-spacing:.05em;
-  color:rgba(226,240,255,.66);margin-left:auto}
-/* The answer to "how many more?" — the whole reason this readout exists. */
-.aw-need{
-  font:800 9.5px/1 var(--ff);letter-spacing:.04em;color:#0e2338;
-  padding:3px 5px 4px;border-radius:5px;
-  background:linear-gradient(180deg,#ffe79a,#ffc93c);
-  box-shadow:0 1px 0 rgba(0,0,0,.35);
-}
-.aw-need.hid{display:none}
+  overflow:hidden;text-overflow:ellipsis;max-width:150px}
+/* The `+N roads` chip is gone — the pair above says it, and what the pair could
+   not say (the floor on an unclaimed award) is in the holder line now. The rule
+   stays so the element cannot come back visible by accident. */
+.aw-need{display:none !important}
 
 /*
  * THE AWARDS ARE THE WHOLE CARD NOW, SO THEY GROW INTO IT.
@@ -154,9 +166,9 @@
 .scorecard.big-awards .aw-ico svg{width:24px;height:24px}
 .scorecard.big-awards .aw-lab{font-size:9.5px}
 .scorecard.big-awards .aw-size{font-size:19px}
-.scorecard.big-awards .aw-holder{font-size:11px;max-width:104px}
-.scorecard.big-awards .aw-mine{font-size:11px}
-.scorecard.big-awards .aw-need{font-size:11px;padding:3px 6px 4px}
+.scorecard.big-awards .aw-holder{font-size:11px;max-width:160px}
+.scorecard.big-awards .aw-mine{font-size:13px}
+.scorecard.big-awards .aw-vs::before{font-size:12px}
 /* The card's own top corners were square because the score row rounded them.
    It is the first thing in the box now. */
 .scorecard.big-awards{border-radius:12px}
@@ -1131,18 +1143,14 @@
   .hud .aw-row{gap:4px}
   .hud .aw-ico svg{width:12px;height:12px}
   .hud .aw-body{flex-direction:row;align-items:center;gap:3px}
-  .hud .aw-lab,.hud .aw-holder,.hud .aw-need,.hud .aw-you{display:none}
-  /* The full-size layout stacks the leader's figure ABOVE your own, which read
-     side by side is back to front — "— 1", the number to beat and then yours,
-     with the chevron dangling off the end pointing at nothing. Swap them. The
-     DOM order is right for the two-line version and is untouched. */
-  .hud .aw-top{order:2;gap:0}
-  .hud .aw-bot{order:1;gap:0}
-  .hud .aw-mine{font-size:10.5px;letter-spacing:0;color:#eaf3ff;opacity:1;
-    margin-left:0}
-  .hud .aw-mine::after{content:'\203A';margin:0 2px;opacity:.45;font-weight:800}
-  .hud .aw-size{font-size:11px;margin-left:0}
-  .hud .aw-row.ours .aw-mine{color:var(--gold-l,#ffe79a)}
+  /* On a phone there is no room for the words, so the pair IS the readout —
+     which is where the full-size layout got the idea. Nothing needs reordering
+     any more: `.aw-pair` is one element and it is already in the right order at
+     both sizes. */
+  .hud .aw-lab,.hud .aw-holder{display:none}
+  .hud .aw-mine{font-size:10.5px}
+  .hud .aw-size{font-size:11px}
+  .hud .aw-pair{margin-left:0}
 
   /* The clock is the same story: a chip that says 2:41 does not need to be
      bigger than the score next to it. */

@@ -184,24 +184,56 @@ export function createHUD(root, state, game) {
      left-corner card; they are the standings row for seat 0 now. */
   let vpBox = null;
 
-  /** One award line: icon, who holds it and at what size, your own standing. */
+  /**
+   * One award line: icon, the full name, YOUR number against the record, and
+   * who is holding it.
+   *
+   * THE PHONE HAD THE NUMBERS RIGHT AND THE DESKTOP DID NOT.
+   *
+   *   "Simplify this even more for the longest road and largest army popup on
+   *    the left side of the screen specifically for desktop. I want it to look
+   *    more like the mobile version in the numbers, with the white smaller
+   *    number being your score and the large yellow number being the record
+   *    right now. However, what I do like about the desktop version is that it
+   *    says and highlights the current name of whoever's longest, and says
+   *    Longest Road and Largest Army in full, since that actually fits on a
+   *    desktop."
+   *
+   * The two layouts had drifted into saying the same thing differently. The
+   * phone collapsed each award to one honest pair — `1 › 4`, yours in white
+   * against the record in gold — while the desktop spread the same two figures
+   * across two rows with a word and a chip between them: the record alone at
+   * the end of the top line, then `you 1` and a `+4 roads` badge underneath. To
+   * read your standing you had to pick two numbers out of different lines and
+   * subtract, which is exactly the work the phone's arrangement does for you.
+   *
+   * So the PAIR moves up to the label's line, at both sizes, and two things go
+   * away with it. The word "you" was labelling a figure whose position already
+   * says whose it is. The `+N roads` chip was arithmetic on two numbers that
+   * are now sitting next to each other — and the one thing it knew that they
+   * did not, the floor you have to clear before an unclaimed award can be won
+   * at all, has moved into the holder line, which was saying nothing but "Open".
+   *
+   * What stays is what the note says to keep: the name in full, and the holder
+   * in their own colour.
+   */
   function awardRow(ico, label) {
     const holder = el('b', { class: 'aw-holder', text: '—' });
     const size = el('em', { class: 'aw-size', text: '0' });
-    /* "you" and the number are separate elements so the phone layout can drop
-       the word and keep the figure — see the compact block in ui-hud.css,
-       where each award collapses to `4 > 6` beside its icon. */
     const mineN = el('b', { text: '0' });
-    const mine = el('span', { class: 'aw-mine' },
-      el('u', { class: 'aw-you', text: 'you' }), mineN);
-    const need = el('span', { class: 'aw-need', text: '' });
+    const mine = el('span', { class: 'aw-mine' }, mineN);
+    /* Kept, empty and hidden: `awardLine` still writes to it and the compact
+       layout may want the chip back one day, but nothing shows it today. */
+    const need = el('span', { class: 'aw-need hid', text: '' });
+    const pair = el('span', { class: 'aw-pair' },
+      mine, el('i', { class: 'aw-vs', 'aria-hidden': 'true' }), size);
     const row = el('div', { class: 'aw-row' },
       el('span', { class: 'aw-ico', html: icon(ico, 18) }),
       el('span', { class: 'aw-body' },
         el('span', { class: 'aw-top' },
-          el('span', { class: 'aw-lab', text: label }), size),
-        el('span', { class: 'aw-bot' }, holder, mine, need)));
-    return { row, holder, size, mine, mineN, need, last: '' };
+          el('span', { class: 'aw-lab', text: label }), pair),
+        el('span', { class: 'aw-bot' }, holder, need)));
+    return { row, holder, size, mine, mineN, need, pair, last: '' };
   }
   const awRoad = awardRow('road', 'Longest Road');
   const awArmy = awardRow('knight', 'Largest Army');
@@ -1218,13 +1250,24 @@ export function createHUD(root, state, game) {
       setText(aw.holder, holderId === 0 ? 'YOURS' : holder.name);
       aw.holder.style.setProperty('--c', holder.color.light);
     } else {
-      setText(aw.holder, 'Open');
+      /* THE FLOOR HAS TO BE SAID SOMEWHERE.
+       *
+       * With the `+N roads` chip gone, an unclaimed award showed `0 › —`, which
+       * is true and useless: it does not say that four segments will not do it
+       * either, because nothing under the floor can win it. That was the one
+       * thing the chip knew which the number pair does not, so it moves onto
+       * the line that was otherwise spending itself on the word "Open". */
+      setText(aw.holder, `Open · needs ${floor}`);
       aw.holder.style.setProperty('--c', 'rgba(233,243,255,.55)');
     }
     setText(aw.mineN, String(mine));
-    // The player already holding it does not need to be told how to take it.
+    if (aw.pair) {
+      aw.pair.setAttribute('aria-label', held
+        ? `You have ${mine}. ${holder.name} leads with ${top}.`
+        : `You have ${mine}. Nobody holds it; ${floor} claims it.`);
+    }
+    // Kept up to date though nothing shows it — see `awardRow`.
     setText(aw.need, holderId === 0 ? '' : `+${need} ${unit}${need === 1 ? '' : 's'}`);
-    toggle(aw.need, 'hid', holderId === 0);
   }
 
   function refreshAwards() {
@@ -1244,7 +1287,7 @@ export function createHUD(root, state, game) {
         awArmy.holder.style.setProperty('--c', 'rgba(233,243,255,.5)');
         setText(awArmy.mineN, '—');
         setText(awArmy.need, '');
-        toggle(awArmy.need, 'hid', true);
+        if (awArmy.pair) awArmy.pair.setAttribute('aria-label', 'Knights are switched off.');
       }
       return;
     }
