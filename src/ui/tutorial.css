@@ -606,6 +606,36 @@
 /* With the band empty, the FOOT card drops onto the gutter at any size. */
 .coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
 
+/* ---------------------------------------------- THE TRADE SHEET MAKES ROOM
+ *
+ *   "When the trade opens up, I want the steps to explain how to trade over the
+ *    top of the trading popup somewhere. Maybe it's a pop-out from the right
+ *    side like with the road building map, that resizes the trade screen
+ *    temporarily ... and it should never cover the elements on the trading post
+ *    popup."
+ *
+ * The map could give the coach a column because it already had one. The trade
+ * sheet has no spare edge — it is 600px of controls centred in the window — so
+ * the only way to keep the promise in that last clause is to make the sheet
+ * itself smaller for the length of the lesson.
+ *
+ * One rule does it, and it is one rule because of how `.panels` is built:
+ * `position:absolute; inset:0` with the sheet centred inside it by
+ * `left:50%; translate(-50%)`. Narrowing the CONTAINER re-centres the sheet in
+ * what is left, so the sheet slides left and shrinks together with no second
+ * transform to keep in step and nothing to undo except the class. The width the
+ * container gives up is the column the coach is standing in plus its gutters.
+ *
+ * The scrim is deliberately NOT narrowed: it is the dark behind everything and
+ * it should still cover the whole screen. Only the box the sheet centres in
+ * moves. */
+#ui.tut-practice.tut-sidepanel .panels{right:216px}
+#ui.tut-practice.tut-sidepanel .panels .scrim{right:-216px}
+@media (max-height:500px),(max-width:1023px){
+  #ui.tut-practice.tut-sidepanel .panels{right:180px}
+  #ui.tut-practice.tut-sidepanel .panels .scrim{right:-180px}
+}
+
 /*   "You can hide the players column on the right of the screen and put the
  *    instructions box for this step over there."
  *

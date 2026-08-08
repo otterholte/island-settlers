@@ -515,6 +515,33 @@ export function drawCard(state, pid, free = false) {
    * short of 1 handed out a Knight for free. It is now the last surviving type,
    * and the roll is scaled to the real total, so neither can happen.
    */
+  /*
+   * A SCRIPTED DECK, FOR THE PRACTICE RUN AND NOTHING ELSE.
+   *
+   *   "I want the order of these to be specific: first knight is a victory
+   *    point ... the second is the road building ... the knight card would be
+   *    the third."
+   *
+   * Three cards have to be explained and each explanation is written against
+   * the card it is explaining, so the tutorial cannot draw them at random and
+   * hope. `state.forcedCards` is a queue the practice run fills and empties;
+   * nothing else in the game ever sets it, `createMatch` does not create it,
+   * and a match that has never met the tutorial has the field undefined and
+   * takes the weighted roll below exactly as before.
+   *
+   * It lives on `state` rather than as an argument because the draw is made by
+   * the real BUILD card through the real purchase path — the point of the
+   * lesson is that the player buys it themselves — so there is nowhere to pass
+   * a parameter through. It is consumed by shifting, so a queue that runs out
+   * simply hands the deck back to chance.
+   */
+  if (Array.isArray(state.forcedCards) && state.forcedCards.length) {
+    const forced = state.forcedCards.shift();
+    if (forced && (forced !== 'knight' || knightsOn())) {
+      return dealCard(state, p, pid, forced);
+    }
+  }
+
   const table = [];
   let total = 0;
   for (const k in CARD_WEIGHTS) {
@@ -531,6 +558,16 @@ export function drawCard(state, pid, free = false) {
     roll -= w;
     if (roll <= 0) { type = k; break; }
   }
+  return dealCard(state, p, pid, type);
+}
+
+/**
+ * Hand `type` to `pid` — the tail of `drawCard`, split out so the scripted deck
+ * above and the weighted roll below it cannot drift apart. A victory point is
+ * banked and scored on the spot; everything else goes into the hand to be
+ * played later.
+ */
+function dealCard(state, p, pid, type) {
   const card = { type, id: `${pid}-${state.time.toFixed(2)}-${Math.floor(state.rng() * 1e6)}` };
   /*
    * `card`, NOT `type`. `emit` builds `{ type, t, ...data }`, so a payload with

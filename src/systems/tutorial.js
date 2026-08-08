@@ -154,7 +154,7 @@ function withoutPracticeParams() {
 
 /** Every class this module may put on `#ui`. Listed once so it can be undone. */
 const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild',
-  'tut-nokeys', 'tut-nokeys-sm', 'tut-norail'];
+  'tut-nokeys', 'tut-nokeys-sm', 'tut-norail', 'tut-sidepanel'];
 
 function stub() {
   return {
@@ -590,6 +590,52 @@ export function createTutorial(state, game, deps = {}) {
     state.largestArmyHolder = -1;
   }
 
+  /** Is a placement target chosen but not yet confirmed, in ANY mode? */
+  function placeArmed() {
+    const m = g.overview && g.overview.metrics;
+    return !!(m && /^place-/.test(String(m.mode || ''))
+      && m.sel !== null && m.sel !== undefined);
+  }
+
+  /* ------------------------------------------------- reading the trade sheet
+   *
+   *   "Walk them through clicking the up arrow on wheat, and then the down
+   *    arrow on wood."
+   *
+   * A step that says "tap the up arrow over WHEAT" has to know when they have.
+   * The sheet already writes its own state onto the columns as classes —
+   * `.tr-col.getting` for a pile being asked for and `.tr-col.giving` for one
+   * being paid out of — and the count is in the column's own numeral, so this
+   * reads the sheet exactly as the player does rather than reaching into
+   * trade.js for a number it would then have to keep in step with.
+   */
+  function tradeCount(res, cls) {
+    let n = null;
+    try {
+      n = document.querySelector(
+        `.sheet.trade:not(.hid) .tr-col.${cls}[data-res="${res}"] .tr-now`);
+    } catch (e) { n = null; }
+    if (!n) return 0;
+    const v = parseInt((n.textContent || '').replace(/[^0-9]/g, ''), 10);
+    return Number.isFinite(v) ? v : 0;
+  }
+  const tradeGetting = res => tradeCount(res, 'getting');
+  const tradeGiving = res => tradeCount(res, 'giving');
+
+  /**
+   * Load the deck for the three card lessons.
+   *
+   *   "I want the order of these to be specific: first is a victory point ...
+   *    the second is the road building ... the knight card would be the third."
+   *
+   * See `state.forcedCards` in core/rules.js. Emptied on the way out so a match
+   * started after the run is dealt from the real weight table.
+   */
+  function scriptDeck() {
+    state.forcedCards = ['victoryPoint', 'roadBuilding', 'knight'];
+  }
+  function clearDeck() { state.forcedCards = null; }
+
   /** Every corner and edge the player already owns, as world points. */
   function myPieces() {
     const out = [];
@@ -622,7 +668,9 @@ export function createTutorial(state, game, deps = {}) {
     walked: () => walked,
     topUp, give, tileCentre, itemOnHome, standingOn,
     sweptAny, sweepTile, restTile,
-    mapMoved, roadArmed, myPieces, fakeAwards, clearFakeAwards,
+    mapMoved, roadArmed, placeArmed, myPieces,
+    tradeGetting, tradeGiving, scriptDeck,
+    fakeAwards, clearFakeAwards,
     restart: () => restart()
   };
 
@@ -851,6 +899,11 @@ export function createTutorial(state, game, deps = {}) {
       toggle(root, 'tut-nokeys', nokeys);
       toggle(root, 'tut-nokeys-sm', nokeysSm);
       toggle(root, 'tut-norail', norail);
+      /* The trade sheet narrows so the coach can stand beside it rather than
+         over it — "a pop-out from the right side that resizes the trade screen
+         temporarily". Driven off `onSheet` for the same reason `norail` is
+         driven off `onMap`: a step cannot ask for the column and forget. */
+      toggle(root, 'tut-sidepanel', !!want.sidepanel || !!(step && step.onSheet));
     }
     // The badge is not inside `#ui`, so it is dressed separately. See `wear`.
     if (coach && coach.wear) {
@@ -1189,6 +1242,7 @@ export function createTutorial(state, game, deps = {}) {
     // Leaving from the awards slides must not hand the player a match that
     // thinks a frozen bot has a five-road line.
     clearFakeAwards();
+    clearDeck();
     clearHud();
     // Whatever the run shut, the player gets back: leaving must never hand
     // somebody a match with no build cards in it.

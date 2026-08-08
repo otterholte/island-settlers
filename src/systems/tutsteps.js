@@ -53,7 +53,7 @@ import {
   COST, TRADE_BASE, VICTORY_POINTS, RES, TILE_REGEN, CARD_LABEL,
   LONGEST_ROAD_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_MIN, LARGEST_ARMY_VP
 } from '../core/constants.js';
-import { MARKET } from '../board/layout.js';
+import { MARKET, DESERT } from '../board/layout.js';
 import { handheld } from '../ui/dom.js';
 import {
   legalSettlements, scoreOf, tileRecovery, tileItemsRemaining
@@ -92,6 +92,18 @@ const SCORING_NOKEYS = { pack: true, ranks: true, nobuild: true };
 const SCORE_LESSON = {
   pack: true, ranks: true, nobuild: true, nokeys: true, noquit: true
 };
+/*   "Hide the build map and pause buttons. Push the instructions for the step
+ *    closer to the bottom of the screen. Darken the screen aside from the
+ *    character that's running around and the trading post in the centre." */
+const MARKET_WALK = { pack: true, nobuild: true, nokeys: true };
+/* The trade steps stand beside the sheet rather than over it, and the sheet
+   narrows to make room — see `tut-sidepanel` in tutorial.css. */
+const TRADE_STEP = { pack: true, nokeys: true, noquit: true, sidepanel: true };
+/*   "Put the instructions in the middle of the screen ... and darken the screen
+ *    except for the 4 build cards at the bottom." No veil on this one: the four
+ *    cards have to stay lit, so the wash does the work and the card simply
+ *    stands in the middle of it. */
+const CARD_LESSON = { pack: true, nokeys: true };
 
 /*
  * WHAT IS IN THE PACK WHEN THE BUILDING LESSONS START.
@@ -104,6 +116,33 @@ const SCORE_LESSON = {
  * `t.give` sets rather than tops up, so the CITY card cannot come up gold
  * beside the ROAD card the step is telling the player to press.
  */
+/* The city lesson is where ORE finally arrives. It has been zero since the road
+   step so the CITY card could not come up gold before anybody explained it. */
+const CITY_PACK = Object.freeze({
+  wood: COST.road.wood * 3, brick: COST.road.brick * 3,
+  wheat: COST.city.wheat + COST.settlement.wheat,
+  wool: COST.settlement.wool,
+  ore: COST.city.ore
+});
+
+/*   "We're going to reset and give them predetermined resources again here. So
+ *    let's say they have 30 wood, 30 brick and 30 sheep, 3 wheat and 0 ore."
+ *
+ * Deep in three things and short of the one the step asks them to buy, which is
+ * what makes the lesson land: the trade is not a demonstration, it is the only
+ * way to get the wheat. */
+const TRADE_PACK = Object.freeze({
+  wood: 30, brick: 30, wool: 30, wheat: 3, ore: 0
+});
+
+/*   "Make sure even if I traded cards away that I'm topped up to purchase at
+ *    least 4 of these cards during this step. That should reset as soon as this
+ *    step opened." */
+const CARD_PACK = Object.freeze({
+  wood: 0, brick: 0,
+  wool: COST.card.wool * 4, wheat: COST.card.wheat * 4, ore: COST.card.ore * 4
+});
+
 const ROAD_PACK = Object.freeze({
   wood: COST.road.wood * 5 + COST.settlement.wood * 3,
   brick: COST.road.brick * 5 + COST.settlement.brick * 3,
@@ -617,247 +656,338 @@ export function buildSteps(t) {
       size: 'big', place: 'low', hud: SCORING_NOKEYS
     },
 
-    /* 16 ------------------------------------------------------- THE SCORE
+    /* ------------------------------------------------------- REACH FURTHER
      *
-     *   "For step 11, add the scores on the right side of screen and hide the
-     *    build cards. That way the step explanation for the tutorial isn't
-     *    covering the game board and my player in the middle of the screen."
+     * Skipped outright when the network already touches a free corner, which
+     * after the road step it usually does. It exists for the board where it
+     * does not. */
+    {
+      id: 'reach',
+      title: 'One more road',
+      text: 'Your network has to REACH a free corner before you can settle it. Build one more, further out.',
+      skipIf: () => legalSettlements(state, 0).length > 0,
+      size: 'big', place: 'top', hud: OPENING,
+      dom: ['.bcard[data-kind="road"]'],
+      spotDom: ['.hud-bc'],
+      check: () => legalSettlements(state, 0).length > 0
+    },
+
+    /* ------------------------------------------------------- A SETTLEMENT
      *
-     *   "Hide the End Practice button for this step, and hide the build map
-     *    pause buttons. And instead of the yellow circle, darken the screen
-     *    aside from the points counter in the top right corner."
+     *   "Do a similar process having them build a settlement, where it also
+     *    makes clear that they can only build at least 2 roads away from the
+     *    nearest settlement or city — that includes other players' settlements
+     *    and cities."
      *
-     * The second note finishes the first. The card had already dropped to the
-     * LOW band with the build cards away; what was left in the corners was a
-     * gold ring on the standings and a cream END PRACTICE chip sitting a
-     * thumb's width from it, both competing with the thing being pointed at. So
-     * the ring goes, the chip goes, the three keys go, and the wash lights the
-     * standings alone.
+     * The same four beats as the road, because the note asks for the same
+     * process and because the player has just learned to read them: buy it,
+     * find the legal spots, tap, tap again. The one thing that is different is
+     * the rule, and it gets a step of its own on the map with the legal corners
+     * lit — the two-roads-clear rule is invisible until you see which corners
+     * refuse to glow, which is exactly when it can be explained.
+     */
+    {
+      id: 'settle',
+      title: 'Build a settlement',
+      text: `A settlement is ${COST.settlement.wood} wood, ${COST.settlement.brick} brick, ${COST.settlement.wheat} wheat and ${COST.settlement.wool} wool. Tap the SETTLEMENT card.`,
+      enter: () => t.give(ROAD_PACK),
+      size: 'big', place: 'top', hud: OPENING,
+      dom: ['.bcard[data-kind="settlement"]'],
+      spotDom: ['.hud-bc'],
+      holdNext: true,
+      check: () => mapIn('settlement') || me.settlements.size > t.base.settlements
+    },
+
+    {
+      id: 'settlerule',
+      title: 'Two roads clear',
+      text: 'Only a few corners are glowing, and that is the rule: a settlement must stand TWO ROADS CLEAR of every other settlement and city on the island — your rivals’ as well as your own. Every corner nearer than that refuses.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+    },
+
+    {
+      id: 'settlepick',
+      title: 'Pick a corner',
+      text: 'Tap one of the glowing corners.',
+      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      check: () => t.placeArmed() || me.settlements.size > t.base.settlements
+    },
+
+    {
+      id: 'settleplace',
+      title: 'Tap it again',
+      text: 'Chosen, not built. Tap the SAME corner once more to confirm it.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      check: () => me.settlements.size > t.base.settlements
+    },
+
+    {
+      id: 'settlebuilt',
+      title: 'One point, and new land',
+      text: 'That is your first point — and every hex touching that corner is now yours to collect from. A settlement is not just a score, it is more ground.',
+      quiet: 1.9,
+      size: 'big', place: 'low', hud: SCORING_NOKEYS
+    },
+
+    /* ------------------------------------------------------------- THE SCORE
+     *
+     * Moved here on purpose: the player has just scored their first point, so
+     * the standings have something in them to read.
      */
     {
       id: 'points',
       title: 'That is what points are',
-      text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings top right carry everybody's.`,
+      text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings top right carry everybody’s.`,
       live: true,
       size: 'big', place: 'foot', hud: SCORE_LESSON,
       spotDom: ['.hud-tr']
     },
 
-    /* 12 ----------------------------------------------------------------- */
-    {
-      id: 'reach',
-      title: 'One more road',
-      text: 'Your network has to REACH a free corner before you can settle it. Build one more, further out.',
-      enter: () => t.topUp(COST.road),
-      skipIf: () => legalSettlements(state, 0).length > 0,
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
-      dom: ['.bcard[data-kind="road"]'],
-      check: () => legalSettlements(state, 0).length > 0
-    },
-
-    /* 13 -------------------------------------------------- A SETTLEMENT
+    /* ------------------------------------------------------------- A CITY
      *
-     *   "Mention that the settlement has to be two roads away from any other
-     *    settlement, even your competitors'."
+     *   "I'd like for you to then clarify and do a similar process for the
+     *    building of a city that you did for building a settlement and road,
+     *    with the clear steps, multiple steps, and with the map open etc."
      *
-     * It is the rule that decides which corners glow and the one that makes a
-     * player think the map is broken when it does not offer the corner they
-     * were looking at.
+     * Same four beats again. `CITY_PACK` is where the ore finally arrives — it
+     * has been zero since the road lesson so that the CITY card could not light
+     * up before anybody had explained it, and this is the step that explains it.
      */
-    {
-      id: 'settle',
-      title: 'Build a settlement',
-      brief: {
-        title: 'Build a settlement',
-        text: 'Topped up again. A settlement must stand TWO ROADS CLEAR of every other settlement on the island — your rivals\' as well as your own — so most corners will not glow. It is worth 1 point and opens the hexes it touches.'
-      },
-      text: 'Tap SETTLEMENT, then a glowing corner, then that corner again.',
-      enter: () => t.topUp(COST.settlement),
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
-      dom: ['.bcard[data-kind="settlement"]'],
-      check: () => me.settlements.size > t.base.settlements
-    },
-
-    /* 14 ----------------------------------------------------------------- */
     {
       id: 'city',
       title: 'Grow it into a city',
-      text: 'A city is a settlement that grew: 2 points instead of 1. Tap CITY, then one of your own settlements, twice.',
-      enter: () => t.topUp(COST.city),
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
+      text: `A city is a settlement that grew: 2 points instead of 1, on the same corner. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore — I have just given you the ore. Tap the CITY card.`,
+      enter: () => t.give(CITY_PACK),
+      size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="city"]'],
+      spotDom: ['.hud-bc'],
+      holdNext: true,
+      check: () => mapIn('city') || me.cities.size > t.base.cities
+    },
+
+    {
+      id: 'cityrule',
+      title: 'Only your own',
+      text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not founding one.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+    },
+
+    {
+      id: 'citypick',
+      title: 'Pick one of yours',
+      text: 'Tap one of your own settlements, then tap it again to confirm.',
+      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
       check: () => me.cities.size > t.base.cities
     },
 
-    /* 15 ----------------------------------------------------------------- */
+    {
+      id: 'citybuilt',
+      title: 'Two points',
+      text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did — what you bought was the point.',
+      quiet: 1.9,
+      size: 'big', place: 'low', hud: SCORING_NOKEYS
+    },
+
+    /* ------------------------------------------------------------ THE MARKET
+     *
+     *   "Hide the build map and pause buttons. Push the instructions for the
+     *    step closer to the bottom of the screen. Darken the screen aside from
+     *    the character that's running around and the trading post in the
+     *    centre. Remove the yellow circle."
+     */
     {
       id: 'market',
       title: 'Walk to the market',
-      text: () => (me.nearTrade
-        ? 'You are at the Great Market. Tap the offer to open it.'
-        : 'The Great Market is the hex in the middle of the island. Walk to it — it will swap what you have spare for what you are short of.'),
-      live: true,
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
-      world: () => ({ x: MARKET.x, z: MARKET.z }),
-      dom: () => (me.nearTrade ? ['.tradecue:not(.hid) .tc-card'] : []),
+      text: 'The Great Market is the hex in the middle of the island. Walk onto it.',
+      size: 'big', place: 'foot', hud: MARKET_WALK,
+      spotMe: true,
+      spotWorld: () => ({ x: MARKET.x, z: MARKET.z, lift: 1.0, r: 120 }),
       check: () => !!me.nearTrade
     },
 
-    /* 16 --------------------------------------------------- THE TRADING POST
+    /*   "When I get close to it, the next step should be to say press the badge
+     *    that says enter/trade. That instruction should be on the bottom of the
+     *    screen." */
+    {
+      id: 'marketcue',
+      title: 'Open the post',
+      text: 'You are on it. Press the badge that has come up — the one that says TRADE — to open the trading post.',
+      size: 'big', place: 'foot', hud: MARKET_WALK,
+      spotDom: ['.tradecue:not(.hid)'],
+      check: () => !!(game.panels && game.panels.isOpen)
+    },
+
+    /* ------------------------------------------------------ THE TRADING POST
      *
-     *   "For the trade at the market step, explain how the market works, then
-     *    have them press okay, and hide / have a much smaller out-of-the-way but
-     *    clear circles/highlights to follow so that you successfully make a
-     *    trade without the tutorial in the way."
+     *   "When the trade opens up, I want you to still have no yellow circle but
+     *    for the steps to explain how to trade over the top of the trading
+     *    popup somewhere. Maybe it's a pop-out from the right side like with the
+     *    road building map, that resizes the trade screen temporarily. And it
+     *    says you always trade 4 resources for 1 item at the trading post.
+     *    There shouldn't be too much text per step and it should never cover
+     *    the elements on the trading post popup."
      *
-     * The sheet was redesigned: RECEIVE is the green band on top, GIVE the
-     * brown one below, the up arrow adds to the pile it sits on, you ask FIRST
-     * and then tap a resource CARD to pay out of that pile, and the brown band
-     * counts the bill. This teaches THAT sheet — and then gets out of its way
-     * completely: once the trade opens, the badge is not shown at all and the
-     * ring alone walks the deal (see `tradeRing`).
+     * So the sheet moves rather than the card hiding: `onSheet` puts the coach
+     * in the same right-hand column the map steps use and narrows the sheet's
+     * own box to match (see `tut-sidepanel` in tutorial.css), which is the only
+     * arrangement where a 600px sheet and a 186px card can both be fully on a
+     * 667px screen. Four short steps instead of one paragraph.
      */
     {
-      id: 'trade',
-      title: 'Make the trade',
-      brief: {
-        title: 'How the market works',
-        text: `YOU RECEIVE is the green band on top, YOU GIVE the brown one below. Tap the UP arrow over what you want — you may ask for what you do not own. The brown band counts the bill: NEEDS ${TRADE_BASE}. Then tap a resource CARD to pay out of that pile. At ${TRADE_BASE} OF ${TRADE_BASE}, TRADE lights up.`
-      },
-      text: 'Follow the ring: ask above, pay below, then TRADE.',
-      enter: () => { me.res.wood = Math.max(me.res.wood | 0, TRADE_BASE * 3); },
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
-      dom: tradeRing,
+      id: 'traderate',
+      title: 'Four for one',
+      text: `Every trade here is the same price: ${TRADE_BASE} of one thing for 1 of another. The post never haggles.`,
+      enter: () => t.give(TRADE_PACK),
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP
+    },
+
+    /*   "Then it should say to click up to say how many of that resource you
+     *    want to add to your pack, and click the down arrow to determine how
+     *    many you're willing to give away. Walk them through clicking the up
+     *    arrow on wheat, and then the down arrow on wood." */
+    {
+      id: 'tradeask',
+      title: 'Ask for wheat',
+      text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT once.',
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      check: () => t.tradeGetting('wheat') > 0
+    },
+
+    {
+      id: 'tradegive',
+      title: 'Pay in wood',
+      text: `The DOWN arrow says what you are willing to give away. You have wood to spare — tap the down arrow over WOOD until it reads ${TRADE_BASE}.`,
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      check: () => t.tradeGiving('wood') >= TRADE_BASE
+    },
+
+    {
+      id: 'tradego',
+      title: 'Make it',
+      text: 'The TRADE key turns green the moment the bill is covered. Press it.',
+      onSheet: true, size: 'slim', place: 'foot', hud: TRADE_STEP,
       check: () => me.stats.traded > t.base.traded
     },
 
-    /* 17 ------------------------------------------------------ THE THREE CARDS
+    /*   "Explain that since they knew they needed extra wheat in order to build
+     *    a settlement, here you press trade so that you'll have the resources
+     *    needed to build a settlement even if you're not on a wheat hex yet on
+     *    the map and can't collect it directly." */
+    {
+      id: 'tradewhy',
+      title: 'Why that mattered',
+      text: 'You were short of wheat and a settlement needs it. You do not own a wheat hex, so no amount of running would have found any — the post is how you buy what your land does not grow.',
+      size: 'big', place: 'foot', hud: SCORING_NOKEYS
+    },
+
+    /* ------------------------------------------------------- THE THREE CARDS
      *
-     *   "...and the cards have a knight, and victory point, and a road building,
-     *    which you should add a few steps to explain in a similar minimal and
-     *    clear and out-of-the-way, hands-on method."
+     *   "Put the instructions in the middle of the screen, right now they're a
+     *    little low. And darken the screen except for the 4 build cards at the
+     *    bottom. Make sure even if I traded cards away that I'm topped up to
+     *    purchase at least 4 of these cards during this step. That should reset
+     *    as soon as this step opened."
      *
-     * One purchase, then one short step per card, each with the ring on a real
-     * thing rather than on a picture of one.
+     * ...and the order is scripted, because each of the next three steps is
+     * written against the card it is explaining. `t.scriptDeck` fills the queue
+     * `drawCard` shifts from; see the note there.
      */
     {
       id: 'cards',
-      title: 'Buy a card',
-      brief: {
-        title: 'Development cards',
-        text: `One price — ${COST.card.wool} wool, ${COST.card.wheat} wheat, ${COST.card.ore} ore — and three things in the deck. I have topped you up for one. Buy it and I will take you through all three.`
-      },
-      text: 'Tap the CARD card.',
-      enter: () => t.topUp(COST.card),
-      size: 'slim', place: 'bottom', hud: WITH_PACK,
+      title: 'Development cards',
+      text: `One price — ${COST.card.wool} wool, ${COST.card.wheat} wheat, ${COST.card.ore} ore — and three different things in the deck. You have enough for four. Tap the CARD card.`,
+      enter: () => { t.give(CARD_PACK); t.scriptDeck(); },
+      size: 'big', place: 'centre', hud: CARD_LESSON,
       dom: ['.bcard[data-kind="card"]'],
+      spotDom: ['.hud-bc'],
+      holdNext: true,
       check: () => cardsHeld() > t.base.cards
     },
 
-    /* 18 ----------------------------------------------------------------- */
-    {
-      id: 'knight',
-      title: CARD_LABEL.knight,
-      /*
-       * THIS TEXT HAD TO CHANGE WITH THE RULE, AND ALMOST DID NOT.
-       *
-       *   "I want it to only take from the players who have a settlement or
-       *    city on the hex where you place the knight, and only they will lose
-       *    half of all of their resources. If I place it on my own hex, I still
-       *    can access that hex for resources, however I never lose half of my
-       *    own resources if I'm the one that plays the knight."
-       *
-       * The old line said "every rival loses half", which was true of the old
-       * Knight and is now simply wrong — it robbed one rival wherever it landed
-       * and it robs the hex's neighbours now. A tutorial that teaches a rule the
-       * game does not have is worse than no tutorial, because the player will
-       * trust it and then be surprised by their own board, so the wording names
-       * the three things the new rule actually turns on: WHO (only the seats
-       * built on that hex), HOW MUCH (half of every resource, rounded down),
-       * and the exemption that makes it worth aiming (never you).
-       */
-      text: 'Land it on a hex and everyone with a settlement or city THERE loses half of everything they carry — rounded down, so five becomes three. Nobody else is touched, and you never pay it yourself. The hex stops giving to them while it stands.',
-      size: 'big', place: 'low', hud: SCORING,
-      dom: ['.kn-cue:not(.rb-cue):not(.hid)', '.bcard[data-kind="card"]']
-    },
-
-    /* 19 ----------------------------------------------------------------- */
-    {
-      id: 'roadcard',
-      title: CARD_LABEL.roadBuilding,
-      text: 'Two roads, free. It opens the placement map by itself and lets you lay both, one after the other, without spending a stick of wood.',
-      size: 'big', place: 'low', hud: SCORING,
-      dom: ['.kn-cue.rb-cue:not(.hid)', '.bcard[data-kind="road"]']
-    },
-
-    /* 20 ----------------------------------------------------------------- */
+    /*   "First is a victory point, where the instruction box disappears when
+     *    the Card button is clicked, and I see the animation that I won a
+     *    victory point, and it explains what that is with an instruction box
+     *    after the animation." */
     {
       id: 'vpcard',
       title: CARD_LABEL.victoryPoint,
-      text: 'One point, the instant you draw it. Nothing to play and nothing to remember — the counter in the corner goes up and stays up.',
-      size: 'big', place: 'low', hud: SCORING,
-      dom: ['.sc-vp']
+      text: 'That was a Victory Point, and it has already scored — you saw it land on your total. There is nothing to play and nothing to remember: it is a point the moment you draw it, and no rival can take it off you.',
+      quiet: 2.4,
+      size: 'big', place: 'foot', hud: SCORE_LESSON,
+      spotDom: ['.hud-tr']
     },
 
-    /* ------------------------------------------------------- THE TWO AWARDS
-     *
-     *   "Don't forget to mention the largest army and the longest road and the
-     *    points associated, and where you can find that info. Don't show that
-     *    section until that step in the tutorial."
-     *
-     *   "Darken the screen again except for the longest road and largest army
-     *    counter in the top left corner. Make the popup instruction explaining
-     *    it use multiple slides and be extra clear. I want for this step to just
-     *    choose random numbers — so even if the longest road and largest army
-     *    haven't been claimed, we're artificially adding in numbers so you see
-     *    that you have a 3 road streak and the longest is at 5 right now, and
-     *    you've played 3 knights and that's the biggest right now. That way you
-     *    can explain those numbers in the tutorial."
-     *
-     * THREE SLIDES, AND A CARD WITH SOMETHING ON IT.
-     *
-     * The old step was one paragraph with a gold ring on an award card that,
-     * in a practice run where the rivals never move and the player has laid two
-     * roads, read `0 › —` on both lines. It was explaining a readout using an
-     * example of that readout with nothing in it — which is the whole reason
-     * the note asks for invented numbers. So the run writes a board in: you on
-     * 3 roads against a rival's 5, and you holding Largest Army on 3 knights.
-     * One award you are chasing and one you already have, because those are the
-     * two states the card has and both of them need reading.
-     *
-     * The numbers are written into `state` rather than faked in the text, so
-     * the card the player is being taught is the real card doing its real job —
-     * the holder's name is coloured by the real seat, YOURS appears because the
-     * real rule fired. It is undone on the way out (see `enter` on the closing
-     * step) so nothing invented survives into a match.
-     */
+    /*   "The second is the road building, where it just says this will give you
+     *    the opportunity to build two roads. And the map will open. (It doesn't
+     *    have to open right now though, since they've already built roads.)" */
     {
-      id: 'awards',
-      title: 'Points you never build',
-      brief: {
-        title: 'Two more ways to score',
-        text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard in the top left, and they change hands the moment somebody beats you. I have put some numbers on them so there is something to read.`
-      },
-      text: `LONGEST ROAD, top line: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is YOURS and the gold one is the record — so 3 against 5 means two more segments would tie it, three would take it.`,
-      enter: () => t.fakeAwards(),
-      size: 'big', place: 'foot', hud: AWARD_LESSON,
-      spotDom: ['.scorecard']
+      id: 'buycard2',
+      title: 'Buy another',
+      text: 'Tap the CARD card again.',
+      size: 'slim', place: 'top', hud: OPENING,
+      dom: ['.bcard[data-kind="card"]'],
+      spotDom: ['.hud-bc'],
+      check: () => cardsHeld() > t.base.cards
     },
 
     {
-      id: 'awards2',
-      title: 'Largest Army',
-      text: `LARGEST ARMY, second line: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED — not held. You are on 3 and nobody has beaten it, so the line says YOURS and the ${LARGEST_ARMY_VP} points are already counted in your score.`,
-      size: 'big', place: 'foot', hud: AWARD_LESSON,
-      spotDom: ['.scorecard']
+      id: 'roadcard',
+      title: CARD_LABEL.roadBuilding,
+      text: 'Road Building: two roads, free. Play it and the placement map opens by itself and lets you lay both, one after the other, without spending a stick of wood.',
+      quiet: 2.0,
+      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
+      spotDom: ['.kn-cue.rb-cue:not(.hid)']
+    },
+
+    /*   "The knight card would be the third. It should hide the instruction box
+     *    again for the third time, showing the knight card animation, then open
+     *    the map. Then the same thing with the instructions on the right side of
+     *    the screen where the players section normally is, and the steps here
+     *    should explain that you should place it on the opponent's hex /
+     *    resource that is their best, so you stop them from collecting
+     *    resources there, and they lose half of what they've already collected.
+     *    That explanation should be across multiple steps, not all in one large
+     *    text box." */
+    {
+      id: 'buycard3',
+      title: 'One more',
+      text: 'Tap the CARD card once more.',
+      size: 'slim', place: 'top', hud: OPENING,
+      dom: ['.bcard[data-kind="card"]'],
+      spotDom: ['.hud-bc'],
+      check: () => cardsHeld() > t.base.cards
     },
 
     {
-      id: 'awards3',
-      title: 'They can be taken',
-      text: 'Neither one is yours to keep. The moment a rival lays a longer line or plays one more Knight, the points move to them — which is why a two-point swing can end a match you thought you were winning.',
-      size: 'big', place: 'foot', hud: AWARD_LESSON,
-      spotDom: ['.scorecard']
+      id: 'knight',
+      title: CARD_LABEL.knight,
+      text: 'The Knight. This one you aim. Play it and the map opens so you can choose a hex.',
+      quiet: 2.0,
+      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
+      spotDom: ['.kn-cue:not(.rb-cue):not(.hid)'],
+      check: () => mapIn('knight')
+    },
+
+    {
+      id: 'knightwhere',
+      title: 'Aim it at their best hex',
+      text: 'Put it on the hex a rival works hardest — a high number with their settlement on a corner. While it stands there, that hex gives them nothing.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+    },
+
+    {
+      id: 'knightcost',
+      title: 'And it robs them',
+      text: 'Everyone with a settlement or city on that hex also loses HALF of everything they are carrying, rounded down. Nobody else is touched, and you never pay it yourself.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+    },
+
+    {
+      id: 'knightown',
+      title: 'Your own hex is fair game',
+      text: 'Landing it on a hex of your own still lets YOU collect there — it only shuts out the rivals built on it. Tap a hex, then tap it again to confirm.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      check: () => state.robberTile !== DESERT.id
     },
 
     /* 22 ----------------------------------------------------------------- */
