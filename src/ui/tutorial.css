@@ -362,6 +362,39 @@
   bottom:calc(var(--gB,10px) + 80px);
   transform:translateX(-50%) translateY(22px);
 }
+/* --------------------------------------------------------- SIDE: on the map
+ *
+ *   "You can hide the players column on the right of the screen and put the
+ *    instructions box for this step over there."
+ *
+ * The board map already reserves this column: `.ov-rail` in ui.css is 186px
+ * pinned to the right gutter, and `fit()` in overview.js sizes the board to
+ * whatever is left over. So a card standing here covers NOTHING — the rail goes
+ * (see `tut-norail` in the wardrobe below), the card takes its slot, and the
+ * board is drawn at exactly the size it would have been anyway. That is what
+ * makes this the one place a lesson may stand while the map is open; every
+ * other corner of that surface belongs to the map's own controls.
+ *
+ * The widths track the rail's own three breakpoints so the two are always
+ * interchangeable, and the card scrolls internally rather than growing, because
+ * a tall step must not push its own keys off the bottom of a 320px screen. */
+.coach-card.at-side{
+  left:auto;right:var(--gR,18px);
+  top:var(--gT,10px);bottom:var(--gB,10px);
+  width:186px;max-height:none;
+  flex-direction:column;align-items:stretch;justify-content:flex-start;gap:7px;
+  overflow:auto;
+  transform:translateX(14px);
+}
+.coach-card.on.at-side{transform:translateX(0)}
+.coach-card.at-side .coach-main{flex-direction:column;align-items:flex-start;gap:7px}
+.coach-card.at-side .coach-acts{width:100%;justify-content:space-between;margin-top:auto}
+.coach-card.at-side .coach-acts .btn{flex:1 1 0;padding:0 6px;font-size:10px}
+.coach-card.at-side .coach-step{width:34px;height:34px;border-radius:11px}
+.coach-card.at-side .coach-step b{font-size:15px}
+.coach-card.at-side .coach-h{font-size:12.5px}
+.coach-card.at-side .coach-t{font-size:10.5px;line-height:1.36}
+
 /* CENTRE is the opening card and nothing else. It is the one place that would
    be indefensible on any other step — dead centre, over the settler — and it is
    right for this one because the veil behind it means there is nothing under
@@ -375,6 +408,9 @@
 .coach-card.at-centre .coach-acts{justify-content:flex-end}
 .coach-card.on.at-bottom,.coach-card.on.at-low,.coach-card.on.at-foot{
   transform:translateX(-50%) translateY(0)}
+/* SIDE is pinned to the right gutter, not centred, so it must not inherit the
+   -50% the three bottom bands share. */
+.coach-card.at-side{left:auto}
 .coach-card.on.at-top{transform:translateX(-50%) translateY(0)}
 .coach-card.on.at-centre{transform:translate(-50%,-50%) scale(1)}
 
@@ -544,8 +580,45 @@
   transition:opacity .25s ease,visibility 0s linear .25s;
 }
 
-/* `tut-nokeys` — the three circular keys as well — is COMPACT ONLY and lives in
-   the phone block below, next to the FOOT band that depends on it. */
+/* THE THREE CIRCULAR KEYS, TWO WAYS.
+ *
+ * `tut-nokeys` is unconditional — the score lesson asks for it at every size:
+ *
+ *   "Hide the End practice button for this step, and hide the build map pause
+ *    buttons. And instead of the yellow circle, darken the screen aside from
+ *    the points counter in the top right corner."
+ *
+ * ...because that step's whole job is to leave ONE lit thing on the screen, and
+ * three bright keys in the opposite corner are three more.
+ *
+ * `tut-nokeys-sm` is the phone-only version, in the compact block below, and it
+ * exists for the pack lesson, where the keys are only in the way because the
+ * card has to reach the bottom of a 320px screen. A laptop has the room, and
+ * taking a control away for no visible reason is worse than a card one notch
+ * higher.
+ *
+ * Both go the same way the build cards do, so a step cannot strand them: the
+ * class comes off with the step, and `quit()` clears it either way. */
+#ui.tut-practice.tut-nokeys .hud-br{
+  opacity:0 !important;visibility:hidden;pointer-events:none !important;
+  transition:opacity .25s ease,visibility 0s linear .25s;
+}
+/* With the band empty, the FOOT card drops onto the gutter at any size. */
+.coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
+
+/*   "You can hide the players column on the right of the screen and put the
+ *    instructions box for this step over there."
+ *
+ * The rail is hidden rather than collapsed, and the difference matters: the
+ * map's `fit()` sizes the board against `railOpen`, so COLLAPSING it would make
+ * the board grow into the space the coach card is about to stand in. Hidden, the
+ * layout still believes the column is spoken for — which it is, just by
+ * something else. See the SIDE band above. */
+#ui.tut-practice.tut-norail .ov-rail,
+#ui.tut-practice.tut-norail .ov-strip{
+  opacity:0 !important;visibility:hidden;pointer-events:none !important;
+  transition:opacity .22s ease,visibility 0s linear .22s;
+}
 
 /* ============================================================ compact phone
    667x375 and 640x320. The sheet loses its margins and the art column narrows;
@@ -577,24 +650,22 @@
    *    well, so the instruction box can actually sit on the bottom without
    *    covering it."
    *
-   * The three circular keys are the last thing standing in the bottom band once
-   * the build cards are down, and on a 320px-tall phone the badge cannot clear
-   * them and still be off the middle of the screen. One step asks for it — the
-   * pack lesson, which is about the pill at the TOP of the screen and has no
-   * use for a build key — and only here, because a laptop has the room. They go
-   * the same way the build cards do, so the step cannot strand them: the class
-   * comes off with the step and `quit()` clears it either way. */
-  #ui.tut-practice.tut-nokeys .hud-br{
+   * The phone-only half of the pair described above the wardrobe: the pack
+   * lesson is about the pill at the TOP of the screen and has no use for a
+   * build key, but only a small screen is short enough for that to matter. */
+  #ui.tut-practice.tut-nokeys-sm .hud-br{
     opacity:0 !important;visibility:hidden;pointer-events:none !important;
     transition:opacity .25s ease,visibility 0s linear .25s;
   }
-  /* ...and with them gone there is nothing left in the band, so the card goes
-     all the way down onto the gutter. `.coach` carries the same flag as `#ui`
-     (see `wear` in ui/tutorial.js) because the badge is not inside the HUD. */
-  .coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
+  .coach.tut-nokeys-sm .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
 
   /* The opening card gives up width before it gives up a word. */
   .coach-card.at-centre{width:min(420px,calc(100vw - 28px))}
+  /* Tracks `.ov-rail`'s own compact widths in ui.css: 158px, then 126px. */
+  .coach-card.at-side{width:158px;padding:6px 8px 7px}
+  .coach-card.at-side .coach-h{font-size:11px}
+  .coach-card.at-side .coach-t{font-size:9.5px}
+  .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:9.5px;padding:0 4px}
   .coach-card.at-top{width:min(400px,calc(100vw - var(--tut-side)));padding:8px 10px 9px}
   .coach-card.slim{width:min(360px,calc(100vw - var(--tut-side)));padding:5px 8px 6px}
   .coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(420px,calc(100vw - 24px))}

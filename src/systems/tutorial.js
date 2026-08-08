@@ -153,7 +153,8 @@ function withoutPracticeParams() {
 }
 
 /** Every class this module may put on `#ui`. Listed once so it can be undone. */
-const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild', 'tut-nokeys'];
+const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild',
+  'tut-nokeys', 'tut-nokeys-sm', 'tut-norail'];
 
 function stub() {
   return {
@@ -230,6 +231,20 @@ export function createTutorial(state, game, deps = {}) {
   let armed = false;
   /* Is NEXT dimmed right now because a `holdNext` step has not been done? */
   let heldNow = false;
+  /*
+   * SECONDS OF NOTHING BEFORE A STEP SPEAKS.
+   *
+   *   "Then close the tutorial steps, show the building of the road animation
+   *    happen, and after it has you can show the next step."
+   *
+   * A step with `quiet: n` arrives with the badge hidden and raises it n seconds
+   * later. The map is closing and the road is dropping into place over those two
+   * seconds, and a card explaining the road on top of the road being built is
+   * the one mistake this whole rework keeps being asked to stop making. Counted
+   * in the frame loop rather than on a `setTimeout` so that leaving the run
+   * mid-gap cannot raise a badge into a match that is no longer a tutorial.
+   */
+  let quietT = 0;
   /* Which steps the player has really completed this run, for `holdNext`. */
   const satisfied = new Set();
   let homeTile = -1;
@@ -390,6 +405,34 @@ export function createTutorial(state, game, deps = {}) {
 
   /* ------------------------------------------------------------- materials */
 
+  /**
+   * SET the pack to exactly this, rather than topping it up to a floor.
+   *
+   *   "Make sure you give them a predetermined number of resources for this
+   *    step — let's say they clear the resources they already collected, and
+   *    you give them enough resources to build 5 roads and 3 settlements, but
+   *    they have no ore, so they can't build a city."
+   *
+   * `topUp` could never do that, because it only ever raises a pile to a floor:
+   * a player who had swept a mountain arrived at the road lesson with ore in
+   * the pack and the CITY card lit up gold beside the ROAD card they were being
+   * told to press. The lesson is easier to write when it knows exactly what is
+   * in the pack — the cards that are affordable are a fact of the step, not of
+   * how much the player happened to collect on the way here.
+   *
+   * Anything not named is set to ZERO. That is the whole point: the empty piles
+   * are as scripted as the full ones, and the card that must not be affordable
+   * has to be un-affordable on purpose.
+   */
+  function give(pack) {
+    for (const r of RES) me.res[r] = Math.max(0, (pack && pack[r]) | 0);
+    if (g.hud && g.hud.pulseResource) {
+      for (const r of RES) {
+        if (pack && pack[r]) { try { g.hud.pulseResource(r); } catch (e) { /* silent */ } }
+      }
+    }
+  }
+
   /** Top the pack up to `cost`. Returns true if anything was handed over. */
   function topUp(cost) {
     let gave = false;
@@ -454,6 +497,113 @@ export function createTutorial(state, game, deps = {}) {
     return best >= 0 ? best : homeTile;
   }
 
+  /* ------------------------------------------------------- the map's own state
+   *
+   * Three readings the map-open steps need, all of them off surfaces the
+   * overview already publishes, so the tutorial never reaches into it.
+   */
+
+  /* Where the board was standing when the current step came up. See `mapMoved`. */
+  let panBase = null;
+
+  function panPose() {
+    const i = g.overview && g.overview.panInfo;
+    if (!i) return null;
+    return { z: i.zoom, x: i.pan ? i.pan[0] : 0, y: i.pan ? i.pan[1] : 0 };
+  }
+
+  /**
+   * How far the player has pushed the board around since this step began, as a
+   * single 0..n figure.
+   *
+   *   "Say zoom in and zoom out with your fingers or click and drag to navigate
+   *    the map. After a few seconds of them doing that, have another step."
+   *
+   * Read as MOVING rather than as WAITING. A timer would move somebody on
+   * mid-sentence and hold somebody who already knows how a map works, and it
+   * cannot tell the difference between the two. Zoom and pan are added together
+   * so either one satisfies it: the zoom term is a ratio (a 25% change is 0.25)
+   * and the pan term is in board units against the island's own width, so both
+   * are on roughly the same scale whatever the viewport is doing.
+   */
+  function mapMoved() {
+    const now = panPose();
+    if (!now) return 0;
+    if (!panBase) { panBase = now; return 0; }
+    const dz = Math.abs(Math.log(Math.max(0.001, now.z / panBase.z)));
+    const dp = (Math.abs(now.x - panBase.x) + Math.abs(now.y - panBase.y)) / 220;
+    return dz * 1.6 + dp;
+  }
+
+  /** Is a road target chosen but not yet confirmed — the first of the two taps? */
+  function roadArmed() {
+    const m = g.overview && g.overview.metrics;
+    return !!(m && m.mode === 'place-road' && m.sel !== null && m.sel !== undefined);
+  }
+
+  /* ------------------------------------------------- a board worth reading
+   *
+   *   "I want for this step to just choose random numbers — so even if the
+   *    longest road and largest army haven't been claimed, we're artificially
+   *    adding in numbers so you see that you have a 3 road streak and the
+   *    longest is at 5 right now, and you've played 3 knights and that's the
+   *    biggest right now. That way you can explain those numbers in the
+   *    tutorial."
+   *
+   * The awards card is a readout, and in a practice run there is nothing in it:
+   * the rivals are frozen, the player has laid two roads, and both lines say
+   * `0 › —`. Teaching somebody to read a gauge with the needle at zero is the
+   * problem the note is naming.
+   *
+   * So the numbers go into `state` rather than into the sentence, and the card
+   * the player is taught is the real card doing its real job — the rival's name
+   * is coloured off the real seat, YOURS appears because the real rule fired,
+   * and the two lines are in the two DIFFERENT states the card has: one you are
+   * chasing, one you already hold.
+   *
+   * `refreshAwards` in hud.js recomputes from these fields every tenth of a
+   * second and `recomputeAwards` in rules.js would overwrite them the moment
+   * anything is built — which is fine and is why this is only up for three
+   * steps and is taken back off at the closing card.
+   */
+  const FAKE = { road: 5, mine: 3, knights: 3, rival: 1 };
+  let fakedAwards = false;
+
+  function fakeAwards() {
+    const rival = state.players[FAKE.rival];
+    if (!rival) return;
+    fakedAwards = true;
+    me.longestRoadLen = FAKE.mine;
+    rival.longestRoadLen = FAKE.road;
+    state.longestRoadHolder = FAKE.rival;
+    me.knightsPlayed = FAKE.knights;
+    for (let i = 1; i < state.players.length; i++) state.players[i].knightsPlayed = 0;
+    state.largestArmyHolder = 0;
+  }
+
+  /** Put it back, so nothing invented survives into a real match. */
+  function clearFakeAwards() {
+    if (!fakedAwards) return;
+    fakedAwards = false;
+    for (const p of state.players) { p.longestRoadLen = 0; p.knightsPlayed = 0; }
+    state.longestRoadHolder = -1;
+    state.largestArmyHolder = -1;
+  }
+
+  /** Every corner and edge the player already owns, as world points. */
+  function myPieces() {
+    const out = [];
+    for (const iid of me.settlements) {
+      const n = intersections[iid];
+      if (n) out.push({ x: n.x, z: n.z, r: 78 });
+    }
+    for (const iid of me.cities) {
+      const n = intersections[iid];
+      if (n) out.push({ x: n.x, z: n.z, r: 86 });
+    }
+    return out;
+  }
+
   /** The owned hex that is actually resting, so the clock has something over it. */
   function restTile() {
     for (const tid of workable()) {
@@ -470,8 +620,9 @@ export function createTutorial(state, game, deps = {}) {
     homeTile: () => homeTile,
     workable,
     walked: () => walked,
-    topUp, tileCentre, itemOnHome, standingOn,
+    topUp, give, tileCentre, itemOnHome, standingOn,
     sweptAny, sweepTile, restTile,
+    mapMoved, roadArmed, myPieces, fakeAwards, clearFakeAwards,
     restart: () => restart()
   };
 
@@ -549,7 +700,8 @@ export function createTutorial(state, game, deps = {}) {
 
   function spotShape(step) {
     if (!step) return null;
-    if (!step.spot && !step.spotDom && !step.spotMe && !step.spotWorld) return null;
+    if (!step.spot && !step.spotDom && !step.spotMe
+      && !step.spotWorld && !step.spotWorldMany) return null;
     const holes = [], pips = [], rects = [];
 
     /* ------------------------------------------------- holes on the INTERFACE
@@ -604,6 +756,19 @@ export function createTutorial(state, game, deps = {}) {
       const s = projectGround(wp.x, wp.z, wp.lift === undefined ? 6.2 : wp.lift);
       const r = wp.r || 96;
       if (s) { const p = nudge(s, r); holes.push({ x: p.x, y: p.y, r }); }
+    }
+
+    /* ...and a LIST of world points, for the step that lights everything the
+       player already owns: "it highlights the blue roads and settlements that
+       already exist on the map, showing that those are yours — without a yellow
+       circle, but instead just darkening the rest of the map slightly again."
+       Not clamped, unlike the single-point case: these come in a handful and one
+       of them being off the edge is a hole that is genuinely elsewhere, not a
+       step with nothing to light. */
+    const many = typeof step.spotWorldMany === 'function' ? step.spotWorldMany() : null;
+    if (many) for (const q of many) {
+      const s = projectGround(q.x, q.z, q.lift === undefined ? 1.2 : q.lift);
+      if (s) holes.push({ x: s.x, y: s.y, r: q.r || 84 });
     }
 
     if (!step.spot) {
@@ -669,6 +834,14 @@ export function createTutorial(state, game, deps = {}) {
      * can see no reason for is worse than a card sitting a little higher.
      */
     const nokeys = !!want.nokeys;
+    // ...and the phone-only variant, for the step that only needs the room. 
+    const nokeysSm = !!want.nokeysPhone;
+    /* The map's player rail stands down for the steps that put the coach card
+       in its column — see the SIDE band in tutorial.css. Driven off `onMap`
+       rather than a separate flag, because a step that asked for the column and
+       forgot to hide the rail would stack the two on top of each other. */
+    const norail = !!want.norail
+      || !!(step && step.onMap && step.onMap !== 'centre');
     const root = document.getElementById('ui');
     if (root) {
       toggle(root, 'tut-pack', !!want.pack);
@@ -676,9 +849,15 @@ export function createTutorial(state, game, deps = {}) {
       toggle(root, 'tut-awards', !!want.awards);
       toggle(root, 'tut-nobuild', nobuild);
       toggle(root, 'tut-nokeys', nokeys);
+      toggle(root, 'tut-nokeys-sm', nokeysSm);
+      toggle(root, 'tut-norail', norail);
     }
     // The badge is not inside `#ui`, so it is dressed separately. See `wear`.
-    if (coach && coach.wear) coach.wear({ pack: !!want.pack, nobuild, nokeys });
+    if (coach && coach.wear) {
+      coach.wear({
+        pack: !!want.pack, nobuild, nokeys, nokeysSm, noquit: !!want.noquit
+      });
+    }
   }
 
   function clearHud() {
@@ -703,6 +882,8 @@ export function createTutorial(state, game, deps = {}) {
   function chromeFor(step) {
     let size = phase === 'brief' ? 'big' : (step.size || 'big');
     let place = step.place || 'bottom';
+    // Still inside the step's own quiet gap: nothing on screen but the game.
+    if (quietT > 0) return { size: 'gone', place };
     /*
      * A FULL-SCREEN SHEET OR THE PLACEMENT MAP TAKES THE WHOLE DISPLAY, so the
      * badge stands down to nothing but its ring.
@@ -724,6 +905,28 @@ export function createTutorial(state, game, deps = {}) {
      */
     const sheetUp = !!(g.panels && g.panels.isOpen);
     const mapUp = !!(g.overview && g.overview.isOpen);
+
+    /*
+     * ...UNLESS THE STEP HAS SOMEWHERE TO STAND ON IT.
+     *
+     *   "You can hide the players column on the right of the screen and put the
+     *    instructions box for this step over there."
+     *
+     * That is the missing third option, and it is the honest one for a lesson
+     * that is ABOUT the map rather than merely interrupted by it. The board map
+     * already reserves a 186px column down its right edge for the player rail
+     * (`.ov-rail` in ui.css) and fits the board to whatever is left, so a card
+     * standing there covers nothing: the rail goes, the card takes its slot, and
+     * the board is exactly the size it always was.
+     *
+     * `onMap` is opt-in per step for the same reason GONE is still the default.
+     * A step that happens to have the map open under it — the player pressed
+     * the map key mid-lesson — has nothing to say about it and should still get
+     * out of the way. Only the steps written for the map ask for the column.
+     */
+    if (mapUp && step.onMap === 'centre') return { size: 'big', place: 'centre' };
+    if (mapUp && step.onMap) return { size: step.onMap === 'slim' ? 'slim' : 'big', place: 'side' };
+    if (sheetUp && step.onSheet) return { size: step.onSheet === 'slim' ? 'slim' : 'big', place: 'side' };
     if (sheetUp || mapUp) size = 'gone';
     return { size, place };
   }
@@ -756,6 +959,9 @@ export function createTutorial(state, game, deps = {}) {
       if (skip) { advance(1, true); return; }
     }
     snapshot();
+    // A fresh baseline for `mapMoved`: "has the player moved the board SINCE
+    // this step came up", not "since the map opened".
+    panBase = panPose();
     if (phase === 'body' && step.enter) {
       try { step.enter(); } catch (e) { /* silent */ }
     }
@@ -778,6 +984,7 @@ export function createTutorial(state, game, deps = {}) {
      * is never held, on this or any other step.
      */
     heldNow = !!step.holdNext && phase === 'body' && !satisfied.has(step.id);
+    quietT = (phase === 'body' && step.quiet > 0) ? step.quiet : 0;
 
     const c = chromeFor(step);
     coach.show({
@@ -862,6 +1069,8 @@ export function createTutorial(state, game, deps = {}) {
 
     const step = steps[idx];
     if (!step) return;
+
+    if (quietT > 0) quietT = Math.max(0, quietT - dt);
 
     // The screen can change under a step — a sheet opens, the map closes — so
     // the badge re-reads what it should be wearing every frame. `chrome` is a
@@ -977,6 +1186,9 @@ export function createTutorial(state, game, deps = {}) {
     if (coach) coach.hide();
     if (spot) spot.clear();
     if (typeof deps.setPractice === 'function') deps.setPractice(false);
+    // Leaving from the awards slides must not hand the player a match that
+    // thinks a frozen bot has a five-road line.
+    clearFakeAwards();
     clearHud();
     // Whatever the run shut, the player gets back: leaving must never hand
     // somebody a match with no build cards in it.

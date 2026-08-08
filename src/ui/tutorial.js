@@ -547,13 +547,15 @@ export function createCoach(root) {
     toggle(card, 'at-low', place === 'low');
     toggle(card, 'at-foot', place === 'foot');
     toggle(card, 'at-centre', place === 'centre');
+    toggle(card, 'at-side', place === 'side');
     /* END PRACTICE lives in the top-right corner and stays there. The top
        badge is deliberately narrow enough to clear it — see `--tut-side` in
        tutorial.css, which reserves the same width on both sides of the screen
        — so the two never have to negotiate. It goes away only when the badge
        itself has, because a chip floating alone over a trade sheet is exactly
        the litter the GONE size exists to prevent. */
-    toggle(quitBtn, 'on', shown && size !== 'gone');
+    toggle(quitBtn, 'on', shown && size !== 'gone'
+      && !layer.classList.contains('tut-noquit'));
   }
 
   function show(info) {
@@ -649,8 +651,18 @@ export function createCoach(root) {
   function wear(flags) {
     const f = flags || {};
     toggle(layer, 'tut-nokeys', !!f.nokeys);
+    toggle(layer, 'tut-nokeys-sm', !!f.nokeysSm);
     toggle(layer, 'tut-nobuild', !!f.nobuild);
     toggle(layer, 'tut-pack', !!f.pack);
+    /* END PRACTICE is the coach's own chip, so this one is not a mirror of an
+       `#ui` class — it is the only place it can be done.
+
+         "Hide the End practice button for this step."
+
+       Two steps ask: the score lesson, which lights the counter in the top
+       right and cannot have a cream chip sitting next to it, and the map-open
+       steps, where the chip would stand over the board. */
+    toggle(layer, 'tut-noquit', !!f.noquit);
   }
 
   function destroy() {

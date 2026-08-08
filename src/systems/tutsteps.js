@@ -67,7 +67,50 @@ const WITH_PACK = { pack: true };
    of the screen and the three circular keys are the last thing in its way:
    "on mobile just hide the build map and pause buttons for this step as well,
    so the instruction box can actually sit on the bottom without covering it." */
-const PACK_LESSON = { pack: true, nobuild: true, nokeys: true };
+const PACK_LESSON = { pack: true, nobuild: true, nokeysPhone: true };
+/* The map-open steps. The pack stays up — it is what the costs are paid out of
+   — and END PRACTICE stands down, because the chip sits in the top-right corner
+   the map's own controls are using. `norail` is not listed: `onMap` implies it
+   (see applyHud), so a step cannot ask for the column and forget to clear it. */
+/* The map-open steps. The pack stays up — it is what the costs are paid out of
+   — END PRACTICE stands down because its chip sits where the map's own controls
+   are, and the build cards stand down so that the DECLARED place below is
+   habitable. That place is the OFF-MAP fallback: `chromeFor` moves these cards
+   into the map's right-hand column whenever the map is actually open, and the
+   foot of the screen is where they land if it is not — which happens the moment
+   somebody presses Back out of the sequence after the map has closed. A card
+   that assumed the map would always be there stood on the build cards. */
+const MAP_STEP = { pack: true, noquit: true, nobuild: true };
+/* ...except the one map step that is ABOUT the rail, which needs it there. */
+const MAP_KEEP_RAIL = { pack: true, noquit: true };
+/* After the road lands: the standings come up and the bottom bar is empty, so
+   the closing card can sit as low as the score lesson's. */
+const SCORING_NOKEYS = { pack: true, ranks: true, nobuild: true };
+/* The score lesson. Everything in the corners stands down so the standings are
+   the only lit thing on the screen — including END PRACTICE, which is a cream
+   chip a thumb's width from the counter being pointed at. */
+const SCORE_LESSON = {
+  pack: true, ranks: true, nobuild: true, nokeys: true, noquit: true
+};
+
+/*
+ * WHAT IS IN THE PACK WHEN THE BUILDING LESSONS START.
+ *
+ *   "Give them enough resources to build 5 roads and 3 settlements, but they
+ *    have no ore, so they can't build a city."
+ *
+ * Five roads is 20 wood and 20 brick; three settlements is another 12 of each
+ * plus 12 wheat and 12 wool. Ore is ZERO and that is the load-bearing part —
+ * `t.give` sets rather than tops up, so the CITY card cannot come up gold
+ * beside the ROAD card the step is telling the player to press.
+ */
+const ROAD_PACK = Object.freeze({
+  wood: COST.road.wood * 5 + COST.settlement.wood * 3,
+  brick: COST.road.brick * 5 + COST.settlement.brick * 3,
+  wheat: COST.settlement.wheat * 3,
+  wool: COST.settlement.wool * 3,
+  ore: 0
+});
 const SCORING = { pack: true, ranks: true, nobuild: true };
 /* The awards step, and the reason it carries `nobuild` like the scoring steps
    do. Its badge sits `low` — it has to, because it is pointing at the two rows
@@ -78,6 +121,13 @@ const SCORING = { pack: true, ranks: true, nobuild: true };
    at all." Nothing on this step asks the player to build, so the four cards
    stand down for it exactly as they do for step 11. */
 const EVERYTHING = { pack: true, ranks: true, awards: true, nobuild: true };
+/* The awards lesson. Everything down but the scoreboard in the top-left, which
+   is the one thing the three slides are about — including END PRACTICE and the
+   three keys, for the same reason the score lesson loses them. */
+const AWARD_LESSON = {
+  pack: true, ranks: true, awards: true,
+  nobuild: true, nokeys: true, noquit: true
+};
 /* The last card. Everything that was introduced stays introduced, and the four
    build cards stand down so the closing badge can sit as low as step 11's. */
 const DONE = { pack: true, ranks: true, awards: true, nobuild: true };
@@ -98,6 +148,14 @@ export function buildSteps(t) {
     return !!(n && !n.classList.contains('hid'));
   };
   const cardsHeld = () => me.cards.length + (me.vpCards | 0);
+
+  /* The player's own seat colour, named rather than shown, because the step
+     that introduces the rail is read before the rail is looked at:
+     "your color is blue". Read off the seat rather than hard-coded, so it
+     cannot drift if the palette or the seat order ever changes. */
+  const myColourName = () => (me.color && me.color.key)
+    ? String(me.color.key).toLowerCase()
+    : 'your colour';
 
   /**
    * Where the ring goes while a trade is being made.
@@ -407,63 +465,182 @@ export function buildSteps(t) {
       check: () => buildRowOpen()
     },
 
-    /* 9 -------------------------------------------------------- A ROAD
+    /* 9 ------------------------------------------------------- BUY A ROAD
      *
-     *   "When it's time to build a road, switch the tutorial step back to where
-     *    the resource counter is, and remove that pack/resource counter
-     *    temporarily. Force them to actually press a button to build a road to
-     *    automatically move to the next step."
+     *   "Darken the screen except for the four build type buttons on the bottom
+     *    of the screen. Don't overcomplicate the step, there is too much text on
+     *    the instructions. Just say that it costs you 4 wood and 4 brick to
+     *    build a road, tap the road card to open the map and build your road.
+     *    Again the first time they visit this step within the tutorial don't let
+     *    them press next unless they press the road button already once. Make
+     *    sure you give them a predetermined number of resources for this step —
+     *    let's say they clear the resources they already collected, and you give
+     *    them enough resources to build 5 roads and 3 settlements, but they have
+     *    no ore, so they can't build a city. Once I click road, the yellow
+     *    circle should remove and it goes to the next step."
      *
-     *   "On the step for building the road, show the popup for the tutorial
-     *    larger, then they click okay, then just keep the highlight of what
-     *    they're supposed to click... Let them know they can tap twice to build
-     *    a road, instead of having to press confirm."
+     * The BRIEF is gone. It was a paragraph and an OK key in front of a step
+     * whose whole content is one sentence, and the note is explicit that this is
+     * too much reading — so the sentence IS the step now, and the cost is in it
+     * because the cost is the only number that matters here.
      *
-     * Both halves, in one step: the badge comes up big at the top with the pack
-     * out of the way, and after OK all that is left is one line and the ring
-     * around the ROAD card. The step ends when the placement map opens, which
-     * only the real card can do.
+     * THE PACK IS SET RATHER THAN TOPPED UP, and that is what makes the rest of
+     * the run behave. `t.give` zeroes everything it is not handed, so ORE is
+     * zero on purpose: the CITY card cannot light up gold next to the ROAD card
+     * the player is being told to press, which is exactly the kind of thing that
+     * makes somebody tap the wrong one. Five roads and three settlements is what
+     * the note asks for and it is enough to carry the next several steps without
+     * another top-up interrupting them.
      */
     {
       id: 'road',
       title: 'Build a road',
-      brief: {
-        title: 'Build a road',
-        text: `A road is ${COST.road.wood} wood and ${COST.road.brick} brick, and your pack is topped up. Tap the ROAD card, then a glowing line on the map — and tap that SAME line again to build it. There is no confirm button: the second tap is the confirm.`
-      },
-      text: 'Tap the ROAD card.',
-      enter: () => t.topUp(COST.road),
-      size: 'slim', place: 'top', hud: OPENING,
+      text: `A road costs ${COST.road.wood} wood and ${COST.road.brick} brick — you have plenty. Tap the ROAD card to open the map.`,
+      enter: () => t.give(ROAD_PACK),
+      size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="road"]'],
+      /* Everything down except the four cards. The ring stays on ROAD — it is
+         naming one of four, which is the job a ring is actually good at. */
+      spotDom: ['.hud-bc'],
+      holdNext: true,
+      /* "Once I click road ... it goes to the next step." The map opening is
+         what a real tap on that card does, and the ring goes with the step. */
       check: () => mapIn('road') || me.roads.size > t.base.roads
     },
 
-    /* 10 ----------------------------------------------------------------- */
+    /* 10 --------------------------------------------- MOVING AROUND THE MAP
+     *
+     *   "You can hide the players column on the right of the screen and put the
+     *    instructions box for this step over there. Say zoom in and zoom out
+     *    with your fingers or click and drag to navigate the map. After a few
+     *    seconds of them doing that, have another step."
+     *
+     * The first of five short steps that all live in the map's own right-hand
+     * column — see `onMap` in systems/tutorial.js and the SIDE band in
+     * tutorial.css. The badge used to vanish entirely the moment this surface
+     * opened, which was right when it had nothing to say about the map and is
+     * wrong now that the map is the lesson.
+     *
+     * "After a few seconds of them doing that" is read as MOVING, not waiting:
+     * the step ends once the player has actually pushed the board around,
+     * measured off the map's own pan/zoom pose. Somebody who already knows how
+     * to work a map is not held here, and somebody who has not touched it is not
+     * moved on by a timer while they read.
+     */
+    {
+      id: 'roadmapmove',
+      title: 'Move the map',
+      text: handheld()
+        ? 'Pinch to zoom in and out. Drag with one finger to move around the island.'
+        : 'Scroll to zoom in and out. Click and drag to move around the island.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      check: () => t.mapMoved() > 0.55
+    },
+
+    /* 11 ------------------------------------------------- WHO IS ON THE BOARD
+     *
+     *   "The next step shows the players section on the right and covers the
+     *    map / darkens it, to show there's the players and their colors, your
+     *    color is blue."
+     *
+     * So this one gives the column BACK — it is the only step in the sequence
+     * that wants the rail rather than the slot — and stands in the middle over a
+     * darkened board, because the thing being pointed at is the rail itself.
+     */
+    {
+      id: 'roadmapwho',
+      title: 'Who else is here',
+      text: () => `Down the right are the four settlers and the colour each one builds in. You are ${myColourName()} — every road and settlement in that colour is yours.`,
+      onMap: 'centre', size: 'big', place: 'centre', veil: true,
+      hud: MAP_KEEP_RAIL,
+      spotDom: ['.ov-rail']
+    },
+
+    /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
+     *
+     *   "Then the next step shows the map again with the instructions covering
+     *    where the players section is. It highlights the blue roads and
+     *    settlements that already exist on the map, showing that those are
+     *    yours — without a yellow circle, but instead just darkening the rest of
+     *    the map slightly again."
+     */
+    {
+      id: 'roadmapmine',
+      title: 'These are yours',
+      text: () => `The ${myColourName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      spotWorldMany: () => t.myPieces()
+    },
+
+    /* 13 ------------------------------------------------- WHERE A ROAD MAY GO
+     *
+     *   "The next step shows the white highlights showing where you can build
+     *    roads right now, and it asks them to click one of the glowing sections
+     *    to place a road."
+     */
+    {
+      id: 'roadmappick',
+      title: 'Pick a line',
+      text: 'The glowing white lines are every place a road may go right now. Tap one.',
+      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      check: () => t.roadArmed() || me.roads.size > t.base.roads
+    },
+
+    /* 14 ---------------------------------------------------------- CONFIRM
+     *
+     *   "Mention that you have to click it twice to confirm that's actually
+     *    where you want to place it, and make them click it again."
+     */
     {
       id: 'roadplace',
-      title: 'Tap it twice',
-      text: 'Tap a glowing line, then tap it again. Tapping the empty sea puts it back.',
-      size: 'slim', place: 'top', hud: OPENING,
+      title: 'Tap it again',
+      text: 'That line is chosen, not built. Tap the SAME line once more to confirm it. Tapping the open sea puts it back.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => me.roads.size > t.base.roads
     },
 
-    /* 11 ------------------------------------------------------- THE SCORE
+    /* 15 ------------------------------------------------- ...AND WATCH IT GO UP
+     *
+     *   "Then close the tutorial steps, show the building of the road animation
+     *    happen, and after it has you can show the next step."
+     *
+     * `quiet` is the whole step: the badge is not shown at all while the map
+     * closes and the road drops into place, and it comes back when the timer
+     * runs out. A card explaining a thing over the top of the thing happening is
+     * the one mistake this rework keeps being asked to stop making.
+     */
+    {
+      id: 'roadbuilt',
+      title: 'Built',
+      text: 'That is a road. It is worth no points on its own — what it does is REACH: every corner your network touches is a corner you may settle.',
+      quiet: 1.9,
+      size: 'big', place: 'low', hud: SCORING_NOKEYS
+    },
+
+    /* 16 ------------------------------------------------------- THE SCORE
      *
      *   "For step 11, add the scores on the right side of screen and hide the
      *    build cards. That way the step explanation for the tutorial isn't
      *    covering the game board and my player in the middle of the screen."
      *
-     * With the four cards away the badge drops to the LOW slot, a hand's width
-     * off the bottom edge, and the whole middle of the screen — the island, and
-     * the settler standing on it — is clear while the standings are read.
+     *   "Hide the End Practice button for this step, and hide the build map
+     *    pause buttons. And instead of the yellow circle, darken the screen
+     *    aside from the points counter in the top right corner."
+     *
+     * The second note finishes the first. The card had already dropped to the
+     * LOW band with the build cards away; what was left in the corners was a
+     * gold ring on the standings and a cream END PRACTICE chip sitting a
+     * thumb's width from it, both competing with the thing being pointed at. So
+     * the ring goes, the chip goes, the three keys go, and the wash lights the
+     * standings alone.
      */
     {
       id: 'points',
       title: 'That is what points are',
-      text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings on the right carry everybody's.`,
+      text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings top right carry everybody's.`,
       live: true,
-      size: 'big', place: 'low', hud: SCORING,
-      dom: ['.hud-tr .rk.me', '.hud-tr']
+      size: 'big', place: 'foot', hud: SCORE_LESSON,
+      spotDom: ['.hud-tr']
     },
 
     /* 12 ----------------------------------------------------------------- */
@@ -622,27 +799,75 @@ export function buildSteps(t) {
       dom: ['.sc-vp']
     },
 
-    /* 21 ----------------------------------------------------- THE TWO AWARDS
+    /* ------------------------------------------------------- THE TWO AWARDS
      *
      *   "Don't forget to mention the largest army and the longest road and the
      *    points associated, and where you can find that info. Don't show that
      *    section until that step in the tutorial."
      *
-     * So the two rows have been off the scoreboard for the whole run and they
-     * arrive HERE, under the ring, at the moment they are explained.
+     *   "Darken the screen again except for the longest road and largest army
+     *    counter in the top left corner. Make the popup instruction explaining
+     *    it use multiple slides and be extra clear. I want for this step to just
+     *    choose random numbers — so even if the longest road and largest army
+     *    haven't been claimed, we're artificially adding in numbers so you see
+     *    that you have a 3 road streak and the longest is at 5 right now, and
+     *    you've played 3 knights and that's the biggest right now. That way you
+     *    can explain those numbers in the tutorial."
+     *
+     * THREE SLIDES, AND A CARD WITH SOMETHING ON IT.
+     *
+     * The old step was one paragraph with a gold ring on an award card that,
+     * in a practice run where the rivals never move and the player has laid two
+     * roads, read `0 › —` on both lines. It was explaining a readout using an
+     * example of that readout with nothing in it — which is the whole reason
+     * the note asks for invented numbers. So the run writes a board in: you on
+     * 3 roads against a rival's 5, and you holding Largest Army on 3 knights.
+     * One award you are chasing and one you already have, because those are the
+     * two states the card has and both of them need reading.
+     *
+     * The numbers are written into `state` rather than faked in the text, so
+     * the card the player is being taught is the real card doing its real job —
+     * the holder's name is coloured by the real seat, YOURS appears because the
+     * real rule fired. It is undone on the way out (see `enter` on the closing
+     * step) so nothing invented survives into a match.
      */
     {
       id: 'awards',
       title: 'Points you never build',
-      text: `Longest Road: ${LONGEST_ROAD_VP} points for ${LONGEST_ROAD_MIN}+ segments in one unbroken line. Largest Army: ${LARGEST_ARMY_VP} for ${LARGEST_ARMY_MIN}+ Knights played. Both sit in the scoreboard, top left — who holds it, your own number, and how many more you need.`,
-      size: 'big', place: 'low', hud: EVERYTHING,
-      dom: ['.sc-awards']
+      brief: {
+        title: 'Two more ways to score',
+        text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard in the top left, and they change hands the moment somebody beats you. I have put some numbers on them so there is something to read.`
+      },
+      text: `LONGEST ROAD, top line: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is YOURS and the gold one is the record — so 3 against 5 means two more segments would tie it, three would take it.`,
+      enter: () => t.fakeAwards(),
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotDom: ['.scorecard']
+    },
+
+    {
+      id: 'awards2',
+      title: 'Largest Army',
+      text: `LARGEST ARMY, second line: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED — not held. You are on 3 and nobody has beaten it, so the line says YOURS and the ${LARGEST_ARMY_VP} points are already counted in your score.`,
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotDom: ['.scorecard']
+    },
+
+    {
+      id: 'awards3',
+      title: 'They can be taken',
+      text: 'Neither one is yours to keep. The moment a rival lays a longer line or plays one more Knight, the points move to them — which is why a two-point swing can end a match you thought you were winning.',
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotDom: ['.scorecard']
     },
 
     /* 22 ----------------------------------------------------------------- */
     {
       id: 'done',
       title: 'That is the whole game',
+      /* Put the board back. The awards lesson wrote numbers into `state` so it
+         would have a filled-in card to teach from; nothing invented may survive
+         into the match the player is about to be handed. */
+      enter: () => t.clearFakeAwards(),
       text: 'Collect on land you own, build roads to reach more, turn corners into settlements and cities, and trade for what you are short of. Go and win one.',
       action: 'Play a Match',
       onAction: () => t.restart(),

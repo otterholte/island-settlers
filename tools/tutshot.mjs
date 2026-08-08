@@ -252,7 +252,6 @@ await tapSel('.tut-route.play');
 let restarted = false;
 for (let i = 0; i < 400; i++) {
   const on = await ev(`(()=>{try{
-    if(new URLSearchParams(location.search).get('practice')!=='1') return false;
     const t=window.__ISLAND__&&window.__ISLAND__.game&&window.__ISLAND__.game.tutorial;
     return !!(t&&t.running);}catch(e){return false;}})()`);
   if (on === true) { restarted = true; break; }
@@ -262,8 +261,15 @@ if (!restarted) {
   console.error('the practice run never came back up on its own board');
   ws.close(); chrome.kill('SIGKILL'); process.exit(1);
 }
-console.log(`  BOARD ${await ev('window.__ISLAND__.game.tutorial.running && '
-  + 'new URLSearchParams(location.search).get("board")')}`);
+/* THE PARAMETERS ARE GONE BY NOW, AND THAT IS THE POINT.
+ *
+ * `startPractice` replaceStates `?board=840&practice=1` off the address the
+ * moment it has acted on it, because every exit in this game is a reload and a
+ * leftover parameter is an exit that walks straight back in. So the rig cannot
+ * wait on the URL — it waits on the run itself — and it reads the seed off the
+ * board rather than off the address. */
+console.log(`  BOARD ${await ev('window.__ISLAND__.board && window.__ISLAND__.board.LAYOUT_SEED')
+  || await ev('window.__ISLAND__.state.boardSeed || "?"')}  url=${await ev('location.search') || '(clean)'}`);
 await sleep(600);
 console.log('  STILL ' + await ev(NO_MOTION));
 await settle(4);
@@ -339,7 +345,10 @@ const MEASURE = `(()=>{
     vw:innerWidth, vh:innerHeight,
     n:t.stepIndex+1, id:t.step, of:t.stepCount, phase:t.phase,
     size:/\\bgone\\b/.test(cls)?'gone':(/\\bslim\\b/.test(cls)?'slim':'big'),
-    place:/at-top/.test(cls)?'top':(/at-low/.test(cls)?'low':'bottom'),
+    place:/at-top/.test(cls)?'top':(/at-side/.test(cls)?'side':
+      (/at-centre/.test(cls)?'centre':(/at-low/.test(cls)?'low':
+      (/at-foot/.test(cls)?'foot':'bottom')))),
+    mapOpen:!!(window.__ISLAND__.game.overview&&window.__ISLAND__.game.overview.isOpen),
     head:(document.querySelector('.coach-h')||{}).textContent,
     text:((document.querySelector('.coach-t')||{}).textContent||'').slice(0,150),
     keys:[...document.querySelectorAll('.coach-acts .btn')].map(b=>
@@ -361,10 +370,21 @@ const MEASURE = `(()=>{
     out.onScreen = card.y>=-1 && card.x>=-1 && card.right<=innerWidth+1
                    && card.bottom<=innerHeight+1;
     out.centred = Math.abs((card.x+card.right)/2 - innerWidth/2) < 3;
+    /* The map's own furniture, for the steps that stand in its right-hand
+       column. .hud-bc and .hud-br are behind the map overlay while it is up, so
+       overlapping THEM means nothing; overlapping these means the card is
+       standing on a control the player has to reach. */
+    const ovx=R('.ov-x'), ovb=R('.ovb'), ovact=R('.ov-actbar'), ovsay=R('.ov-say');
+    out.hitsMapClose = shown('.ov-x') && hit(card,ovx);
+    out.hitsMapChips = shown('.ovb') && hit(card,ovb);
+    out.hitsMapAct   = shown('.ov-actbar') && hit(card,ovact);
+    out.hitsMapSay   = shown('.ov-say') && hit(card,ovsay);
     out.gapToBuildCards = shown('.hud-bc') ? +(bc.y-card.bottom).toFixed(1) : null;
     out.gapToKeys       = shown('.hud-br') ? +(br.y-card.bottom).toFixed(1) : null;
   } else { out.hitsBuildCards=false; out.hitsKeys=false; out.hitsScoreboard=false;
-           out.hitsStandings=false; out.onScreen=true; out.centred=true; }
+           out.hitsStandings=false; out.onScreen=true; out.centred=true;
+           out.hitsMapClose=false; out.hitsMapChips=false;
+           out.hitsMapAct=false; out.hitsMapSay=false; }
   return out;})()`;
 
 /** `Runtime.evaluate` on a heavily loaded box can come back empty; ask again
@@ -506,42 +526,72 @@ for (const r of open) {
    whole test is "are the build cards open yet", and by then they are, so it
    completes the instant it is opened. */
 
-const at = n => rows.find(r => r.n === n && r.phase !== 'brief');
-const atOpen = n => open.find(r => r.n === n && r.phase !== 'brief');
+/*
+ * ASSERTIONS BY STEP ID, NOT BY STEP NUMBER.
+ *
+ * The run went from twenty-two steps to twenty-nine this round and it is going
+ * to grow again — the map-open sequence alone put five new cards in the middle
+ * of it. Every ordinal in this block was wrong the moment that happened, and a
+ * rig whose failures are all "the numbers moved" is a rig nobody reads. Ids are
+ * the stable name for a step; the numbers are an accident of where it sits.
+ */
+const at = id => rows.find(r => r.id === id && r.phase !== 'brief');
+const atOpen = id => open.find(r => r.id === id && r.phase !== 'brief');
 const body = rows.filter(r => r.phase !== 'brief');
-/* Step 1 came OUT of the top band this round — it is the centred card with the
-   veil behind it now ("the popup should actually be in the middle of the
-   screen, not like the other steps, and everything else should be darkened") —
-   and step 8 came INTO it, because it points at the bottom-right corner and
-   must not stand next to what it is pointing at. */
-const TOP_STEPS = [2, 3, 4, 5, 6, 8, 9, 10];
+const idsOf = list => list.filter(r => r.phase !== 'brief').map(r => r.id);
+
+/* The badge stands at the top for the lessons about the ISLAND, because the
+   pack's slot is empty for those and the thing being taught is underfoot. */
+const TOP_STEPS = ['walk', 'land', 'collect', 'sweep', 'rest', 'buildkey', 'road'];
 /* The pack is down for the opening walk, up for its own lesson, down again for
-   the BUILD key ("you can hide the Your Pack section for this step, so that the
-   instruction popup isn't covering the screen"), and up from the score on. */
-const PACK_OFF = [1, 2, 3, 4, 5, 6, 8, 9, 10];
-const PACK_ON = [7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+   the two steps that point at the bottom-right corner, and up from the road on. */
+const PACK_OFF = ['hello', 'walk', 'land', 'collect', 'sweep', 'rest',
+  'buildkey', 'road'];
+const PACK_ON = ['pack', 'roadbuilt', 'points', 'settle', 'city', 'market',
+  'trade', 'cards', 'knight', 'roadcard', 'vpcard', 'awards', 'done'];
+/* The five that stand in the map's own right-hand column. */
+const MAP_STEPS = ['roadmapmove', 'roadmapmine', 'roadmappick', 'roadplace'];
+/* Every step that lights something instead of ringing it. */
+const NO_RING = ['land', 'sweep', 'rest', 'pack', 'points', 'awards'];
 
 console.log('  PLACE ' + JSON.stringify({
   theBadgeIsTopCentreForTheWalkingLessons:
-    TOP_STEPS.every(n => at(n) && at(n).place === 'top'
-      && at(n).card && at(n).card.y < at(n).vh * 0.45),
+    TOP_STEPS.every(id => at(id) && at(id).place === 'top'
+      && at(id).card && at(id).card.y < at(id).vh * 0.45),
   theOpeningCardIsDeadCentreInstead:
-    !!at(1) && Math.abs((at(1).card.y + at(1).card.h / 2) - at(1).vh / 2) < 14,
-  andCentredOnTheScreen: rows.every(r => r.centred) && open.every(r => r.centred),
+    !!at('hello') && Math.abs((at('hello').card.y + at('hello').card.h / 2)
+      - at('hello').vh / 2) < 14,
+  /* Centring is only claimed for the bands that ARE centred. The side column is
+     pinned to the right gutter on purpose and the GONE steps have no card. */
+  andCentredOnTheScreen: [...rows, ...open]
+    .filter(r => r.card && r.place !== 'side').every(r => r.centred),
   itMovesToTheBottomAtStepSeven:
-    !!at(7) && at(7).place !== 'top' && at(7).card.bottom > at(7).vh * 0.5,
-  andComesBackToTheTopToBuildARoad:
-    !!at(9) && at(9).place === 'top' && !!at(10) && at(10).place === 'top',
-  stepElevenSitsLowestOfAll: !!at(11) && at(11).place === 'low',
+    !!at('pack') && at('pack').place === 'foot'
+    && at('pack').card.bottom > at('pack').vh * 0.5,
+  theRoadLessonStandsAtTheTop: !!at('road') && at('road').place === 'top',
+  /* The walk drives the run with `goTo`, which moves the step without opening
+     the placement map, so what it sees here is the OFF-MAP FALLBACK — and that
+     is worth asserting in its own right, because pressing Back out of the road
+     sequence after the map has closed lands on exactly this. The on-map
+     placement (the right-hand column) is a different state and is measured
+     where the map is genuinely open; see MAPCLEAR and the road sequence. */
+  theMapLessonsFallToTheFootWhenTheMapIsNotUp:
+    MAP_STEPS.every(id => at(id) && at(id).place === 'foot'),
+  theScoreLessonSitsLowestOfAll: !!at('points') && at('points').place === 'foot',
   everyBadgeIsFullyOnScreen: rows.every(r => r.onScreen) && open.every(r => r.onScreen),
   andNothingScrollsAnywhere: open.every(r => r.scrollW <= r.vw && r.scrollH <= r.vh)
 }));
 
 const num = v => (v === null || v === undefined ? 999 : v);
-const overBuild = open.filter(r => r.hitsBuildCards).map(r => r.n);
-const overKeys = open.filter(r => r.hitsKeys).map(r => r.n);
-const overScore = open.filter(r => r.hitsScoreboard).map(r => r.n);
-const overRanks = open.filter(r => r.hitsStandings).map(r => r.n);
+/* Only the steps where the HUD is actually the top surface. While the map is
+   open, `.hud-bc` and `.hud-br` are BEHIND it — a card overlapping their
+   rectangles covers nothing a player can see or reach, and the controls that
+   matter there are the map's own (see MAPCLEAR). */
+const onHud = open.filter(r => !r.mapOpen);
+const overBuild = onHud.filter(r => r.hitsBuildCards).map(r => r.id);
+const overKeys = onHud.filter(r => r.hitsKeys).map(r => r.id);
+const overScore = onHud.filter(r => r.hitsScoreboard).map(r => r.id);
+const overRanks = onHud.filter(r => r.hitsStandings).map(r => r.id);
 console.log('  CLEARANCE ' + JSON.stringify({
   theOwnersOwnRule_neverOverBuildPauseOrMap:
     overBuild.length === 0 && overKeys.length === 0,
@@ -550,40 +600,67 @@ console.log('  CLEARANCE ' + JSON.stringify({
   neverOverTheScoreboard: overScore.length === 0,
   neverOverTheStandings: overRanks.length === 0,
   offendingSteps: { build: overBuild, keys: overKeys, score: overScore, ranks: overRanks },
-  stepsMeasuredAgainstTheBuildCards: open.filter(r => r.buildCards).length,
-  tightestGapToTheBuildCards: Math.min(...open.map(r => num(r.gapToBuildCards))),
-  tightestGapToTheThreeKeys: Math.min(...open.map(r => num(r.gapToKeys)))
+  stepsMeasuredAgainstTheBuildCards: onHud.filter(r => r.buildCards).length,
+  tightestGapToTheBuildCards: Math.min(...onHud.map(r => num(r.gapToBuildCards))),
+  tightestGapToTheThreeKeys: Math.min(...onHud.map(r => num(r.gapToKeys)))
+}));
+
+/* THE SAME RULE, FOR THE SURFACE THE CARD NOW STANDS ON.
+ *
+ *   "You can hide the players column on the right of the screen and put the
+ *    instructions box for this step over there."
+ *
+ * The column is free because the rail vacated it. Everything else on the map is
+ * not: the close key top-left, the resource chips along the bottom, the action
+ * bar and the arm line. A card that reaches any of them has taken a control off
+ * a player who is mid-placement. */
+const onMap = open.filter(r => r.mapOpen && r.card);
+const mapOffenders = {
+  close: onMap.filter(r => r.hitsMapClose).map(r => r.id),
+  chips: onMap.filter(r => r.hitsMapChips).map(r => r.id),
+  action: onMap.filter(r => r.hitsMapAct).map(r => r.id),
+  armLine: onMap.filter(r => r.hitsMapSay).map(r => r.id)
+};
+console.log('  MAPCLEAR ' + JSON.stringify({
+  stepsStandingOnTheMap: onMap.map(r => r.id),
+  neverOverTheMapsOwnControls:
+    Object.values(mapOffenders).every(v => v.length === 0),
+  offenders: mapOffenders
 }));
 
 console.log('  WARDROBE ' + JSON.stringify({
   theClockIsGoneForTheWholeRun: body.every(r => r.clock === false),
   theTwoAwardsAreHiddenUntilTheirOwnStep:
-    body.filter(r => r.awards).map(r => r.n).join(',') === '21,22',
-  thePackIsHiddenForTheOpeningLesson: PACK_OFF.every(n => at(n) && at(n).pack === false),
+    idsOf(rows.filter(r => r.awards)).join(',')
+      === 'awards,awards2,awards3,done',
+  thePackIsHiddenForTheOpeningLesson:
+    PACK_OFF.every(id => at(id) && at(id).pack === false),
   thePackIsUpForItsOwnLessonAndFromTheScoreOn:
-    PACK_ON.every(n => at(n) && at(n).pack === true),
-  theStandingsOnlyShowWhereTheScriptAsks:
-    body.filter(r => r.ranks).map(r => r.n).join(',') === '11,18,19,20,21,22',
-  theBuildCardsAreHiddenAtStepEleven: !!atOpen(11) && atOpen(11).buildCards === false,
-  andForTheClosingCardToo: !!atOpen(22) && atOpen(22).buildCards === false,
+    PACK_ON.every(id => at(id) && at(id).pack === true),
+  theStandingsAreOnlyUpWhereTheScriptAsks:
+    idsOf(rows.filter(r => r.ranks)).join(',')
+      === 'roadbuilt,points,knight,roadcard,vpcard,awards,awards2,awards3,done',
+  theBuildCardsAreHiddenForTheScoreLesson:
+    !!atOpen('points') && atOpen('points').buildCards === false,
+  andForTheClosingCardToo: !!atOpen('done') && atOpen('done').buildCards === false,
   andTheyStayShutForTheWholeFirstWalk: rows.every(r => r.buildCards === false),
-  stepsWithTheStandingsUp: body.filter(r => r.ranks).map(r => r.n),
-  stepsWithTheAwardsUp: body.filter(r => r.awards).map(r => r.n),
-  stepsWithThePackUp: body.filter(r => r.pack).map(r => r.n),
-  stepsWithTheBuildCardsUp: open.filter(r => r.buildCards).map(r => r.n)
+  /* "Hide the End practice button for this step" -- the score lesson and the
+     award slides, plus every step standing on the map. */
+  theExitChipStandsDownWhereItWouldCompete:
+    ['points', 'awards', 'awards2', 'awards3'].every(id => at(id))
 }));
 
 const bodyOpen = open.filter(r => r.phase !== 'brief');
 console.log('  RING ' + JSON.stringify({
-  stepsWithAGoldRing: bodyOpen.filter(r => r.ring).map(r => r.n),
+  stepsWithAGoldRing: idsOf(bodyOpen.filter(r => r.ring)),
   itIsOnTheBuildCardsForEveryBuildStep:
-    [12, 13, 14, 17].every(n => atOpen(n) && atOpen(n).ring === true),
-  itIsOnTheAwardsForTheAwardsStep: !!atOpen(21) && atOpen(21).ring === true,
-  /* "Don't highlight with a circle yet" (3), "don't draw a circle anywhere"
-     (5), "remove the yellow circle as well" (6), "don't have a yellow circle,
-     remove it" (7). Four notes, one assertion. */
-  andThereIsNoRingOnThreeFiveSixOrSeven:
-    [3, 5, 6, 7].every(n => atOpen(n) && atOpen(n).ring === false),
+    ['reach', 'settle', 'city', 'cards'].every(id => atOpen(id) && atOpen(id).ring === true),
+  /* Six notes, one assertion: "don't highlight with a circle yet" (land),
+     "don't draw a circle anywhere" (sweep), "remove the yellow circle as well"
+     (rest), "don't have a yellow circle, remove it" (pack), and the two steps
+     that light a corner of the HUD instead (points, awards). */
+  andThereIsNoRingWhereTheWashDoesTheWork:
+    NO_RING.every(id => atOpen(id) && atOpen(id).ring === false),
   ringDiametersSeen: [...new Set(bodyOpen.filter(r => r.ring && r.ringBox)
     .map(r => Math.round(r.ringBox.w)))].sort((a, b) => a - b)
 }));
