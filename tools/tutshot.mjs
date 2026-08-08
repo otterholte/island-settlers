@@ -224,7 +224,36 @@ await tapSel('.mf-tut');
 if (!await waitFor('.tut-route.play', 30)) { console.error('the rules book never opened'); process.exit(1); }
 await sleep(250);
 await tapSel('.tut-route.play');
-await sleep(1100);
+
+/* ...AND THEN THE PAGE GOES AWAY UNDER US, ON PURPOSE.
+ *
+ * The practice run is dealt a SET island — see `TUTORIAL_SEED` in
+ * systems/tutorial.js — and the only honest way onto it is a reload, because
+ * the world layer bakes its geometry at construction and cannot be re-dealt in
+ * place. So PRACTICE RUN navigates to `?board=840&practice=1` and the run
+ * starts itself on the way back up, from `begin()` in matchflow.js.
+ *
+ * That means everything below is running against a DIFFERENT DOCUMENT than the
+ * one the taps above landed in, and the rig has to wait the whole boot out a
+ * second time. It is worth saying loudly: a harness that missed this would
+ * measure the coach card of a page that no longer exists and report a tutorial
+ * that never started, which is what it did the first time this ran. */
+let restarted = false;
+for (let i = 0; i < 400; i++) {
+  const on = await ev(`(()=>{try{
+    if(new URLSearchParams(location.search).get('practice')!=='1') return false;
+    const t=window.__ISLAND__&&window.__ISLAND__.game&&window.__ISLAND__.game.tutorial;
+    return !!(t&&t.running);}catch(e){return false;}})()`);
+  if (on === true) { restarted = true; break; }
+  await sleep(250);
+}
+if (!restarted) {
+  console.error('the practice run never came back up on its own board');
+  ws.close(); chrome.kill('SIGKILL'); process.exit(1);
+}
+console.log(`  BOARD ${await ev('window.__ISLAND__.game.tutorial.running && '
+  + 'new URLSearchParams(location.search).get("board")')}`);
+await sleep(600);
 console.log('  STILL ' + await ev(NO_MOTION));
 await settle(4);
 
@@ -233,6 +262,46 @@ console.log('  ENTRY ' + JSON.stringify(await ev(`(()=>{const t=window.__ISLAND_
   return {running:t.running, step:t.step, of:t.stepCount, phase:t.phase,
     practiceClass:document.getElementById('ui').classList.contains('tut-practice'),
     buildCardsCollapsedAtTheStart:!!(row&&row.classList.contains('hid'))};})()`)));
+
+/* ------------------------------------------------ NEXT is held on step 8
+ *
+ *   "If this is my first time on this step during this visit to the tutorial,
+ *    don't let me press next until I've pressed build. Let me go backwards."
+ */
+await ev('window.__ISLAND__.game.tutorial.goTo(7)');   // 0-based: step 8
+await settle(4);
+const holdBefore = await ev(`(()=>{
+  const n=document.querySelector('.coach-next');
+  const b=document.querySelector('.coach-back');
+  const row=document.querySelector('.build-row');
+  return {step:window.__ISLAND__.game.tutorial.stepIndex,
+    nextDisabled:!!(n&&n.disabled), backDisabled:!!(b&&b.disabled),
+    cardsShut:!!(row&&row.classList.contains('hid'))};})()`);
+await tapSel('.coach-next');
+await settle(3);
+const afterBlockedNext = await ev('window.__ISLAND__.game.tutorial.stepIndex');
+await tapSel('.hud-br .cbtn.gold');   // the REAL build key
+await settle(6);
+const holdAfter = await ev(`(()=>{
+  const n=document.querySelector('.coach-next');
+  return {step:window.__ISLAND__.game.tutorial.stepIndex,
+    nextDisabled:!!(n&&n.disabled)};})()`);
+console.log('  HOLD ' + JSON.stringify({
+  before: holdBefore, afterPressingNext: afterBlockedNext, after: holdAfter,
+  nextIsHeldBeforeBuildIsPressed: holdBefore.nextDisabled === true,
+  andPressingItDoesNothing: afterBlockedNext === 7,
+  backIsNeverHeld: holdBefore.backDisabled === false,
+  andPressingBuildCarriesTheRunForward: holdAfter.step === 8
+}));
+
+/* Put the run back where the walkthrough expects it: step 1, four cards shut.
+   The hold itself does NOT come back — it is a first-visit thing and this visit
+   has now had its first — which is exactly the behaviour the note asks for and
+   the reason this block has to run before the walks rather than after them. */
+await ev(`(()=>{const r=document.querySelector('.build-row');
+  if(r) r.classList.add('hid'); return true;})()`);
+await ev('window.__ISLAND__.game.tutorial.goTo(0)');
+await settle(4);
 
 /* ------------------------------------------------------------ measurement */
 
@@ -429,14 +498,24 @@ for (const r of open) {
 const at = n => rows.find(r => r.n === n && r.phase !== 'brief');
 const atOpen = n => open.find(r => r.n === n && r.phase !== 'brief');
 const body = rows.filter(r => r.phase !== 'brief');
-const TOP_STEPS = [1, 2, 3, 4, 5, 6, 9, 10];
-const PACK_OFF = [1, 2, 3, 4, 5, 6, 9, 10];
-const PACK_ON = [7, 8, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+/* Step 1 came OUT of the top band this round — it is the centred card with the
+   veil behind it now ("the popup should actually be in the middle of the
+   screen, not like the other steps, and everything else should be darkened") —
+   and step 8 came INTO it, because it points at the bottom-right corner and
+   must not stand next to what it is pointing at. */
+const TOP_STEPS = [2, 3, 4, 5, 6, 8, 9, 10];
+/* The pack is down for the opening walk, up for its own lesson, down again for
+   the BUILD key ("you can hide the Your Pack section for this step, so that the
+   instruction popup isn't covering the screen"), and up from the score on. */
+const PACK_OFF = [1, 2, 3, 4, 5, 6, 8, 9, 10];
+const PACK_ON = [7, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
 
 console.log('  PLACE ' + JSON.stringify({
-  theBadgeIsTopCentreForTheOpeningLesson:
+  theBadgeIsTopCentreForTheWalkingLessons:
     TOP_STEPS.every(n => at(n) && at(n).place === 'top'
       && at(n).card && at(n).card.y < at(n).vh * 0.45),
+  theOpeningCardIsDeadCentreInstead:
+    !!at(1) && Math.abs((at(1).card.y + at(1).card.h / 2) - at(1).vh / 2) < 14,
   andCentredOnTheScreen: rows.every(r => r.centred) && open.every(r => r.centred),
   itMovesToTheBottomAtStepSeven:
     !!at(7) && at(7).place !== 'top' && at(7).card.bottom > at(7).vh * 0.5,
@@ -470,7 +549,8 @@ console.log('  WARDROBE ' + JSON.stringify({
   theTwoAwardsAreHiddenUntilTheirOwnStep:
     body.filter(r => r.awards).map(r => r.n).join(',') === '21,22',
   thePackIsHiddenForTheOpeningLesson: PACK_OFF.every(n => at(n) && at(n).pack === false),
-  thePackIsBackFromStepSevenOn: PACK_ON.every(n => at(n) && at(n).pack === true),
+  thePackIsUpForItsOwnLessonAndFromTheScoreOn:
+    PACK_ON.every(n => at(n) && at(n).pack === true),
   theStandingsOnlyShowWhereTheScriptAsks:
     body.filter(r => r.ranks).map(r => r.n).join(',') === '11,18,19,20,21,22',
   theBuildCardsAreHiddenAtStepEleven: !!atOpen(11) && atOpen(11).buildCards === false,
@@ -488,6 +568,11 @@ console.log('  RING ' + JSON.stringify({
   itIsOnTheBuildCardsForEveryBuildStep:
     [12, 13, 14, 17].every(n => atOpen(n) && atOpen(n).ring === true),
   itIsOnTheAwardsForTheAwardsStep: !!atOpen(21) && atOpen(21).ring === true,
+  /* "Don't highlight with a circle yet" (3), "don't draw a circle anywhere"
+     (5), "remove the yellow circle as well" (6), "don't have a yellow circle,
+     remove it" (7). Four notes, one assertion. */
+  andThereIsNoRingOnThreeFiveSixOrSeven:
+    [3, 5, 6, 7].every(n => atOpen(n) && atOpen(n).ring === false),
   ringDiametersSeen: [...new Set(bodyOpen.filter(r => r.ring && r.ringBox)
     .map(r => Math.round(r.ringBox.w)))].sort((a, b) => a - b)
 }));
@@ -511,6 +596,94 @@ console.log('  NAV ' + JSON.stringify({
   from: navStart, afterNext, afterBack, afterBack2,
   nextGoesForward: afterNext === navStart + 1,
   backGoesBackward: afterBack === navStart && afterBack2 === navStart - 1
+}));
+
+/* ------------------------------------------------ back onto a DONE step
+ *
+ *   "Make sure the back and next buttons work at any time during the tutorial,
+ *    it seems to be stopping me from going back a lot of the time."
+ *
+ * The old failure was invisible to the NAV block above, because it only shows
+ * up on a step whose `check` is still TRUE after the thing has been done. Step
+ * 3 is the cheapest one to stage: walk onto your own land, let it carry you
+ * forward, then press Back. Before the `armed` fix the very next frame threw
+ * you at step 4 again and the key looked dead. Held for a full second, because
+ * a bounce takes one frame and a passing test must not be a race.
+ */
+await ev('window.__ISLAND__.game.tutorial.goTo(2)');   // 0-based: step 3
+await settle(4);
+const standing = await ev(`(()=>{const I=window.__ISLAND__;
+  const me=I.state.players[0];const t=I.game.tutorial;
+  return {step:t.stepIndex, id:t.step};})()`);
+// Put the settler on a hex it owns, which is what the step is waiting for.
+await ev(`(()=>{const I=window.__ISLAND__;const me=I.state.players[0];
+  const L=I.game.tutorial.spotAt();return true;})()`);
+await ev('window.__ISLAND__.game.tutorial.goTo(3)');   // 0-based: step 4
+await settle(2);
+await ev('window.__ISLAND__.game.tutorial.back()');
+await settle(2);
+const backLanded = await ev('window.__ISLAND__.game.tutorial.stepIndex');
+await sleep(1000);
+const backHeld = await ev('window.__ISLAND__.game.tutorial.stepIndex');
+console.log('  BACKSTICKS ' + JSON.stringify({
+  wasOn: standing.step, landedOn: backLanded, oneSecondLater: backHeld,
+  backLandedWhereItSaidIt: backLanded === 2,
+  andDidNotBounceForward: backHeld === backLanded
+}));
+
+/* --------------------------------------------- the veil, and the two masks
+ *
+ * Step 1 darkens the WHOLE screen behind a centred card; step 7 darkens
+ * everything except the pack, the settler and the player's own hexes; step 8
+ * darkens everything except the three keys in the bottom-right. All three are
+ * read back rather than eyeballed — the veil from its computed opacity, the two
+ * masks out of the wash canvas at the element's own centre and at a point well
+ * away from it.
+ */
+const SAMPLE = `(sel)=>{
+  const cv=document.querySelector('.tut-spot');
+  if(!cv) return null;
+  const g=cv.getContext('2d');
+  const dpr=cv.width/innerWidth;
+  const px=(x,y)=>g.getImageData(Math.round(x*dpr),Math.round(y*dpr),1,1).data[3];
+  const n=document.querySelector(sel);
+  if(!n) return null;
+  const r=n.getBoundingClientRect();
+  /* "Far from it" cannot be screen centre on the pack step: that step also cuts
+     a hole over the settler, who is standing in the middle of the frame. Sweep
+     a coarse grid and take the DARKEST point instead — the claim being tested
+     is "the rest of the screen is turned down", and one genuinely dark place
+     off the lit elements is what proves it. */
+  let dark=0;
+  for(let gx=1;gx<8;gx++)for(let gy=1;gy<6;gy++){
+    const a=px(innerWidth*gx/8, innerHeight*gy/6);
+    if(a>dark) dark=a;
+  }
+  return { onTheElement:px(r.left+r.width/2, r.top+r.height/2), farFromIt:dark };
+}`;
+await ev('window.__ISLAND__.game.tutorial.goTo(0)');
+await settle(12);
+const veil = await ev(`(()=>{const v=document.querySelector('.coach-veil');
+  const c=document.querySelector('.coach-card');
+  return {veilUp:!!(v&&v.classList.contains('on')),
+    veilOpacity:v?+getComputedStyle(v).opacity:0,
+    cardIsCentred:!!(c&&c.classList.contains('at-centre'))};})()`);
+await ev('window.__ISLAND__.game.tutorial.goTo(6)');   // 0-based: step 7, the pack
+await settle(14);
+const packMask = await ev(`(${SAMPLE})('.hud-tc')`);
+await ev('window.__ISLAND__.game.tutorial.goTo(7)');   // 0-based: step 8, the keys
+await settle(14);
+const keyMask = await ev(`(${SAMPLE})('.hud-br')`);
+const veilOff = await ev(`(()=>{const v=document.querySelector('.coach-veil');
+  return !!(v&&v.classList.contains('on'));})()`);
+console.log('  MASKS ' + JSON.stringify({
+  veil, packMask, keyMask, veilIsOffEverywhereElse: veilOff === false,
+  theOpeningCardHasTheScreenToItself:
+    veil.veilUp === true && veil.veilOpacity > 0.6 && veil.cardIsCentred === true,
+  thePackIsTheOnlyBrightThingOnItsStep:
+    !!packMask && packMask.onTheElement === 0 && packMask.farFromIt > 60,
+  theThreeKeysAreTheOnlyBrightThingOnTheirs:
+    !!keyMask && keyMask.onTheElement === 0 && keyMask.farFromIt > 60
 }));
 
 /* ------------------------------------------------------------- the wash

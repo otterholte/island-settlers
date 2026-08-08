@@ -435,24 +435,36 @@
   background:rgba(0,0,0,.5);box-shadow:inset 0 1px 1px rgba(0,0,0,.55);
   overflow:hidden;
 }
+/* THE HAIRLINE IS TRIM, NOT A READOUT.
+ *
+ *   "The hairline isn't needed at all, but I do like having the hairline just
+ *    be always full, so it's more just a static visual element."
+ *
+ * It used to run as a supply meter — how much of this resource was still
+ * standing anywhere on the island — and as a recovery countdown when a resource
+ * had run out everywhere. Both are gone: nothing writes its width any more (see
+ * `refreshRegions` in hud.js), so `width:100%` here is the only width it will
+ * ever have, and the `transition` comes off with the thing that was animating.
+ * The gold underline stays because it is what makes the five chips read as one
+ * pill instead of five numbers. */
 .res-live span{
   display:block;height:100%;width:100%;border-radius:2px;
   background:linear-gradient(90deg,var(--gold-d),var(--gold));
   box-shadow:0 0 5px rgba(255,201,60,.55);
-  transition:width .4s ease,background .4s ease;
 }
-/* Nothing of this kind is standing anywhere: dim the object, and let the bar
-   run as the countdown to the first region coming back. */
+/* Nothing of this kind is standing anywhere. The ICON says so — the hairline no
+   longer does, so the bar keeps its gold at every supply level. */
 .res.dry .ico{opacity:.4;filter:grayscale(.85)}
 .res.dry b{color:rgba(214,230,248,.55);-webkit-text-stroke-color:rgba(8,16,28,.7)}
-.res.dry .res-live span{background:linear-gradient(90deg,#3f6d86,#5fc0d6);
-  box-shadow:0 0 5px rgba(63,196,216,.5)}
-.res.dry .res-live{box-shadow:inset 0 1px 1px rgba(0,0,0,.55),0 0 0 1px rgba(242,112,90,.45)}
 
-.res.pop{animation:resPop .46s cubic-bezier(.2,1.6,.4,1)}
-.res.pop b{color:#fff2c4}
-.res.pop .ico{animation:resIcoPop .46s cubic-bezier(.2,1.7,.4,1)}
-.res.pop::after{content:'';position:absolute;inset:2px -2px;border-radius:11px;
+/* `res-pop`, not `pop`: `.pop` is the popover class and its unqualified rule
+   below absolutely-positions whatever wears it, which threw the pulsing chip
+   clean out of the pill for as long as the player kept collecting. See
+   `pulseResource` in hud.js. */
+.res.res-pop{animation:resPop .46s cubic-bezier(.2,1.6,.4,1)}
+.res.res-pop b{color:#fff2c4}
+.res.res-pop .ico{animation:resIcoPop .46s cubic-bezier(.2,1.7,.4,1)}
+.res.res-pop::after{content:'';position:absolute;inset:2px -2px;border-radius:11px;
   border:2px solid var(--gold);opacity:0;animation:resRing .55s ease-out}
 @keyframes resPop{0%{transform:scale(1)}34%{transform:scale(1.14)}100%{transform:scale(1)}}
 @keyframes resIcoPop{0%{transform:scale(1) rotate(0)}30%{transform:scale(1.35) rotate(-8deg)}

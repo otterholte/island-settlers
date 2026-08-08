@@ -50,17 +50,24 @@
  */
 
 import {
-  COST, TRADE_BASE, VICTORY_POINTS, RES, RES_LABEL, TILE_REGEN, CARD_LABEL,
+  COST, TRADE_BASE, VICTORY_POINTS, RES, TILE_REGEN, CARD_LABEL,
   LONGEST_ROAD_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_MIN, LARGEST_ARMY_VP
 } from '../core/constants.js';
-import { tiles, MARKET } from '../board/layout.js';
+import { MARKET } from '../board/layout.js';
+import { handheld } from '../ui/dom.js';
 import {
-  legalSettlements, scoreOf, isTileExhausted, tileRecovery, tileItemsRemaining
+  legalSettlements, scoreOf, tileRecovery, tileItemsRemaining
 } from '../core/rules.js';
 
 /** The HUD wardrobe, per step. Anything left out is off for that step. */
 const OPENING = {};                                   // pack, awards, clock: gone
 const WITH_PACK = { pack: true };
+/* The pack lesson. `nobuild` because nothing on it asks you to build, and
+   `nokeys` — compact viewports only — because the badge has to reach the foot
+   of the screen and the three circular keys are the last thing in its way:
+   "on mobile just hide the build map and pause buttons for this step as well,
+   so the instruction box can actually sit on the bottom without covering it." */
+const PACK_LESSON = { pack: true, nobuild: true, nokeys: true };
 const SCORING = { pack: true, ranks: true, nobuild: true };
 /* The awards step, and the reason it carries `nobuild` like the scoring steps
    do. Its badge sits `low` — it has to, because it is pointing at the two rows
@@ -78,14 +85,6 @@ const DONE = { pack: true, ranks: true, awards: true, nobuild: true };
 export function buildSteps(t) {
   const { state, me, game } = t;
 
-  const homeName = () => {
-    const h = tiles[t.homeTile()];
-    return h && h.resource ? RES_LABEL[h.resource].toLowerCase() : 'green';
-  };
-  const regenOf = () => {
-    const h = tiles[t.homeTile()];
-    return h ? (TILE_REGEN[h.pips] || TILE_REGEN[3]) : TILE_REGEN[3];
-  };
 
   /* The two resources the market lesson is built around: ask for the pile you
      are shortest of, pay out of the one you are deepest in. Read live off the
@@ -129,13 +128,35 @@ export function buildSteps(t) {
   };
 
   return [
-    /* 1 ------------------------------------------------------------------ */
+    /* 1 ------------------------------------------------ THE ONE THAT STOPS YOU
+     *
+     *   "For step 1 the popup should actually be in the middle of the screen
+     *    (not like the other steps) and everything else should be darkened. It
+     *    should be switched to say something like (This is a tutorial, only YOU
+     *    are playing right now, the other three players are standing still).
+     *    Then I have to press okay."
+     *
+     * The only card in the run that is not pointing at anything, so the only
+     * one allowed to take the whole display: `place: 'centre'` puts it dead
+     * middle and `veil: true` turns everything behind it — island and heads-up
+     * display both — down to nothing. Every other step has to leave the game
+     * playable underneath, which is why this is a flag on one step rather than
+     * the badge's normal manners.
+     *
+     * The words changed too, and the change is the whole point of the card. The
+     * old line ("one thing at a time, and I will wait for you") described the
+     * tutorial's TONE. What a player actually needs to know before they touch
+     * anything is that the race they can see is not running: three rivals are
+     * standing on the island doing nothing, on purpose, and nothing they do
+     * here counts. That is the sentence that lets somebody stop hurrying.
+     */
     {
       id: 'hello',
-      title: 'A slow run-through',
-      text: 'One thing at a time, and I will wait for you. Nothing here can go wrong — the other three settlers are standing still.',
-      action: 'Start',
-      size: 'big', place: 'top', hud: OPENING
+      title: 'This is a tutorial',
+      text: 'Only YOU are playing right now — the other three settlers are standing still and will not move. Nothing here can go wrong and nothing here counts. Take as long as you like.',
+      action: 'Okay',
+      veil: true,
+      size: 'big', place: 'centre', hud: OPENING
     },
 
     /* 2 ------------------------------------------------------------------ */
@@ -150,7 +171,28 @@ export function buildSteps(t) {
        * the sides toggle was removed from settings, and this step was still
        * sending the player's thumb to the left half of the screen.
        */
-      text: 'Press and drag ANYWHERE on the screen — left side, right side, straight over the island. Your settler follows your thumb.',
+      /*
+       * ...AND ON A LAPTOP IT IS NOT A THUMB.
+       *
+       *   "Check automatically to see if the screen is the size of an iPad or
+       *    smaller, then have the normal directions for how to move. If it's
+       *    larger like a laptop, then change the directions to be for arrow
+       *    keys instead."
+       *
+       * `handheld()` in ui/dom.js is the same three-question test the Add to
+       * Home Screen key uses — coarse pointer, no hover, and an iPad-or-smaller
+       * long edge — so a touchscreen laptop is told about its keyboard and an
+       * iPad is told about its thumb, which is the right way round.
+       *
+       * Both are true of both devices: systems/input.js takes WASD and the
+       * arrow keys as well as a drag from anywhere that is not a button. This
+       * only decides which one the sentence NAMES, and it names one, because a
+       * first instruction that offers two ways to walk is a first instruction
+       * that has to be read twice.
+       */
+      text: () => (handheld()
+        ? 'Press and drag ANYWHERE on the screen — left side, right side, straight over the island. Your settler follows your thumb.'
+        : 'Use the ARROW KEYS to walk — up, down, left, right. WASD does the same thing if you would rather.'),
       size: 'big', place: 'top', hud: OPENING,
       check: () => t.walked() > 6
     },
@@ -163,21 +205,31 @@ export function buildSteps(t) {
      *    darkness level of the other hexes you can't pick up from... But just
      *    highlight one hex for the sake of learning."
      *
-     * Three marks and one ring. The dots are drawn by src/ui/tutspot.js over
-     * every hex `canGatherTile` says yes to; the ring is the coach's own and it
-     * is on exactly one of them, which is the one this step asks for.
+     * ...AND NO RING ON THIS ONE.
+     *
+     *   "Don't highlight with a circle yet. Just let me run around and
+     *    collect."
+     *
+     * The wash and the gold dots stay, because they ARE the lesson — the whole
+     * step is "these hexes, not those" — but the coach's own ring came off. A
+     * ring names ONE hex, and naming one at the moment the player is being told
+     * they own several turns an invitation to wander into an instruction to go
+     * to a particular place. The dots say where; the player picks which.
+     *
+     * The check followed the ring off its single hex: standing on ANY workable
+     * hex finishes this step now, so whichever one they walk to is the right
+     * answer. `homeTile` is still the hex the later steps teach on.
      */
     {
       id: 'land',
       title: 'Your own land glows',
       text: () => {
         const n = t.workable().length;
-        return `The island has gone dark except the ${n} hexes you may collect from — the glowing ones, with a gold dot on each. Walk onto the ringed one, the ${homeName()}.`;
+        return `The island has gone dark except the ${n} hexes you may collect from — the glowing ones, with a gold dot on each. Walk onto any of them.`;
       },
       live: true,
       size: 'big', place: 'top', hud: OPENING, spot: 'pips',
-      world: () => t.tileCentre(t.homeTile()),
-      check: () => t.standingOn(t.homeTile())
+      check: () => t.workable().some(id => t.standingOn(id))
     },
 
     /* 4 ------------------------------------------------------------------ */
@@ -190,30 +242,80 @@ export function buildSteps(t) {
       check: () => me.stats.gathered - t.base.gathered >= 6
     },
 
-    /* 5 ------------------------------------------------------------------ */
+    /* 5 ------------------------------------------------- CLEAR ONE, ANY ONE
+     *
+     *   "Don't draw a circle anywhere, just show up if they haven't cleared a
+     *    single whole hex yet. As soon as they do clear a single whole hex
+     *    we'll move to the next step."
+     *
+     * So the ring is gone and the step is conditional on itself: `skipIf` walks
+     * straight past it for a player who swept a hex during step 4 — which is
+     * easy to do, since step 4 only asks for six things and a 1-pip hex holds
+     * five — and `check` ends it the moment any hex they own goes bare, not
+     * just the one the script had in mind. Two readings of "a single whole hex"
+     * were available and this is the generous one: the player who cleared a
+     * different hex than the tutorial expected has still learned the thing.
+     */
     {
       id: 'sweep',
       title: 'Clear the whole hex',
-      text: () => `Keep running until nothing is left standing. ${tileItemsRemaining(t.homeTile())} to go.`,
+      text: () => {
+        const t0 = t.sweepTile();
+        const left = t0 < 0 ? 0 : tileItemsRemaining(t0);
+        return `Keep running until nothing is left standing on one of your hexes. ${left} to go on the nearest.`;
+      },
       live: true,
       size: 'big', place: 'top', hud: OPENING, spot: true,
-      world: () => t.itemOnHome(),
-      check: () => isTileExhausted(t.homeTile())
+      skipIf: () => t.sweptAny(),
+      check: () => t.sweptAny()
     },
 
-    /* 6 ------------------------------------------------------------------ */
+    /* 6 --------------------------------------------------- THE RECOVERY CLOCK
+     *
+     *   "Darken everything on the screen except for highlight the countdown
+     *    timer (remove the yellow circle as well). Be more clear it's not 6
+     *    seconds. It takes time to reset the hex. The number tile on the hex
+     *    will determine if the hex reloads quicker or slower."
+     *
+     * TWO CHANGES, AND THE FIRST ONE IS A CONSTRAINT.
+     *
+     * The countdown is not a HUD element. It is an instanced shader quad
+     * floating over the hex (world/regionmark.js) with the seconds painted into
+     * a glyph atlas — there is no node and therefore no selector a highlight
+     * could be pointed at. What CAN be done is what the wash already does for
+     * hexes: `spotWorld` projects the point the clock floats above and punches
+     * the hole there, so the numerals are the only bright thing on the screen
+     * and the gold ring is not needed to say which. That is the note's two
+     * halves in one move — the timer highlighted, the circle gone.
+     *
+     * `spot` is dropped with the ring for the same reason: leaving every
+     * workable hex lit would leave three bright patches competing with the one
+     * the step is about. On this step the clock is the whole screen.
+     *
+     * THE SECOND CHANGE IS THE SENTENCE, and the old one was actively
+     * misleading. It read "about 6 seconds" off whichever hex the run happened
+     * to teach on, which made a number that RANGES from 6 to 34 look like a
+     * constant — and worse, hid the only thing the player can act on, which is
+     * that the disc on the hex is what sets it. TILE_REGEN is read out at both
+     * ends so the range is named, and the disc is named as the cause.
+     */
     {
       id: 'rest',
       title: 'It comes back',
       text: () => {
-        const rc = tileRecovery(t.homeTile(), state.time || 0);
-        return rc && rc.exhausted
-          ? `Bare, and resting. Everything on it returns at once in ${Math.ceil(rc.secondsLeft)} seconds. Own several hexes and walk a loop around them.`
-          : `A hex you have cleared rests about ${regenOf()} seconds, then everything on it returns at once. Own several hexes and walk a loop around them.`;
+        const t0 = t.restTile();
+        const rc = t0 < 0 ? null : tileRecovery(t0, state.time || 0);
+        const clock = rc && rc.exhausted
+          ? `The clock over the bare hex is counting it back in: ${Math.ceil(rc.secondsLeft)} seconds left, and then everything on it returns at once. `
+          : 'A hex you have stripped goes bare and a clock appears over it. When it runs out, everything on it returns at once. ';
+        return `${clock}It is not the same wait everywhere — the NUMBER DISC on the hex sets it. A ${TILE_REGEN[5]}-second hex is a 5-pip one; a 1-pip hex takes ${TILE_REGEN[1]}. Own several and walk a loop around them.`;
       },
-      live: true, action: 'Got it',
-      size: 'big', place: 'top', hud: OPENING, spot: true,
-      world: () => t.tileCentre(t.homeTile())
+      live: true,
+      size: 'big', place: 'top', hud: OPENING,
+      spotWorld: () => {
+        const c = t.tileCentre(t.restTile());
+        return c ? { x: c.x, z: c.z, lift: 7.0, r: 104 } : null;
+      }
     },
 
     /* 7 ------------------------------------------------------- THE PACK
@@ -227,10 +329,36 @@ export function buildSteps(t) {
     {
       id: 'pack',
       title: 'Your pack',
-      text: 'Up in the middle is everything you are carrying: wood, brick, wool, wheat and ore. The hairline under each says how much of it is still standing anywhere on the island.',
-      action: 'Got it',
-      size: 'big', place: 'bottom', hud: WITH_PACK,
-      dom: ['.resbar']
+      /*
+       *   "Don't have a yellow circle, remove it. Instead highlight the exact
+       *    element for my pack, and darken the rest of the screen to bring
+       *    attention to the correct place. Maybe still keep the player I'm
+       *    running with and the highlighted hexes lighter so I can run around
+       *    and see the increase on that My Pack section as I collect items."
+       *
+       * The ring came off and the wash took its place, cut to the pill's own
+       * rectangle: everything is turned down except the pack, the settler, and
+       * the hexes they may collect on. That last part is why this step is a
+       * spotlight and not a modal — the lesson is watching the numbers move,
+       * which means the player has to be able to run while they read it.
+       *
+       *   "The box for the instruction is too high on the screen for both
+       *    mobile and desktop. On mobile just hide the build map and pause
+       *    buttons for this step as well, so the instruction box can actually
+       *    sit on the bottom without covering it."
+       *
+       * `place: 'foot'` is the bottom of the screen rather than the band 126px
+       * up that this step used to stand in. On a laptop it clears the three
+       * circular keys; on a phone PACK_LESSON takes those away too and the card
+       * drops onto the gutter. See the FOOT band in tutorial.css.
+       *
+       * The hairline sentence is gone with the hairline's job — it is a static
+       * piece of trim now, not a supply meter, so describing it would be
+       * teaching a readout that no longer reads anything.
+       */
+      text: 'Up in the middle is everything you are carrying: wood, brick, wool, wheat and ore. Run over things on your glowing land and watch the numbers climb.',
+      size: 'big', place: 'foot', hud: PACK_LESSON,
+      spot: true, spotMe: true, spotDom: ['.hud-tc']
     },
 
     /* 8 ------------------------------------------------------- THE BUILD KEY
@@ -245,9 +373,37 @@ export function buildSteps(t) {
     {
       id: 'buildkey',
       title: 'The BUILD key',
+      /*
+       *   "Push the instruction to the top of the page — in fact you can hide
+       *    the Your Pack section for this step, so that the instruction popup
+       *    isn't covering the screen. Darken everything else on the screen
+       *    except for the three buttons on the bottom right and keep the circle
+       *    around build. Let me go backwards, but if this is my first time on
+       *    this step during this visit to the tutorial, don't let me press next
+       *    until I've pressed build."
+       *
+       * All four, and the fourth one is the interesting one. `holdNext` dims
+       * NEXT until the step's own check has come true ONCE this run, which
+       * makes this the only step in the tutorial the player cannot read their
+       * way past. It is defensible here and would not be anywhere else: every
+       * later step depends on the four build cards being open, and a player who
+       * skipped this one arrives at "tap the ROAD card" with no ROAD card on
+       * screen. BACK is never held — that was asked for in the same breath —
+       * and the hold is first-visit only, so walking back through the run and
+       * forward again is free.
+       *
+       * The badge goes to the TOP with the pack hidden (`hud: OPENING`) because
+       * the thing it is talking about is in the bottom-right corner: a card
+       * standing in the bottom band would be sitting next to the keys it is
+       * pointing at. The ring stays on BUILD — the note says to keep it — and
+       * the wash cuts a hole round all three keys, so the ring names which one
+       * and the darkness names where to look.
+       */
       text: 'Tap BUILD, bottom right. Four cards slide up — road, settlement, city, card — and each one fills as you gather, then turns gold when you can afford it.',
-      size: 'big', place: 'bottom', hud: WITH_PACK,
+      size: 'big', place: 'top', hud: OPENING,
       dom: ['.hud-br .cbtn.gold'],
+      spotDom: ['.hud-br'],
+      holdNext: true,
       check: () => buildRowOpen()
     },
 
@@ -305,7 +461,7 @@ export function buildSteps(t) {
       id: 'points',
       title: 'That is what points are',
       text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings on the right carry everybody's.`,
-      live: true, action: 'Got it',
+      live: true,
       size: 'big', place: 'low', hud: SCORING,
       dom: ['.hud-tr .rk.me', '.hud-tr']
     },
@@ -444,7 +600,6 @@ export function buildSteps(t) {
        * and the exemption that makes it worth aiming (never you).
        */
       text: 'Land it on a hex and everyone with a settlement or city THERE loses half of everything they carry — rounded down, so five becomes three. Nobody else is touched, and you never pay it yourself. The hex stops giving to them while it stands.',
-      action: 'Got it',
       size: 'big', place: 'low', hud: SCORING,
       dom: ['.kn-cue:not(.rb-cue):not(.hid)', '.bcard[data-kind="card"]']
     },
@@ -454,7 +609,6 @@ export function buildSteps(t) {
       id: 'roadcard',
       title: CARD_LABEL.roadBuilding,
       text: 'Two roads, free. It opens the placement map by itself and lets you lay both, one after the other, without spending a stick of wood.',
-      action: 'Got it',
       size: 'big', place: 'low', hud: SCORING,
       dom: ['.kn-cue.rb-cue:not(.hid)', '.bcard[data-kind="road"]']
     },
@@ -464,7 +618,6 @@ export function buildSteps(t) {
       id: 'vpcard',
       title: CARD_LABEL.victoryPoint,
       text: 'One point, the instant you draw it. Nothing to play and nothing to remember — the counter in the corner goes up and stays up.',
-      action: 'Got it',
       size: 'big', place: 'low', hud: SCORING,
       dom: ['.sc-vp']
     },
@@ -482,7 +635,6 @@ export function buildSteps(t) {
       id: 'awards',
       title: 'Points you never build',
       text: `Longest Road: ${LONGEST_ROAD_VP} points for ${LONGEST_ROAD_MIN}+ segments in one unbroken line. Largest Army: ${LARGEST_ARMY_VP} for ${LARGEST_ARMY_MIN}+ Knights played. Both sit in the scoreboard, top left — who holds it, your own number, and how many more you need.`,
-      action: 'Got it',
       size: 'big', place: 'low', hud: EVERYTHING,
       dom: ['.sc-awards']
     },

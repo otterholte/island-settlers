@@ -33,7 +33,7 @@ import {
   knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower, soundOn, setSoundOn
 } from '../core/options.js';
 
-import { el, button, setText, toggle, replay, setVar, fmtTime } from './dom.js';
+import { el, button, setText, toggle, replay, fmtTime } from './dom.js';
 import { icon, iconEl, resIcon, avatar } from './icons.js';
 import { createBuildBar } from './hud-build.js';
 import { createTradeCue } from './hud-trade.js';
@@ -258,7 +258,7 @@ export function createHUD(root, state, game) {
     const live = el('i', { class: 'res-live' }, el('span'));
     const slot = el('div', { class: 'res', 'data-res': r, title: RES_LABEL[r] },
       iconEl(resIcon(r), RES_ICON_PX), num, live);
-    resSlots[r] = { node: slot, num, live, last: -1, lastF: -1 };
+    resSlots[r] = { node: slot, num, live, last: -1 };
     resBar.appendChild(slot);
   }
 
@@ -607,10 +607,33 @@ export function createHUD(root, state, game) {
     notice.show(s, color, glyph);
   }
 
-  /* ------------------------------------------------------------ resources */
+  /* ------------------------------------------------------------ resources
+   *
+   * THE PULSE CLASS IS `res-pop`, AND IT USED TO BE `pop`.
+   *
+   *   "I don't like that while my resources are being collected, that resource
+   *    in my pack disappears ... the whole resource for brick in my pack
+   *    disappears until it has a new total for a second or two. I'd rather it
+   *    stays in the pack and just live updates the number as I'm picking items
+   *    up."
+   *
+   * It was doing exactly that, and it was not a timing problem — it was a name
+   * collision. `pop` is also the class every popover in this interface wears,
+   * and `.pop` in ui-hud.css is an unqualified rule that sets
+   * `position:absolute; left:var(--gL); top:calc(var(--gT) + 56px); width:238px`.
+   * Both selectors score (0,1,0) and the popover's is written later, so it won.
+   * The instant a chip pulsed it stopped being a flex child of `.resbar` — the
+   * other four closed the gap — and was thrown to a popover's coordinates
+   * offscreen-left of the pill. It came back 480ms after the LAST pickup,
+   * because `replay` restarts its own timer, which is why sweeping a hex hid
+   * the chip for the whole sweep rather than for a frame.
+   *
+   * A rename is the fix rather than a specificity bump: the two things have
+   * nothing to do with each other and should never have shared a word.
+   */
   function pulseResource(res) {
     const s = resSlots[res];
-    if (s) replay(s.node, 'pop', 480);
+    if (s) replay(s.node, 'res-pop', 480);
   }
 
   function flashCost(kind) { buildBar.flash(kind); }
@@ -920,18 +943,29 @@ export function createHUD(root, state, game) {
   /* -------------------------------------------------------------- refresh */
   let regions = regionReport(state);
 
+  /*
+   * THE HAIRLINE NO LONGER MEASURES ANYTHING.
+   *
+   *   "The hairline isn't needed at all, but I do like having the hairline just
+   *    be always full, so it's more just a static visual element."
+   *
+   * It was two readouts in one 3px bar: how much of that resource was still
+   * standing on the island, and — once a resource had run out everywhere — how
+   * far the first region was through coming back. Neither is a number anybody
+   * plays off. What the player actually reads at a glance is the numeral, and a
+   * bar that quietly drains under it while they collect reads as a warning
+   * about something they cannot act on.
+   *
+   * So the width write is gone and `width:100%` in ui-hud.css is now the only
+   * width it has. `regionReport` is still called, because `regions` is read by
+   * the guide panel; only the hairline stopped listening. The DRY state stays,
+   * because "there is none of this anywhere" is worth saying — it just says it
+   * by dimming the icon and the numeral instead.
+   */
   function refreshRegions() {
     regions = regionReport(state);
     for (const r of RES) {
-      const s = resSlots[r];
-      const rr = regions[r];
-      const dry = rr.live === 0;
-      const f = dry ? rr.recovery : rr.live / Math.max(1, rr.total);
-      if (Math.abs(f - s.lastF) > 0.01) {
-        s.lastF = f;
-        setVar(s.live.firstChild, 'width', (f * 100).toFixed(1) + '%');
-      }
-      toggle(s.node, 'dry', dry);
+      toggle(resSlots[r].node, 'dry', regions[r].live === 0);
     }
   }
 
@@ -1126,7 +1160,7 @@ export function createHUD(root, state, game) {
       const s = resSlots[r];
       const v = shown[r] | 0;
       if (s.last !== v) {
-        if (v > s.last && s.last >= 0) replay(s.node, 'pop', 480);
+        if (v > s.last && s.last >= 0) replay(s.node, 'res-pop', 480);
         s.last = v;
         setText(s.num, v);
       }

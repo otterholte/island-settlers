@@ -446,6 +446,19 @@ export function createMatchFlow(state, game) {
     if (state.phase === 'play') { enterPlay(true); return; }
     if (state.phase === 'over') { startWin(state.winner); return; }
 
+    /*
+     * THIS PAGE WAS LOADED IN ORDER TO PRACTISE.
+     *
+     * The practice run is dealt a set island so the lesson can count on having
+     * one of every resource to teach from, and the only honest way to get onto
+     * it is a reload — see `TUTORIAL_SEED` in tutorial.js for why the world
+     * layer cannot be re-dealt in place. So the second half of that reload
+     * lands here: the player already pressed PRACTICE RUN, and showing them the
+     * title cinematic and the TUTORIAL button again so they can press it a
+     * second time would be a worse bug than the one the reload is fixing.
+     */
+    if (tutorial.pending) { tutorial.startPractice(); return; }
+
     setInput(false);
     cam.setActive(true);
     cam.overview(false);

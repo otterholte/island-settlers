@@ -48,6 +48,20 @@ const WASH = 'rgba(3, 12, 26, 0.58)';
 const PIP = '#ffc93c';
 const PIP_KEY = 'rgba(8, 16, 28, 0.9)';
 
+/** A rounded-rectangle path. `ctx.roundRect` is too young for the phones. */
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
 export function createSpotlight(app) {
   if (!app || !app.appendChild || typeof document === 'undefined') {
     const noop = () => {};
@@ -64,7 +78,7 @@ export function createSpotlight(app) {
   if (ui && ui.parentNode === app) app.insertBefore(cv, ui);
   else app.appendChild(cv);
 
-  let shape = null;       // { holes:[{x,y,r}], pips:[{x,y}] }
+  let shape = null;       // { holes:[{x,y,r}], rects:[{x,y,w,h,r}], pips:[{x,y}] }
   let w = 0, h = 0, dpr = 1;
   let fade = 0;           // 0..1, eased so the island does not snap dark
 
@@ -117,6 +131,54 @@ export function createSpotlight(app) {
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    /* ------------------------------------------- and holes over the INTERFACE
+     *
+     *   "Instead highlight the exact element for my pack, and darken the rest
+     *    of the screen to bring attention to the correct place."
+     *   "Darken everything on the screen except for the three buttons on the
+     *    bottom right."
+     *
+     * Two steps now point at a HUD cluster rather than at a hex, and a circle
+     * is the wrong hole for both: the pack pill is a 300x44 lozenge and the
+     * three keys are a 190x58 row, so a disc big enough to clear either one
+     * lights half the sky above it. A rounded rectangle traced round the
+     * element's own `getBoundingClientRect` lights the control and nothing
+     * else.
+     *
+     * The soft edge the discs get is done here with a shadow rather than a
+     * gradient — a rounded rect has no radial centre to run a gradient from,
+     * and `shadowBlur` under `destination-out` erases with exactly the falloff
+     * a blurred stamp would. Drawn offset far off-canvas so only the shadow
+     * lands, which is the standard way to get a blur-only stamp out of 2D
+     * canvas without a second buffer.
+     *
+     * The wash is BEHIND `#ui` (see the insert above), so a hole here does not
+     * make the control brighter than it already is — it stops the wash from
+     * dulling everything around it. That is the whole ask: the element is not
+     * lit up, the rest is turned down.
+     */
+    const rects = (shape && shape.rects) || [];
+    for (const b of rects) {
+      const w2 = Math.max(2, b.w), h2 = Math.max(2, b.h);
+      const rad = Math.min(Number(b.r) || 14, w2 / 2, h2 / 2);
+      const x0 = b.x - w2 / 2, y0 = b.y - h2 / 2;
+      const OFF = 4000;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,1)';
+      ctx.shadowBlur = 22;
+      ctx.shadowOffsetX = OFF;
+      ctx.fillStyle = 'rgba(0,0,0,1)';
+      ctx.beginPath();
+      roundRect(ctx, x0 - OFF, y0, w2, h2, rad);
+      ctx.fill();
+      ctx.restore();
+      // ...and the crisp core, so the middle of the control is fully clear
+      // rather than merely 80% clear under the blur's own centre falloff.
+      ctx.beginPath();
+      roundRect(ctx, x0, y0, w2, h2, rad);
+      ctx.fill();
+    }
     ctx.globalCompositeOperation = 'source-over';
 
     /* The pips. "Point out clearly and minimally to ALL THREE" — so each
@@ -143,12 +205,15 @@ export function createSpotlight(app) {
   }
 
   /**
-   * `next` is `{ holes:[{x,y,r}], pips:[{x,y}] }` in CSS pixels, or null to
-   * fade the wash back out. `dt` advances the ease; pass the frame's own delta.
+   * `next` is `{ holes:[{x,y,r}], rects:[{x,y,w,h,r}], pips:[{x,y}] }` in CSS
+   * pixels, or null to fade the wash back out. `dt` advances the ease; pass the
+   * frame's own delta.
    */
   function set(next, dt) {
     shape = next || null;
-    const want = shape && shape.holes && shape.holes.length ? 1 : 0;
+    const any = shape
+      && ((shape.holes && shape.holes.length) || (shape.rects && shape.rects.length));
+    const want = any ? 1 : 0;
     const d = Math.min(0.1, Math.max(0, dt || 1 / 60));
     fade += (want - fade) * Math.min(1, d * 4.2);
     if (want === 0 && fade < 0.004) fade = 0;

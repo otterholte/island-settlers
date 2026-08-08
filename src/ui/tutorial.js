@@ -447,7 +447,7 @@ export function createCoach(root) {
     const noop = () => {};
     return {
       show: noop, say: noop, mark: noop, progress: noop, hide: noop, good: noop,
-      chrome: noop, destroy: noop, onQuit: noop,
+      chrome: noop, wear: noop, destroy: noop, onQuit: noop,
       get isOpen() { return false; }, get node() { return null; }
     };
   }
@@ -508,7 +508,28 @@ export function createCoach(root) {
     on: { click: () => onQuit && onQuit() }
   }, el('span', { class: 'sb-lab', text: 'End Practice' }));
 
-  const layer = el('div', { class: 'coach hid' }, mark, card, quitBtn);
+  /*
+   * THE VEIL — the whole screen turned down behind one card.
+   *
+   *   "For step 1 the popup should actually be in the middle of the screen (not
+   *    like the other steps) and everything else should be darkened. Then I have
+   *    to press okay."
+   *
+   * The first card is the only one that is not asking the player to look at
+   * anything: there is no hex, no control, no ring — just a sentence about what
+   * this run is. So it is the only one that may take the whole screen, and the
+   * dark behind it is what makes "read this, then press Okay" the only thing on
+   * offer. Every other step has to leave the island playable, which is why this
+   * is a per-step flag and not the coach's normal state.
+   *
+   * It is a DOM layer rather than a hole-less `tut-spot` wash because it must
+   * sit ABOVE the heads-up display, not behind it — the point is that nothing
+   * else is available — and because it takes the taps that would otherwise
+   * reach the joystick underneath.
+   */
+  const veil = el('div', { class: 'coach-veil' });
+
+  const layer = el('div', { class: 'coach hid' }, veil, mark, card, quitBtn);
   root.appendChild(layer);
 
   let shown = false;
@@ -524,6 +545,8 @@ export function createCoach(root) {
     toggle(card, 'at-top', place === 'top');
     toggle(card, 'at-bottom', place === 'bottom');
     toggle(card, 'at-low', place === 'low');
+    toggle(card, 'at-foot', place === 'foot');
+    toggle(card, 'at-centre', place === 'centre');
     /* END PRACTICE lives in the top-right corner and stays there. The top
        badge is deliberately narrow enough to clear it — see `--tut-side` in
        tutorial.css, which reserves the same width on both sides of the screen
@@ -559,6 +582,7 @@ export function createCoach(root) {
       : 'Skip this step and go on');
 
     shown = true;
+    toggle(veil, 'on', !!o.veil);
     chrome(o.size, o.place);
     // Same reasoning as `show()` above: the coach card is the thing the player
     // reads on every step, and a step whose words arrive a frame late on a
@@ -607,8 +631,26 @@ export function createCoach(root) {
     shown = false;
     toggle(card, 'on', false);
     toggle(mark, 'on', false);
+    toggle(veil, 'on', false);
     toggle(quitBtn, 'on', false);
     setTimeout(() => toggle(layer, 'hid', !shown), 320);
+  }
+
+  /**
+   * Mirror the run's wardrobe flags onto the coach layer.
+   *
+   * The HUD wardrobe hangs off classes on `#ui` (see the note at the top of
+   * systems/tutorial.js), but the badge is not inside `#ui` — it is a sibling —
+   * so a rule like "sit lower on the step that hides the three keys" has no
+   * selector that can reach it from there. Rather than move the coach into the
+   * HUD, the same flags are written on both roots and tutorial.css matches
+   * whichever one it needs.
+   */
+  function wear(flags) {
+    const f = flags || {};
+    toggle(layer, 'tut-nokeys', !!f.nokeys);
+    toggle(layer, 'tut-nobuild', !!f.nobuild);
+    toggle(layer, 'tut-pack', !!f.pack);
   }
 
   function destroy() {
@@ -616,7 +658,7 @@ export function createCoach(root) {
   }
 
   return {
-    show, say, progress, mark: place2, good, hide, chrome, destroy,
+    show, say, progress, mark: place2, good, hide, chrome, wear, destroy,
     onQuit(fn) { onQuit = fn; },
     get isOpen() { return shown; },
     get size() { return size; },

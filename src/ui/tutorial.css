@@ -219,6 +219,26 @@
 .coach{position:absolute;inset:0;z-index:26;pointer-events:none}
 .coach.hid{display:none !important}
 
+/* --- the veil: one step, and the whole screen behind it ------------------
+     "For step 1 the popup should actually be in the middle of the screen (not
+      like the other steps) and everything else should be darkened. Then I have
+      to press okay."
+
+   The opening card is the only one in the run that is not pointing at
+   something, so it is the only one allowed to take the display. This sits
+   inside `.coach` and therefore ABOVE `#ui` — the heads-up display goes down
+   with the island, which is the point — and it swallows the taps that would
+   otherwise reach the joystick, so Okay really is the only thing on offer.
+   Darker than the `tut-spot` wash (.58) because that one has holes in it and
+   this one does not. */
+.coach-veil{
+  position:absolute;inset:0;
+  background:rgba(3,12,26,.74);
+  opacity:0;pointer-events:none;
+  transition:opacity .3s ease;
+}
+.coach-veil.on{opacity:1;pointer-events:auto}
+
 /* --- the marker ---------------------------------------------------------
    A gold ring that lands on the thing being talked about, with a bouncing
    chevron above it. Never covers what it points at: the ring is a stroke, and
@@ -324,8 +344,39 @@
   flex-direction:column;align-items:stretch;gap:7px;
   transform:translateX(-50%) translateY(-18px);
 }
-.coach-card.on.at-bottom,.coach-card.on.at-low{transform:translateX(-50%) translateY(0)}
+/* FOOT is as far down as the card can go, and how far that is depends on what
+   is still standing in the bottom band.
+
+     "The box for the instruction is too high on the screen for both mobile and
+      desktop. On mobile just hide the build map and pause buttons for this
+      step as well, so the instruction box can actually sit on the bottom
+      without covering it."
+
+   On a laptop the three circular keys stay — there is room for both — so FOOT
+   is the LOW band: clear of the 58px keys by a gap, and 46px lower than the
+   BOTTOM band this step used to stand in, which is the desktop half of the
+   note. On a phone the step also takes the keys away (`tut-nokeys`, in the
+   wardrobe at the foot of this file) and there is nothing left to clear, so
+   FOOT drops onto the gutter itself — see the compact block. */
+.coach-card.at-foot{
+  bottom:calc(var(--gB,10px) + 80px);
+  transform:translateX(-50%) translateY(22px);
+}
+/* CENTRE is the opening card and nothing else. It is the one place that would
+   be indefensible on any other step — dead centre, over the settler — and it is
+   right for this one because the veil behind it means there is nothing under
+   there to cover. */
+.coach-card.at-centre{
+  top:50%;
+  width:min(460px,calc(100vw - 44px));
+  flex-direction:column;align-items:stretch;gap:8px;
+  transform:translate(-50%,-50%) scale(.96);
+}
+.coach-card.at-centre .coach-acts{justify-content:flex-end}
+.coach-card.on.at-bottom,.coach-card.on.at-low,.coach-card.on.at-foot{
+  transform:translateX(-50%) translateY(0)}
 .coach-card.on.at-top{transform:translateX(-50%) translateY(0)}
+.coach-card.on.at-centre{transform:translate(-50%,-50%) scale(1)}
 
 /* --- what it is made of --------------------------------------------------- */
 .coach-main{display:flex;align-items:center;gap:clamp(8px,1.6vw,14px);
@@ -493,6 +544,9 @@
   transition:opacity .25s ease,visibility 0s linear .25s;
 }
 
+/* `tut-nokeys` — the three circular keys as well — is COMPACT ONLY and lives in
+   the phone block below, next to the FOOT band that depends on it. */
+
 /* ============================================================ compact phone
    667x375 and 640x320. The sheet loses its margins and the art column narrows;
    nothing is removed, because the whole point of the reading route is the
@@ -517,6 +571,30 @@
   /* The three circular keys are 58px tall and sit on `--gB`. 72 is that plus a
      14px gap, which is the clearance the capture rig asserts at every step. */
   .coach-card.at-low{bottom:calc(var(--gB,10px) + 72px)}
+  .coach-card.at-foot{bottom:calc(var(--gB,10px) + 72px)}
+
+  /*   "On mobile just hide the build map and pause buttons for this step as
+   *    well, so the instruction box can actually sit on the bottom without
+   *    covering it."
+   *
+   * The three circular keys are the last thing standing in the bottom band once
+   * the build cards are down, and on a 320px-tall phone the badge cannot clear
+   * them and still be off the middle of the screen. One step asks for it — the
+   * pack lesson, which is about the pill at the TOP of the screen and has no
+   * use for a build key — and only here, because a laptop has the room. They go
+   * the same way the build cards do, so the step cannot strand them: the class
+   * comes off with the step and `quit()` clears it either way. */
+  #ui.tut-practice.tut-nokeys .hud-br{
+    opacity:0 !important;visibility:hidden;pointer-events:none !important;
+    transition:opacity .25s ease,visibility 0s linear .25s;
+  }
+  /* ...and with them gone there is nothing left in the band, so the card goes
+     all the way down onto the gutter. `.coach` carries the same flag as `#ui`
+     (see `wear` in ui/tutorial.js) because the badge is not inside the HUD. */
+  .coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
+
+  /* The opening card gives up width before it gives up a word. */
+  .coach-card.at-centre{width:min(420px,calc(100vw - 28px))}
   .coach-card.at-top{width:min(400px,calc(100vw - var(--tut-side)));padding:8px 10px 9px}
   .coach-card.slim{width:min(360px,calc(100vw - var(--tut-side)));padding:5px 8px 6px}
   .coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(420px,calc(100vw - 24px))}
