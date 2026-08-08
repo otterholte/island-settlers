@@ -16,7 +16,7 @@
  * Owner: UI agent.
  */
 
-import { HEX_SIZE, pipsFor } from '../core/constants.js';
+import { HEX_SIZE, pipsFor, TRADE_BASE } from '../core/constants.js';
 import { tiles, intersections, edges, ports, BOUNDS, cornerOffset } from '../board/layout.js';
 import { knightsOn } from '../core/options.js';
 import { hash01 } from './dom.js';
@@ -230,6 +230,32 @@ export function createPainter(ctx, proj) {
   }
 
   /** The carved outer frame: a brass bead, a dark reveal and corner studs. */
+  /**
+   * Clip everything that follows to the inside of the board's own frame.
+   *
+   *   "Right now the map items when I zoom in are not staying within the
+   *    confines of their border box for the draft/map."
+   *
+   * The frame has always been drawn LAST, over the top of the board, so at rest
+   * it looked like a window when it was really a picture frame painted onto the
+   * glass. Zooming in is what gives that away: the board grows past the
+   * rectangle and hexes, docks and settlers carry on across the label strip and
+   * the resource chips, because nothing was ever stopping them.
+   *
+   * The radius and the inset match the frame's innermost keyline
+   * (`fr.x + 7`, `r - 5`) so the board is cut off exactly where the moulding
+   * begins, with no gap and no overlap. Returns whether a clip was actually
+   * pushed, so a caller that gets a frameless projection — the very first draw,
+   * before `measure()` has run — does not restore a state it never saved.
+   */
+  function clipToFrame(fr) {
+    if (!fr || !(fr.w > 0) || !(fr.h > 0)) return false;
+    ctx.save();
+    rounded(fr.x + 7, fr.y + 7, fr.w - 14, fr.h - 14, 11);
+    ctx.clip();
+    return true;
+  }
+
   function drawFrame(fr) {
     const r = 16;
     ctx.save();
@@ -483,9 +509,43 @@ export function createPainter(ctx, proj) {
     if (up) ctx.restore();
   }
 
+  /**
+   * The Great Market's own rate board, on the hex in the middle.
+   *
+   *   "On the map show the 4:1 on the middle hex, so that the ports make more
+   *    sense."
+   *
+   * Nine harbours around the coast wear a ratio and the tenth trading post does
+   * not, which makes the 3:1s and 2:1s look like the whole system rather than
+   * the discounts they are. The centre hex is the baseline every one of those
+   * signs is a discount ON, and saying so is one plate: the same shape, the
+   * same ink and the same billboard trick as a number disc, so it reads as part
+   * of the board rather than as a caption laid over it.
+   *
+   * It is drawn with the tokens rather than with the ports because it belongs
+   * to a HEX, not to an edge, and because that is the pass the number discs are
+   * painted in — the market's plate has to sit at the same height in the stack
+   * as the discs it is standing among.
+   */
+  function drawMarketRate() {
+    const t = tiles.find(x => !x.resource);
+    if (!t) return;
+    const s = proj.s;
+    const cx = PX(t.x), cy = PY(t.z);
+    const w = Math.max(30, s * 8.6), h = Math.max(15, s * 4.2);
+    const up = billboard(cx, cy);
+    plate(cx, cy, w, h, '#f4e5c1', '#5d3a10', Math.min(h / 2, 7), 2);
+    ctx.fillStyle = '#33200a';
+    ctx.font = f(800, Math.round(h * 0.62));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`${TRADE_BASE}:1`, cx, cy + h * 0.02);
+    if (up) ctx.restore();
+  }
+
   function drawTokens() {
     note('board');
     for (const t of tiles) drawToken(t);
+    drawMarketRate();
   }
 
   /* ---------------------------------------------------------------- ports */
@@ -535,6 +595,18 @@ export function createPainter(ctx, proj) {
       signH: Math.max(15, s * 4.4)
     };
   };
+
+  /** Where the market's own rate board is, so a tap can find it. */
+  function marketRect() {
+    const t = tiles.find(x => !x.resource);
+    if (!t) return null;
+    const s = proj.s;
+    return {
+      x: PX(t.x), y: PY(t.z),
+      w: Math.max(30, s * 8.6) + 6, h: Math.max(15, s * 4.2) + 6,
+      weight: 22, kind: 'market'
+    };
+  }
 
   function portRects() {
     return ports.map(p => {
@@ -924,11 +996,12 @@ export function createPainter(ctx, proj) {
 
   return {
     PX, PY, hexPath, plate, rounded,
-    drawSea, fillSea, drawFrame, drawShelf, drawTiles, drawTokens, tokenRects,
+    drawSea, fillSea, drawFrame, clipToFrame,
+    drawShelf, drawTiles, drawTokens, tokenRects,
     /** The vertical scale the canvas really had while the board and while a
      *  billboarded label were painted. Read by the capture rig only. */
     get scales() { return { board: +seen.board.toFixed(3), label: +seen.label.toFixed(3) }; },
-    drawPorts, portRects, drawRoads, drawBuildings, drawRobber, ownerPip,
+    drawPorts, portRects, marketRect, drawRoads, drawBuildings, drawRobber, ownerPip,
     drawSettlers
   };
 }

@@ -79,8 +79,8 @@
  * Owner: UI agent.
  */
 
-import { HEX_SIZE } from '../core/constants.js';
-import { tiles, intersections, edges, BOUNDS } from '../board/layout.js';
+import { HEX_SIZE, TRADE_BASE, RES_LABEL } from '../core/constants.js';
+import { tiles, intersections, edges, ports, BOUNDS } from '../board/layout.js';
 import {
   legalRoads, legalSettlements, legalCities,
   placeRoad, placeSettlement, upgradeCity, playKnight, scoreOf
@@ -444,6 +444,80 @@ export function createOverview(root, state, game) {
    * confirm button that does nothing". */
   const actBar = el('div', { class: 'ov-actbar plate lift hid' }, actionBtn);
 
+  /* ------------------------------------------------------ what a dock means
+   *
+   *   "If I click on the 2:1 or 3:1 in the map or the draft or anywhere for the
+   *    ports, that it should have a popup that explains in better detail what
+   *    that means."
+   *
+   * The signs are the densest thing on this board: `2:1` with a wheat dot is a
+   * whole rule written in four characters, and until now the only place it was
+   * spelled out was one line in the rules book, which is not where anybody is
+   * standing when they wonder. So the sign became pressable, and it says the
+   * one thing the number cannot: what it is a discount ON, and what it costs to
+   * own it.
+   *
+   * Not in the 3D world — down there the dock IS the trade screen and tapping
+   * it should open the post, which it already does. This is the map and the
+   * draft, where the sign is information rather than a control. */
+  const popTitle = el('b', { class: 'ovp-t', text: '' });
+  const popRate = el('span', { class: 'ovp-rate', text: '' });
+  const popBody = el('span', { class: 'ovp-b', text: '' });
+  const popX = button('cream ovp-x', {
+    'aria-label': 'Close', on: { click: () => showPortPop(null) }
+  }, el('span', { class: 'sb-lab', text: 'OK' }));
+  const portPop = el('div', { class: 'ov-portpop plate lift hid', 'data-ui': '' },
+    el('div', { class: 'ovp-head' }, popTitle, popRate), popBody, popX);
+
+  /**
+   * Which harbour sign — or the market's own rate board — is under this point?
+   * Both come from the painter's own rect functions, so the tap zone is the
+   * plate that was actually drawn rather than a second guess at where it went.
+   */
+  function signAt(px, py) {
+    if (!paint) return null;
+    const rects = paint.portRects ? paint.portRects() : [];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      if (Math.abs(px - r.x) <= r.w / 2 && Math.abs(py - r.y) <= r.h / 2) {
+        return { kind: 'port', port: ports[i] };
+      }
+    }
+    const m = paint.marketRect ? paint.marketRect() : null;
+    if (m && Math.abs(px - m.x) <= m.w / 2 && Math.abs(py - m.y) <= m.h / 2) {
+      return { kind: 'market' };
+    }
+    return null;
+  }
+
+  function showPortPop(hit) {
+    if (!hit) { toggle(portPop, 'hid', true); return; }
+    if (hit.kind === 'market') {
+      setText(popTitle, 'The Great Market');
+      setText(popRate, `${TRADE_BASE}:1`);
+      setText(popBody, `The post in the middle of the island. Anyone may use it, `
+        + `at ${TRADE_BASE} of any one resource for 1 of any other. Every harbour `
+        + `below is a discount on this rate.`);
+    } else {
+      const p = hit.port;
+      const owned = !!(state.players[0].ports && state.players[0].ports.has
+        ? state.players[0].ports.has(p.id) : false);
+      setText(popTitle, p.resource ? `${RES_LABEL[p.resource]} harbour` : 'Harbour');
+      setText(popRate, p.label);
+      setText(popBody, (p.resource
+        ? `Give ${p.ratio} ${RES_LABEL[p.resource].toLowerCase()} and take 1 of anything. `
+          + `Only ${RES_LABEL[p.resource].toLowerCase()} is discounted here; everything `
+          + `else still costs ${TRADE_BASE}:1. `
+        : `Give ${p.ratio} of any ONE resource and take 1 of anything, instead of `
+          + `the ${TRADE_BASE}:1 the middle of the island charges. `)
+        + (owned
+          ? 'You own it — settle either of its two corners and it is yours.'
+          : 'You do not own it yet. Build a settlement on either of the two corners '
+            + 'it stands between and the rate is yours for the rest of the match.'));
+    }
+    toggle(portPop, 'hid', false);
+  }
+
   let action = null;
   function fireAction() {
     const fn = action;
@@ -467,7 +541,7 @@ export function createOverview(root, state, game) {
   const label = el('div', { class: 'ov-say' }, titleEl, hintEl);
   const wrap = el('div', {
     class: 'ov hid', 'data-ui': '', role: 'dialog', 'aria-label': 'Island map'
-  }, cv, label, strip, closeBtn, rail, sayEl, buyRow, actBar);
+  }, cv, label, strip, closeBtn, rail, sayEl, buyRow, actBar, portPop);
   root.appendChild(wrap);
 
   const ctx = (cv.getContext && cv.getContext('2d')) || null;
@@ -1026,6 +1100,18 @@ export function createOverview(root, state, game) {
     if (!ctx) return;
     measure();
     ctx.clearRect(0, 0, proj.w, proj.h);
+    /* EVERYTHING THAT IS THE BOARD STAYS INSIDE THE BOARD'S FRAME.
+     *
+     *   "Right now the map items when I zoom in are not staying within the
+     *    confines of their border box for the draft/map."
+     *
+     * The frame was painted over the top of the board rather than around it, so
+     * at rest it read as a window and under zoom it stopped: hexes, docks and
+     * settlers ran straight out across the label strip and the chips. One clip,
+     * pushed here and released just before `drawFrame` paints the moulding
+     * itself — which has to be outside it, or it would clip away its own outer
+     * keyline. See `clipToFrame` in ovmap.js for where the radius comes from. */
+    const clipped = paint.clipToFrame(proj.frame);
     if (bgx) {
       /* Re-bake when the board is still, and ALWAYS when the tilt has moved:
          the ride-along blit is a uniform scale, which cannot express a change
@@ -1061,6 +1147,7 @@ export function createOverview(root, state, game) {
     tg.drawTargets(v);
     paint.drawSettlers(state);
     if (tilted) ctx.restore();
+    if (clipped) ctx.restore();
     paint.drawFrame(proj.frame);
   }
 
@@ -1147,15 +1234,26 @@ export function createOverview(root, state, game) {
    * Knight's region both used to need the bar for this, and neither has one now.
    */
   onTap(cv, e => {
-    if (!openFlag || mode === 'view' || mode === 'draft-watch') return;
-    // A drag that moved the board is not a choice of corner.
+    if (!openFlag) return;
+    // A drag that moved the board is not a choice of anything.
     if (pan.moved) return;
     const r = cv.getBoundingClientRect ? cv.getBoundingClientRect() : { left: 0, top: 0 };
-    const hit = pick(e.clientX - r.left, unTilt(e.clientY - r.top));
+    const px = e.clientX - r.left, py = unTilt(e.clientY - r.top);
+    const placing = mode !== 'view' && mode !== 'draft-watch';
+
+    /* PLACEMENT FIRST, ALWAYS. A harbour sign stands out over open water and a
+       target stands on the island, so the two almost never overlap — but when
+       they do, the player mid-placement meant the corner. The sign is only
+       consulted once the placement pick has missed. */
+    const hit = placing ? pick(px, py) : null;
     if (hit === null || hit === undefined) {
-      if (sel !== null) select(null);
+      const sign = signAt(px, py);
+      if (sign) { showPortPop(sign); return; }
+      showPortPop(null);
+      if (placing && sel !== null) select(null);
       return;
     }
+    showPortPop(null);
     if (hit === sel) { commit(); return; }
     select(hit);
   });
@@ -1557,6 +1655,7 @@ export function createOverview(root, state, game) {
 
     openFlag = true;
     closeTimer = 0;
+    showPortPop(null);
     /* NOTHING ELSE OVER THE BOARD WHILE THE BOARD IS THE SCREEN.
      *
      *   "Suppress the 'GATHER. BUILD. WIN. / FIRST TO 12 POINTS' intro banner

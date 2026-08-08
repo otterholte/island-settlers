@@ -328,3 +328,44 @@
  * because that file has another owner this week. */
 #ui.ov-live .mf-obj{opacity:0;transform:translate(-50%,-14px) scale(.94);
   pointer-events:none}
+
+
+/* ====================================================== what a harbour means
+ *
+ *   "If I click on the 2:1 or 3:1 in the map or the draft or anywhere for the
+ *    ports, that it should have a popup that explains in better detail what
+ *    that means."
+ *
+ * A dock sign is four characters carrying a whole rule, and the only place the
+ * rule was written out was the book — which is not where anybody is standing
+ * when they wonder what `2:1` means. Tapping the sign says it here instead.
+ *
+ * Centred over the board rather than anchored to the sign it came from: the
+ * nine harbours are spread all the way round the coast and half of them are
+ * within a plate's width of an edge, so a tethered card would need four
+ * different flip rules to stay on screen. One place, always the same place, and
+ * it is dismissed by its own key or by the next tap anywhere on the board.
+ */
+.ov-portpop{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  z-index:6;width:min(300px,calc(100vw - 60px));
+  display:flex;flex-direction:column;gap:7px;padding:11px 13px 12px;
+  border-radius:15px;
+}
+.ov-portpop.hid{display:none !important}
+.ovp-head{display:flex;align-items:baseline;gap:8px}
+.ovp-t{flex:1 1 auto;min-width:0;
+  font:800 12px/1.1 var(--ff);letter-spacing:.12em;text-transform:uppercase;
+  color:#ffe79a;text-shadow:0 1px 2px rgba(0,0,0,.7)}
+.ovp-rate{flex:0 0 auto;padding:3px 8px 4px;border-radius:8px;
+  background:linear-gradient(180deg,#ffe79a,#ffc93c);
+  font:800 13px/1 var(--ff);color:#3a2208;box-shadow:0 1px 0 rgba(0,0,0,.35)}
+.ovp-b{font:700 10.5px/1.45 var(--ff);color:rgba(226,240,255,.9)}
+.ovp-x{align-self:flex-end;min-height:38px;padding:0 16px;font-size:11px}
+
+@media (max-height:500px),(max-width:1023px){
+  .ov-portpop{width:min(268px,calc(100vw - 40px));padding:9px 11px 10px;gap:6px}
+  .ovp-t{font-size:11px}
+  .ovp-b{font-size:9.5px;line-height:1.4}
+  .ovp-x{min-height:36px;padding:0 13px}
+}
