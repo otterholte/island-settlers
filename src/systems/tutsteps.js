@@ -250,8 +250,11 @@ export function buildSteps(t) {
     {
       id: 'hello',
       title: 'This is a tutorial',
-      text: 'Only YOU are playing right now — the other three settlers are standing still and will not move. Nothing here can go wrong and nothing here counts. Take as long as you like.',
-      action: 'Okay',
+      /* The OKAY key came off with the paragraph. The card is three short
+         sentences over a veiled screen and NEXT is right there — a second key
+         that does the same thing as the one beside it is a choice the player
+         has to make about nothing. */
+      text: 'Only you are playing right now. The other three settlers are not moving. Feel free to explore.',
       veil: true,
       size: 'big', place: 'centre', hud: OPENING
     },
@@ -291,7 +294,10 @@ export function buildSteps(t) {
         ? 'Press and drag ANYWHERE on the screen — left side, right side, straight over the island. Your settler follows your thumb.'
         : 'Use the ARROW KEYS to walk — up, down, left, right. WASD does the same thing if you would rather.'),
       size: 'big', place: 'top', hud: OPENING,
-      check: () => t.walked() > 6
+      /* "Let me walk a bit longer on step two before step three opens up."
+         Six units is about two seconds of holding a direction — long enough to
+         prove the stick works and much too short to have gone anywhere. */
+      check: () => t.walked() > 26
     },
 
     /* 3 --------------------------------------------------- THE GLOWING LAND
@@ -320,9 +326,16 @@ export function buildSteps(t) {
     {
       id: 'land',
       title: 'Your own land glows',
+      /* "Make the text more clear. Say something instead like: you can collect
+         resources from your hexes where you've built a settlement on the corner
+         of. Those are the glowing hexes."
+
+         The old line said WHICH hexes glow and never said why, which left the
+         one rule this game turns on — you only collect where you have built —
+         to be inferred from a colour. */
       text: () => {
         const n = t.workable().length;
-        return `The island has gone dark except the ${n} hexes you may collect from — the glowing ones, with a gold dot on each. Walk onto any of them.`;
+        return `You can only collect from a hex you have built on the corner of. Those are the glowing ones — ${n} of them, each with a gold dot. Walk onto any of them.`;
       },
       live: true,
       size: 'big', place: 'top', hud: OPENING, spot: 'pips',
@@ -333,10 +346,24 @@ export function buildSteps(t) {
     {
       id: 'collect',
       title: 'Run things over',
-      text: 'Everything growing on a hex you own is yours. Walk over it — no tapping, no waiting. Collect six things.',
+      /*
+       *   "Instead of saying collect six things, say collect all of the items
+       *    on one hex."  ...and  "wait a bit longer before the clear the hex
+       *    step shows up."
+       *
+       * The same change said twice. "Six things" was a number with nothing
+       * behind it — a hex holds anywhere from 5 to 28 — and six of them is over
+       * in about four seconds, which is why the next step arrived before this
+       * one had been felt. Asking for a whole hex makes the count mean
+       * something AND takes as long as the lesson deserves; the sweep step
+       * after it then skips itself when the hex really does come up empty here,
+       * which it usually will.
+       */
+      text: 'Everything growing on a hex you own is yours. Walk over it — no tapping, no waiting. Clear all of the items off one hex.',
       size: 'big', place: 'top', hud: OPENING, spot: true,
       world: () => t.itemOnHome(),
-      check: () => me.stats.gathered - t.base.gathered >= 6
+      check: () => t.sweptAny()
+        || me.stats.gathered - t.base.gathered >= t.hexLoad()
     },
 
     /* 5 ------------------------------------------------- CLEAR ONE, ANY ONE
@@ -399,14 +426,27 @@ export function buildSteps(t) {
     {
       id: 'rest',
       title: 'It comes back',
-      text: () => {
-        const t0 = t.restTile();
-        const rc = t0 < 0 ? null : tileRecovery(t0, state.time || 0);
-        const clock = rc && rc.exhausted
-          ? `The clock over the bare hex is counting it back in: ${Math.ceil(rc.secondsLeft)} seconds left, and then everything on it returns at once. `
-          : 'A hex you have stripped goes bare and a clock appears over it. When it runs out, everything on it returns at once. ';
-        return `${clock}It is not the same wait everywhere — the NUMBER DISC on the hex sets it. A ${TILE_REGEN[5]}-second hex is a 5-pip one; a 1-pip hex takes ${TILE_REGEN[1]}. Own several and walk a loop around them.`;
-      },
+      /*
+       *   "Hide the step for a few seconds before the step/instructions show up
+       *    again, so that I can see the highlighted countdown."
+       *   "Don't give specifics on step 6 regarding the number of pips, just
+       *    say that different numbers represent different lengths before it
+       *    refreshes. Don't mention pips at all. Shorten the amount of text."
+       *
+       * `quiet` gives the clock the screen to itself first: the wash is already
+       * up and lighting it, and a card arriving in the same frame is a card
+       * standing where the player was about to look. Two and a half seconds is
+       * long enough to watch a digit change, which is the whole point of the
+       * step.
+       *
+       * The words lost the arithmetic with the pips. Naming a range in seconds
+       * invited exactly the reading the shorter line avoids — that six is a
+       * constant, or that the player should be counting — when all they need to
+       * know is that the disc on the hex is the reason one comes back faster
+       * than another.
+       */
+      text: 'The clock over the bare hex is counting it back in. When it runs out, everything returns at once — and the number on the hex is what decides how long that takes.',
+      quiet: 2.5,
       live: true,
       size: 'big', place: 'top', hud: OPENING,
       spotWorld: () => {
@@ -455,7 +495,12 @@ export function buildSteps(t) {
        */
       text: 'Up in the middle is everything you are carrying: wood, brick, wool, wheat and ore. Run over things on your glowing land and watch the numbers climb.',
       size: 'big', place: 'foot', hud: PACK_LESSON,
-      spot: true, spotMe: true, spotDom: ['.hud-tc']
+      /* "Highlight the pack more, and slightly darken the hexes a bit more —
+         but not as much as the fully dark section." Three levels: the pill lit
+         and ringed in gold, the player's own land at half wash so they can
+         still run it while they read, everything else full dark. */
+      spot: true, spotDim: 0.55, spotMe: true,
+      spotDom: ['.hud-tc'], spotGlow: true
     },
 
     /* 8 ------------------------------------------------------- THE BUILD KEY
@@ -499,7 +544,9 @@ export function buildSteps(t) {
       text: 'Tap BUILD, bottom right. Four cards slide up — road, settlement, city, card — and each one fills as you gather, then turns gold when you can afford it.',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.hud-br .cbtn.gold'],
-      spotDom: ['.hud-br'],
+      /* "Just highlight the shape of the build key, not also the pause and map
+         button." The step names one control, so it lights one. */
+      spotDom: ['.hud-br .cbtn.gold'], spotGlow: true,
       holdNext: true,
       check: () => buildRowOpen()
     },
@@ -589,10 +636,13 @@ export function buildSteps(t) {
     {
       id: 'roadmapwho',
       title: 'Who else is here',
-      text: () => `Down the right are the four settlers and the colour each one builds in. You are ${myColourName()} — every road and settlement in that colour is yours.`,
-      onMap: 'centre', size: 'big', place: 'centre', veil: true,
+      text: () => `On the right side are the four settlers and the colour each one builds in. You are ${myColourName()} — every road and settlement in that colour is yours.`,
+      /* The veil came off: it darkened the rail as well, which is the one thing
+         this step is pointing at. The wash lights it instead, and it is raised
+         above the interface because the rail lives inside the map. */
+      onMap: 'centre', size: 'big', place: 'centre',
       hud: MAP_KEEP_RAIL,
-      spotDom: ['.ov-rail']
+      spotDom: ['.ov-rail'], spotGlow: true, spotMapMine: true, spotMapR: 34
     },
 
     /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
@@ -607,8 +657,10 @@ export function buildSteps(t) {
       id: 'roadmapmine',
       title: 'These are yours',
       text: () => `The ${myColourName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
+      /* "Darken everything that isn't my own settlements and roads." Read off
+         the map's own projection, roads included — see `minePieceXY`. */
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
-      spotWorldMany: () => t.myPieces()
+      spotMapMine: true, spotMapR: 40
     },
 
     /* 13 ------------------------------------------------- WHERE A ROAD MAY GO
@@ -620,8 +672,15 @@ export function buildSteps(t) {
     {
       id: 'roadmappick',
       title: 'Pick a line',
-      text: 'The glowing white lines are every place a road may go right now. Tap one.',
+      /* "Darken the rest and just highlight the white sections for where I can
+         place a road. Force me to tap it to move forward to the next step." So
+         the wash lights the legal edges and nothing else, and NEXT is held —
+         this is the one step where reading past it leaves the player on a map
+         with no idea what they were meant to touch. */
+      text: 'The glowing lines are every place a road may go. Tap one.',
       onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      spotMapTargets: true, spotMapR: 34,
+      holdNext: true,
       check: () => t.roadArmed() || me.roads.size > t.base.roads
     },
 
@@ -635,6 +694,8 @@ export function buildSteps(t) {
       title: 'Tap it again',
       text: 'That line is chosen, not built. Tap the SAME line once more to confirm it. Tapping the open sea puts it back.',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      /* "Force them to click one road and submit it to go to the next step." */
+      holdNext: true,
       check: () => me.roads.size > t.base.roads
     },
 

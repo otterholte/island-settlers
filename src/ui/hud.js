@@ -719,7 +719,19 @@ export function createHUD(root, state, game) {
       flashCost(kind);
       return false;
     }
-    game.openOverview('place-' + kind, {});
+    /* ONE PIECE AT A TIME WHILE THE PRACTICE RUN IS ON.
+     *
+     *   "Override the rule that keeps the road builder map open if I have extra
+     *    resources available in order to build a road. It should close right
+     *    after I built one road in this instance."
+     *
+     * The stay-open rule is right in a match — build three roads on one visit
+     * to the map and never leave it — and wrong in a lesson, where the pack has
+     * been stocked with five roads on purpose and the step after this one is
+     * written for a board with the piece already on it. `game.tutorial.running`
+     * is the whole condition, so a real match is untouched. */
+    const teaching = !!(game.tutorial && game.tutorial.running);
+    game.openOverview('place-' + kind, teaching ? { once: true } : {});
     return true;
   }
 

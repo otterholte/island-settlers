@@ -381,7 +381,8 @@
 .coach-card.at-side{
   left:auto;right:var(--gR,18px);
   top:var(--gT,10px);bottom:var(--gB,10px);
-  width:186px;max-height:none;
+  width:186px;max-width:calc(100vw - var(--gL,18px) - var(--gR,18px));
+  max-height:none;
   flex-direction:column;align-items:stretch;justify-content:flex-start;gap:7px;
   overflow:auto;
   transform:translateX(14px);
@@ -389,11 +390,21 @@
 .coach-card.on.at-side{transform:translateX(0)}
 .coach-card.at-side .coach-main{flex-direction:column;align-items:flex-start;gap:7px}
 .coach-card.at-side .coach-acts{width:100%;justify-content:space-between;margin-top:auto}
-.coach-card.at-side .coach-acts .btn{flex:1 1 0;padding:0 6px;font-size:10px}
+.coach-card.at-side .coach-acts .btn{flex:1 1 0;min-width:0;padding:0 6px;font-size:10.5px}
 .coach-card.at-side .coach-step{width:34px;height:34px;border-radius:11px}
 .coach-card.at-side .coach-step b{font-size:15px}
-.coach-card.at-side .coach-h{font-size:12.5px}
-.coach-card.at-side .coach-t{font-size:10.5px;line-height:1.36}
+/* MAKE IT READABLE. "Make the text bigger and a lot easier to read on the steps
+   in the right side of the tutorial when the map is open." The column inherited
+   the SLIM sizes, which are right for one line across the bottom of a screen
+   and much too small for a paragraph in a narrow column that the eye has to
+   track down. Up to 14/12 with the line-height opened out, and the word-break
+   guards are because a 158px column is narrow enough for one long word to push
+   the card wider than its own box — which is the mobile glitch. */
+.coach-card.at-side .coach-h{font-size:14px;line-height:1.15;letter-spacing:.03em}
+.coach-card.at-side .coach-t{font-size:12px;line-height:1.5}
+.coach-card.at-side .coach-h,
+.coach-card.at-side .coach-t{overflow-wrap:anywhere;word-break:normal;hyphens:auto}
+.coach-card.at-side .coach-body{min-width:0;width:100%}
 
 /* CENTRE is the opening card and nothing else. It is the one place that would
    be indefensible on any other step — dead centre, over the settler — and it is
@@ -486,6 +497,24 @@
    own top strip and its whole bottom bar. There is no corner left, so the badge
    does not try to find one. */
 .coach-card.gone{display:none !important}
+
+/* ...AND THE SIDE COLUMN OUTRANKS BOTH OF THEM.
+ *
+ * `.coach-card.slim` and `.coach-card.at-side` are both (0,2,0) and SLIM is
+ * written later, so a card that ended up in the column while still carrying
+ * `slim` took SLIM's width and SLIM's row layout: a 400px card crammed into a
+ * 186px slot with the body squeezed to one character per line, which is the
+ * "way too wide, and glitching on mobile" that was reported. `chromeFor` no
+ * longer asks for SLIM in the column at all — this is the belt to that brace,
+ * so the two can never disagree again whatever a future step asks for. */
+.coach-card.slim.at-side,
+.coach-card.at-side{
+  width:186px;max-width:calc(100vw - var(--gL,18px) - var(--gR,18px));
+  flex-direction:column;align-items:stretch;padding:9px 11px 10px;
+}
+.coach-card.slim.at-side .coach-h{display:block}
+.coach-card.slim.at-side .coach-step{width:34px;height:34px;border-radius:11px}
+.coach-card.slim.at-side .coach-t{font-size:12px;line-height:1.5}
 
 /* A quiet progress rail across the top of the card. */
 .coach-rail{
@@ -691,11 +720,23 @@
 
   /* The opening card gives up width before it gives up a word. */
   .coach-card.at-centre{width:min(420px,calc(100vw - 28px))}
-  /* Tracks `.ov-rail`'s own compact widths in ui.css: 158px, then 126px. */
-  .coach-card.at-side{width:158px;padding:6px 8px 7px}
-  .coach-card.at-side .coach-h{font-size:11px}
-  .coach-card.at-side .coach-t{font-size:9.5px}
-  .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:9.5px;padding:0 4px}
+  /* Tracks `.ov-rail`'s own compact widths in ui.css: 158px, then 126px.
+     `max-width` is the fix for the reported glitch — "the right side step
+     explanation is way too wide, and glitching on mobile" — because 158px plus
+     two 18px gutters is more than a 640x320 screen has to give once the card's
+     own border and padding are counted, and the card was growing rather than
+     wrapping. It may now be as wide as the column or as wide as the screen
+     allows, whichever is smaller. */
+  .coach-card.at-side{width:158px;padding:7px 9px 8px}
+  .coach-card.at-side .coach-h{font-size:12px}
+  .coach-card.at-side .coach-t{font-size:11px;line-height:1.45}
+  .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:10px;padding:0 4px}
+}
+@media (max-width:700px){
+  .coach-card.at-side{width:min(146px,calc(100vw - 190px))}
+  .coach-card.at-side .coach-step{display:none}
+  .coach-card.at-side .coach-h{font-size:11.5px}
+  .coach-card.at-side .coach-t{font-size:10.5px;line-height:1.42}
   .coach-card.at-top{width:min(400px,calc(100vw - var(--tut-side)));padding:8px 10px 9px}
   .coach-card.slim{width:min(360px,calc(100vw - var(--tut-side)));padding:5px 8px 6px}
   .coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(420px,calc(100vw - 24px))}

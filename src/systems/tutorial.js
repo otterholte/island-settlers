@@ -64,7 +64,7 @@
  * Owner: Tutorial (flow) agent.
  */
 
-import { HEX_SIZE, RES } from '../core/constants.js';
+import { HEX_SIZE, RES, TILE_ITEMS } from '../core/constants.js';
 import { tiles, intersections, tileAt, DESERT, LAYOUT_SEED } from '../board/layout.js';
 import {
   legalSettlements, legalRoads, setupCurrentPlayer,
@@ -650,6 +650,22 @@ export function createTutorial(state, game, deps = {}) {
     return out;
   }
 
+  /**
+   * How many things the hex the player is working actually holds.
+   *
+   * "Collect all of the items on one hex" needs a number, and the honest one is
+   * that hex's own stock rather than a constant — a 1-pip hex carries five and
+   * a 5-pip hex twenty-eight. Read off the emptiest owned hex, which is the one
+   * they are most likely to finish, and floored at five so a hex that is
+   * already half-swept when the step arrives cannot make the step trivial.
+   */
+  function hexLoad() {
+    const tid = sweepTile();
+    const t = tiles[tid];
+    if (!t) return 8;
+    return Math.max(5, TILE_ITEMS[t.pips] || 8);
+  }
+
   /** The owned hex that is actually resting, so the clock has something over it. */
   function restTile() {
     for (const tid of workable()) {
@@ -667,7 +683,7 @@ export function createTutorial(state, game, deps = {}) {
     workable,
     walked: () => walked,
     topUp, give, tileCentre, itemOnHome, standingOn,
-    sweptAny, sweepTile, restTile,
+    sweptAny, sweepTile, restTile, hexLoad,
     mapMoved, roadArmed, placeArmed, myPieces,
     tradeGetting, tradeGiving, scriptDeck,
     fakeAwards, clearFakeAwards,
@@ -748,8 +764,10 @@ export function createTutorial(state, game, deps = {}) {
 
   function spotShape(step) {
     if (!step) return null;
-    if (!step.spot && !step.spotDom && !step.spotMe
-      && !step.spotWorld && !step.spotWorldMany) return null;
+    if (!step.spot && !step.spotDom && !step.spotMe && !step.spotWorld
+      && !step.spotWorldMany && !step.spotMapTargets && !step.spotMapMine) {
+      return null;
+    }
     const holes = [], pips = [], rects = [];
 
     /* ------------------------------------------------- holes on the INTERFACE
@@ -764,7 +782,10 @@ export function createTutorial(state, game, deps = {}) {
      * fades in on its own transition and the three keys move with the safe-area
      * gutters when a phone is rotated. */
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
-    if (domSel) for (const s of domSel) { const r = domRect(s); if (r) rects.push(r); }
+    if (domSel) for (const s of domSel) {
+      const r = domRect(s);
+      if (r) { r.glow = !!step.spotGlow; rects.push(r); }
+    }
 
     /*
      * A HOLE HAS TO BE SOMEWHERE THE PLAYER CAN LOOK.
@@ -819,6 +840,34 @@ export function createTutorial(state, game, deps = {}) {
       if (s) holes.push({ x: s.x, y: s.y, r: q.r || 84 });
     }
 
+    /* ------------------------------------------------- and holes on the MAP
+     *
+     *   "Darken everything that isn't my own settlements and roads."
+     *   "Darken the rest and just highlight the white sections for where I can
+     *    place a road."
+     *
+     * The board map has its own projection and its own tilt, so a point on it
+     * cannot be found through the play camera. `overview.metrics` publishes the
+     * two lists this needs in canvas pixels — `targetsXY` for the glowing
+     * placements and `minePieceXY` for what the player already owns — measured
+     * by the same three lines the map uses to draw them, so the holes land on
+     * the paint rather than near it.
+     *
+     * The map canvas is not the window: it sits inside `.ov` at the panel's own
+     * offset, so its coordinates are shifted into screen space here before they
+     * are any use to a wash that covers everything.
+     */
+    const wants = step.spotMapTargets ? 'targetsXY'
+      : (step.spotMapMine ? 'minePieceXY' : null);
+    if (wants) {
+      const m = g.overview && g.overview.metrics;
+      const cv = document.querySelector('.ov-cv');
+      const box = cv && cv.getBoundingClientRect ? cv.getBoundingClientRect() : null;
+      const list = (m && m[wants]) || [];
+      const r = step.spotMapR || 42;
+      if (box) for (const q of list) holes.push({ x: box.left + q[0], y: box.top + q[1], r });
+    }
+
     if (!step.spot) {
       return (holes.length || rects.length) ? { holes, pips, rects } : null;
     }
@@ -855,7 +904,11 @@ export function createTutorial(state, game, deps = {}) {
       const onScreen = c.x > -r && c.x < innerWidth + r
         && c.y > -r && c.y < innerHeight + r;
       if (!onScreen) continue;
-      holes.push({ x: c.x, y: c.y, r });
+      /* `spotDim` leaves some of the wash lying over the player's own land —
+         "slightly darken the hexes a bit more, but not as much as the fully
+         dark section" — so the lit control is the brightest thing without the
+         island going black behind it. */
+      holes.push({ x: c.x, y: c.y, r, a: step.spotDim === undefined ? 1 : step.spotDim });
       if (step.spot === 'pips') pips.push({ x: c.x, y: c.y });
     }
     return (holes.length || rects.length) ? { holes, pips, rects } : null;
@@ -978,8 +1031,19 @@ export function createTutorial(state, game, deps = {}) {
      * out of the way. Only the steps written for the map ask for the column.
      */
     if (mapUp && step.onMap === 'centre') return { size: 'big', place: 'centre' };
-    if (mapUp && step.onMap) return { size: step.onMap === 'slim' ? 'slim' : 'big', place: 'side' };
-    if (sheetUp && step.onSheet) return { size: step.onSheet === 'slim' ? 'slim' : 'big', place: 'side' };
+    /*
+     * THE SIDE COLUMN IS ALWAYS THE BIG CARD.
+     *
+     * SLIM is one line and a nav row laid out ACROSS the screen — it exists so a
+     * step can get out of the way along the bottom edge. In a 186px column that
+     * layout has nowhere to go: the words and the two keys fight over the same
+     * row, the body collapses to about a character wide, and the card grows
+     * sideways trying to fit, which is exactly the "way too wide, and glitching
+     * on mobile" that was reported. The column is tall and narrow, which is the
+     * shape BIG already has.
+     */
+    if (mapUp && step.onMap) return { size: 'big', place: 'side' };
+    if (sheetUp && step.onSheet) return { size: 'big', place: 'side' };
     if (sheetUp || mapUp) size = 'gone';
     return { size, place };
   }
@@ -1131,7 +1195,12 @@ export function createTutorial(state, game, deps = {}) {
     const c = chromeFor(step);
     coach.chrome(c.size, c.place);
     coach.mark(markerFor(step));
-    if (spot) spot.set(spotShape(step), dt);
+    if (spot) {
+      /* In front of `#ui` only while a lesson is pointing at the map, which is
+         the one surface a wash behind the interface cannot reach. See `over`. */
+      if (spot.over) spot.over(!!(step.spotMapTargets || step.spotMapMine));
+      spot.set(spotShape(step), dt);
+    }
     if (step.live && phase === 'body') coach.say(textOf(step));
 
     if (phase === 'body' && step.check) {
@@ -1237,7 +1306,7 @@ export function createTutorial(state, game, deps = {}) {
     running = false;
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     if (coach) coach.hide();
-    if (spot) spot.clear();
+    if (spot) { spot.clear(); if (spot.over) spot.over(false); }
     if (typeof deps.setPractice === 'function') deps.setPractice(false);
     // Leaving from the awards slides must not hand the player a match that
     // thinks a frozen bot has a five-road line.

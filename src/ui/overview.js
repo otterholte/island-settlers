@@ -1775,8 +1775,22 @@ export function createOverview(root, state, game) {
      * Both halves are `rearm()`: it returns false when the count has run out or
      * the board has, and that is the close. Nothing about it is a mode the
      * player has to be in or get out of — build your last affordable road and
-     * the map closes exactly as it always did. */
-    if (rearm(id)) return true;
+     * the map closes exactly as it always did.
+     *
+     * ...EXCEPT WHEN THE TUTORIAL IS ASKING FOR ONE.
+     *
+     *   "Override the rule that keeps the road builder map open if I have extra
+     *    resources available in order to build a road. It should close right
+     *    after I built one road in this instance."
+     *
+     * The practice run hands the player a pack with five roads in it so the
+     * later steps never stall for materials, which turns the stay-open rule
+     * against the lesson: the step after this one is written for a board with
+     * the road ON it, and the player is instead left holding an armed map with
+     * four more placements glowing and nothing telling them to stop. `opts.once`
+     * is set only by the caller that means it, so nothing about a real match
+     * changes. */
+    if (!opts.once && rearm(id)) return true;
     close();
     return true;
   }
@@ -1866,6 +1880,37 @@ export function createOverview(root, state, game) {
           return o ? [Math.round(PX(o.x)), Math.round(PY(o.z))] : null;
         })(),
         ids: targets.slice(0, 80),
+        /**
+         * WHERE EVERY LEGAL SPOT IS, IN CANVAS PIXELS.
+         *
+         *   "Darken the rest and just highlight the white sections for where I
+         *    can place a road."
+         *
+         * The tutorial's wash works in screen pixels and has always got them by
+         * projecting through the PLAY camera. This surface has its own
+         * projection and its own tilt, so nothing outside overview.js can work
+         * out where a target landed — and a lesson that points at the glowing
+         * lines has to know. Same three lines `selXY` uses, for the whole list,
+         * with the tilt applied because these are read against the screen and
+         * not against flat board space.
+         */
+        targetsXY: targets.slice(0, 80).map(id => {
+          const o = mode === 'place-road' ? edges[id]
+            : (mode === 'place-robber' ? tiles[id] : intersections[id]);
+          return o ? [Math.round(PX(o.x)), Math.round(tiltY(PY(o.z)))] : null;
+        }).filter(Boolean),
+        /** ...and the player's own pieces, for the step that names them. */
+        minePieceXY: (() => {
+          const me0 = state.players[0]; const out = [];
+          if (!me0) return out;
+          for (const iid of me0.settlements) { const n = intersections[iid];
+            if (n) out.push([Math.round(PX(n.x)), Math.round(tiltY(PY(n.z)))]); }
+          for (const iid of me0.cities) { const n = intersections[iid];
+            if (n) out.push([Math.round(PX(n.x)), Math.round(tiltY(PY(n.z)))]); }
+          for (const eid of me0.roads) { const e = edges[eid];
+            if (e) out.push([Math.round(PX(e.x)), Math.round(tiltY(PY(e.z)))]); }
+          return out;
+        })(),
         /** choose-a-spot ring radius */
         targetR: +targetR().toFixed(1),
         /** PLACED settlement pip radius — deliberately unchanged */

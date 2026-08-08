@@ -78,9 +78,33 @@ export function createSpotlight(app) {
   if (ui && ui.parentNode === app) app.insertBefore(cv, ui);
   else app.appendChild(cv);
 
+  /**
+   * Move the wash to the other side of the heads-up display.
+   *
+   *   "Darken everything that isn't my own settlements and roads."
+   *   "Darken the rest and just highlight the white sections for where I can
+   *    place a road."
+   *
+   * Both of those are asked of the BOARD MAP, and the board map is inside
+   * `#ui`. A wash sitting behind `#ui` — which is where it belongs for every
+   * lesson about the island, so the pack and the build keys stay crisp — cannot
+   * darken a surface that is drawn on top of it. So for the map steps it goes
+   * in front instead, still behind the coach layer, which is a sibling further
+   * down. One node, two positions, no second canvas to keep in step.
+   */
+  function over(on) {
+    const want = !!on;
+    if (want === raised) return;
+    raised = want;
+    if (!app.contains(cv)) return;
+    if (want) app.appendChild(cv);
+    else if (ui && ui.parentNode === app) app.insertBefore(cv, ui);
+  }
+
   let shape = null;       // { holes:[{x,y,r}], rects:[{x,y,w,h,r}], pips:[{x,y}] }
   let w = 0, h = 0, dpr = 1;
   let fade = 0;           // 0..1, eased so the island does not snap dark
+  let raised = false;     // is the wash in front of `#ui`? see `over`
 
   function resize() {
     const nw = app.clientWidth || window.innerWidth;
@@ -123,6 +147,20 @@ export function createSpotlight(app) {
     ctx.globalCompositeOperation = 'destination-out';
     for (const c of holes) {
       if (!(c.r > 1)) continue;
+      /* A HOLE MAY BE A DIMMER RATHER THAN A HOLE.
+       *
+       *   "Slightly darken the hexes a bit more, but not as much as the fully
+       *    dark section."
+       *
+       * Three levels instead of two. The step that lights the pack still wants
+       * the player's own land READABLE — they have to run around on it while
+       * they watch the numbers climb — but not competing with the thing the
+       * step is actually about. `a` is how much of the wash this hole erases:
+       * 1 is a hole, 0.5 leaves half the wash lying over it, and the effect is
+       * a middle tone between the lit control and the dark rest. */
+      const a = c.a === undefined ? 1 : Math.max(0, Math.min(1, c.a));
+      if (a <= 0.001) continue;
+      ctx.globalAlpha = a;
       const g = ctx.createRadialGradient(c.x, c.y, c.r * 0.62, c.x, c.y, c.r);
       g.addColorStop(0, 'rgba(0,0,0,1)');
       g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -131,6 +169,7 @@ export function createSpotlight(app) {
       ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.globalAlpha = 1;
 
     /* ------------------------------------------- and holes over the INTERFACE
      *
@@ -181,6 +220,26 @@ export function createSpotlight(app) {
     }
     ctx.globalCompositeOperation = 'source-over';
 
+    /* ...and a keyline round the ones that asked for it. "Highlight the pack
+       more": a hole in a wash says "not dark here", which is quieter than it
+       sounds once the rest of the screen is only half dark. A thin gold edge
+       says "this one" without covering a pixel of the control it is around. */
+    for (const b of rects) {
+      if (!b.glow) continue;
+      const w2 = Math.max(2, b.w), h2 = Math.max(2, b.h);
+      const rad = Math.min(Number(b.r) || 14, w2 / 2, h2 / 2);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.beginPath();
+      roundRect(ctx, b.x - w2 / 2, b.y - h2 / 2, w2, h2, rad);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,201,60,.92)';
+      ctx.shadowColor = 'rgba(255,201,60,.7)';
+      ctx.shadowBlur = 14;
+      ctx.stroke();
+      ctx.restore();
+    }
+
     /* The pips. "Point out clearly and minimally to ALL THREE" — so each
        workable hex gets one small gold dot at its centre and nothing else. The
        hex the step is actually teaching on takes the coach's own gold ring on
@@ -227,7 +286,7 @@ export function createSpotlight(app) {
   }
 
   return {
-    set, clear, destroy,
+    set, clear, over, destroy,
     get on() { return fade > 0.01; },
     get node() { return cv; }
   };

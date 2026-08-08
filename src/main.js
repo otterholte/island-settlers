@@ -743,10 +743,37 @@ async function boot() {
           portsView.setUnlocked && portsView.setUnlocked(ev.port, ev.player);
           break;
         case 'blocked':
-          /* This one IS about you: you walked onto a hex the Knight is sitting
-             on and came away with nothing. */
-          hud.toast('The Knight blocks this region', 'warn');
-          audio.sfx('deny', { mine: true });
+          /*
+           * TWO DIFFERENT REFUSALS, AND ONLY ONE OF THEM IS AN EVENT.
+           *
+           *   "Remove the haptic feedback throughout the game that happens
+           *    every few seconds when I'm on a hex that isn't mine."
+           *
+           * `noteBlocked` in rules.js fires for both reasons it can refuse you,
+           * and this handled them as one: the same warning toast and the same
+           * `mine: true`, which is what audio.js gates a buzz on. So walking
+           * across somebody else's land — the most ordinary thing there is on
+           * a shared island, and the thing you do for most of a match — put a
+           * buzz in the hand every two and a half seconds, and told you a
+           * Knight was doing it when no Knight was anywhere near.
+           *
+           * A KNIGHT is an event: somebody aimed a card at a hex you work and
+           * you have just felt it. That keeps the buzz and the warning.
+           *
+           * UNOWNED is not an event, it is the map. You are standing somewhere
+           * you never had a claim to, nothing has changed, and there is nothing
+           * to act on except walking off. It keeps the small refusal SOUND,
+           * because a pickup that silently does not happen is worse, and it
+           * loses the buzz and the warning colour. The words are now true as
+           * well, which they were not before.
+           */
+          if (ev.reason === 'knight') {
+            hud.toast('The Knight blocks this region', 'warn');
+            audio.sfx('deny', { mine: true });
+          } else {
+            hud.toast('You have not settled this hex');
+            audio.sfx('deny');
+          }
           break;
         case 'victory':
           audio.music('victory');
