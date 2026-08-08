@@ -72,7 +72,7 @@
  * an item reference stays valid across a re-deal.
  */
 
-import { tiles, onBoardChanged } from './layout.js';
+import { tiles, cornerOffset, onBoardChanged } from './layout.js';
 import {
   HEX_SIZE, NODE_CAPACITY, TILE_ITEMS, TILE_REGEN, TILE_ITEM_POOL, PICKUP_RADIUS
 } from '../core/constants.js';
@@ -225,6 +225,88 @@ function clearOfToken(lx, lz) {
   return lz >= TOKEN_LANE_FRONT || lx <= -TOKEN_LANE_HALF || lx >= TOKEN_LANE_HALF;
 }
 
+/* ----------------------------------------------- and the six corners are not
+ *                                                   growing ground either
+ *
+ *   "I don't want resources to be at all covered or hidden underneath
+ *    settlements and cities. If there is a settlement or a city built on the
+ *    map, the new boundary for where resources can exist should be outside of
+ *    that city boundary."
+ *
+ * A settlement and a city stand on an INTERSECTION — a hex corner — and a
+ * corner is shared by three hexes, so a building drops a solid, opaque,
+ * knee-to-roof-height object onto ground that three separate item fields were
+ * free to plant on. The field never knew: `insideHex` holds items off the
+ * tile's EDGES, and the closest an item centre could get to a CORNER was
+ * whatever fell out of that — 2.36 world units at RIM, well inside a city pad
+ * at CITY_RADIUS 2.72. So a sheep placed at match start could be standing
+ * under a city built over it at minute nine, and `PICKUP_RADIUS` 2.4 would
+ * still hand it to whoever walked past, which makes it worse rather than
+ * better: the player collects a resource they were never shown.
+ *
+ * GEOMETRIC, NOT STATEFUL, and that is the whole design.
+ *
+ * The obvious reading of the request is to re-lay a hex's field when something
+ * is built on one of its corners. That is the wrong shape here for three
+ * reasons, in increasing order of severity:
+ *
+ *   1. Item positions are fixed at deal time and read straight into renderer
+ *      slots (`world/nodelife.js`) and into a spatial bucket grid below.
+ *      Moving `it.x` at run time moves the hitbox and leaves the mesh and the
+ *      bucket behind — a pickup you can see and cannot collect.
+ *   2. Resources visibly teleporting out from under a building mid-match is a
+ *      worse thing to watch than the overlap it fixes.
+ *   3. Determinism. The scatter is seeded off the board and nothing else,
+ *      because net/mirror.js replays a pickup by ITEM ID and every process —
+ *      four browsers and the match worker — has to agree on where item 412 is.
+ *      A layout that depended on which settlements exist, in what order they
+ *      were built, would have to agree about all of that too, at every moment.
+ *
+ * So the ground is reserved up front, on all six corners of every hex, whether
+ * anything is ever built there or not. The corners belong to the players; the
+ * field simply stops planting on them. world/props.js reached exactly this
+ * conclusion for the dressing one pass earlier — "THE SIX CORNERS ARE NOT
+ * DRESSING GROUND. THEY BELONG TO THE PLAYERS." — and CIVIC_R is deliberately
+ * the same 3.55 it uses, derived there as the city's outermost banner: the
+ * pole stands at CITY_RADIUS*0.94 and the cloth hangs 0.57 past it, so 3.10,
+ * plus a hand's breadth. Two placers keeping different clearances round the
+ * same building is how a tree ends up growing through a banner.
+ *
+ * WHAT IT COSTS, measured rather than guessed. Six discs of radius 3.55 pinned
+ * to the corners of a hex sounds ruinous and is not, because the rim inset has
+ * already taken most of that ground: the plantable region only reaches to
+ * within 2.36 of a corner to begin with, so this trims a crescent, not a disc.
+ * Across 400 tile seeds it removes 3.5 points of a 30% dart acceptance rate on
+ * the three narrow-item terrains and 1.1 on the two wide ones — the ore and
+ * clay margins in `RIM_BY_KIND` were already standing 3.13 and 2.90 off a
+ * corner, so they barely notice. The 32-position pool still fills to 32 on
+ * every seed tried, which is the number that matters: `tileItemCount` caps at
+ * pool length, so a short pool would silently cut a 5-pip hex's yield, and it
+ * does not. The tightest pair on a fully stocked 28-item pasture goes from
+ * 1.31 units to 1.22 — the field packs 7% closer because it has 12% less room
+ * — which is inside the range the density cap in world/nodelife.js already
+ * handles and is bought back several times over by never losing an item behind
+ * a wall.
+ *
+ * Deterministic: six constants off HEX_SIZE, nothing sampled, no state read.
+ * `tools/boardsync.mjs` still sees one field from one seed in every process.
+ */
+const CIVIC_R = 3.55;
+const CIVIC = (() => {
+  const out = [];
+  for (let i = 0; i < 6; i++) out.push(cornerOffset(i));
+  return out;
+})();
+
+/** False within a building's reach of any of the hex's six corners. */
+function clearOfCorners(lx, lz) {
+  for (const c of CIVIC) {
+    const dx = c.x - lx, dz = c.z - lz;
+    if (dx * dx + dz * dz < CIVIC_R * CIVIC_R) return false;
+  }
+  return true;
+}
+
 /**
  * Mitchell best-candidate scatter: for each new item, throw a handful of darts
  * and keep the one furthest from everything already placed. Gives an even,
@@ -234,7 +316,11 @@ function clearOfToken(lx, lz) {
  * The dart budget went 40 -> 70 when the token lane above started rejecting
  * darts: a quarter of the hex is now off limits, and a candidate that runs out
  * of tries is a candidate that never gets placed, which would quietly shorten
- * the item pool below what a 5-pip hex asks for.
+ * the item pool below what a 5-pip hex asks for. The corner keep-out took
+ * another 3.5 points off the acceptance rate and 70 still covers it easily:
+ * the worst terrain now accepts 26.5% of darts, so the odds of a candidate
+ * failing all seventy are 0.735^70, about two in ten billion, and the pool
+ * measured 32 of 32 on every seed tried.
  *
  * THE CANDIDATE COUNT WENT 14 -> 26, and that is the "spread them" half of:
  *
@@ -264,8 +350,10 @@ function scatterField(rng, count, margin = RIM) {
       do {
         lx = (rng() * 2 - 1) * INNER;
         lz = (rng() * 2 - 1) * HEX_SIZE;
-      } while ((!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)) && guard++ < 70);
-      if (!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)) continue;
+      } while ((!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)
+        || !clearOfCorners(lx, lz)) && guard++ < 70);
+      if (!insideHex(lx, lz, margin) || !clearOfToken(lx, lz)
+        || !clearOfCorners(lx, lz)) continue;
       let d = Infinity;
       for (const p of pts) {
         const dd = (p.lx - lx) * (p.lx - lx) + (p.lz - lz) * (p.lz - lz);

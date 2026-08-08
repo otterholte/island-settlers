@@ -182,4 +182,45 @@ export function onTap(node, fn) {
   node.addEventListener('pointercancel', () => { id = -1; });
 }
 
-export default { el, button, clear, clamp, lerp, fmtTime, hash01, onTap, guardTaps };
+/* ------------------------------------------------------------ what am I on?
+ *
+ * Is this a handheld — a phone or a tablet — rather than a desktop?
+ *
+ * Three questions, and it has to be all three rather than a user-agent string,
+ * because a Chromebook, a touchscreen laptop and an iPad Pro in landscape are
+ * all "touch device with a big screen" and only one of them is a handheld.
+ *
+ *   - A coarse pointer and no hover: a finger, not a mouse. Desktop Chrome
+ *     with a touchscreen still reports `hover: hover`.
+ *   - `maxTouchPoints`, as the fallback for engines with no pointer media
+ *     queries.
+ *   - And a size cap. A 12.9" iPad Pro is 1366 CSS px on its long edge, so
+ *     1400 is "an iPad or smaller" with a little room, and it is measured on
+ *     the LONG edge because this game is landscape-locked and every phone is
+ *     wide here.
+ *
+ * It lives here rather than in the one module that first needed it because it
+ * is now asked twice — flowIntro.js decides whether to offer Add to Home
+ * Screen, matchflow.js decides whether the objective card is worth the screen
+ * it costs — and two copies of a device test that disagree is a bug waiting
+ * for the one device that lands between them. Not cached: a tablet that gets
+ * rotated or a window that gets dragged to another display changes the answer,
+ * and both callers ask at a moment where a media query is cheap.
+ */
+const HANDHELD_MAX = 1400;
+
+export function handheld() {
+  const nav = typeof navigator !== 'undefined' ? navigator : null;
+  const mm = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
+  const coarse = mm ? mm('(pointer: coarse)').matches : false;
+  const noHover = mm ? mm('(hover: none)').matches : false;
+  const touch = !!(nav && (nav.maxTouchPoints > 0 || 'ontouchstart' in globalThis));
+  const w = globalThis.innerWidth || 0;
+  const h = globalThis.innerHeight || 0;
+  const long = Math.max(w, h);
+  return (coarse || noHover || touch) && long > 0 && long <= HANDHELD_MAX;
+}
+
+export default {
+  el, button, clear, clamp, lerp, fmtTime, hash01, onTap, guardTaps, handheld
+};

@@ -43,6 +43,8 @@ import { mulberry32 } from '../board/nodes.js';
 
 import { scoreOf, rankings, emit } from '../core/rules.js';
 
+import { handheld } from '../ui/dom.js';
+
 import { createFlowUI } from './flowUI.js';
 import { createFlowCamera } from './flowCamera.js';
 import { createDraft } from './flowDraft.js';
@@ -508,7 +510,37 @@ export function createMatchFlow(state, game) {
     // The objective card lands ON GO, not under the countdown — it used to sit
     // in the middle of the screen exactly where the numerals are. `immediate`
     // is the harness/restored-match route, which never had one.
-    if (!immediate) ui.showObjective('Gather. Build. Win.', `First to ${VICTORY_POINTS} points`, 2.6);
+
+    /* AND ON A PHONE IT DOES NOT LAND AT ALL.
+     *
+     *   "Remove the popup that says (Gather build win) on mobile, since it's
+     *    just in the way of the player."
+     *
+     * The card is 2.6 seconds of plate across the middle of the screen at the
+     * exact moment the player is first allowed to move, and what that costs is
+     * a function of how much screen there is. On a desktop window it is a
+     * caption over a wide board; on a 320px-tall phone held landscape it is
+     * 85px of the 320 — 27% of the height, measured in ui-build.css when the
+     * same card was found sitting over the build map — parked on the settler
+     * the player is trying to run. Sitting at top:57% it is below the HUD and
+     * over the ground, which is the worst place for it and the right place on
+     * a screen with room to spare.
+     *
+     * There is nothing on the card a handheld player loses. "First to 12
+     * points" is on the opening screen, on the score rail for the whole match,
+     * and in the tutorial; the title is the game's own strapline. So this is
+     * the banner going away on the devices it hurts, not information going
+     * away.
+     *
+     * Only the intro banner. `showObjective` is borrowed once more — by the
+     * Victory Point Card beat in `openWinFlow` — and that one is the only
+     * notice a player ever gets that a card just ended the match, so it stays
+     * on every device. Gating the call rather than hiding `.mf-obj` in CSS is
+     * what keeps those two apart.
+     */
+    if (!immediate && !handheld()) {
+      ui.showObjective('Gather. Build. Win.', `First to ${VICTORY_POINTS} points`, 2.6);
+    }
   }
 
   /* ---------------------------------------------------------- pacing beats */
