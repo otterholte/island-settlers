@@ -2484,7 +2484,43 @@ if (STAGE === 'home') {
     return {hidden:!!(n&&n.classList.contains('hid')),
       hudSaysOpen:!!window.__ISLAND__.game.hud.raidOpen};})()`);
   console.log('  DISMISS ' + JSON.stringify({ early, late, gone }));
+
+  /*
+   * AND YOUR OWN KNIGHT RAISES NOTHING.
+   *
+   *   "Also make sure that I don't see the knight popup after playing the
+   *    knight myself, since I'm not losing any resources when I play it."
+   *
+   * Fired through the same entry point the live event uses, the only difference
+   * being whose card it is. It must stay down. Run AFTER the dismissal sequence
+   * above on purpose: run first, a card that merely failed to RE-open would be
+   * indistinguishable from one that was correctly suppressed.
+   */
+  const ownKnight = await ev(`(()=>{
+    const g=window.__ISLAND__.game;
+    g.hud.raid({type:'knight',player:0,tile:5,
+      losses:[{player:1,total:6,lost:{wood:3,ore:3}},
+              {player:2,total:4,lost:{wool:4}}]});
+    for(let i=0;i<4;i++) g.hud.update(0.05);
+    const n=document.querySelector('.raid');
+    return {open:!!(n&&!n.classList.contains('hid')),
+      hudSaysOpen:!!g.hud.raidOpen};})()`);
+  console.log('  OWNKNIGHT ' + JSON.stringify(ownKnight));
+
+  /* And the two rows the owner asked to be rid of, asserted absent rather than
+     merely unmentioned — a hidden row is a row that grows back. */
+  const slim = await ev(`(()=>{
+    const c=document.querySelector('.raid-card');
+    return {chips:document.querySelectorAll('.raid-chip').length,
+      bill:document.querySelectorAll('.raid-bill').length,
+      foot:document.querySelectorAll('.raid-foot').length,
+      h:c?Math.round(c.getBoundingClientRect().height):0};})()`);
+  console.log('  RAIDSLIM ' + JSON.stringify(slim));
+
   console.log('  RAIDCARD ' + JSON.stringify({
+    yourOwnKnightRaisesNoCard: ownKnight.open === false && ownKnight.hudSaysOpen === false,
+    noPerResourceRow: slim.chips === 0 && slim.bill === 0,
+    noClosingLineOfText: slim.foot === 0,
     theCardLands: up.open === true && up.hudSaysOpen === true,
     itNamesTheLoss: /knight/i.test(up.text),
     aPressAlreadyInFlightDoesNotTakeIt: early.stillUp === true,
@@ -2849,6 +2885,42 @@ if (STAGE === 'home') {
   }
   await ev(`(()=>{document.querySelector('.hud-tl .cbtn').click();return 1})()`);
   await sleep(320);
+  /*
+   * THE AWARDS PLATE HOLDS ITS OWN TEXT.
+   *
+   *   "Do you see how the yellow 2 on the largest army section doesn't fit on
+   *    the dark blue box behind it. I don't want the box to be wider, but I'd
+   *    like you to instead make it two rows."
+   *
+   * Measured with the widest values the game can produce rather than whatever
+   * this match happens to be at — the target is twelve points, so "12 › 13" is
+   * the real worst case and it is two characters wider than the "1 › 2" in the
+   * report. Every award row must sit inside the plate's own box, on both axes.
+   */
+  console.log('  AWARDS ' + JSON.stringify(await ev(`(()=>{
+    const I=window.__ISLAND__;
+    I.state.players.forEach((p,i)=>{ p.knights=i===1?13:12; });
+    I.state.players[0].hasLongestRoad=false;
+    for(let i=0;i<12;i++) I.game.hud.update(1/60);
+    const plate=document.querySelector('.scorecard .sc-awards')
+      ||document.querySelector('.sc-awards');
+    const rows=[...document.querySelectorAll('.aw-row')];
+    const pb=plate.getBoundingClientRect();
+    const out=rows.map(r=>{const b=r.getBoundingClientRect();
+      return {txt:(r.textContent||'').replace(/\s+/g,' ').trim().slice(0,18),
+        inside: b.left>=pb.left-0.5 && b.right<=pb.right+0.5
+             && b.top>=pb.top-0.5 && b.bottom<=pb.bottom+0.5,
+        over:+(b.right-pb.right).toFixed(1)};});
+    // the numerals themselves, which is what actually overran
+    const nums=[...document.querySelectorAll('.aw-size,.aw-mine')].map(n=>{
+      const b=n.getBoundingClientRect();
+      return +(b.right-pb.right).toFixed(1);});
+    return {rows:out, stacked: rows.length===2 && rows[0].getBoundingClientRect().top
+        < rows[1].getBoundingClientRect().top - 4,
+      worstOverhang: Math.max(...nums),
+      allInside: out.every(r=>r.inside) && Math.max(...nums) <= 0.5,
+      plate:{w:Math.round(pb.width),h:Math.round(pb.height)}};})()`)));
+
   console.log('  SETTINGS ' + JSON.stringify(await ev(`(()=>{
     const s=document.querySelector('.pop.settings');
     const r=s?s.getBoundingClientRect():null;

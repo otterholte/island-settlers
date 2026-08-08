@@ -47,9 +47,9 @@
  * Owner: UI agent.
  */
 
-import { RES, RES_LABEL } from '../core/constants.js';
+import { RES } from '../core/constants.js';
 import { el, toggle, setText } from './dom.js';
-import { icon, resIcon } from './icons.js';
+import { icon } from './icons.js';
 import { regionName } from './hud-knight.js';
 
 const STYLE_ID = 'hud-raid-style';
@@ -129,25 +129,7 @@ const CSS = `
 }
 .raid-who b{color:var(--wc,#fff);font-weight:800}
 
-/* The bill. One chip per resource actually taken, so a raid on a full pack
-   reads as five and a raid on a bare one reads as one. */
-.raid-bill{
-  display:flex;flex-wrap:wrap;align-items:center;justify-content:center;
-  gap:8px;margin:12px 0 4px;
-}
-.raid-chip{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:6px 11px 7px;border-radius:11px;
-  background:rgba(0,0,0,.42);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.12),inset 0 0 0 1.5px rgba(255,255,255,.10);
-}
-.raid-chip svg{width:26px;height:26px;display:block}
-.raid-chip b{font:800 21px/1 var(--ff);color:#ffd8cc;
-  -webkit-text-stroke:1.5px rgba(12,6,6,.85);paint-order:stroke fill}
-.raid.good .raid-chip b{color:#ffe79a}
-.raid-none{font:800 13px/1 var(--ff);letter-spacing:.09em;text-transform:uppercase;
-  color:rgba(255,232,222,.66)}
-
+.raid.good 
 .raid-total{
   margin-top:9px;display:inline-flex;align-items:baseline;gap:8px;
   padding:5px 15px 7px;border-radius:11px;
@@ -164,11 +146,6 @@ const CSS = `
 .raid-total span{font:800 10px/1 var(--ff);letter-spacing:.15em;
   text-transform:uppercase;color:rgba(255,232,222,.72)}
 
-.raid-foot{
-  margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.13);
-  font:800 10.5px/1.35 var(--ff);letter-spacing:.09em;text-transform:uppercase;
-  color:rgba(255,232,222,.62);
-}
 
 @keyframes raidIn{
   0%{opacity:0;transform:scale(.62) rotate(-3deg)}
@@ -183,14 +160,9 @@ const CSS = `
   .raid-card{padding:11px 16px 13px;border-radius:15px;min-width:min(90vw,340px)}
   .raid-ttl{font-size:25px;letter-spacing:.08em}
   .raid-who{font-size:11px;margin-top:5px}
-  .raid-bill{gap:6px;margin:9px 0 3px}
-  .raid-chip{padding:4px 8px 5px;gap:5px}
-  .raid-chip svg{width:22px;height:22px}
-  .raid-chip b{font-size:18px}
-  .raid-total{margin-top:7px;padding:4px 12px 6px}
+        .raid-total{margin-top:7px;padding:4px 12px 6px}
   .raid-total b{font-size:22px}
-  .raid-foot{margin-top:8px;padding-top:7px;font-size:9.5px}
-}
+  }
 `;
 
 function injectStyle(doc) {
@@ -210,22 +182,40 @@ export function createRaidCue(root, state, game) {
     || (typeof document !== 'undefined' ? document : null);
   if (!doc || !doc.createElement || !root || !root.appendChild) return stub();
 
-  let wrap, ttl, who, bill, totalNum, totalLab, foot, headIco;
+  let wrap, ttl, who, totalNum, totalLab, headIco;
   try {
     injectStyle(doc);
     headIco = el('span', { class: 'ico', html: icon('knight', 40) });
     ttl = el('div', { class: 'raid-ttl', text: 'Knight' });
     who = el('div', { class: 'raid-who' });
-    bill = el('div', { class: 'raid-bill' });
     totalNum = el('b', { text: '0' });
     totalLab = el('span', { text: 'goods lost' });
-    foot = el('div', { class: 'raid-foot' });
+    /*
+     * TWO SECONDS IS NOT LONG ENOUGH TO READ A TABLE.
+     *
+     *   "The knight screen popup, it's only there for a couple seconds, so it
+     *    doesn't need to be so big or have all that text. I think you should
+     *    remove the row of the resource icons showing how many types of
+     *    resources I lost of each type. I also want you to remove the bottom
+     *    row of text of the popup as well."
+     *
+     * Both rows are gone. The per-resource bill was five chips of icon and
+     * figure — a breakdown nobody can total in the time the card is up, and one
+     * the player can read at leisure afterwards off the resource pill, which is
+     * where they will actually look. The closing line explained the rule the
+     * Knight had just demonstrated on them.
+     *
+     * What is left is what a glance can take: whose Knight, that half of
+     * everything is gone, and one number. `fillBill` and the `bill`/`foot`
+     * elements are deleted rather than hidden, because a card that still builds
+     * five chips and then does not show them is a card that will grow them back
+     * the next time somebody edits this file.
+     */
     wrap = el('div', { class: 'raid hid' },
       el('div', { class: 'raid-card' },
         el('div', { class: 'raid-hd' }, headIco, ttl),
-        who, bill,
-        el('div', { class: 'raid-total' }, totalNum, totalLab),
-        foot));
+        who,
+        el('div', { class: 'raid-total' }, totalNum, totalLab)));
     root.appendChild(wrap);
   } catch (e) {
     if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
@@ -247,26 +237,6 @@ export function createRaidCue(root, state, game) {
   const onAnyPress = () => { dismiss(); };
 
   const safe = fn => { try { return fn(); } catch (e) { return undefined; } };
-
-  /** One `icon + −N` chip per resource that actually moved. */
-  function fillBill(lost, sign) {
-    bill.innerHTML = '';
-    let any = 0;
-    for (const r of RES) {
-      const n = lost && lost[r] ? lost[r] | 0 : 0;
-      if (n <= 0) continue;
-      any++;
-      bill.appendChild(el('span', {
-        class: 'raid-chip', title: RES_LABEL[r] || r
-      },
-        el('span', { class: 'ico', html: icon(resIcon(r), 26) }),
-        el('b', { text: `${sign}${n}` })));
-    }
-    if (!any) {
-      bill.appendChild(el('span', { class: 'raid-none', text: 'Nothing to take' }));
-    }
-    return any;
-  }
 
   function dress(ev) {
     const knight = state.players[ev.player];
@@ -292,7 +262,6 @@ export function createRaidCue(root, state, game) {
           ? ' played a Knight on your hex — half of everything you held is gone'
           : ' played a Knight — you had nothing to lose'
       }));
-      fillBill(mine && mine.lost, '−');
       setText(totalNum, `−${total}`);
       setText(totalLab, total === 1 ? 'good lost' : 'goods lost');
       hold = HOLD_LOSS;
@@ -324,13 +293,11 @@ export function createRaidCue(root, state, game) {
           ? (state.players[all[0].player] || {}).name || 'one rival'
           : `${all.length} on that hex`
       }));
-      fillBill(sum, '−');
       setText(totalNum, `−${total}`);
       setText(totalLab, total === 1 ? 'good destroyed' : 'goods destroyed');
       hold = HOLD_GAIN;
     }
 
-    setText(foot, `The Knight now shuts down ${regionName(ev.tile)} · nothing comes off it`);
   }
 
   /**
@@ -341,6 +308,28 @@ export function createRaidCue(root, state, game) {
    */
   function show(ev) {
     if (!ev) return;
+    /*
+     * YOUR OWN KNIGHT COSTS YOU NOTHING, SO IT RAISES NOTHING.
+     *
+     *   "Also make sure that I don't see the knight popup after playing the
+     *    knight myself, since I'm not losing any resources when I play it."
+     *
+     * This card answers one question — what did that just take off me — and
+     * when you are the one who played it the answer is fixed at nothing, by the
+     * rule set out in the same round: the player who sends the Knight never
+     * loses anything to it. A card over the board reporting a loss of zero is
+     * an interruption charging for a fact the player already had.
+     *
+     * The rest of the moment is untouched and still says it plainly: the horn,
+     * the shockwave over the hex, every rival's carry-stack dropping at once,
+     * and the centre-screen line naming who was hit. Only the modal goes.
+     *
+     * Guarded here rather than at the call site in main.js so that every route
+     * in — the live event, the queue released when a trade sheet closes, and a
+     * networked raid arriving from the server — gets the same answer without
+     * three places having to remember the rule.
+     */
+    if (ev.player === 0) return;
     safe(() => dress(ev));
     t = 0;
     if (!live && win) {

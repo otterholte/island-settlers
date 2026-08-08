@@ -1090,9 +1090,33 @@
   .hud .sc-goal{font-size:7.5px;margin:2px 0 0 -1px}
   .hud .vp-track{display:none}
 
-  /* Two chips in a row, not two lines in a column. */
-  .hud .sc-awards{flex-direction:row;gap:5px;padding:1px 6px 4px}
-  .hud .aw-row{gap:3px}
+  /*
+   * ONE AWARD PER ROW, AND THE REASON IS THAT TWO DID NOT FIT.
+   *
+   *   "Do you see how the yellow 2 on the largest army section doesn't fit on
+   *    the dark blue box behind it. I don't want the box to be wider, but I'd
+   *    like you to instead make it two rows, with knight icon and numbers on
+   *    the second row."
+   *
+   * Two award chips laid side by side inside a plate sized for the score above
+   * them, and the last figure on the line — the one that is gold, so the one
+   * the eye goes to — hung off the right edge of the plate. It gets worse as
+   * the match runs: the numbers grow, and the target is twelve points now, so
+   * "12 › 13" is two characters wider again than the "1 › 2" in the report.
+   *
+   * Widening the plate was the obvious fix and the owner ruled it out, rightly
+   * — it is the top-left corner of a landscape phone, and the plate is already
+   * as wide as the score it sits under. Stacking costs one line of height in
+   * the emptiest part of the screen and nothing else, and it puts the two
+   * awards in the same reading order as the full-size layout.
+   *
+   * `column` here is the DEFAULT direction from the rule at the top of this
+   * file, so this is really the deletion of an override rather than a new
+   * instruction. The two rows are the DOM order — Longest Road, then Largest
+   * Army — so nothing needs reordering.
+   */
+  .hud .sc-awards{flex-direction:column;gap:2px;padding:1px 6px 4px}
+  .hud .aw-row{gap:4px}
   .hud .aw-ico svg{width:12px;height:12px}
   .hud .aw-body{flex-direction:row;align-items:center;gap:3px}
   .hud .aw-lab,.hud .aw-holder,.hud .aw-need,.hud .aw-you{display:none}
