@@ -533,11 +533,33 @@ export function createTutorial(state, game, deps = {}) {
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
     if (domSel) for (const s of domSel) { const r = domRect(s); if (r) rects.push(r); }
 
+    /*
+     * A HOLE HAS TO BE SOMEWHERE THE PLAYER CAN LOOK.
+     *
+     * `projectGround` will happily return a coordinate a hundred pixels above
+     * the top of the frame, and a wash whose only hole is off-screen is a
+     * screen that has gone dark for no reason — which is exactly what step 6
+     * did when the camera left the recovery clock over the top edge. The hex
+     * wash rejects those outright (it has five other hexes to light), but a
+     * step with ONE thing to point at cannot afford to drop it, so this pulls
+     * it back inside instead: the hole keeps its size and slides until half of
+     * it is in the frame. `markerFor` clamps the gold ring for the same reason
+     * and with the same arithmetic.
+     */
+    const nudge = (s, r) => {
+      const W = host.clientWidth || window.innerWidth;
+      const H = host.clientHeight || window.innerHeight;
+      return {
+        x: Math.max(r * 0.5, Math.min(W - r * 0.5, s.x)),
+        y: Math.max(r * 0.5, Math.min(H - r * 0.5, s.y))
+      };
+    };
+
     /* ...and the player, so a step that darkens the screen around a HUD cluster
        still lets them see the settler they are running. */
     if (step.spotMe) {
       const s = projectGround(me.x, me.z, 1.6);
-      if (s) holes.push({ x: s.x, y: s.y, r: 92 });
+      if (s) { const p = nudge(s, 92); holes.push({ x: p.x, y: p.y, r: 92 }); }
     }
 
     /* ...and any world point a step nominates. Step 6 uses this for the
@@ -547,7 +569,8 @@ export function createTutorial(state, game, deps = {}) {
     const wp = typeof step.spotWorld === 'function' ? step.spotWorld() : null;
     if (wp) {
       const s = projectGround(wp.x, wp.z, wp.lift === undefined ? 6.2 : wp.lift);
-      if (s) holes.push({ x: s.x, y: s.y, r: wp.r || 96 });
+      const r = wp.r || 96;
+      if (s) { const p = nudge(s, r); holes.push({ x: p.x, y: p.y, r }); }
     }
 
     if (!step.spot) {

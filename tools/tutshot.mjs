@@ -116,6 +116,17 @@ const ev = async (expr, awaitPromise = false) => {
 };
 const shot = async name => {
   if (!SHOT) return;
+  /* LET THE STEP FINISH ARRIVING BEFORE PHOTOGRAPHING IT.
+   *
+   * Three of the things this rig is now photographing are eased rather than
+   * switched: the coach card's .28s fade, the veil's .3s, and the spotlight
+   * wash, which is a per-frame lerp at 4.2/s and therefore takes about 0.7s to
+   * reach full strength. `settle()` is three frames — right for MEASURING, since
+   * every assertion reads classes and rectangles that are correct immediately —
+   * and much too quick for a picture. Shots taken on it showed a step that had
+   * darkened nothing, which is the opposite of what the step does. */
+  await sleep(850);
+  await frames(6);
   const r = await send('Page.captureScreenshot', { format: 'png' });
   if (!r?.data) { console.log(`  shot ${name} FAILED`); return; }
   writeFileSync(resolve(OUT, `${name}.png`), Buffer.from(r.data, 'base64'));
@@ -676,6 +687,32 @@ await settle(14);
 const keyMask = await ev(`(${SAMPLE})('.hud-br')`);
 const veilOff = await ev(`(()=>{const v=document.querySelector('.coach-veil');
   return !!(v&&v.classList.contains('on'));})()`);
+/* EVERY HOLE A STEP CUTS HAS TO BE ON THE SCREEN.
+ *
+ * A wash whose only hole is off the top of the frame is a screen that went dark
+ * for no reason, which is what step 6 did before the clamp in `spotShape` — the
+ * camera left the recovery clock twelve pixels above the top edge. Walked over
+ * every step that lights anything, because the camera is wherever the player
+ * left it and any of them can hit this. */
+const offScreenHoles = [];
+for (let i = 0; i < N; i++) {
+  await ev(`window.__ISLAND__.game.tutorial.goTo(${i})`);
+  await settle(6);
+  const bad = await ev(`(()=>{const sh=window.__ISLAND__.game.tutorial.spotAt();
+    if(!sh) return null;
+    const all=[...(sh.holes||[]).map(h=>({x:h.x,y:h.y,r:h.r})),
+               ...(sh.rects||[]).map(r=>({x:r.x,y:r.y,r:Math.max(r.w,r.h)/2}))];
+    if(!all.length) return null;
+    const on=all.filter(h=>h.x>-h.r*0.5&&h.x<innerWidth+h.r*0.5
+                        &&h.y>-h.r*0.5&&h.y<innerHeight+h.r*0.5);
+    return on.length?null:{holes:all.length};})()`);
+  if (bad) offScreenHoles.push(i + 1);
+}
+console.log('  LITSOMEWHERE ' + JSON.stringify({
+  stepsThatDarkenTheScreenAndLightNothingOnIt: offScreenHoles,
+  everyWashHasSomethingToLookAt: offScreenHoles.length === 0
+}));
+
 console.log('  MASKS ' + JSON.stringify({
   veil, packMask, keyMask, veilIsOffEverywhereElse: veilOff === false,
   theOpeningCardHasTheScreenToItself:
