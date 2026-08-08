@@ -119,6 +119,39 @@ function practiceWanted() {
   } catch (e) { return false; }
 }
 
+/**
+ * This page's address with the practice run's own two parameters taken off.
+ *
+ * THE PARAMETERS ARE AN INSTRUCTION, NOT A PLACE, AND THEY HAVE TO BE SPENT.
+ *
+ *   "Right now, when I leave the match for a practice game, or go to End
+ *    Practice, it just keeps reopening practice for me instead of going to the
+ *    main menu."
+ *
+ * `?board=840&practice=1` means "deal the tutorial's island and start the run".
+ * Every exit this game has — END PRACTICE, LEAVE MATCH, the home key, an
+ * in-place restart — is a `location.reload()`, and a reload keeps the query
+ * string. So the instruction was still sitting in the address bar when the page
+ * came back up, `begin()` read it exactly as it was written to, and handed the
+ * player back into the practice run they had just left. Forever. The same
+ * parameter would also have pinned every future match on that tab to board 840.
+ *
+ * So the instruction is consumed the moment it is carried out — see the
+ * `replaceState` in `startPractice` — and this is the address it is replaced
+ * with. `board` goes with `practice` and only with it: somebody who typed
+ * `?board=12345` themselves is asking for that island and should keep it, but
+ * an 840 this module put there is scaffolding.
+ */
+function withoutPracticeParams() {
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.get('practice') !== '1') return null;
+    u.searchParams.delete('practice');
+    u.searchParams.delete('board');
+    return u.toString();
+  } catch (e) { return null; }
+}
+
 /** Every class this module may put on `#ui`. Listed once so it can be undone. */
 const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild', 'tut-nokeys'];
 
@@ -877,6 +910,24 @@ export function createTutorial(state, game, deps = {}) {
     if (ensureBoard()) return;
     running = true;
 
+    /* THE INSTRUCTION IS SPENT THE MOMENT IT IS CARRIED OUT.
+     *
+     * `?practice=1` asked for this run and it has now been given one, so it
+     * comes out of the address bar before anything else happens. Every exit in
+     * this game is a `location.reload()`, and a parameter left sitting there is
+     * an exit that walks straight back in — which is exactly what END PRACTICE
+     * and LEAVE MATCH were doing. See `withoutPracticeParams`.
+     *
+     * `replaceState` rather than `pushState`: this is not a place the player
+     * navigated to and the Back button must not be able to return to it. The
+     * board is already dealt, so taking the seed off the URL changes nothing
+     * about the island underneath — `LAYOUT_SEED` was read at module load and
+     * is what `ensureBoard` keeps checking. */
+    const clean = withoutPracticeParams();
+    if (clean && typeof history !== 'undefined' && history.replaceState) {
+      try { history.replaceState(null, '', clean); } catch (e) { /* cosmetic */ }
+    }
+
     if (book && book.isOpen) book.close();
     if (deps.ui && deps.ui.hideIntro) { try { deps.ui.hideIntro(); } catch (e) { /* silent */ } }
     if (deps.ui && deps.ui.hideObjective) { try { deps.ui.hideObjective(); } catch (e) { /* silent */ } }
@@ -905,6 +956,16 @@ export function createTutorial(state, game, deps = {}) {
   /** Leave the practice and start a real match: a fresh island, fresh rivals. */
   function restart() {
     quit();
+    /* Belt to `replaceState`'s braces. That call is the fix and it runs on
+       every start, but it is the one line standing between END PRACTICE and an
+       inescapable loop, and it is allowed to fail — a sandboxed frame throws on
+       `replaceState`. If the parameter is somehow still there, leave by
+       navigating to the address without it rather than by reloading the one
+       that has it. */
+    const clean = withoutPracticeParams();
+    if (clean && typeof location !== 'undefined' && location.assign) {
+      location.assign(clean); return;
+    }
     if (typeof g.restart === 'function') { g.restart(); return; }
     if (typeof location !== 'undefined' && location.reload) location.reload();
   }
