@@ -232,6 +232,22 @@ export function createTutorial(state, game, deps = {}) {
   /* Is NEXT dimmed right now because a `holdNext` step has not been done? */
   let heldNow = false;
   /*
+   * ...AND FOR HOW LONG. A HOLD IS A NUDGE, NOT A LOCK.
+   *
+   *   "Make sure that can never happen, so I don't get ahead or stuck so I
+   *    can't get back on track."
+   *
+   * `needs` covers every stranding I could find and re-open, but it can only
+   * cover the ones I thought of, and a dimmed NEXT is the single worst thing to
+   * be wrong about: it is the control a player reaches for precisely when they
+   * are lost. So every hold also has a clock on it. Twenty-five seconds is far
+   * longer than any held step takes — they are all one tap on a control the
+   * step is pointing at — so nobody who is following along will ever see it
+   * expire, and nobody who is stuck will ever be stuck for longer than that.
+   */
+  const HOLD_MAX = 25;
+  let holdT = 0;
+  /*
    * SECONDS OF NOTHING BEFORE A STEP SPEAKS.
    *
    *   "Then close the tutorial steps, show the building of the road animation
@@ -1102,6 +1118,115 @@ export function createTutorial(state, game, deps = {}) {
     return { size, place };
   }
 
+  /* =========================================================== STAYING ON TRACK
+   *
+   *   "If I accidentally do something that's not in the correct order the
+   *    tutorial breaks, and I can't easily get back to where I was. Make sure
+   *    that can never happen."
+   *
+   * Every way this run could strand somebody came down to the same shape: a
+   * step that is ABOUT a surface — the placement map, the trading post — and a
+   * player who is no longer looking at that surface. The step's words describe
+   * a control that is not there, its `check` can never come true because the
+   * thing it watches is gone, and if the step also holds NEXT then forward is
+   * dimmed and backward lands on a sibling step in the same broken state. That
+   * is the dead end, and it needed one answer rather than thirty.
+   *
+   * A step now DECLARES what it needs, and two rules follow from the
+   * declaration:
+   *
+   *   PUT IT BACK. Arriving on a step whose surface is missing re-opens it,
+   *   through the same call a player's own tap would make — so walking Back
+   *   into the middle of the road sequence re-opens the placement map rather
+   *   than showing "tap one of the glowing lines" over an empty island.
+   *
+   *   AND NEVER HOLD A DOOR THAT WILL NOT OPEN. If the surface cannot be put
+   *   back — the player cannot afford the piece, there is nowhere legal left,
+   *   the post is behind them — the hold comes OFF and NEXT lights up. A hold
+   *   is there to stop somebody skipping a lesson they could have taken, not to
+   *   trap somebody who cannot take it. This is re-checked every frame, so
+   *   closing the map mid-step lights NEXT within one frame rather than leaving
+   *   the player pressing a dead key.
+   *
+   * `needs` is a string because there are only two surfaces and guessing at a
+   * general capability system for two things is how a tutorial ends up harder
+   * to reason about than the game.
+   */
+
+  /** Is the surface this step is about actually on screen? */
+  function surfaceOk(step) {
+    const need = step && step.needs;
+    if (!need) return true;
+    if (need === 'sheet') return !!(g.panels && g.panels.isOpen);
+    if (need === 'buildcards') {
+      const row = document.querySelector('.build-row');
+      return !!(row && !row.classList.contains('hid'));
+    }
+    if (need.indexOf('map:') === 0) {
+      return !!(g.overview && g.overview.isOpen
+        && g.overview.mode === 'place-' + need.slice(4));
+    }
+    return true;
+  }
+
+  /**
+   * ...and if it is not, ask for it the way the player would — or, for a step
+   * that needs no surface at all, put away whatever is still standing.
+   *
+   * THE SECOND HALF IS THE ONE THAT WAS BITING.
+   *
+   * `chromeFor` hides the card outright while a full-screen surface owns the
+   * display, which is right — there is no corner of a trade sheet a lesson may
+   * stand in. But it means a map left open by the step BEFORE takes the card
+   * away from the step after, and if that step also washes the screen the
+   * player is left looking at a dark board with no instruction on it and no
+   * idea what closed it. Which is most of "the tutorial breaks if I do
+   * something out of order": open the map at the wrong moment and the run goes
+   * silent.
+   *
+   * A surface belongs to the steps that declare it. Arriving anywhere else
+   * closes it, so the card can always be seen.
+   */
+  function restoreSurface(step) {
+    const need = step && step.needs;
+    if (!need) {
+      try {
+        if (g.overview && g.overview.isOpen && g.overview.close) g.overview.close();
+      } catch (e) { /* silent */ }
+      try {
+        if (g.panels && g.panels.isOpen && g.panels.close) g.panels.close();
+      } catch (e) { /* silent */ }
+      return;
+    }
+    if (surfaceOk(step)) return;
+    if (need === 'sheet') {
+      try { if (g.panels && g.panels.openTrade) g.panels.openTrade(); } catch (e) { /* silent */ }
+      return;
+    }
+    if (need === 'buildcards') {
+      /* A step that says "tap the ROAD card" needs the four cards up, and the
+         row is a toggle the player can collapse at any moment — including by
+         pressing BUILD a second time on the step that just taught them to press
+         it once. Sliding it back open is not a cheat: it is the precondition of
+         the sentence, not the lesson. The step that teaches the key itself does
+         NOT declare this, for the obvious reason. */
+      const row = document.querySelector('.build-row');
+      if (row) toggle(row, 'hid', false);
+      return;
+    }
+    if (need.indexOf('map:') === 0) {
+      const kind = need.slice(4);
+      /* Through `requestBuild`, not `openOverview`, because that is the call
+         the BUILD card makes: it checks the cost and whether anywhere is legal
+         and refuses politely if not, which is exactly the refusal that should
+         release the hold rather than a map opened onto nothing. `robber` has no
+         such route — a Knight is played, not bought — so it is left alone and
+         its steps simply unhold. */
+      if (kind === 'robber') return;
+      try { if (g.hud && g.hud.requestBuild) g.hud.requestBuild(kind); } catch (e) { /* silent */ }
+    }
+  }
+
   const safeCheck = step => {
     if (!step || !step.check) return false;
     try { return !!step.check(); } catch (e) { return false; }
@@ -1161,7 +1286,12 @@ export function createTutorial(state, game, deps = {}) {
      * been pressed, walking back through the run and forward again is free. Back
      * is never held, on this or any other step.
      */
-    heldNow = !!step.holdNext && phase === 'body' && !satisfied.has(step.id);
+    // Put the step's surface back before deciding whether NEXT may be held:
+    // a hold is only honest once the thing being asked for is reachable.
+    if (phase === 'body') restoreSurface(step);
+    holdT = 0;
+    heldNow = !!step.holdNext && phase === 'body'
+      && !satisfied.has(step.id) && surfaceOk(step);
     quietT = (phase === 'body' && step.quiet > 0) ? step.quiet : 0;
 
     const c = chromeFor(step);
@@ -1280,6 +1410,20 @@ export function createTutorial(state, game, deps = {}) {
       spot.set(spotShape(step), dt);
     }
     if (step.live && phase === 'body') coach.say(textOf(step));
+
+    /* The hold is re-read every frame, because the screen can change under a
+       step: close the map on `roadmappick` and NEXT lights up at once rather
+       than leaving a dead key and a sentence about lines that are not there. */
+    if (phase === 'body' && step.holdNext && !satisfied.has(step.id)) {
+      holdT += dt;
+      // Held while the surface is there to be used, released the moment it is
+      // not — and released regardless once the clock runs out. See `HOLD_MAX`.
+      const want = surfaceOk(step) && holdT < HOLD_MAX;
+      if (want !== heldNow) {
+        heldNow = want;
+        if (coach.allowNext) coach.allowNext(!heldNow && idx < steps.length - 1);
+      }
+    }
 
     if (phase === 'body' && step.check) {
       const ok = safeCheck(step);

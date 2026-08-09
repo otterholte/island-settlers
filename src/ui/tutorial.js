@@ -447,7 +447,7 @@ export function createCoach(root) {
     const noop = () => {};
     return {
       show: noop, say: noop, mark: noop, progress: noop, hide: noop, good: noop,
-      chrome: noop, wear: noop, destroy: noop, onQuit: noop,
+      chrome: noop, wear: noop, allowNext: noop, destroy: noop, onQuit: noop,
       get isOpen() { return false; }, get node() { return null; }
     };
   }
@@ -609,6 +609,20 @@ export function createCoach(root) {
     toggle(card, 'on', shown);
   }
 
+  /**
+   * Light or dim NEXT without rebuilding the card.
+   *
+   * A step that holds NEXT can stop being holdable — the player closed the map
+   * it was about, or walked away from the post — and the key has to change
+   * without `show()` running again, because `show()` is what re-applies a
+   * step's `enter` and re-applies means re-dealing the pack in the middle of a
+   * trade the player is halfway through.
+   */
+  function allowNext(on) {
+    toggle(nextBtn, 'off', !on);
+    nextBtn.disabled = !on;
+  }
+
   /** Live edit of the running instruction — used by the countdown steps. */
   function say(text) { setText(textEl, text || ''); }
 
@@ -685,7 +699,7 @@ export function createCoach(root) {
   }
 
   return {
-    show, say, progress, mark: place2, good, hide, chrome, wear, destroy,
+    show, say, progress, mark: place2, good, hide, chrome, wear, allowNext, destroy,
     onQuit(fn) { onQuit = fn; },
     get isOpen() { return shown; },
     get size() { return size; },

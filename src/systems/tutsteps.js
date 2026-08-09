@@ -593,6 +593,7 @@ export function buildSteps(t) {
       title: 'Build a road',
       text: `A road costs ${COST.road.wood} wood and ${COST.road.brick} brick. Tap the ROAD card to open the map.`,
       enter: () => t.give(ROAD_PACK),
+      needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="road"]'],
       /* Everything down except the four cards. The ring stays on ROAD — it is
@@ -629,6 +630,7 @@ export function buildSteps(t) {
       text: handheld()
         ? 'Pinch to zoom in and out. Drag with one finger to move around the island.'
         : 'Scroll to zoom in and out. Click and drag to move around the island.',
+      needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => t.mapMoved() > 0.55
     },
@@ -653,6 +655,7 @@ export function buildSteps(t) {
       /* The rail is a dark plate, so a hole in the wash only stopped it being
          dimmed — `spotBright` adds light to it instead. And the player's own
          pieces are NOT lit here: that is the next step's job.  */
+      needs: 'map:road',
       onMap: 'centre', size: 'big', place: 'centre',
       /* "I don't need it darkened then artificially lightened, I just need
          that part not darkened in the first place." So: a hole, at full
@@ -677,6 +680,7 @@ export function buildSteps(t) {
       text: () => `The ${myColorName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
       /* "Darken everything that isn't my own settlements and roads." Read off
          the map's own projection, roads included — see `minePieceXY`. */
+      needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapMine: true, spotMapR: 40
     },
@@ -696,6 +700,7 @@ export function buildSteps(t) {
          this is the one step where reading past it leaves the player on a map
          with no idea what they were meant to touch. */
       text: 'The glowing lines are every place a road may go. Tap one.',
+      needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 34,
       holdNext: true,
@@ -711,6 +716,7 @@ export function buildSteps(t) {
       id: 'roadplace',
       title: 'Tap it again',
       text: 'That line is chosen, not built. Tap it once more to confirm.',
+      needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapSel: true, spotMapR: 40,
       /* "Force them to click one road and submit it to go to the next step." */
@@ -728,6 +734,7 @@ export function buildSteps(t) {
       title: 'One more road',
       text: 'Your network has to REACH a free corner before you can settle it. Build one more, further out.',
       skipIf: () => legalSettlements(state, 0).length > 0,
+      needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="road"]'],
       spotDom: ['.hud-bc'],
@@ -753,6 +760,7 @@ export function buildSteps(t) {
       title: 'Build a settlement',
       text: `A settlement is ${COST.settlement.wood} wood, ${COST.settlement.brick} brick, ${COST.settlement.wheat} wheat and ${COST.settlement.wool} wool. Tap the SETTLEMENT card.`,
       enter: () => t.give(ROAD_PACK),
+      needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="settlement"]'],
       spotDom: ['.hud-bc'],
@@ -764,6 +772,7 @@ export function buildSteps(t) {
       id: 'settlerule',
       title: 'Two roads clear',
       text: 'A settlement must be at least TWO ROADS away from the nearest settlement or city — anyone’s, not just yours. The glowing corners are the only ones far enough.',
+      needs: 'map:settlement',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 36,
       /* Tapping a corner while this is up means the rule has been read and the
@@ -776,6 +785,7 @@ export function buildSteps(t) {
       title: 'Pick a corner',
       text: 'Tap one of the glowing corners.',
       skipIf: () => t.placeArmed(),
+      needs: 'map:settlement',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => t.placeArmed() || me.settlements.size > t.base.settlements
     },
@@ -784,6 +794,7 @@ export function buildSteps(t) {
       id: 'settleplace',
       title: 'Tap it again',
       text: 'Chosen, not built. Tap the SAME corner once more to confirm it.',
+      needs: 'map:settlement',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => me.settlements.size > t.base.settlements
     },
@@ -833,6 +844,7 @@ export function buildSteps(t) {
       title: 'Grow it into a city',
       text: `A city replaces one of your settlements and is worth TWO victory points instead of one. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore — the ore is yours. Tap the CITY card.`,
       enter: () => t.give(CITY_PACK),
+      needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="city"]'],
       spotDom: ['.hud-bc'],
@@ -844,6 +856,7 @@ export function buildSteps(t) {
       id: 'cityrule',
       title: 'Only your own',
       text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not founding one.',
+      needs: 'map:city',
       onMap: 'centre', size: 'big', place: 'centre', veil: true, hud: MAP_STEP
     },
 
@@ -851,6 +864,7 @@ export function buildSteps(t) {
       id: 'citypick',
       title: 'Pick one of yours',
       text: 'Only your own settlements are glowing. Tap one.',
+      needs: 'map:city',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 38,
       holdNext: true,
@@ -863,6 +877,7 @@ export function buildSteps(t) {
       id: 'cityplace',
       title: 'Tap it again',
       text: 'Chosen, not built. Tap the SAME settlement once more to confirm the upgrade.',
+      needs: 'map:city',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       holdNext: true,
       check: () => me.cities.size > t.base.cities
@@ -929,6 +944,7 @@ export function buildSteps(t) {
       title: 'Four for one',
       text: `Every trade here is the same price: ${TRADE_BASE} of one thing for 1 of another. The post never haggles.`,
       enter: () => t.give(TRADE_PACK),
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP
     },
 
@@ -940,6 +956,7 @@ export function buildSteps(t) {
       id: 'tradeask',
       title: 'Ask for wheat',
       text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT.',
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       /* A glowing border round the arrow itself rather than a ring floating
          over it, and the rest of the sheet turned down so it is the only lit
@@ -959,6 +976,7 @@ export function buildSteps(t) {
       id: 'tradegive',
       title: 'Pay in wood',
       text: `The DOWN arrow says what you are willing to give away. You have wood to spare — tap the down arrow under WOOD until it reads ${TRADE_BASE}.`,
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="wood"] .tr-arr.dn'],
@@ -971,6 +989,7 @@ export function buildSteps(t) {
       id: 'tradego',
       title: 'Make it',
       text: 'The TRADE button turns green the moment the bill is covered. Press it.',
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .sheet-foot .btn'],
@@ -989,6 +1008,7 @@ export function buildSteps(t) {
       id: 'tradedone',
       title: 'Look what moved',
       text: `Wheat is up by 1, wood is down by ${TRADE_BASE}.`,
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       /* White, not gold: a gold ring round a gold numeral says nothing. */
       spotOverUi: true, spotGlow: 'white',
@@ -1020,6 +1040,7 @@ export function buildSteps(t) {
       title: 'Bulk trading',
       text: 'Tap the UP arrow over ORE four times. The brown band underneath counts what it will cost you.',
       enter: () => t.give(TRADE_PACK),
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="ore"] .tr-arr.up'],
@@ -1032,6 +1053,7 @@ export function buildSteps(t) {
       id: 'bulkpay',
       title: 'Pay it in one press',
       text: 'Instead of multiple taps on an arrow: press the BRICK card itself, between its two arrows. It pays the whole bill out of that one pile.',
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="brick"] .tr-card'],
@@ -1055,6 +1077,7 @@ export function buildSteps(t) {
       id: 'bulkgo',
       title: 'And take it',
       text: 'Four ore, paid in brick, in three presses. Press TRADE.',
+      needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .sheet-foot .btn'],
@@ -1094,6 +1117,7 @@ export function buildSteps(t) {
       title: 'Development cards',
       text: `One price — ${COST.card.wool} wool, ${COST.card.wheat} wheat, ${COST.card.ore} ore — and three different things in the deck. You have enough for four. Tap the CARD card.`,
       enter: () => { t.give(CARD_PACK); t.scriptDeck(); },
+      needs: 'buildcards',
       size: 'big', place: 'centre', hud: CARD_LESSON,
       dom: ['.bcard[data-kind="card"]'],
       spotDom: ['.hud-bc'],
@@ -1124,6 +1148,7 @@ export function buildSteps(t) {
       id: 'buycard2',
       title: 'Buy another',
       text: 'Tap the CARD card again.',
+      needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="card"]'],
       /* Raised, so the merchant's ENTER TRADE badge — which is still up if the
@@ -1170,6 +1195,7 @@ export function buildSteps(t) {
       id: 'buycard3',
       title: 'One more',
       text: 'Tap the CARD card once more.',
+      needs: 'buildcards',
       size: 'slim', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="card"]'],
       spotDom: ['.hud-bc'],
@@ -1190,6 +1216,7 @@ export function buildSteps(t) {
       id: 'knightwhere',
       title: 'Aim it at their best hex',
       text: 'Put it on the hex a rival works hardest — a high number with their settlement on a corner. While it stands there, that hex gives them nothing.',
+      needs: 'map:robber',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -1197,6 +1224,7 @@ export function buildSteps(t) {
       id: 'knightcost',
       title: 'And it robs them',
       text: 'Everyone with a settlement or city on that hex also loses HALF of everything they are carrying, rounded down. Nobody else is touched, and you never pay it yourself.',
+      needs: 'map:robber',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -1204,6 +1232,7 @@ export function buildSteps(t) {
       id: 'knightown',
       title: 'Your own hex is fair game',
       text: 'Landing it on a hex of your own still lets YOU collect there — it only shuts out the rivals built on it. Tap a hex, then tap it again to confirm.',
+      needs: 'map:robber',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => state.robberTile !== DESERT.id
     },
