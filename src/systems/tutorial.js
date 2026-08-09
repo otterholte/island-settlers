@@ -1468,8 +1468,22 @@ export function createTutorial(state, game, deps = {}) {
        * The map steps raise it for the same reason — the map is inside `#ui`
        * too — so they do not have to say so twice. */
       if (spot.over) {
-        spot.over(!!(step.spotMapTargets || step.spotMapMine
-          || step.spotMapSel || step.spotOverUi || step.spotBright));
+        /*
+         * RAISED WHENEVER THE THING BEING DARKENED IS INSIDE THE INTERFACE.
+         *
+         * This used to be a list of the spot fields that happened to imply a
+         * map, and it broke the moment a map step stopped using one of them:
+         * step 3d lights the player rail and nothing else, so when its
+         * `spotMapMine` came off — the pieces are the NEXT step's job — the
+         * raise came off with it and the map stopped going dark at all. The
+         * board map and the trade sheet both live inside `#ui`, so ANY step
+         * standing on one of them needs the wash in front of it; asking that
+         * question directly cannot fall out of step with the field list again.
+         */
+        const onSurface = !!(step.onMap || step.onSheet);
+        spot.over(!!(step.spotOverUi || step.spotBright
+          || step.spotMapTargets || step.spotMapMine || step.spotMapSel
+          || onSurface));
       }
       spot.set(spotShape(step), dt);
     }
