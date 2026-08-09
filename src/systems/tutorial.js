@@ -765,7 +765,8 @@ export function createTutorial(state, game, deps = {}) {
   function spotShape(step) {
     if (!step) return null;
     if (!step.spot && !step.spotDom && !step.spotMe && !step.spotWorld
-      && !step.spotWorldMany && !step.spotMapTargets && !step.spotMapMine) {
+      && !step.spotWorldMany && !step.spotMapTargets && !step.spotMapMine
+      && !step.spotOverUi) {
       return null;
     }
     const holes = [], pips = [], rects = [];
@@ -1198,7 +1199,23 @@ export function createTutorial(state, game, deps = {}) {
     if (spot) {
       /* In front of `#ui` only while a lesson is pointing at the map, which is
          the one surface a wash behind the interface cannot reach. See `over`. */
-      if (spot.over) spot.over(!!(step.spotMapTargets || step.spotMapMine));
+      /* IN FRONT OF THE INTERFACE, NOT JUST IN FRONT OF THE ISLAND.
+       *
+       *   "Darken the trade popup and the my stack at the top of the screen."
+       *   "Darken the merchant trade hover popup."
+       *   "Darken the rest of the trade popup."
+       *
+       * The wash lives behind `#ui` so that the pack and the build keys stay
+       * crisp while the ISLAND goes dark, which is right for every lesson about
+       * the ground. It is wrong for a lesson about one control: leaving every
+       * other chip, sheet and cue at full brightness is most of the screen
+       * still shouting. `spotOverUi` raises it, and the `spotDom` holes then
+       * keep exactly the named elements lit out of an otherwise dark interface.
+       * The map steps raise it for the same reason — the map is inside `#ui`
+       * too — so they do not have to say so twice. */
+      if (spot.over) {
+        spot.over(!!(step.spotMapTargets || step.spotMapMine || step.spotOverUi));
+      }
       spot.set(spotShape(step), dt);
     }
     if (step.live && phase === 'body') coach.say(textOf(step));

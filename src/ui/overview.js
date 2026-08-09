@@ -642,11 +642,31 @@ export function createOverview(root, state, game) {
      sharp the moment the gesture ends. */
   let bgS = 1, bgOX = 0, bgOY = 0, bgKY = 1, bgTilt = false;
 
+  /**
+   * What the baked board depends on. If two frames agree on this string the
+   * bake is reused, which is the whole reason the map can be dragged at all.
+   *
+   * IT HAS TO COUNT CITIES SEPARATELY FROM BUILDINGS.
+   *
+   *   "When I build a city, it's not seemingly updating the icon/circle that
+   *    represents a city right away, it still looks like a settlement."
+   *
+   * `state.buildings` is keyed by intersection, and an upgrade REPLACES the
+   * entry at that corner rather than adding one — so `buildings.size` is
+   * identical before and after, the key matched, the bake was reused, and the
+   * map went on painting a settlement pip over a city until something else on
+   * this list happened to move. The 3D island was right the whole time, which
+   * is what made it look like a rendering delay rather than a cache that never
+   * knew.
+   *
+   * Counted off the players' own sets rather than by walking `buildings`,
+   * because this runs every frame the map is open.
+   */
   function boardKey() {
-    let unlocked = 0;
-    for (const p of state.players) unlocked += p.ports.size;
+    let unlocked = 0, cities = 0;
+    for (const p of state.players) { unlocked += p.ports.size; cities += p.cities.size; }
     return `${cv.width}x${cv.height}|${proj.s.toFixed(3)}|${proj.ox.toFixed(1)}|` +
-      `${proj.oy.toFixed(1)}|${state.buildings.size}|${state.roadOwner.size}|` +
+      `${proj.oy.toFixed(1)}|${state.buildings.size}|${cities}|${state.roadOwner.size}|` +
       `${state.robberTile}|${unlocked}|${(proj.ky || 1).toFixed(3)}`;
   }
 

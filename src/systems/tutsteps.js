@@ -89,6 +89,12 @@ const SCORING_NOKEYS = { pack: true, ranks: true, nobuild: true };
 /* The score lesson. Everything in the corners stands down so the standings are
    the only lit thing on the screen — including END PRACTICE, which is a cream
    chip a thumb's width from the counter being pointed at. */
+/* ...and the same again with the pack away, for the steps that are about one
+   corner of the screen and do not want a second bright thing in another.
+   "I don't need the My Pack section highlighted." */
+const SCORE_NOPACK = {
+  ranks: true, nobuild: true, nokeys: true, noquit: true
+};
 const SCORE_LESSON = {
   pack: true, ranks: true, nobuild: true, nokeys: true, noquit: true
 };
@@ -678,7 +684,7 @@ export function buildSteps(t) {
          this is the one step where reading past it leaves the player on a map
          with no idea what they were meant to touch. */
       text: 'The glowing lines are every place a road may go. Tap one.',
-      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 34,
       holdNext: true,
       check: () => t.roadArmed() || me.roads.size > t.base.roads
@@ -714,7 +720,10 @@ export function buildSteps(t) {
       title: 'Built',
       text: 'That is a road. It is worth no points on its own — what it does is REACH: every corner your network touches is a corner you may settle.',
       quiet: 1.9,
-      size: 'big', place: 'low', hud: SCORING_NOKEYS
+      /* Centred with the screen behind it dark: there is nothing to look at
+         while this is read — the road is already down — so the card may have
+         the display for the two sentences it takes. */
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------- REACH FURTHER
@@ -762,7 +771,7 @@ export function buildSteps(t) {
     {
       id: 'settlerule',
       title: 'Two roads clear',
-      text: 'Only a few corners are glowing, and that is the rule: a settlement must stand TWO ROADS CLEAR of every other settlement and city on the island — your rivals’ as well as your own. Every corner nearer than that refuses.',
+      text: 'Only a few corners glow, and that is the rule: a settlement must stand TWO ROADS CLEAR of every other one on the island — rivals’ as well as your own.',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -770,7 +779,7 @@ export function buildSteps(t) {
       id: 'settlepick',
       title: 'Pick a corner',
       text: 'Tap one of the glowing corners.',
-      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => t.placeArmed() || me.settlements.size > t.base.settlements
     },
 
@@ -784,10 +793,10 @@ export function buildSteps(t) {
 
     {
       id: 'settlebuilt',
-      title: 'One point, and new land',
-      text: 'That is your first point — and every hex touching that corner is now yours to collect from. A settlement is not just a score, it is more ground.',
+      title: 'You gained a victory point!',
+      text: 'And new ground with it — every hex touching that corner is yours to collect from now. A settlement is not just a score, it is more land to work.',
       quiet: 1.9,
-      size: 'big', place: 'low', hud: SCORING_NOKEYS
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------------- THE SCORE
@@ -800,8 +809,10 @@ export function buildSteps(t) {
       title: 'That is what points are',
       text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings top right carry everybody’s.`,
       live: true,
-      size: 'big', place: 'foot', hud: SCORE_LESSON,
-      spotDom: ['.hud-tr']
+      /* Centred, and the pack goes with the rest: the step is about the
+         standings and nothing else on the screen is being read. */
+      size: 'big', place: 'centre', hud: SCORE_NOPACK,
+      spotOverUi: true, spotDom: ['.hud-tr'], spotGlow: true
     },
 
     /* ------------------------------------------------------------- A CITY
@@ -817,7 +828,7 @@ export function buildSteps(t) {
     {
       id: 'city',
       title: 'Grow it into a city',
-      text: `A city is a settlement that grew: 2 points instead of 1, on the same corner. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore — I have just given you the ore. Tap the CITY card.`,
+      text: `A city replaces one of your settlements on the same corner and is worth TWO victory points instead of one — so upgrading is worth a whole extra point. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore, and I have just given you the ore. Tap the CITY card.`,
       enter: () => t.give(CITY_PACK),
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="city"]'],
@@ -830,14 +841,27 @@ export function buildSteps(t) {
       id: 'cityrule',
       title: 'Only your own',
       text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not founding one.',
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+      onMap: 'centre', size: 'big', place: 'centre', veil: true, hud: MAP_STEP
     },
 
     {
       id: 'citypick',
       title: 'Pick one of yours',
-      text: 'Tap one of your own settlements, then tap it again to confirm.',
-      onMap: 'slim', size: 'slim', place: 'foot', hud: MAP_STEP,
+      text: 'Only your own settlements are glowing. Tap one.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      spotMapTargets: true, spotMapR: 38,
+      holdNext: true,
+      /* "When I tap the settlement once it should automatically go to the next
+         step that says press again to confirm." */
+      check: () => t.placeArmed() || me.cities.size > t.base.cities
+    },
+
+    {
+      id: 'cityplace',
+      title: 'Tap it again',
+      text: 'Chosen, not built. Tap the SAME settlement once more to confirm the upgrade.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      holdNext: true,
       check: () => me.cities.size > t.base.cities
     },
 
@@ -846,7 +870,7 @@ export function buildSteps(t) {
       title: 'Two points',
       text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did — what you bought was the point.',
       quiet: 1.9,
-      size: 'big', place: 'low', hud: SCORING_NOKEYS
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------------ THE MARKET
@@ -874,7 +898,10 @@ export function buildSteps(t) {
       title: 'Open the post',
       text: 'You are on it. Press the badge that has come up — the one that says TRADE — to open the trading post.',
       size: 'big', place: 'foot', hud: MARKET_WALK,
-      spotDom: ['.tradecue:not(.hid)'],
+      /* The post stays lit under the badge: "still keep the rest of the screen
+         except for the market hex dark." */
+      spotWorld: () => ({ x: MARKET.x, z: MARKET.z, lift: 1.0, r: 120 }),
+      spotDom: ['.tradecue:not(.hid)'], spotGlow: true, spotOverUi: true,
       check: () => !!(game.panels && game.panels.isOpen)
     },
 
@@ -909,24 +936,99 @@ export function buildSteps(t) {
     {
       id: 'tradeask',
       title: 'Ask for wheat',
-      text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT once.',
+      text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT.',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      /* A glowing border round the arrow itself rather than a ring floating
+         over it, and the rest of the sheet turned down so it is the only lit
+         control. NEXT is held: reading past a step that names one arrow leaves
+         the player on a sheet with nothing asked for. */
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .tr-col[data-res="wheat"] .tr-arr.up'],
+      holdNext: true,
       check: () => t.tradeGetting('wheat') > 0
     },
 
     {
       id: 'tradegive',
       title: 'Pay in wood',
-      text: `The DOWN arrow says what you are willing to give away. You have wood to spare — tap the down arrow over WOOD until it reads ${TRADE_BASE}.`,
+      text: `The DOWN arrow says what you are willing to give away. You have wood to spare — tap the down arrow under WOOD until it reads ${TRADE_BASE}.`,
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .tr-col[data-res="wood"] .tr-arr.dn'],
+      holdNext: true,
       check: () => t.tradeGiving('wood') >= TRADE_BASE
     },
 
     {
       id: 'tradego',
       title: 'Make it',
-      text: 'The TRADE key turns green the moment the bill is covered. Press it.',
-      onSheet: true, size: 'slim', place: 'foot', hud: TRADE_STEP,
+      text: 'The TRADE button turns green the moment the bill is covered. Press it.',
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .sheet-foot .btn'],
+      holdNext: true,
+      check: () => me.stats.traded > t.base.traded
+    },
+
+    /* "Once that step is complete, highlight/glow the new numbers that they
+        increased and decreased to on the trade popup, darken the rest, and have
+        the right side step instructions explain that change simply." */
+    {
+      id: 'tradedone',
+      title: 'Look what moved',
+      text: `Wheat went up by 1. Wood went down by ${TRADE_BASE}. That is the whole trade — four of something you had, for one of something you did not.`,
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: [
+        '.sheet.trade .tr-col[data-res="wheat"] .tr-count',
+        '.sheet.trade .tr-col[data-res="wood"] .tr-count'
+      ]
+    },
+
+    /* ------------------------------------------------------- FOUR AT A TIME
+     *
+     *   "Before we get to step 33, show steps in a similar manner for bulk
+     *    trading. For example, if they say they want to add 4 ore, then want to
+     *    bulk select the item they want to give up, like brick, make them press
+     *    the brick icon in the middle of the arrows to make that trade quicker."
+     *
+     * The arrows are one at a time and a four-for-one trade taken four times is
+     * sixteen taps. The CARD between the arrows pays the whole outstanding bill
+     * out of that one pile in a single press, which is the sheet's fastest
+     * control and the least discoverable thing on it — the arrows look like the
+     * whole interface. Three short steps, same shape as the three above.
+     */
+    {
+      id: 'bulkask',
+      title: 'Now ask for four',
+      text: 'Tap the UP arrow over ORE four times. The brown band underneath counts what it will cost you.',
+      enter: () => t.give(TRADE_PACK),
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .tr-col[data-res="ore"] .tr-arr.up'],
+      holdNext: true,
+      check: () => t.tradeGetting('ore') >= 4
+    },
+
+    {
+      id: 'bulkpay',
+      title: 'Pay it in one press',
+      text: 'Instead of sixteen taps on an arrow: press the BRICK card itself, between its two arrows. It pays the whole bill out of that one pile.',
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .tr-col[data-res="brick"] .tr-card'],
+      holdNext: true,
+      check: () => t.tradeGiving('brick') >= TRADE_BASE * 4
+    },
+
+    {
+      id: 'bulkgo',
+      title: 'And take it',
+      text: 'Four ore for sixteen brick, in three presses. Press TRADE.',
+      onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
+      spotOverUi: true, spotGlow: true,
+      spotDom: ['.sheet.trade .sheet-foot .btn'],
+      holdNext: true,
       check: () => me.stats.traded > t.base.traded
     },
 
@@ -937,8 +1039,8 @@ export function buildSteps(t) {
     {
       id: 'tradewhy',
       title: 'Why that mattered',
-      text: 'You were short of wheat and a settlement needs it. You do not own a wheat hex, so no amount of running would have found any — the post is how you buy what your land does not grow.',
-      size: 'big', place: 'foot', hud: SCORING_NOKEYS
+      text: 'If you cannot collect from a wheat hex, trading is the only way to get wheat — and without it you cannot build the settlements and cities that score. The post is how you buy what your own land does not grow.',
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------- THE THREE CARDS
@@ -972,10 +1074,13 @@ export function buildSteps(t) {
     {
       id: 'vpcard',
       title: CARD_LABEL.victoryPoint,
-      text: 'That was a Victory Point, and it has already scored — you saw it land on your total. There is nothing to play and nothing to remember: it is a point the moment you draw it, and no rival can take it off you.',
+      /* Two sentences instead of four, and the wash raised so the pack and the
+         rest of the interface go down with the island — the point landed in the
+         standings and that is the only place to look. */
+      text: 'A Victory Point, and it has already scored. Nothing to play, nothing to remember, and no rival can take it off you.',
       quiet: 2.4,
-      size: 'big', place: 'foot', hud: SCORE_LESSON,
-      spotDom: ['.hud-tr']
+      size: 'big', place: 'centre', hud: SCORE_NOPACK,
+      spotOverUi: true, spotGlow: true, spotDom: ['.hud-tr']
     },
 
     /*   "The second is the road building, where it just says this will give you
@@ -985,19 +1090,37 @@ export function buildSteps(t) {
       id: 'buycard2',
       title: 'Buy another',
       text: 'Tap the CARD card again.',
-      size: 'slim', place: 'top', hud: OPENING,
+      size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="card"]'],
-      spotDom: ['.hud-bc'],
+      /* Raised, so the merchant's ENTER TRADE badge — which is still up if the
+         player is standing on the post — goes dark with everything else instead
+         of competing with the card they are being sent to. */
+      spotOverUi: true, spotDom: ['.hud-bc'],
+      holdNext: true,
       check: () => cardsHeld() > t.base.cards
     },
 
     {
       id: 'roadcard',
       title: CARD_LABEL.roadBuilding,
-      text: 'Road Building: two roads, free. Play it and the placement map opens by itself and lets you lay both, one after the other, without spending a stick of wood.',
-      quiet: 2.0,
-      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
-      spotDom: ['.kn-cue.rb-cue:not(.hid)']
+      /*
+       *   "I don't need the weird small Free Roads popup in the right middle of
+       *    the screen. Instead just darken everything a second or two after I
+       *    see the road building animation, and put the instructions popup in
+       *    the middle of the screen while you darken everything else including
+       *    the my stack and the build map and pause buttons. Make it clear
+       *    since you already know how to build roads, we're just moving to the
+       *    next step."
+       *
+       * The cue was being LIT by this step, which is what made a 90px chip on
+       * the right edge the brightest thing on the screen while the sentence
+       * explaining it sat somewhere else. The veil takes the whole interface —
+       * pack, keys and cue together — and the card stands in the middle of it.
+       * The words stop teaching road building, because that was four steps ago.
+       */
+      text: 'Road Building: two roads, free. It opens the map by itself and lets you lay both without spending anything — and you have already built a road, so there is nothing new here. Keep it for later.',
+      quiet: 2.4,
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /*   "The knight card would be the third. It should hide the instruction box
