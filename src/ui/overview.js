@@ -1931,6 +1931,44 @@ export function createOverview(root, state, game) {
             if (e) out.push([Math.round(PX(e.x)), Math.round(tiltY(PY(e.z)))]); }
           return out;
         })(),
+        /**
+         * THE HEXES A RIVAL IS ACTUALLY WORKING, for the Knight lesson.
+         *
+         *   "The steps here should explain that you should place it on the
+         *    opponent's hex that is their best... use your best judgement on
+         *    what sections should be highlighted and darkened."
+         *
+         * `targetsXY` in robber mode is every tile the Knight may legally go to,
+         * which is nearly the whole island — a wash with eighteen holes in it is
+         * not a hint. The sentence says "the hex a rival works hardest", so the
+         * holes are the tiles with a rival settlement or city on a corner and
+         * nothing else. Desert is dropped: nobody works it, and the Knight is
+         * already standing there. Sorted by pips so the busiest hex is first,
+         * which is the one the words are about.
+         */
+        rivalHexXY: (() => {
+          const out = [];
+          const owner = new Map();          // iid -> pid, rivals only
+          for (let pid = 1; pid < state.players.length; pid++) {
+            const p = state.players[pid];
+            if (!p) continue;
+            for (const iid of p.settlements) owner.set(iid, pid);
+            for (const iid of p.cities) owner.set(iid, pid);
+          }
+          if (!owner.size) return out;
+          for (const t of tiles) {
+            // No pips is the desert, which nobody works and where the Knight
+            // already stands — it is not a hex to aim at.
+            if (!t || !t.pips) continue;
+            let worked = false;
+            for (const iid of (t.corners || [])) { if (owner.has(iid)) { worked = true; break; } }
+            if (!worked) continue;
+            out.push({ pips: t.pips || 0,
+              xy: [Math.round(PX(t.x)), Math.round(tiltY(PY(t.z)))] });
+          }
+          out.sort((a, b) => b.pips - a.pips);
+          return out.map(o => o.xy);
+        })(),
         /** choose-a-spot ring radius */
         targetR: +targetR().toFixed(1),
         /** PLACED settlement pip radius — deliberately unchanged */

@@ -675,6 +675,20 @@
   transition:opacity .25s ease,visibility 0s linear .25s;
 }
 
+/*   "I don't need the free roads or knight ready buttons to ever show up on the
+ *    right bottom side of the screen. Instead both times the map just opens
+ *    after I see the animation for the card I picked."
+ *
+ * Two cues live in that corner — ROAD BUILDING READY and KNIGHT READY — and
+ * both are a good control in a match, where a card you are holding needs
+ * somewhere to be played from. In a lesson they are clutter in front of a step
+ * that is about to open the map for you anyway, and they were competing with
+ * the card explaining what you had just bought. Off for the whole run; the
+ * class comes off with `tut-practice`, so a real match still has them, and the
+ * two steps that need the board raise it themselves (see `map:freeroads` and
+ * `map:robber` in systems/tutorial.js). */
+#ui.tut-practice .kn-cue{display:none !important}
+
 /* THE THREE CIRCULAR KEYS, TWO WAYS.
  *
  * `tut-nokeys` is unconditional — the score lesson asks for it at every size:

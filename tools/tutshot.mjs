@@ -450,9 +450,24 @@ for (const r of rows) {
  * started shut — there is nothing on the bottom of the screen to press until
  * this key is pressed — and the ROAD card on step 9 is the press that opens the
  * placement map and ends that step.
+ *
+ * FROM A FRESH RUN, NOT FROM THE END OF THE WALK.
+ *
+ * The walk above visits all fifty steps, and the card steps do real things now:
+ * they deal a Road Building card and spend it, deal a Knight and send it. So by
+ * the time this section jumped back to step 8 it was asking "were the build
+ * cards still shut" of a run that had been all the way to the end and back, and
+ * getting the answer that question deserves. It restarts the run instead, which
+ * is what "the cards start shut" is actually a claim about.
  */
+await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html?practice=1` });
+for (let i = 0; i < 400; i++) {
+  if (await ev(`(()=>{const t=window.__ISLAND__&&window.__ISLAND__.game
+    &&window.__ISLAND__.game.tutorial; return !!(t&&t.running);})()`) === true) break;
+  await sleep(250);
+}
 await ev('window.__ISLAND__.game.tutorial.goTo(7)');
-await settle();
+await settle(6);
 const beforeBuild = await ev(`(()=>{const t=window.__ISLAND__.game.tutorial;
   const row=document.querySelector('.build-row');
   return {step:t.stepIndex, collapsed:!!(row&&row.classList.contains('hid'))};})()`);
@@ -475,6 +490,8 @@ const afterRoad = await ev(`(()=>{const t=window.__ISLAND__.game.tutorial;
   return {step:t.stepIndex, id:t.step,
     mapOpen:!!(ov&&ov.isOpen), mode:ov?ov.mode:null,
     badgeHidden:!document.querySelector('.coach-card:not(.gone)'),
+    place:(((document.querySelector('.coach-card')||{}).className||'')
+      .match(/at-([a-z]+)/)||[])[1]||null,
     say:((document.querySelector('.ovb-say')||{}).textContent||'').trim()};})()`);
 await shot(`step-10-on-the-map-${TAG}`);
 console.log('  BUILDKEY ' + JSON.stringify({
@@ -482,11 +499,22 @@ console.log('  BUILDKEY ' + JSON.stringify({
   theCardsWereShutUntilBuildWasPressed: beforeBuild.collapsed === true
     && afterBuild.collapsedNow === false,
   pressingBuildCarriedTheStep: afterBuild.stepNow === beforeBuild.step + 1,
-  theRoadStepOpensBigThenGoesSlim: armed.size === 'slim' && armed.place === 'top',
+  /* THESE TWO USED TO DESCRIBE A LAYOUT THAT NO LONGER EXISTS.
+   *
+   *   "The right side step explanation is way too wide... put the instructions
+   *    on the right side of the screen where the players section normally is."
+   *
+   * The step that asks for the ROAD card is a small card at the top, not a slim
+   * one; and once the map is up the badge does not HIDE, it moves into the side
+   * column beside the board — which is the whole point of the map lessons. The
+   * old wording made the rig print `false` for two things that are correct,
+   * which is worse than printing nothing: a rig that cries wolf gets ignored on
+   * the day it is right. */
+  theRoadStepIsASmallCardAtTheTop: armed.place === 'top',
   andLeavesTheRingOnTheRoadCard: armed.ring === true,
   theRoadCardOpensThePlacementMap: afterRoad.mapOpen === true
     && afterRoad.mode === 'place-road',
-  andTheBadgeGetsCompletelyOutOfTheMapsWay: afterRoad.badgeHidden === true
+  andTheBadgeMovesToTheMapsSideColumn: afterRoad.place === 'side'
 }));
 await ev(`(()=>{const g=window.__ISLAND__.game;
   if(g.overview&&g.overview.isOpen)g.closeOverview();return 1})()`);

@@ -1264,9 +1264,10 @@ export function buildSteps(t) {
       quiet: 2.4,
       /* Shown ON the map, in the same column every other map lesson uses: the
          card opens a placement map in a real match, so the lesson about it
-         should be read against one. `needs` opens it and, per the note, the
-         Free Roads cue never appears at all (see `tut-practice .kn-cue`). */
-      needs: 'map:road',
+         should be read against one. `needs` opens it through the CARD's own
+         path — free roads, nothing charged — and, per the note, the Free Roads
+         cue never appears at all (see `tut-practice .kn-cue`). */
+      needs: 'map:freeroads',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -1303,6 +1304,11 @@ export function buildSteps(t) {
       title: 'Aim it at their best hex',
       text: 'Put it on the hex a rival works hardest — a high number with their settlement on a corner. While it stands there, that hex gives them nothing.',
       needs: 'map:robber',
+      /* "Use your best judgement on what sections should be highlighted." The
+         sentence names a hex, so the wash lights hexes: the three busiest tiles
+         a rival is actually built on, and nothing else. See `rivalHexXY` in
+         overview.js for why this is not the legal-target list. */
+      spotMapRivals: true, spotMapMax: 3,
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -1311,6 +1317,8 @@ export function buildSteps(t) {
       title: 'And it robs them',
       text: 'Everyone with a settlement or city on that hex also loses HALF of everything they are carrying, rounded down. Nobody else is touched, and you never pay it yourself.',
       needs: 'map:robber',
+      // Same three hexes as the step before: this is what happens ON them.
+      spotMapRivals: true, spotMapMax: 3,
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
@@ -1319,6 +1327,10 @@ export function buildSteps(t) {
       title: 'Your own hex is fair game',
       text: 'Landing it on a hex of your own still lets YOU collect there — it only shuts out the rivals built on it. Tap a hex, then tap it again to confirm.',
       needs: 'map:robber',
+      /* The sentence turns to the player's own corners, so the wash does too —
+         the same pieces the settlement lesson lit, dimmed rather than cut out
+         so the whole board stays readable for the tap that follows. */
+      spotMapMine: true, spotMapMineDim: 0.55,
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => state.robberTile !== DESERT.id
     },
@@ -1346,7 +1358,10 @@ export function buildSteps(t) {
         title: 'Two more ways to score',
         text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard, top left. I have put some numbers on them so there is something to read.`
       },
-      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 3 against 5 means three more takes it.`,
+      /* The two numbers quoted here are the two numbers `fakeAwards` writes —
+         yours 2, the record 4 — so the line and the card agree. Ties go to the
+         holder, so catching 4 wins nothing: it takes 5, hence three more. */
+      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 2 against 4 means three more takes it.`,
       enter: () => t.fakeAwards(),
       size: 'big', place: 'foot', hud: AWARD_LESSON,
       spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
@@ -1355,7 +1370,7 @@ export function buildSteps(t) {
     {
       id: 'awards2',
       title: 'Largest Army',
-      text: `LARGEST ARMY: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED, not held. You are on 3 and nobody has beaten it, so the line reads YOURS and those points are already in your score.`,
+      text: `LARGEST ARMY: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED, not held. You are on ${LARGEST_ARMY_MIN} and nobody has beaten it, so the line reads YOURS in your colour.`,
       size: 'big', place: 'foot', hud: AWARD_LESSON,
       spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
     },

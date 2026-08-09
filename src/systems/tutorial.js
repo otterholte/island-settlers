@@ -69,7 +69,7 @@ import { tiles, intersections, tileAt, DESERT, LAYOUT_SEED } from '../board/layo
 import {
   legalSettlements, legalRoads, setupCurrentPlayer,
   setupPlaceSettlement, setupPlaceRoad, canGatherTile,
-  isTileExhausted, tileItemsRemaining
+  isTileExhausted, tileItemsRemaining, recomputeAwards, drawCard
 } from '../core/rules.js';
 import { nearestItem } from '../board/nodes.js';
 import { toggle } from '../ui/dom.js';
@@ -610,13 +610,22 @@ export function createTutorial(state, game, deps = {}) {
     state.largestArmyHolder = 0;
   }
 
-  /** Put it back, so nothing invented survives into a real match. */
+  /**
+   * Put it back, so nothing invented survives into a real match.
+   *
+   * Zeroing the fields was wrong in one visible way: by the closing card the
+   * player HAS laid roads, and a card reading `0` is as false as the invented 4
+   * was. The knights are cleared by hand — none were really played — and then
+   * the real rule is asked for the truth, which is the same call every build
+   * makes. Nothing is left for the next recompute to correct.
+   */
   function clearFakeAwards() {
     if (!fakedAwards) return;
     fakedAwards = false;
-    for (const p of state.players) { p.longestRoadLen = 0; p.knightsPlayed = 0; }
+    for (const p of state.players) p.knightsPlayed = 0;
     state.longestRoadHolder = -1;
     state.largestArmyHolder = -1;
+    try { recomputeAwards(state); } catch (e) { /* silent */ }
   }
 
   /** Is a placement target chosen but not yet confirmed, in ANY mode? */
@@ -885,6 +894,7 @@ export function createTutorial(state, game, deps = {}) {
     if (!step) return null;
     if (!step.spot && !step.spotDom && !step.spotMe && !step.spotWorld
       && !step.spotWorldMany && !step.spotMapTargets && !step.spotMapMine
+      && !step.spotMapRivals
       && !step.spotOverUi && !step.spotBright && !step.spotMapSel) {
       return null;
     }
@@ -1005,14 +1015,25 @@ export function createTutorial(state, game, deps = {}) {
       }
     }
 
+    /* `spotMapRivals` is the Knight lesson's hint: see `rivalHexXY` in
+       overview.js for why it is not `targetsXY`. */
     for (const wants of [step.spotMapMine ? 'minePieceXY' : null,
-      step.spotMapTargets ? 'targetsXY' : null]) {
+      step.spotMapTargets ? 'targetsXY' : null,
+      step.spotMapRivals ? 'rivalHexXY' : null]) {
       if (!wants) continue;
       const m = g.overview && g.overview.metrics;
       const cv = document.querySelector('.ov-cv');
       const box = cv && cv.getBoundingClientRect ? cv.getBoundingClientRect() : null;
-      const list = (m && m[wants]) || [];
-      const r = step.spotMapR || 42;
+      let list = (m && m[wants]) || [];
+      /* A hint that lights every candidate is not a hint. `spotMapMax` keeps
+         the wash to the first few, and `rivalHexXY` arrives sorted busiest
+         first, so "their best hex" really is the one lit. */
+      if (step.spotMapMax > 0) list = list.slice(0, step.spotMapMax);
+      /* A HEX IS NOT A PIECE. The piece lists want a small hole; a tile wants
+         one about the size of the tile, which the map already reports as the
+         on-screen length of a hex side. */
+      const r = step.spotMapR
+        || (wants === 'rivalHexXY' ? Math.max(46, (m && m.roadEdgePx) || 46) : 42);
       const a = wants === 'minePieceXY' && step.spotMapMineDim !== undefined
         ? step.spotMapMineDim : 1;
       if (box) for (const q of list) {
@@ -1248,8 +1269,13 @@ export function createTutorial(state, game, deps = {}) {
       return !!(row && !row.classList.contains('hid'));
     }
     if (need.indexOf('map:') === 0) {
+      /* `freeroads` names the DOOR, not the mode: the Road Building card opens
+         the ordinary road placement map, it just does not charge for it. The
+         two must not be conflated here or the step would sit waiting for a
+         `place-freeroads` that does not exist. */
+      const kind = need.slice(4) === 'freeroads' ? 'road' : need.slice(4);
       return !!(g.overview && g.overview.isOpen
-        && g.overview.mode === 'place-' + need.slice(4));
+        && g.overview.mode === 'place-' + kind);
     }
     return true;
   }
@@ -1274,6 +1300,22 @@ export function createTutorial(state, game, deps = {}) {
    */
   function restoreSurface(step) {
     const need = step && step.needs;
+
+    /*
+     * AN UNSPENT FREE ROAD FOLLOWS YOU AROUND.
+     *
+     * The Road Building lesson credits two free roads and opens the map, which
+     * is the whole point of it — but a player who reads the step and presses
+     * NEXT without laying both leaves the credit behind, and `main.js` sees
+     * `freeRoads > 0` on the next frame and raises the placement map again. On
+     * the Knight steps, on the awards slides, on the closing card. Closing the
+     * map is not enough because the reconciler simply re-opens it, so the
+     * credit itself is dropped the moment the run walks off the step that
+     * granted it — exactly like every other surface here, which belongs to the
+     * steps that declare it and to no others.
+     */
+    if (need !== 'map:freeroads' && (me.freeRoads | 0) > 0) me.freeRoads = 0;
+
     if (!need) {
       try {
         if (g.overview && g.overview.isOpen && g.overview.close) g.overview.close();
@@ -1301,13 +1343,51 @@ export function createTutorial(state, game, deps = {}) {
     }
     if (need.indexOf('map:') === 0) {
       const kind = need.slice(4);
-      /* Through `requestBuild`, not `openOverview`, because that is the call
-         the BUILD card makes: it checks the cost and whether anywhere is legal
-         and refuses politely if not, which is exactly the refusal that should
-         release the hold rather than a map opened onto nothing. `robber` has no
-         such route — a Knight is played, not bought — so it is left alone and
-         its steps simply unhold. */
-      if (kind === 'robber') return;
+      /*
+       * A KNIGHT IS PLAYED, NOT BOUGHT, so it has its own door.
+       *
+       *   "Both times the map just opens after I see the animation for the card
+       *    I picked."
+       *
+       * `knightCue.play()` is the same call the KNIGHT READY chip makes, which
+       * is the chip this run hides — so the lesson raises the board itself
+       * rather than asking the player to find a control that is not there.
+       *
+       * It is called with `auto` set, because a refusal here is a bug in the
+       * lesson and not something to toast at the player. And it can only refuse
+       * for one reason — no Knight in hand — which is reachable: a player who
+       * pressed NEXT past the buy step never bought one. Three steps written
+       * about a map would then be read against no map at all, so the card is
+       * handed over rather than the lesson silently collapsing. It is dealt the
+       * way every other card in this run is, through `forcedCards`, so nothing
+       * here has to know the shape of a card.
+       */
+      if (kind === 'robber' || kind === 'freeroads') {
+        /*
+         *   "I don't need the free roads or knight ready buttons to ever show
+         *    up. Instead BOTH times the map just opens after I see the
+         *    animation for the card I picked."
+         *
+         * Two cards, one door. Free Roads used to come through `requestBuild`
+         * below, which is the wrong call twice over: it is the BUY path, so it
+         * charges for a road the card has already paid for, and it refuses
+         * outright when the player is short — which is exactly the moment the
+         * card is worth having. `roadCue.play` is what the chip does, and the
+         * chip is the thing this run hides.
+         */
+        const knight = kind === 'robber';
+        const want = knight ? 'knight' : 'roadBuilding';
+        const cue = knight ? g.knightCue : g.roadCue;
+        try {
+          const held = me.cards && me.cards.some(c => c && c.type === want);
+          if (!held) { scriptDeck(want); drawCard(state, me.id, true); }
+          if (cue && cue.play) cue.play(true);
+        } catch (e) { /* silent */ }
+        return;
+      }
+      /* Everything else goes through `requestBuild`, not `openOverview`,
+         because that is the call the BUILD card makes: it checks the cost and
+         whether anywhere is legal and refuses politely if not. */
       try { if (g.hud && g.hud.requestBuild) g.hud.requestBuild(kind); } catch (e) { /* silent */ }
     }
   }
@@ -1470,8 +1550,24 @@ export function createTutorial(state, game, deps = {}) {
     if (!step) return;
 
     if (quietT > 0) quietT = Math.max(0, quietT - dt);
-    // See `fakeAwards`: rules.js recomputes these off the real board every tick.
-    if (fakedAwards && /^awards/.test(String(step && step.id))) fakeAwards();
+    /*
+     * THE NUMBERS BELONG TO THE SLIDE, NOT TO ITS `enter`.
+     *
+     *   "Step 8a — there should be new numbers just for visual help. Right now
+     *    it says it put numbers there but didn't."
+     *
+     * They didn't, twice over. `enter` only runs in the `body` phase (see
+     * `present`), and 8a is the BRIEF phase of the awards step — the slide whose
+     * own words are "I have put some numbers on them", read against a card still
+     * sitting at zero. And the re-apply below used to be gated on `fakedAwards`,
+     * a latch only `fakeAwards` itself sets, so it could never start the very
+     * thing it was guarding. Being on an awards step IS the condition; nothing
+     * else needs to be true, and `clearFakeAwards` on the closing card and on
+     * quit is what takes it back off. `fakeAwards` writes only the two readouts
+     * — never `hasLongestRoad`/`hasLargestArmy` — so the score itself, and the
+     * victory check that reads it, stay honest.
+     */
+    if (/^awards/.test(String(step && step.id))) fakeAwards();
 
     // The screen can change under a step — a sheet opens, the map closes — so
     // the badge re-reads what it should be wearing every frame. `chrome` is a
