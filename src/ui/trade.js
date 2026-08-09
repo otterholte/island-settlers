@@ -301,7 +301,8 @@ export function createTradeSheet(state, game, opts = {}) {
 
   /* ---------------------------------------------------------------- markup */
 
-  const where = el('span', { class: 'tr-where', text: 'Great Market' });
+  /* "Always refer to it as the Trading Post" — never the Great Market. */
+  const where = el('span', { class: 'tr-where', text: 'Trading Post' });
   /* THE RATE, ONCE. It used to be stamped on all five cards, which at the Great
      Market is the same three characters printed five times down a row — five
      copies of one fact, competing for the corner of a card that now has a price
@@ -1038,7 +1039,7 @@ export function createTradeSheet(state, game, opts = {}) {
 
   function placeName() {
     const port = portId === null ? null : ports[portId];
-    if (!port) return 'Great Market';
+    if (!port) return 'Trading Post';
     return port.resource ? `${RES_LABEL[port.resource]} Dock` : 'Trading Dock';
   }
 

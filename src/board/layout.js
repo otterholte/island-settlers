@@ -285,7 +285,7 @@ export const MARKET = {
   x: DESERT.x,
   z: DESERT.z,
   radius: HEX_SIZE * 0.55,
-  name: 'Great Market'
+  name: 'Trading Post'
 };
 
 /* Where the four settlers stand at the opening of the match — spread around

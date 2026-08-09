@@ -631,6 +631,18 @@ export function createPanels(root, state, game) {
   return {
     openTrade, openCards, showResults, close, update,
     hideResults,
+    /*
+     * FOR THE TUTORIAL'S TRADE LESSON, which scripts an exact trade.
+     *
+     *   "Please clear any trades that were in the process — so if I had pressed
+     *    the up arrow 5 times on another resource, clear that, so when I ask
+     *    for a wheat and offer a wood it will actually let me do the trade."
+     *
+     * The lesson already deals the pack fresh on arrival; this is the same
+     * hygiene for the sheet's own staging. It is trade.js's own CLEAR key, not
+     * a second implementation — see `clearStage` there.
+     */
+    clearTrade: () => tradeUI.clearStage(),
     /** matchflow.js plays this the moment the match freezes, over the board. */
     endBanner(wid) { endgame.banner(wid); },
     get isOpen() { return openKind !== null; },

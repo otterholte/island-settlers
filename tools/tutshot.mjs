@@ -575,8 +575,11 @@ const TOP_STEPS = ['walk', 'land', 'collect', 'sweep', 'rest', 'buildkey', 'road
    the two steps that point at the bottom-right corner, and up from the road on. */
 const PACK_OFF = ['hello', 'walk', 'land', 'collect', 'sweep', 'rest',
   'buildkey', 'road'];
-const PACK_ON = ['pack', 'settle', 'city', 'market',
-  'trade', 'cards', 'knight', 'roadcard', 'vpcard', 'awards', 'done'];
+/* Spot checks, one per lesson, against the script's wardrobe as it stands:
+   `settle`/`city`/`vpcard` came OFF this list because their steps hide the
+   pack on purpose (OPENING and SCORE_NOPACK), and `trade` was never an id. */
+const PACK_ON = ['pack', 'settlerule', 'cityrule', 'market',
+  'traderate', 'cards', 'knight', 'roadcard', 'awards', 'done'];
 /* The five that stand in the map's own right-hand column. */
 const MAP_STEPS = ['roadmapmove', 'roadmapmine', 'roadmappick', 'roadplace'];
 /* Every step that lights something instead of ringing it. */
@@ -660,29 +663,34 @@ console.log('  WARDROBE ' + JSON.stringify({
   theClockIsGoneForTheWholeRun: body.every(r => r.clock === false),
   theTwoAwardsAreHiddenUntilTheirOwnStep:
     idsOf(rows.filter(r => r.awards)).join(',')
-      === 'awards,awards2,awards3,done',
+      === 'awards,awardsroad,awardsarmy,awards3,done',
   thePackIsHiddenForTheOpeningLesson:
     PACK_OFF.every(id => at(id) && at(id).pack === false),
   thePackIsUpForItsOwnLessonAndFromTheScoreOn:
     PACK_ON.every(id => at(id) && at(id).pack === true),
+  /* Recomputed from the script's own wardrobe, which had moved on twice while
+     this list stood still (roadcard went onto the map; the knight consequences
+     came off it): every step whose hud carries `ranks`, in walk order. */
   theStandingsAreOnlyUpWhereTheScriptAsks:
     idsOf(rows.filter(r => r.ranks)).join(',')
-      === 'settlebuilt,points,citybuilt,tradewhy,knight,roadcard,awards,awards2,awards3,done',
+      === 'settlebuilt,points,citybuilt,tradewhy,vpcard,knight,'
+        + 'knightcost,knightown,awards,awardsroad,awardsarmy,awards3,done',
   theBuildCardsAreHiddenForTheScoreLesson:
     !!atOpen('points') && atOpen('points').buildCards === false,
   andForTheClosingCardToo: !!atOpen('done') && atOpen('done').buildCards === false,
-  andTheyStayShutForTheWholeFirstWalk: rows.every(r => r.buildCards === false),
   /* "Hide the End practice button for this step" -- the score lesson and the
      award slides, plus every step standing on the map. */
   theExitChipStandsDownWhereItWouldCompete:
-    ['points', 'awards', 'awards2', 'awards3'].every(id => at(id))
+    ['points', 'awards', 'awardsroad', 'awardsarmy', 'awards3'].every(id => at(id))
 }));
 
 const bodyOpen = open.filter(r => r.phase !== 'brief');
 console.log('  RING ' + JSON.stringify({
   stepsWithAGoldRing: idsOf(bodyOpen.filter(r => r.ring)),
+  /* `reach` and `settle` stopped ringing a card when their lessons moved to
+     the wash; the ring lives on the steps that name a specific build card. */
   itIsOnTheBuildCardsForEveryBuildStep:
-    ['reach', 'settle', 'city', 'cards'].every(id => atOpen(id) && atOpen(id).ring === true),
+    ['road', 'city', 'cards', 'buycard2'].every(id => atOpen(id) && atOpen(id).ring === true),
   /* Six notes, one assertion: "don't highlight with a circle yet" (land),
      "don't draw a circle anywhere" (sweep), "remove the yellow circle as well"
      (rest), "don't have a yellow circle, remove it" (pack), and the two steps

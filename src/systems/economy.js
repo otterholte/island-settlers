@@ -475,7 +475,7 @@ export function tradeSpot(game = G) {
   if (!state || !p) return null;
 
   const near = p.nearTrade;
-  if (near === 'market') return { at: 'market', portId: null, label: 'Great Market' };
+  if (near === 'market') return { at: 'market', portId: null, label: 'Trading Post' };
   if (typeof near === 'number') {
     if (!p.ports.has(near)) return null;
     const port = ports[near];
@@ -486,7 +486,7 @@ export function tradeSpot(game = G) {
   }
 
   const dm = Math.hypot(p.x - MARKET.x, p.z - MARKET.z);
-  if (dm <= MARKET_REACH) return { at: 'market', portId: null, label: 'Great Market' };
+  if (dm <= MARKET_REACH) return { at: 'market', portId: null, label: 'Trading Post' };
 
   const port = nearestPortFor(state, 0, p.x, p.z, PORT_REACH);
   if (port) {
@@ -515,7 +515,7 @@ export function quote(give, game = G) {
   if (!spot) {
     return {
       ok: false, ratio: 0, at: null, portId: null,
-      reason: 'Head to the Great Market or one of your docks to trade'
+      reason: 'Head to the Trading Post or one of your docks to trade'
     };
   }
   const ratio = activeTradeRatio(state, 0, give, spot.portId);

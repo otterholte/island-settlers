@@ -76,7 +76,7 @@ function buildPages() {
         // the trading post." Quite right: the nineteenth hex carries the Great
         // Market, and calling it a desert that gives nothing describes a
         // tabletop rule this game does not have.
-        'Forest gives wood. Clay hills give brick. Pasture gives wool. Fields give wheat. Mountains give ore. The nineteenth is the Great Market, where you trade.'
+        'Forest gives wood. Clay hills give brick. Pasture gives wool. Fields give wheat. Mountains give ore. The nineteenth is the Trading Post, where you trade.'
       ]
     },
     {
@@ -154,7 +154,7 @@ function buildPages() {
       title: 'Trading',
       h: 'Swap what you have spare',
       body: [
-        `Walk up to the Great Market in the middle of the island and it will swap ${TRADE_BASE} of anything for 1 of what you need.`,
+        `Walk up to the Trading Post in the middle of the island and it will swap ${TRADE_BASE} of anything for 1 of what you need.`,
         `A dock you own does better: ${PORT_GENERIC} for 1, or ${PORT_SPECIAL} for 1 on the goods that dock deals in. You own a dock by settling one of its two corners.`
       ]
     },

@@ -308,7 +308,7 @@ export function buildSteps(t) {
          sentences over a veiled screen and NEXT is right there — a second key
          that does the same thing as the one beside it is a choice the player
          has to make about nothing. */
-      text: 'Only you are playing right now. Feel free to explore.',
+      text: 'Only you’re playing right now. Feel free to explore.',
       veil: true,
       size: 'big', place: 'centre', hud: OPENING
     },
@@ -599,7 +599,7 @@ export function buildSteps(t) {
        * the wash cuts a hole round all three keys, so the ring names which one
        * and the darkness names where to look.
        */
-      text: 'Tap BUILD, bottom right. Four cards slide up — road, settlement, city, card — and each one fills as you gather, then turns gold when you can afford it.',
+      text: 'Tap BUILD, bottom right. Four cards slide up — road, settlement, city, card — and each one fills as you gather resources from the island. It turns to gold when you can afford it.',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.hud-br .cbtn.gold'],
       /* "Just highlight the shape of the build key, not also the pause and map
@@ -721,7 +721,14 @@ export function buildSteps(t) {
          because it was adding light to something that had already lost its
          own. */
       hud: MAP_KEEP_RAIL, railOpen: true,
-      spotDom: ['.ov-rail']
+      /*   "Make the players section a little brighter still — it looks a little
+       *    dark."
+       * The hole stops the wash dimming it, but the rail is a dark plate to
+       * begin with, so undimmed still reads dark next to a lit board. `spotLift`
+       * adds a touch of light INSIDE the hole — the gentle version of the
+       * `spotBright` treatment, on top of not being darkened rather than
+       * instead of it. */
+      spotDom: ['.ov-rail'], spotLift: true
     },
 
     /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
@@ -864,7 +871,7 @@ export function buildSteps(t) {
     {
       id: 'settlebuilt',
       title: 'You gained a victory point!',
-      text: 'And more land to explore with it — every hex touching that corner is yours to collect from now.',
+      text: 'And more land to explore with it — every hex touching that new corner you built a settlement on is yours to collect from now.',
       quiet: 1.9,
       /* The wash rather than the veil, because this card now lights the same
          counter the next one does — a veil would take that with everything
@@ -921,7 +928,7 @@ export function buildSteps(t) {
     {
       id: 'cityrule',
       title: 'Only your own',
-      text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not building in a new location.',
+      text: 'A city does not take new ground. The only spots glowing are settlements you already own — you’re upgrading a settlement, not building in a new location.',
       needs: 'map:city',
       onMap: 'centre', size: 'big', place: 'centre', veil: true, hud: MAP_STEP
     },
@@ -952,7 +959,7 @@ export function buildSteps(t) {
     {
       id: 'citybuilt',
       title: 'Two points',
-      text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did before.',
+      text: 'That corner is worth 2 points now instead of 1. It collects exactly the same as it did before.',
       quiet: 1.9,
       /* Lit and pointed at: the ring carries a bobbing chevron and `markerFor`
          clamps it to the frame, so a city built behind the camera still has an
@@ -976,8 +983,12 @@ export function buildSteps(t) {
      */
     {
       id: 'market',
-      title: 'Walk to the market',
-      text: 'The Great Market is the hex in the middle of the island. Walk onto it.',
+      /* "Don't call the trading post the Great Market or the market — always
+         refer to it as the Trading Post." Everywhere a player reads it: here,
+         the sheet's title bar, the map's rate-board popup, the guide line and
+         the walk-up prompt (trade.js, overview.js, hud.js, economy.js). */
+      title: 'Walk to the Trading Post',
+      text: 'The Trading Post is the hex in the middle of the island. Walk onto it.',
       size: 'big', place: 'foot', hud: MARKET_WALK,
       spotMe: true,
       spotWorld: () => ({ x: MARKET.x, z: MARKET.z, lift: 1.0, r: 120 }),
@@ -1033,8 +1044,16 @@ export function buildSteps(t) {
       title: 'Ask for wheat',
       /* Dealt again on the way in: the player may have spent the last few
          minutes poking at the post, and every step after this one is written
-         against a known pack. */
-      enter: () => t.give(TRADE_PACK),
+         against a known pack. And the sheet's own staging is wiped for the
+         same reason — "if I had pressed the up arrow 5 times on another
+         resource, clear that, so when I ask for a wheat and offer a wood it
+         will actually let me do the trade." */
+      enter: () => {
+        t.give(TRADE_PACK);
+        try {
+          if (game.panels && game.panels.clearTrade) game.panels.clearTrade();
+        } catch (e) { /* silent */ }
+      },
       text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT.',
       needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
@@ -1215,7 +1234,7 @@ export function buildSteps(t) {
       /* Two sentences instead of four, and the wash raised so the pack and the
          rest of the interface go down with the island — the point landed in the
          standings and that is the only place to look. */
-      text: 'One type of development card is a Victory Point. It is added to your score automatically, and to the leaderboard.',
+      text: 'One type of development card is a Victory Point. It is added to your score automatically, and added to the leaderboard.',
       quiet: 2.4,
       size: 'big', place: 'centre', hud: SCORE_NOPACK,
       spotOverUi: true, spotGlow: true, spotDom: ['.hud-tr']
@@ -1268,7 +1287,14 @@ export function buildSteps(t) {
          path — free roads, nothing charged — and, per the note, the Free Roads
          cue never appears at all (see `tut-practice .kn-cue`). */
       needs: 'map:freeroads',
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      /*   "7d didn't disappear or go to the next step after I built two roads,
+       *    like it should've gone to 7e."
+       * It had no check, so nothing ever carried it — the player laid both
+       * roads, the map folded away, and the card sat there describing a thing
+       * that was finished. Two roads more than the step opened with is the
+       * lesson done. */
+      check: () => me.roads.size >= t.base.roads + 2
     },
 
     /*   "The knight card would be the third. It should hide the instruction box
@@ -1296,43 +1322,73 @@ export function buildSteps(t) {
       title: CARD_LABEL.knight,
       text: 'The Knight. This one you aim — the map opens so you can choose a hex.',
       quiet: 2.0,
+      /* "7f — the background should be dark." The veil, not the wash: this is
+         one sentence between two surfaces, and the veil comes up with the card
+         after the quiet gap, so the draw animation plays on a bright screen and
+         THEN everything steps back for the words. */
+      veil: true,
       size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     {
       id: 'knightwhere',
       title: 'Aim it at their best hex',
-      text: 'Put it on the hex a rival works hardest — a high number with their settlement on a corner. While it stands there, that hex gives them nothing.',
+      text: 'Place the Knight on a hex where an opponent picks up the most resources — a high number with their settlement on the corner. While the Knight is on that hex, they can’t pick up any of its resources.',
       needs: 'map:robber',
       /* "Use your best judgement on what sections should be highlighted." The
          sentence names a hex, so the wash lights hexes: the three busiest tiles
          a rival is actually built on, and nothing else. See `rivalHexXY` in
          overview.js for why this is not the legal-target list. */
       spotMapRivals: true, spotMapMax: 3,
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      /* "If they click once on 7g to select a hex, change 7h to tell them to
+         press it twice to confirm." Same shape as `citypick`: one tap arms the
+         hex and carries the run forward to the confirm step. */
+      holdNext: true,
+      check: () => t.placeArmed() || state.robberTile !== DESERT.id
     },
 
+    {
+      id: 'knightconfirm',
+      title: 'Tap it again',
+      text: 'Chosen, not sent. Tap the SAME hex once more to confirm.',
+      needs: 'map:robber',
+      /* Skipped when the Knight already landed — a fast double-tap on the step
+         before confirms in one motion, and this card would then be asking for a
+         tap that has already happened. */
+      skipIf: () => state.robberTile !== DESERT.id,
+      /* Just the one that is armed, like the road and city confirms — with a
+         hole cut for a HEX rather than for a corner piece. */
+      spotMapSel: true, spotMapR: 58,
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      holdNext: true,
+      check: () => state.robberTile !== DESERT.id
+    },
+
+    /*   "Once the knight placement is confirmed, close the map, and switch what
+     *    was on 7h before to now be on 7i and show it as a popup in front of
+     *    the game while the game darkens, instead of being on the right side.
+     *    Make 7i also be a popup in the middle of the screen with the rest of
+     *    the screen being dark behind it."
+     *
+     * So the two consequences are read AFTER the deed, off the map, each a
+     * veiled card in the middle of the screen. Neither declares `needs`, which
+     * is what closes the map on arrival — a surface belongs to the steps that
+     * declare it. */
     {
       id: 'knightcost',
       title: 'And it robs them',
       text: 'Everyone with a settlement or city on that hex also loses HALF of everything they are carrying, rounded down. Nobody else is touched, and you never pay it yourself.',
-      needs: 'map:robber',
-      // Same three hexes as the step before: this is what happens ON them.
-      spotMapRivals: true, spotMapMax: 3,
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+      veil: true,
+      size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     {
       id: 'knightown',
       title: 'Your own hex is fair game',
-      text: 'Landing it on a hex of your own still lets YOU collect there — it only shuts out the rivals built on it. Tap a hex, then tap it again to confirm.',
-      needs: 'map:robber',
-      /* The sentence turns to the player's own corners, so the wash does too —
-         the same pieces the settlement lesson lit, dimmed rather than cut out
-         so the whole board stays readable for the tap that follows. */
-      spotMapMine: true, spotMapMineDim: 0.55,
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
-      check: () => state.robberTile !== DESERT.id
+      text: 'Landing it on a hex of your own still lets YOU collect there — it only shuts out the rivals built on it.',
+      veil: true,
+      size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------- THE TWO AWARDS
@@ -1352,27 +1408,59 @@ export function buildSteps(t) {
      * back off at the closing step and on quit.
      */
     {
+      /*
+       * FOUR PLAIN STEPS, NO BRIEF, AND THE ORDER THE CARD IS PRINTED IN.
+       *
+       *   "Remove the OK button from step 8. You forgot to explain the longest
+       *    road points. Do the longest road steps before the largest army,
+       *    since it's on top — also highlight that row more than the knights
+       *    row while the tutorial is talking about it."
+       *
+       * The forgetting was the brief's fault: NEXT on a brief advances to the
+       * next STEP, so the intro slide's gold key skipped the Longest Road body
+       * hiding behind it and landed the player straight on Largest Army. Three
+       * points of the five were never explained by a card that existed to
+       * explain them. Un-nesting the intro into a step of its own removes the
+       * OK key (a brief is the only thing that shows one) and makes Longest
+       * Road un-skippable by the same stroke — one press, one slide, in the
+       * order the rows sit on the card.
+       */
       id: 'awards',
-      title: 'Points you never build',
-      brief: {
-        title: 'Two more ways to score',
-        text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard, top left. I have put some numbers on them so there is something to read.`
-      },
-      /* The two numbers quoted here are the two numbers `fakeAwards` writes —
-         yours 2, the record 4 — so the line and the card agree. Ties go to the
-         holder, so catching 4 wins nothing: it takes 5, hence three more. */
-      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 2 against 4 means three more takes it.`,
+      title: 'Two more ways to score',
+      text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard, top left. I have put some numbers on them so there is something to read.`,
       enter: () => t.fakeAwards(),
       size: 'big', place: 'foot', hud: AWARD_LESSON,
       spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
     },
 
     {
-      id: 'awards2',
-      title: 'Largest Army',
-      text: `LARGEST ARMY: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED, not held. You are on ${LARGEST_ARMY_MIN} and nobody has beaten it, so the line reads YOURS in your colour.`,
+      id: 'awardsroad',
+      title: 'Longest Road',
+      /* The two numbers quoted here are the two numbers `fakeAwards` writes —
+         yours 2, the record 4 — so the line and the card agree. Ties go to the
+         holder, so catching 4 wins nothing: it takes 5, hence three more. */
+      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 2 against 4 means three more takes it.`,
       size: 'big', place: 'foot', hud: AWARD_LESSON,
-      spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
+      /* Its own row and nothing else: the hole shrinks from the whole card to
+         the line being read, so the knight row stays under the wash while this
+         one is ringed and lifted. `:first-child` because the rows are built in
+         the order they are drawn — road on top, see `awardRow` in hud.js. */
+      spotOverUi: true, spotGlow: true, spotLift: true,
+      spotDom: ['.sc-awards .aw-row:first-child']
+    },
+
+    {
+      id: 'awardsarmy',
+      title: 'Largest Army',
+      /*   "Please make the knights description more clear. And always spell
+       *    color without a u."
+       * Spelled out in full: what counts (played, not held), what it takes (the
+       * floor AND the lead), and what the card is showing right now. */
+      text: `LARGEST ARMY: every Knight you PLAY counts toward your army — Knights still in hand do not. Play ${LARGEST_ARMY_MIN} or more, and more than anyone else, and its ${LARGEST_ARMY_VP} points are yours. You have played ${LARGEST_ARMY_MIN} and nobody has more, so the line reads YOURS in your color.`,
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      // The knight row's turn to be the lit one, same treatment as the road's.
+      spotOverUi: true, spotGlow: true, spotLift: true,
+      spotDom: ['.sc-awards .aw-row:last-child']
     },
 
     {

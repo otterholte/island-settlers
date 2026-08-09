@@ -493,7 +493,7 @@ export function createOverview(root, state, game) {
   function showPortPop(hit) {
     if (!hit) { toggle(portPop, 'hid', true); return; }
     if (hit.kind === 'market') {
-      setText(popTitle, 'The Great Market');
+      setText(popTitle, 'The Trading Post');
       setText(popRate, `${TRADE_BASE}:1`);
       setText(popBody, `The post in the middle of the island. Anyone may use it, `
         + `at ${TRADE_BASE} of any one resource for 1 of any other. Every harbour `

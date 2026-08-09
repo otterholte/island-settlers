@@ -62,7 +62,7 @@ const HOW_TO_ALL = [
      a rules card that quietly keeps quoting the old number is worse than one
      that does not mention it. */
   ['Awards', `Longest Road is ${LONGEST_ROAD_VP} points, Largest Army ${LARGEST_ARMY_VP}.`],
-  ['Trade', 'The Great Market swaps 4:1; a dock you own does 3:1 or 2:1.'],
+  ['Trade', 'The Trading Post swaps 4:1; a dock you own does 3:1 or 2:1.'],
   ['Cards', 'A Knight opens the whole board so you can pick the region it shuts down. Road Building opens the map and lays two roads for nothing.'],
   ['The Knight', 'Send it to a hex and everyone with a settlement or city THERE loses half of every resource they hold, rounded down and gone rather than stolen. Nobody else pays, and nor do you. The hex then gives nothing to anybody but you.'],
   ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
