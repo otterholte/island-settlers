@@ -308,7 +308,7 @@ export function buildSteps(t) {
          sentences over a veiled screen and NEXT is right there — a second key
          that does the same thing as the one beside it is a choice the player
          has to make about nothing. */
-      text: 'Only you are playing right now. The other three settlers are not moving. Feel free to explore.',
+      text: 'Only you are playing right now. Feel free to explore.',
       veil: true,
       size: 'big', place: 'centre', hud: OPENING
     },
@@ -387,11 +387,15 @@ export function buildSteps(t) {
          The old line said WHICH hexes glow and never said why, which left the
          one rule this game turns on — you only collect where you have built —
          to be inferred from a color. */
-      text: 'You can only collect from a resource hex where you have a settlement on one of its corners. Those are the glowing ones.',
+      text: 'You can only collect from a resource hex where you have a settlement on one of its corners.',
       live: true,
       /* The gold dots came off: the glow IS the mark, and a second one on top
          of it was two answers to the same question. */
       size: 'big', place: 'top', hud: OPENING, spot: true,
+      /* A player who sweeps a hex while still on the "walk onto one" card has
+         plainly learned both of the next two lessons, so they go straight to
+         the countdown rather than being asked to do it again twice. */
+      jumpIf: () => t.sweptAny(), jumpTo: 'rest',
       check: () => t.workable().some(id => t.standingOn(id))
     },
 
@@ -416,8 +420,8 @@ export function buildSteps(t) {
       /* No ring: the wash already says which hexes, and pointing at ONE item
          on one of them is a smaller instruction than the step is giving. */
       size: 'big', place: 'top', hud: OPENING, spot: true,
-      check: () => t.sweptAny()
-        || me.stats.gathered - t.base.gathered >= t.hexLoad()
+      jumpIf: () => t.sweptAny(), jumpTo: 'rest',
+      check: () => me.stats.gathered - t.base.gathered >= t.hexLoad()
     },
 
     /* 5 ------------------------------------------------- CLEAR ONE, ANY ONE
@@ -606,8 +610,11 @@ export function buildSteps(t) {
          What the key needed instead was to stop being DARK — it is a plate like
          any other and the raised wash was sitting on it. Hole plus lift, no
          border. */
-      spotOverUi: true, spotDom: ['.hud-br .cbtn.gold'],
-      spotBright: ['.hud-br .cbtn.gold'], spotLiftAmt: 0.22,
+      /* A ROUND hole on a round key. The rectangle was the "weird square", and
+         the lift was making up for a hole that only half cleared — a full
+         circular hole leaves the key at exactly the brightness it has in every
+         other step, which is what was asked for. */
+      spotOverUi: true, spotDom: ['.hud-br .cbtn.gold'], spotRound: true,
       holdNext: true,
       check: () => buildRowOpen()
     },
@@ -679,8 +686,8 @@ export function buildSteps(t) {
       id: 'roadmapmove',
       title: 'Move the map',
       text: handheld()
-        ? 'Pinch to zoom in and out. Drag with one finger to move around the island.'
-        : 'Scroll to zoom in and out. Click and drag to move around the island.',
+        ? 'Drag with one finger to move around the island. Pinch to zoom in and out.'
+        : 'Click and drag to move around the island. Scroll to zoom in and out.',
       needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => t.mapMoved() > 0.55
@@ -809,7 +816,7 @@ export function buildSteps(t) {
     {
       id: 'settle',
       title: 'Build a settlement',
-      text: `A settlement is ${COST.settlement.wood} wood, ${COST.settlement.brick} brick, ${COST.settlement.wheat} wheat and ${COST.settlement.wool} wool. Tap the SETTLEMENT card.`,
+      text: `It costs ${COST.settlement.wood} wood, ${COST.settlement.brick} brick, ${COST.settlement.wheat} wheat, and ${COST.settlement.wool} wool to build a settlement. Tap the SETTLEMENT card.`,
       enter: () => t.give(ROAD_PACK),
       needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
@@ -826,6 +833,10 @@ export function buildSteps(t) {
       needs: 'map:settlement',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 36,
+      /* Your own roads and settlements come up too, at half strength, so the
+         two-roads rule can be SEEN — the corners you may take against the ones
+         you already hold. The legal spots stay the brighter of the two. */
+      spotMapMine: true, spotMapMineDim: 0.45,
       /* Tapping a corner while this is up means the rule has been read and the
          player is already ahead of it — carry them straight to the confirm. */
       check: () => t.placeArmed() || me.settlements.size > t.base.settlements
@@ -844,7 +855,7 @@ export function buildSteps(t) {
     {
       id: 'settleplace',
       title: 'Tap it again',
-      text: 'Chosen, not built. Tap the SAME corner once more to confirm it.',
+      text: 'You have selected a placement. Press it again to confirm.',
       needs: 'map:settlement',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => me.settlements.size > t.base.settlements
@@ -855,7 +866,11 @@ export function buildSteps(t) {
       title: 'You gained a victory point!',
       text: 'And more land to explore with it — every hex touching that corner is yours to collect from now.',
       quiet: 1.9,
-      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
+      /* The wash rather than the veil, because this card now lights the same
+         counter the next one does — a veil would take that with everything
+         else — and END PRACTICE stands down beside it. */
+      size: 'big', place: 'centre', hud: SCORE_NOPACK,
+      spotOverUi: true, spotGlow: true, spotDom: ['.hud-tr']
     },
 
     /* ------------------------------------------------------------- THE SCORE
@@ -893,7 +908,7 @@ export function buildSteps(t) {
     {
       id: 'city',
       title: 'Grow it into a city',
-      text: `A city replaces one of your settlements and is worth TWO victory points instead of one. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore — the ore is yours. Tap the CITY card.`,
+      text: `A city replaces one of your settlements and is worth TWO victory points instead of one. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore. Tap the CITY card.`,
       enter: () => t.give(CITY_PACK),
       needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
@@ -906,15 +921,15 @@ export function buildSteps(t) {
     {
       id: 'cityrule',
       title: 'Only your own',
-      text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not founding one.',
+      text: 'A city does not take new ground. The only spots glowing are settlements you already own — you are upgrading one, not building in a new location.',
       needs: 'map:city',
       onMap: 'centre', size: 'big', place: 'centre', veil: true, hud: MAP_STEP
     },
 
     {
       id: 'citypick',
-      title: 'Pick one of yours',
-      text: 'Only your own settlements are glowing. Tap one.',
+      title: 'Pick a settlement',
+      text: 'Select the settlement you want to upgrade to a City.',
       needs: 'map:city',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       spotMapTargets: true, spotMapR: 38,
@@ -939,7 +954,12 @@ export function buildSteps(t) {
       title: 'Two points',
       text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did before.',
       quiet: 1.9,
-      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
+      /* Lit and pointed at: the ring carries a bobbing chevron and `markerFor`
+         clamps it to the frame, so a city built behind the camera still has an
+         arrow saying which way to look. */
+      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
+      world: () => t.newestCity(),
+      spotWorld: () => { const c = t.newestCity(); return c ? { x: c.x, z: c.z, lift: 2.2, r: 110 } : null; }
     },
 
     /* ------------------------------------------------------------ THE MARKET
@@ -1006,6 +1026,10 @@ export function buildSteps(t) {
     {
       id: 'tradeask',
       title: 'Ask for wheat',
+      /* Dealt again on the way in: the player may have spent the last few
+         minutes poking at the post, and every step after this one is written
+         against a known pack. */
+      enter: () => t.give(TRADE_PACK),
       text: 'The UP arrow over a resource says how many you want ADDED to your pack. Tap the up arrow over WHEAT.',
       needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
@@ -1142,12 +1166,12 @@ export function buildSteps(t) {
      *    the map and can't collect it directly." */
     {
       id: 'tradewhy',
-      title: 'Why that mattered',
+      title: 'Why trading matters',
       /* Shut the post on the way out. This card takes the whole screen behind a
          veil, and a trade sheet still standing under it is a surface nobody can
          reach and nobody was told about. */
       enter: () => t.closeSheet(),
-      text: 'If you cannot collect from a wheat hex, trading is the only way to get wheat — and without it you cannot build the settlements and cities that score. The post is how you buy what your own land does not grow.',
+      text: 'If you do not have a settlement or city built on an ore hex, you cannot collect ore — trading is the best way to get it.',
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
@@ -1166,7 +1190,7 @@ export function buildSteps(t) {
     {
       id: 'cards',
       title: 'Development cards',
-      text: `One price — ${COST.card.wool} wool, ${COST.card.wheat} wheat, ${COST.card.ore} ore — and three different things in the deck. You have enough for four. Tap the CARD card.`,
+      text: `You can also purchase development cards. There are three different types in the deck, and each one costs ${COST.card.wool} wool, ${COST.card.wheat} wheat and ${COST.card.ore} ore. Tap the CARD tile.`,
       enter: () => { t.give(CARD_PACK); t.scriptDeck(); },
       needs: 'buildcards',
       size: 'big', place: 'centre', hud: CARD_LESSON,
@@ -1186,7 +1210,7 @@ export function buildSteps(t) {
       /* Two sentences instead of four, and the wash raised so the pack and the
          rest of the interface go down with the island — the point landed in the
          standings and that is the only place to look. */
-      text: 'A Victory Point, and it has already scored. Nothing to play, nothing to remember, and no rival can take it off you.',
+      text: 'One type of development card is a Victory Point. It is added to your score automatically, and to the leaderboard.',
       quiet: 2.4,
       size: 'big', place: 'centre', hud: SCORE_NOPACK,
       spotOverUi: true, spotGlow: true, spotDom: ['.hud-tr']
@@ -1205,7 +1229,10 @@ export function buildSteps(t) {
       /* Raised, so the merchant's ENTER TRADE badge — which is still up if the
          player is standing on the post — goes dark with everything else instead
          of competing with the card they are being sent to. */
-      spotOverUi: true, spotDom: ['.hud-bc'],
+      /* Not raised: 7a lights the four cards out of a dark ISLAND and this step
+         was lighting them out of a dark interface, which came out a stop
+         darker for no reason anybody could see. */
+      spotDom: ['.hud-bc'],
       holdNext: true,
       check: () => cardsHeld() > t.base.cards
     },
@@ -1228,9 +1255,14 @@ export function buildSteps(t) {
        * pack, keys and cue together — and the card stands in the middle of it.
        * The words stop teaching road building, because that was four steps ago.
        */
-      text: 'Road Building: two roads, free. It opens the map by itself and lets you lay both without spending anything — and you have already built a road, so there is nothing new here. Keep it for later.',
+      text: 'This card lets you build two roads for free. Lay both without spending anything.',
       quiet: 2.4,
-      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
+      /* Shown ON the map, in the same column every other map lesson uses: the
+         card opens a placement map in a real match, so the lesson about it
+         should be read against one. `needs` opens it and, per the note, the
+         Free Roads cue never appears at all (see `tut-practice .kn-cue`). */
+      needs: 'map:road',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
     },
 
     /*   "The knight card would be the third. It should hide the instruction box
@@ -1256,11 +1288,9 @@ export function buildSteps(t) {
     {
       id: 'knight',
       title: CARD_LABEL.knight,
-      text: 'The Knight. This one you aim. Play it and the map opens so you can choose a hex.',
+      text: 'The Knight. This one you aim — the map opens so you can choose a hex.',
       quiet: 2.0,
-      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
-      spotDom: ['.kn-cue:not(.rb-cue):not(.hid)'],
-      check: () => mapIn('knight')
+      size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     {
@@ -1349,6 +1379,7 @@ export function buildSteps(t) {
     {
       id: 'done',
       title: 'That is the whole game',
+      noBadge: true, noNext: true,
       /* Put the board back. The awards lesson wrote numbers into `state` so it
          would have a filled-in card to teach from; nothing invented may survive
          into the match the player is about to be handed. */

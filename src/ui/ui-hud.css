@@ -851,9 +851,22 @@
  * hud-notice.js builds it; hud.js, hud-knight.js and hud-road.js all reach it
  * through `hud.announce`, so all three notices are on this plate and only one
  * of them had to be told about it. */
+/* ABOVE THE MAP, ALWAYS.
+ *
+ *   "During the game and during the tutorial, when the map is open, if I buy a
+ *    card the animation for the card I receive should show up in front of the
+ *    map. Right now I can't tell what card I bought."
+ *
+ * The HUD is built before the map and the sheets (see main.js), so everything in
+ * it paints UNDER them — which is right for the pack and the build keys and
+ * wrong for the one thing that has to be seen the instant it happens. Buying a
+ * card from the placement map played its whole announcement behind the board.
+ * `z-index` here is inside `#ui`'s own stacking context, so it lifts the notice
+ * over the map and the sheets without reaching past the interface. It never
+ * takes a tap either way. */
 .announce{
   position:absolute;left:0;right:0;top:31%;display:flex;justify-content:center;
-  padding:0 16px;opacity:0;
+  padding:0 16px;opacity:0;z-index:8;pointer-events:none;
 }
 .announce.show{animation:annIn 2.6s cubic-bezier(.2,.9,.3,1) forwards}
 .ann-card{

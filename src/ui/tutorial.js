@@ -607,6 +607,12 @@ export function createCoach(root) {
        verbs and NEXT leave the words about forty pixels wide. The card stacks
        instead — body over keys — for the one step that has two. */
     toggle(card, 'twoacts', !!o.action2);
+    /* The closing card is not a step you can be part-way through, so it carries
+       neither a number nor a way onward: "remove the next button from 9a — in
+       fact remove the number 9a, since it's just letting me know the tutorial
+       is over." */
+    toggle(card, 'nostep', !!o.noBadge);
+    toggle(nextBtn, 'hid', !!o.noNext);
     toggle(backBtn, 'off', !o.canBack);
     backBtn.disabled = !o.canBack;
     toggle(nextBtn, 'off', !o.canNext);

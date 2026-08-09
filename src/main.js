@@ -7,6 +7,7 @@
 
 import * as THREE from 'three';
 import { createMatch, drainEvents, tickWorld } from './core/rules.js';
+import { CARD_LABEL } from './core/constants.js';
 import * as seatColorM from './core/seatcolor.js';
 
 const NOOP = () => {};
@@ -715,6 +716,24 @@ async function boot() {
         case 'trade':     audio.sfx('trade'); break;
         case 'cardDrawn':
           audio.sfx('card');
+          /* SAY WHICH CARD, WHERE IT CAN BE SEEN.
+           *
+           *   "When the map is open, if I buy a card the animation for the card
+           *    I receive should show up in front of the map. Right now I can't
+           *    tell what card I bought."
+           *
+           * Two halves. There was no reveal at all — a card purchase played a
+           * sound and nothing else, so with the placement map up the only
+           * evidence was a number in a chip behind it. And the notice layer is
+           * built with the HUD, which paints UNDER the map and the sheets, so
+           * even once there was something to show it would have shown behind
+           * them; `.announce` is lifted in ui-hud.css for exactly this. */
+          if (ev.player === 0) {
+            hud.announce(CARD_LABEL[ev.card] || 'Development Card',
+              state.players[0].color.light,
+              ev.card === 'knight' ? 'knight'
+                : (ev.card === 'roadBuilding' ? 'road' : 'trophy'));
+          }
           // A Victory Point card scores as it is drawn, so this is how the flow
           // knows the last point came off a card and holds the celebration for
           // a beat to say so. See WIN_CARD_BEAT in matchflow.js.

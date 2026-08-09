@@ -487,6 +487,9 @@
    laid out as a row — the body ends up a column of single words. The closing
    card stacks: words first, then the keys along the bottom. */
 .coach-card.twoacts{flex-direction:column;align-items:stretch;gap:9px}
+/* No number on the card that is only telling you the run is over. */
+.coach-card.nostep .coach-step{display:none}
+.coach-card .coach-next.hid{display:none !important}
 .coach-card.twoacts .coach-main{width:100%}
 .coach-card.twoacts .coach-acts{width:100%;justify-content:flex-end}
 .coach-card.slim .coach-act2{display:none}

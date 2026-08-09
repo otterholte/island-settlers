@@ -582,9 +582,22 @@ export function createTutorial(state, game, deps = {}) {
    * anything is built — which is fine and is why this is only up for three
    * steps and is taken back off at the closing card.
    */
-  const FAKE = { road: 5, mine: 3, knights: 3, rival: 1 };
+  const FAKE = { road: 4, mine: 2, knights: 2, rival: 1 };
   let fakedAwards = false;
 
+  /*
+   * ...AND THEY HAVE TO BE WRITTEN BACK EVERY FRAME.
+   *
+   *   "Step 8a — there should be new numbers just for visual help. Right now it
+   *    says it put numbers there but didn't."
+   *
+   * `recomputeAwards` in rules.js runs off the real board on its own clock and
+   * puts every one of these fields back to the truth, which for a practice run
+   * is two roads and no knights. Setting them once on `enter` therefore lasted
+   * until the next tick. They are re-applied while the awards slides are up and
+   * taken off at the end, which is the only honest way to teach a readout that
+   * has nothing in it.
+   */
   function fakeAwards() {
     const rival = state.players[FAKE.rival];
     if (!rival) return;
@@ -661,8 +674,13 @@ export function createTutorial(state, game, deps = {}) {
    * See `state.forcedCards` in core/rules.js. Emptied on the way out so a match
    * started after the run is dealt from the real weight table.
    */
-  function scriptDeck() {
-    state.forcedCards = ['victoryPoint', 'roadBuilding', 'knight'];
+  function scriptDeck(...types) {
+    /* One card per buy step rather than a queue laid down once: a player who
+       walks Back and buys again would otherwise take the NEXT card off the
+       queue and land on a step written about a different one. Each buy step
+       loads the card its own lesson explains. */
+    state.forcedCards = types.length ? types.slice()
+      : ['victoryPoint', 'roadBuilding', 'knight'];
   }
   function clearDeck() { state.forcedCards = null; }
 
@@ -696,6 +714,26 @@ export function createTutorial(state, game, deps = {}) {
     return Math.max(5, TILE_ITEMS[t.pips] || 8);
   }
 
+  /**
+   * The city the player has most recently built, as a world point.
+   *
+   * `builtAt` is stamped on every building by rules.js, so "the newest" is a
+   * comparison rather than a guess — and the step that says "that corner is
+   * worth 2 now" can point at the corner it means even if the camera is facing
+   * the other way, because `markerFor` clamps the ring into the frame and the
+   * chevron over it says which direction to walk.
+   */
+  function newestCity() {
+    let best = null, at = -Infinity;
+    if (!state.buildings) return null;
+    for (const [iid, b] of state.buildings) {
+      if (!b || b.type !== 'city' || b.owner !== 0) continue;
+      const t0 = b.builtAt === undefined ? 0 : b.builtAt;
+      if (t0 >= at) { at = t0; best = intersections[iid]; }
+    }
+    return best ? { x: best.x, z: best.z } : null;
+  }
+
   /** The owned hex that is actually resting, so the clock has something over it. */
   function restTile() {
     for (const tid of workable()) {
@@ -714,7 +752,7 @@ export function createTutorial(state, game, deps = {}) {
     walked: () => walked,
     topUp, give, tileCentre, itemOnHome, standingOn,
     sweptAny, sweepTile, restTile, hexLoad,
-    mapMoved, roadArmed, placeArmed, myPieces,
+    mapMoved, roadArmed, placeArmed, myPieces, newestCity,
     tradeGetting, tradeGiving, scriptDeck, closeSheet,
     fakeAwards, clearFakeAwards,
     restart: () => restart(),
@@ -833,7 +871,16 @@ export function createTutorial(state, game, deps = {}) {
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
     if (domSel) for (const s of domSel) {
       const r = domRect(s);
-      if (r) { r.glow = step.spotGlow || false; r.lift = step.spotLift || false; rects.push(r); }
+      if (!r) continue;
+      /* A ROUND control wants a round hole. The rectangle read as a box drawn
+         over the BUILD key rather than as the key simply not being dimmed. */
+      if (step.spotRound) {
+        holes.push({ x: r.x, y: r.y, r: Math.max(r.w, r.h) * 0.62 });
+        continue;
+      }
+      r.glow = step.spotGlow || false;
+      r.lift = step.spotLift || false;
+      rects.push(r);
     }
     /* A second list, for controls that want to be BRIGHTER rather than ringed —
        a dark plate cannot be lit by a hole in a wash. See `lift` in tutspot.js. */
@@ -925,15 +972,19 @@ export function createTutorial(state, game, deps = {}) {
       }
     }
 
-    const wants = step.spotMapTargets ? 'targetsXY'
-      : (step.spotMapMine ? 'minePieceXY' : null);
-    if (wants) {
+    for (const wants of [step.spotMapMine ? 'minePieceXY' : null,
+      step.spotMapTargets ? 'targetsXY' : null]) {
+      if (!wants) continue;
       const m = g.overview && g.overview.metrics;
       const cv = document.querySelector('.ov-cv');
       const box = cv && cv.getBoundingClientRect ? cv.getBoundingClientRect() : null;
       const list = (m && m[wants]) || [];
       const r = step.spotMapR || 42;
-      if (box) for (const q of list) holes.push({ x: box.left + q[0], y: box.top + q[1], r });
+      const a = wants === 'minePieceXY' && step.spotMapMineDim !== undefined
+        ? step.spotMapMineDim : 1;
+      if (box) for (const q of list) {
+        holes.push({ x: box.left + q[0], y: box.top + q[1], r, a });
+      }
     }
 
     if (!step.spot) {
@@ -1301,6 +1352,8 @@ export function createTutorial(state, game, deps = {}) {
       of: steps.length,
       label: step.label,
       tag: step.chapterTag,
+      noBadge: !!step.noBadge,
+      noNext: !!step.noNext || idx >= steps.length - 1,
       title: titleOf(brief ? step.brief.title : step.title),
       text: brief ? step.brief.text : textOf(step),
       /* The brief's key is always OK — it is dismissing an explanation, not
@@ -1384,6 +1437,8 @@ export function createTutorial(state, game, deps = {}) {
     if (!step) return;
 
     if (quietT > 0) quietT = Math.max(0, quietT - dt);
+    // See `fakeAwards`: rules.js recomputes these off the real board every tick.
+    if (fakedAwards && /^awards/.test(String(step && step.id))) fakeAwards();
 
     // The screen can change under a step — a sheet opens, the map closes — so
     // the badge re-reads what it should be wearing every frame. `chrome` is a
@@ -1391,7 +1446,11 @@ export function createTutorial(state, game, deps = {}) {
     const c = chromeFor(step);
     coach.chrome(c.size, c.place);
     coach.mark(markerFor(step));
-    if (spot) {
+    /* Nothing is washed while a step is holding its tongue. The gap exists so
+       the player can watch something happen — a road landing, a card turning
+       over — and darkening it is the opposite of the point. */
+    if (spot && quietT > 0) { spot.set(null, dt); }
+    else if (spot) {
       /* In front of `#ui` only while a lesson is pointing at the map, which is
          the one surface a wash behind the interface cannot reach. See `over`. */
       /* IN FRONT OF THE INTERFACE, NOT JUST IN FRONT OF THE ISLAND.
@@ -1427,6 +1486,25 @@ export function createTutorial(state, game, deps = {}) {
       if (want !== heldNow) {
         heldNow = want;
         if (coach.allowNext) coach.allowNext(!heldNow && idx < steps.length - 1);
+      }
+    }
+
+    /* A player who has plainly done the next two lessons already is carried
+       past them rather than asked to repeat them. See `jumpIf` on the gather
+       steps. */
+    if (phase === 'body' && step.jumpIf && step.jumpTo) {
+      let jump = false;
+      try { jump = !!step.jumpIf(); } catch (e) { jump = false; }
+      if (jump) {
+        const to = steps.findIndex(x => x.id === step.jumpTo);
+        if (to > idx) {
+          satisfied.add(step.id);
+          idx = to;
+          phase = steps[idx] && steps[idx].brief ? 'brief' : 'body';
+          coach.good();
+          present(1);
+          return;
+        }
       }
     }
 
