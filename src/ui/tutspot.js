@@ -220,6 +220,32 @@ export function createSpotlight(app) {
     }
     ctx.globalCompositeOperation = 'source-over';
 
+    /* ...and a LIFT on the ones that asked to be brighter rather than outlined.
+     *
+     *   "The players section is highlighted around the border but still dark on
+     *    the player section — make it bright."
+     *   "Brighten up the middle bar of the resource buttons. It doesn't need to
+     *    be highlighted around the border, just make it brighter."
+     *
+     * A hole in a wash only stops something being dimmed; it cannot make a dark
+     * plate light, and both of those controls are dark plates by design. A
+     * `lighter` composite adds to what is underneath instead of covering it, so
+     * the plate keeps its own colour and comes up a stop — which is what
+     * "brighter" means and what a border cannot do. */
+    for (const b of rects) {
+      if (!b.lift) continue;
+      const w2 = Math.max(2, b.w), h2 = Math.max(2, b.h);
+      const rad = Math.min(Number(b.r) || 14, w2 / 2, h2 / 2);
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = fade * (b.lift === true ? 0.16 : b.lift);
+      ctx.fillStyle = '#ffe9b0';
+      ctx.beginPath();
+      roundRect(ctx, b.x - w2 / 2, b.y - h2 / 2, w2, h2, rad);
+      ctx.fill();
+      ctx.restore();
+    }
+
     /* ...and a keyline round the ones that asked for it. "Highlight the pack
        more": a hole in a wash says "not dark here", which is quieter than it
        sounds once the rest of the screen is only half dark. A thin gold edge

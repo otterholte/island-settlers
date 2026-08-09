@@ -400,8 +400,12 @@
    track down. Up to 14/12 with the line-height opened out, and the word-break
    guards are because a 158px column is narrow enough for one long word to push
    the card wider than its own box — which is the mobile glitch. */
-.coach-card.at-side .coach-h{font-size:14px;line-height:1.15;letter-spacing:.03em}
-.coach-card.at-side .coach-t{font-size:12px;line-height:1.5}
+/* "All of the sections where the steps for instructions are on the right side
+   should have even larger text." Up again from 14/12. The column is the one
+   place in the run where the words are the whole surface — there is no board
+   behind them competing for the space — so it can afford the size. */
+.coach-card.at-side .coach-h{font-size:15.5px;line-height:1.15;letter-spacing:.02em}
+.coach-card.at-side .coach-t{font-size:13.5px;line-height:1.5}
 .coach-card.at-side .coach-h,
 .coach-card.at-side .coach-t{overflow-wrap:anywhere;word-break:normal;hyphens:auto}
 .coach-card.at-side .coach-body{min-width:0;width:100%}
@@ -447,7 +451,12 @@
   text-transform:uppercase;color:var(--brown,#5a3a1e);
   text-shadow:0 1px 0 rgba(255,255,255,.8);
 }
-.coach-t{font:700 clamp(9.5px,1.5vw,12px)/1.35 var(--ff);color:#4d341a}
+/* `pre-line` so a step may lay its body out as one fact per line — the score
+   card does, and a paragraph of "settlement 1, city 2, card 1" is a sentence
+   the eye has to parse rather than a list it can scan. Runs of spaces still
+   collapse, so ordinary prose is unaffected. */
+.coach-t{font:700 clamp(9.5px,1.5vw,12px)/1.35 var(--ff);color:#4d341a;
+  white-space:pre-line}
 .coach-t em{font-style:normal;color:#8a4a12;text-shadow:0 1px 0 rgba(255,255,255,.6)}
 
 /* --- BACK and NEXT, the pair ----------------------------------------------
@@ -514,7 +523,7 @@
 }
 .coach-card.slim.at-side .coach-h{display:block}
 .coach-card.slim.at-side .coach-step{width:34px;height:34px;border-radius:11px}
-.coach-card.slim.at-side .coach-t{font-size:12px;line-height:1.5}
+.coach-card.slim.at-side .coach-t{font-size:13.5px;line-height:1.5}
 
 /* A quiet progress rail across the top of the card. */
 .coach-rail{
@@ -727,16 +736,16 @@
      own border and padding are counted, and the card was growing rather than
      wrapping. It may now be as wide as the column or as wide as the screen
      allows, whichever is smaller. */
-  .coach-card.at-side{width:158px;padding:7px 9px 8px}
-  .coach-card.at-side .coach-h{font-size:12px}
-  .coach-card.at-side .coach-t{font-size:11px;line-height:1.45}
+  .coach-card.at-side{width:172px;padding:7px 9px 8px}
+  .coach-card.at-side .coach-h{font-size:13.5px}
+  .coach-card.at-side .coach-t{font-size:12.5px;line-height:1.45}
   .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:10px;padding:0 4px}
 }
 @media (max-width:700px){
-  .coach-card.at-side{width:min(146px,calc(100vw - 190px))}
+  .coach-card.at-side{width:min(160px,calc(100vw - 176px))}
   .coach-card.at-side .coach-step{display:none}
-  .coach-card.at-side .coach-h{font-size:11.5px}
-  .coach-card.at-side .coach-t{font-size:10.5px;line-height:1.42}
+  .coach-card.at-side .coach-h{font-size:12.5px}
+  .coach-card.at-side .coach-t{font-size:12px;line-height:1.42}
   .coach-card.at-top{width:min(400px,calc(100vw - var(--tut-side)));padding:8px 10px 9px}
   .coach-card.slim{width:min(360px,calc(100vw - var(--tut-side)));padding:5px 8px 6px}
   .coach-card.slim.at-bottom,.coach-card.slim.at-low{width:min(420px,calc(100vw - 24px))}

@@ -297,8 +297,8 @@ export function buildSteps(t) {
        * that has to be read twice.
        */
       text: () => (handheld()
-        ? 'Press and drag ANYWHERE on the screen — left side, right side, straight over the island. Your settler follows your thumb.'
-        : 'Use the ARROW KEYS to walk — up, down, left, right. WASD does the same thing if you would rather.'),
+        ? 'Press and drag anywhere on the screen to move.'
+        : 'Use the ARROW KEYS to move. WASD works too.'),
       size: 'big', place: 'top', hud: OPENING,
       /* "Let me walk a bit longer on step two before step three opens up."
          Six units is about two seconds of holding a direction — long enough to
@@ -339,12 +339,11 @@ export function buildSteps(t) {
          The old line said WHICH hexes glow and never said why, which left the
          one rule this game turns on — you only collect where you have built —
          to be inferred from a colour. */
-      text: () => {
-        const n = t.workable().length;
-        return `You can only collect from a hex you have built on the corner of. Those are the glowing ones — ${n} of them, each with a gold dot. Walk onto any of them.`;
-      },
+      text: 'You can only collect from a resource hex where you have a settlement on one of its corners. Those are the glowing ones.',
       live: true,
-      size: 'big', place: 'top', hud: OPENING, spot: 'pips',
+      /* The gold dots came off: the glow IS the mark, and a second one on top
+         of it was two answers to the same question. */
+      size: 'big', place: 'top', hud: OPENING, spot: true,
       check: () => t.workable().some(id => t.standingOn(id))
     },
 
@@ -451,7 +450,7 @@ export function buildSteps(t) {
        * know is that the disc on the hex is the reason one comes back faster
        * than another.
        */
-      text: 'The clock over the bare hex is counting it back in. When it runs out, everything returns at once — and the number on the hex is what decides how long that takes.',
+      text: 'Every hex has a countdown once it is cleared. Different numbers take different amounts of time to reset.',
       quiet: 2.5,
       live: true,
       size: 'big', place: 'top', hud: OPENING,
@@ -499,7 +498,7 @@ export function buildSteps(t) {
        * piece of trim now, not a supply meter, so describing it would be
        * teaching a readout that no longer reads anything.
        */
-      text: 'Up in the middle is everything you are carrying: wood, brick, wool, wheat and ore. Run over things on your glowing land and watch the numbers climb.',
+      text: 'In the top middle of the screen is your pack. It shows every resource you have collected.',
       size: 'big', place: 'foot', hud: PACK_LESSON,
       /* "Highlight the pack more, and slightly darken the hexes a bit more —
          but not as much as the fully dark section." Three levels: the pill lit
@@ -552,7 +551,9 @@ export function buildSteps(t) {
       dom: ['.hud-br .cbtn.gold'],
       /* "Just highlight the shape of the build key, not also the pause and map
          button." The step names one control, so it lights one. */
-      spotDom: ['.hud-br .cbtn.gold'], spotGlow: true,
+      /* Raised, so PAUSE and MAP go dark with the island rather than sitting
+         bright beside the one key being named. */
+      spotOverUi: true, spotDom: ['.hud-br .cbtn.gold'], spotGlow: true,
       holdNext: true,
       check: () => buildRowOpen()
     },
@@ -587,7 +588,7 @@ export function buildSteps(t) {
     {
       id: 'road',
       title: 'Build a road',
-      text: `A road costs ${COST.road.wood} wood and ${COST.road.brick} brick — you have plenty. Tap the ROAD card to open the map.`,
+      text: `A road costs ${COST.road.wood} wood and ${COST.road.brick} brick. Tap the ROAD card to open the map.`,
       enter: () => t.give(ROAD_PACK),
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="road"]'],
@@ -646,9 +647,13 @@ export function buildSteps(t) {
       /* The veil came off: it darkened the rail as well, which is the one thing
          this step is pointing at. The wash lights it instead, and it is raised
          above the interface because the rail lives inside the map. */
+      /* The rail is a dark plate, so a hole in the wash only stopped it being
+         dimmed — `spotBright` adds light to it instead. And the player's own
+         pieces are NOT lit here: that is the next step's job.  */
       onMap: 'centre', size: 'big', place: 'centre',
-      hud: MAP_KEEP_RAIL,
-      spotDom: ['.ov-rail'], spotGlow: true, spotMapMine: true, spotMapR: 34
+      hud: MAP_KEEP_RAIL, railOpen: true,
+      spotDom: ['.ov-rail'], spotGlow: true,
+      spotBright: ['.ov-rail'], spotLiftAmt: 0.20
     },
 
     /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
@@ -698,32 +703,12 @@ export function buildSteps(t) {
     {
       id: 'roadplace',
       title: 'Tap it again',
-      text: 'That line is chosen, not built. Tap the SAME line once more to confirm it. Tapping the open sea puts it back.',
+      text: 'That line is chosen, not built. Tap it once more to confirm.',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      spotMapSel: true, spotMapR: 40,
       /* "Force them to click one road and submit it to go to the next step." */
       holdNext: true,
       check: () => me.roads.size > t.base.roads
-    },
-
-    /* 15 ------------------------------------------------- ...AND WATCH IT GO UP
-     *
-     *   "Then close the tutorial steps, show the building of the road animation
-     *    happen, and after it has you can show the next step."
-     *
-     * `quiet` is the whole step: the badge is not shown at all while the map
-     * closes and the road drops into place, and it comes back when the timer
-     * runs out. A card explaining a thing over the top of the thing happening is
-     * the one mistake this rework keeps being asked to stop making.
-     */
-    {
-      id: 'roadbuilt',
-      title: 'Built',
-      text: 'That is a road. It is worth no points on its own — what it does is REACH: every corner your network touches is a corner you may settle.',
-      quiet: 1.9,
-      /* Centred with the screen behind it dark: there is nothing to look at
-         while this is read — the road is already down — so the card may have
-         the display for the two sentences it takes. */
-      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
     /* ------------------------------------------------------- REACH FURTHER
@@ -771,8 +756,9 @@ export function buildSteps(t) {
     {
       id: 'settlerule',
       title: 'Two roads clear',
-      text: 'Only a few corners glow, and that is the rule: a settlement must stand TWO ROADS CLEAR of every other one on the island — rivals’ as well as your own.',
-      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP
+      text: 'A settlement must be at least TWO ROADS away from the nearest settlement or city — anyone’s, not just yours. The glowing corners are the only ones far enough.',
+      onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      spotMapTargets: true, spotMapR: 36
     },
 
     {
@@ -794,7 +780,7 @@ export function buildSteps(t) {
     {
       id: 'settlebuilt',
       title: 'You gained a victory point!',
-      text: 'And new ground with it — every hex touching that corner is yours to collect from now. A settlement is not just a score, it is more land to work.',
+      text: 'And more land to explore with it — every hex touching that corner is yours to collect from now.',
       quiet: 1.9,
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
@@ -806,9 +792,16 @@ export function buildSteps(t) {
      */
     {
       id: 'points',
-      title: 'That is what points are',
-      text: () => `You gather to build, and you build to score. A settlement is 1 point, a city 2, a victory card 1 — first to ${VICTORY_POINTS} wins. You are on ${scoreOf(state, me)}; the standings top right carry everybody’s.`,
-      live: true,
+      title: () => `${VICTORY_POINTS} points wins the game`,
+      /* One fact a line. `.coach-t` keeps its newlines (see `white-space` in
+         tutorial.css), so this is a list without needing a list. */
+      text: [
+        'The current standings are in the top right corner.',
+        '',
+        'Settlement  =  1 victory point',
+        'City  =  2 victory points',
+        'Victory card  =  1 victory point'
+      ].join('\n'),
       /* Centred, and the pack goes with the rest: the step is about the
          standings and nothing else on the screen is being read. */
       size: 'big', place: 'centre', hud: SCORE_NOPACK,
@@ -828,7 +821,7 @@ export function buildSteps(t) {
     {
       id: 'city',
       title: 'Grow it into a city',
-      text: `A city replaces one of your settlements on the same corner and is worth TWO victory points instead of one — so upgrading is worth a whole extra point. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore, and I have just given you the ore. Tap the CITY card.`,
+      text: `A city replaces one of your settlements and is worth TWO victory points instead of one. It costs ${COST.city.wheat} wheat and ${COST.city.ore} ore — the ore is yours. Tap the CITY card.`,
       enter: () => t.give(CITY_PACK),
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="city"]'],
@@ -868,7 +861,7 @@ export function buildSteps(t) {
     {
       id: 'citybuilt',
       title: 'Two points',
-      text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did — what you bought was the point.',
+      text: 'That corner is worth 2 now instead of 1. It collects exactly the same as it did before.',
       quiet: 1.9,
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
@@ -944,6 +937,10 @@ export function buildSteps(t) {
          the player on a sheet with nothing asked for. */
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="wheat"] .tr-arr.up'],
+      /* ...and the card between the arrows comes up a stop so the COLUMN is
+         findable at a glance: "brighten up the middle bar of the resource
+         buttons — it doesn't need a border, just make it brighter." */
+      spotBright: ['.sheet.trade .tr-col[data-res="wheat"] .tr-card'],
       holdNext: true,
       check: () => t.tradeGetting('wheat') > 0
     },
@@ -955,6 +952,7 @@ export function buildSteps(t) {
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="wood"] .tr-arr.dn'],
+      spotBright: ['.sheet.trade .tr-col[data-res="wood"] .tr-card'],
       holdNext: true,
       check: () => t.tradeGiving('wood') >= TRADE_BASE
     },
@@ -966,6 +964,10 @@ export function buildSteps(t) {
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .sheet-foot .btn'],
+      spotBright: [
+        '.sheet.trade .tr-col[data-res="wheat"] .tr-card',
+        '.sheet.trade .tr-col[data-res="wood"] .tr-card'
+      ],
       holdNext: true,
       check: () => me.stats.traded > t.base.traded
     },
@@ -982,6 +984,10 @@ export function buildSteps(t) {
       spotDom: [
         '.sheet.trade .tr-col[data-res="wheat"] .tr-count',
         '.sheet.trade .tr-col[data-res="wood"] .tr-count'
+      ],
+      spotBright: [
+        '.sheet.trade .tr-col[data-res="wheat"] .tr-card',
+        '.sheet.trade .tr-col[data-res="wood"] .tr-card'
       ]
     },
 
@@ -1006,6 +1012,7 @@ export function buildSteps(t) {
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="ore"] .tr-arr.up'],
+      spotBright: ['.sheet.trade .tr-col[data-res="ore"] .tr-card'],
       holdNext: true,
       check: () => t.tradeGetting('ore') >= 4
     },
@@ -1017,8 +1024,20 @@ export function buildSteps(t) {
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="brick"] .tr-card'],
+      spotBright: ['.sheet.trade .tr-col[data-res="brick"] .tr-card'],
       holdNext: true,
-      check: () => t.tradeGiving('brick') >= TRADE_BASE * 4
+      /* ANY brick on the bill, not the full sixteen.
+       *
+       *   "When I press the brick button it should then highlight the trade
+       *    button and add a step to complete the trade. Right now it's getting
+       *    stuck so I can't see the next button."
+       *
+       * It was waiting for `>= 16`, and the card pays what the sheet decides it
+       * owes — which is not sixteen if the ask was not exactly four, and is not
+       * readable at all if the column renders the figure any other way. The
+       * step is teaching the PRESS; one brick on the bill proves it happened,
+       * and the step after it is the one that finishes the trade. */
+      check: () => t.tradeGiving('brick') > 0
     },
 
     {

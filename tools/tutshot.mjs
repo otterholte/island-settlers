@@ -547,7 +547,7 @@ const TOP_STEPS = ['walk', 'land', 'collect', 'sweep', 'rest', 'buildkey', 'road
    the two steps that point at the bottom-right corner, and up from the road on. */
 const PACK_OFF = ['hello', 'walk', 'land', 'collect', 'sweep', 'rest',
   'buildkey', 'road'];
-const PACK_ON = ['pack', 'roadbuilt', 'points', 'settle', 'city', 'market',
+const PACK_ON = ['pack', 'settle', 'city', 'market',
   'trade', 'cards', 'knight', 'roadcard', 'vpcard', 'awards', 'done'];
 /* The five that stand in the map's own right-hand column. */
 const MAP_STEPS = ['roadmapmove', 'roadmapmine', 'roadmappick', 'roadplace'];
@@ -639,7 +639,7 @@ console.log('  WARDROBE ' + JSON.stringify({
     PACK_ON.every(id => at(id) && at(id).pack === true),
   theStandingsAreOnlyUpWhereTheScriptAsks:
     idsOf(rows.filter(r => r.ranks)).join(',')
-      === 'roadbuilt,points,knight,roadcard,vpcard,awards,awards2,awards3,done',
+      === 'settlebuilt,points,citybuilt,tradewhy,knight,roadcard,awards,awards2,awards3,done',
   theBuildCardsAreHiddenForTheScoreLesson:
     !!atOpen('points') && atOpen('points').buildCards === false,
   andForTheClosingCardToo: !!atOpen('done') && atOpen('done').buildCards === false,

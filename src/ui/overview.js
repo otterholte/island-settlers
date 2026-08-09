@@ -1976,6 +1976,20 @@ export function createOverview(root, state, game) {
       };
     },
     resetView() { return pan.reset(true); },
+    /**
+     * Open or close the player rail from outside.
+     *
+     * The practice run has a step whose whole subject is that rail — "on the
+     * right side are the four settlers and the colour each one builds in" — and
+     * on a compact screen the rail defaults CLOSED, so the step was pointing at
+     * a 30px strip of pips that was not what it described. `setRail` was already
+     * here for the rail's own key; this exposes it so a lesson can put the
+     * surface into the state it is about to talk about. It sets `railChosen`
+     * exactly as a tap does, which is right: the player is being shown the rail,
+     * and it should stay shown afterwards.
+     */
+    setRail(open) { setRail(!!open); return railOpen; },
+    get railOpen() { return railOpen; },
     select, commit,
     destroy() {
       pan.destroy();

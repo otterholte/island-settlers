@@ -694,12 +694,29 @@ export function createTutorial(state, game, deps = {}) {
 
   /** Screen position and size of whatever the current step is pointing at. */
   function markerFor(step) {
+    /*
+     * A RING ON SOMETHING NOBODY CAN SEE IS A RING POINTING AT NOTHING.
+     *
+     *   "When I click the road button then the map opens up, the yellow circle
+     *    is still visible when it should be hidden."
+     *
+     * The build cards do not go anywhere when the placement map opens — they
+     * are simply behind it — so `document.querySelector` went on finding the
+     * ROAD card, and the ring went on hovering over a full-screen surface with
+     * nothing underneath it. The ring is only allowed on something that is on
+     * top: while the map or a sheet owns the display, the target has to be
+     * INSIDE that surface or there is no ring at all.
+     */
+    const overlay = (g.overview && g.overview.isOpen) ? document.querySelector('.ov')
+      : ((g.panels && g.panels.isOpen) ? document.querySelector('.panels') : null);
+
     const sel = typeof step.dom === 'function' ? step.dom() : step.dom;
     if (sel && sel.length) {
       for (const s of sel) {
         let n = null;
         try { n = document.querySelector(s); } catch (e) { n = null; }
         if (!n) continue;
+        if (overlay && !overlay.contains(n)) continue;
         const r = n.getBoundingClientRect();
         if (r.width < 3 || r.height < 3) continue;
         return {
@@ -766,7 +783,7 @@ export function createTutorial(state, game, deps = {}) {
     if (!step) return null;
     if (!step.spot && !step.spotDom && !step.spotMe && !step.spotWorld
       && !step.spotWorldMany && !step.spotMapTargets && !step.spotMapMine
-      && !step.spotOverUi) {
+      && !step.spotOverUi && !step.spotBright && !step.spotMapSel) {
       return null;
     }
     const holes = [], pips = [], rects = [];
@@ -785,7 +802,15 @@ export function createTutorial(state, game, deps = {}) {
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
     if (domSel) for (const s of domSel) {
       const r = domRect(s);
-      if (r) { r.glow = !!step.spotGlow; rects.push(r); }
+      if (r) { r.glow = !!step.spotGlow; r.lift = step.spotLift || false; rects.push(r); }
+    }
+    /* A second list, for controls that want to be BRIGHTER rather than ringed —
+       a dark plate cannot be lit by a hole in a wash. See `lift` in tutspot.js. */
+    const liftSel = typeof step.spotBright === 'function'
+      ? step.spotBright() : step.spotBright;
+    if (liftSel) for (const s of liftSel) {
+      const r = domRect(s);
+      if (r) { r.glow = false; r.lift = step.spotLiftAmt || true; rects.push(r); }
     }
 
     /*
@@ -858,6 +883,17 @@ export function createTutorial(state, game, deps = {}) {
      * offset, so its coordinates are shifted into screen space here before they
      * are any use to a wash that covers everything.
      */
+    /* Just the ONE that is armed: "keep the road you clicked once be the one
+       thing highlighted while the rest is dark". */
+    if (step.spotMapSel) {
+      const m = g.overview && g.overview.metrics;
+      const cv0 = document.querySelector('.ov-cv');
+      const b0 = cv0 && cv0.getBoundingClientRect ? cv0.getBoundingClientRect() : null;
+      if (b0 && m && m.selXY) {
+        holes.push({ x: b0.left + m.selXY[0], y: b0.top + m.selXY[1], r: step.spotMapR || 44 });
+      }
+    }
+
     const wants = step.spotMapTargets ? 'targetsXY'
       : (step.spotMapMine ? 'minePieceXY' : null);
     if (wants) {
@@ -984,6 +1020,9 @@ export function createTutorial(state, game, deps = {}) {
   /* ------------------------------------------------------------ stepping */
 
   const textOf = step => (typeof step.text === 'function' ? step.text() : step.text);
+  /* A title may be a function for the same reason a body may: one of them wants
+     a constant read out of core/constants.js rather than typed twice. */
+  const titleOf = t0 => (typeof t0 === 'function' ? t0() : t0);
 
   /** Which size and place the badge should be in RIGHT NOW, step and screen. */
   function chromeFor(step) {
@@ -1085,6 +1124,13 @@ export function createTutorial(state, game, deps = {}) {
     }
     applyHud(step);
 
+    /* A step that is ABOUT the player rail has to have the rail open. On a
+       compact screen it defaults closed, so the lesson was describing a column
+       that was not on screen. See `setRail` in overview.js. */
+    if (step.railOpen && g.overview && g.overview.setRail) {
+      try { g.overview.setRail(true); } catch (e) { /* silent */ }
+    }
+
     const brief = phase === 'brief' && step.brief;
     // Only a check that is false RIGHT NOW may carry this step. See `armed`.
     armed = phase === 'body' && !!step.check && !safeCheck(step);
@@ -1108,7 +1154,7 @@ export function createTutorial(state, game, deps = {}) {
     coach.show({
       n: idx + 1,
       of: steps.length,
-      title: brief ? step.brief.title : step.title,
+      title: titleOf(brief ? step.brief.title : step.title),
       text: brief ? step.brief.text : textOf(step),
       /* The brief's key is always OK — it is dismissing an explanation, not
          completing a task — and the body's is the step's own verb, if it has
@@ -1214,7 +1260,8 @@ export function createTutorial(state, game, deps = {}) {
        * The map steps raise it for the same reason — the map is inside `#ui`
        * too — so they do not have to say so twice. */
       if (spot.over) {
-        spot.over(!!(step.spotMapTargets || step.spotMapMine || step.spotOverUi));
+        spot.over(!!(step.spotMapTargets || step.spotMapMine
+          || step.spotMapSel || step.spotOverUi || step.spotBright));
       }
       spot.set(spotShape(step), dt);
     }
