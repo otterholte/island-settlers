@@ -259,8 +259,12 @@ export function createSpotlight(app) {
       ctx.beginPath();
       roundRect(ctx, b.x - w2 / 2, b.y - h2 / 2, w2, h2, rad);
       ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(255,201,60,.92)';
-      ctx.shadowColor = 'rgba(255,201,60,.7)';
+      /* Gold by default, because gold is what this interface uses to mean
+         "here". White where the thing being ringed is a NUMBER that just
+         changed — a gold border round a gold-ish numeral says nothing. */
+      const white = b.glow === 'white';
+      ctx.strokeStyle = white ? 'rgba(255,255,255,.95)' : 'rgba(255,201,60,.92)';
+      ctx.shadowColor = white ? 'rgba(255,255,255,.75)' : 'rgba(255,201,60,.7)';
       ctx.shadowBlur = 14;
       ctx.stroke();
       ctx.restore();

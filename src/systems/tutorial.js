@@ -623,6 +623,20 @@ export function createTutorial(state, game, deps = {}) {
   const tradeGiving = res => tradeCount(res, 'giving');
 
   /**
+   * Shut whatever sheet is open, for a step that is about to take the screen.
+   *
+   *   "After I completed that bulk trade the trade popup is still there, but
+   *    everything is dark and I can't press anything."
+   *
+   * Half of that was the veil outliving its card (see `show` in ui/tutorial.js);
+   * the other half is that the trading post has no reason to still be standing
+   * once the lesson has moved on from it.
+   */
+  function closeSheet() {
+    try { if (g.panels && g.panels.close) g.panels.close(); } catch (e) { /* silent */ }
+  }
+
+  /**
    * Load the deck for the three card lessons.
    *
    *   "I want the order of these to be specific: first is a victory point ...
@@ -685,7 +699,7 @@ export function createTutorial(state, game, deps = {}) {
     topUp, give, tileCentre, itemOnHome, standingOn,
     sweptAny, sweepTile, restTile, hexLoad,
     mapMoved, roadArmed, placeArmed, myPieces,
-    tradeGetting, tradeGiving, scriptDeck,
+    tradeGetting, tradeGiving, scriptDeck, closeSheet,
     fakeAwards, clearFakeAwards,
     restart: () => restart()
   };
@@ -802,7 +816,7 @@ export function createTutorial(state, game, deps = {}) {
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
     if (domSel) for (const s of domSel) {
       const r = domRect(s);
-      if (r) { r.glow = !!step.spotGlow; r.lift = step.spotLift || false; rects.push(r); }
+      if (r) { r.glow = step.spotGlow || false; r.lift = step.spotLift || false; rects.push(r); }
     }
     /* A second list, for controls that want to be BRIGHTER rather than ringed —
        a dark plate cannot be lit by a hole in a wash. See `lift` in tutspot.js. */

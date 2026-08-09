@@ -533,6 +533,7 @@ export function createCoach(root) {
   root.appendChild(layer);
 
   let shown = false;
+  let wantVeil = false;
   let size = 'big', place = 'top';
 
   /** Put the card in one of the three sizes and one of the three places. */
@@ -556,6 +557,19 @@ export function createCoach(root) {
        the litter the GONE size exists to prevent. */
     toggle(quitBtn, 'on', shown && size !== 'gone'
       && !layer.classList.contains('tut-noquit'));
+    /* THE VEIL GOES WITH THE CARD, ALWAYS.
+     *
+     *   "After I completed that bulk trade the trade popup is still there, but
+     *    everything is dark and I can't press anything and I can't see the next
+     *    step."
+     *
+     * That is this, exactly. The veil was raised in `show()` and the card was
+     * hidden a moment later by `chrome()` — GONE is what a step wears while a
+     * full-screen sheet owns the display — so the screen kept a black layer
+     * that swallows taps with nothing on top of it to explain itself or to
+     * dismiss it. A veil is the card's own backdrop and has no business
+     * outliving it by even a frame. */
+    toggle(veil, 'on', shown && wantVeil && size !== 'gone');
   }
 
   function show(info) {
@@ -584,7 +598,7 @@ export function createCoach(root) {
       : 'Skip this step and go on');
 
     shown = true;
-    toggle(veil, 'on', !!o.veil);
+    wantVeil = !!o.veil;
     chrome(o.size, o.place);
     // Same reasoning as `show()` above: the coach card is the thing the player
     // reads on every step, and a step whose words arrive a frame late on a
@@ -631,6 +645,7 @@ export function createCoach(root) {
 
   function hide() {
     shown = false;
+    wantVeil = false;
     toggle(card, 'on', false);
     toggle(mark, 'on', false);
     toggle(veil, 'on', false);

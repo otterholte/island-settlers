@@ -3,7 +3,7 @@
  *
  *   buildSteps(t) -> [ step, step, ... ]
  *
- * The twenty-two things the guided run says, in the order somebody who has
+ * The forty-odd things the guided run says, in the order somebody who has
  * never played needs them. It is a DATA file: it owns no timers, no DOM and no
  * rules — `t` is the small toolkit systems/tutorial.js hands in (the match, the
  * board helpers, the pack top-up), and that module does all the driving. It
@@ -40,11 +40,11 @@
  *   enter            run once as the step comes up (the pack top-ups).
  *   skipIf           true means this step has nothing to teach today.
  *
- * WHICH STEP IS WHICH. Three numbers in the owner's notes are load-bearing —
- * "for step 3", "for step 7", "for step 11" — so the running order below is
- * pinned to them: 3 is the glowing land, 7 is the pack (and the move to the
- * bottom of the screen), 11 is the score. Anything inserted has to keep those
- * three where they are.
+ * WHICH STEP IS WHICH. The owner's notes name steps by NUMBER and the numbers
+ * move every time one is inserted, so nothing here is pinned to an ordinal and
+ * nothing should be: `id` is the stable name for a step, and tools/tutshot.mjs
+ * asserts against ids for exactly that reason. When a note says "step 19", find
+ * it by counting the list below once — do not try to keep the count true.
  *
  * Owner: Tutorial (flow) agent.
  */
@@ -69,10 +69,6 @@ const WITH_PACK = { pack: true };
    so the instruction box can actually sit on the bottom without covering it." */
 const PACK_LESSON = { pack: true, nobuild: true, nokeysPhone: true };
 /* The map-open steps. The pack stays up — it is what the costs are paid out of
-   — and END PRACTICE stands down, because the chip sits in the top-right corner
-   the map's own controls are using. `norail` is not listed: `onMap` implies it
-   (see applyHud), so a step cannot ask for the column and forget to clear it. */
-/* The map-open steps. The pack stays up — it is what the costs are paid out of
    — END PRACTICE stands down because its chip sits where the map's own controls
    are, and the build cards stand down so that the DECLARED place below is
    habitable. That place is the OFF-MAP fallback: `chromeFor` moves these cards
@@ -86,15 +82,16 @@ const MAP_KEEP_RAIL = { pack: true, noquit: true };
 /* After the road lands: the standings come up and the bottom bar is empty, so
    the closing card can sit as low as the score lesson's. */
 const SCORING_NOKEYS = { pack: true, ranks: true, nobuild: true };
-/* The score lesson. Everything in the corners stands down so the standings are
-   the only lit thing on the screen — including END PRACTICE, which is a cream
-   chip a thumb's width from the counter being pointed at. */
-/* ...and the same again with the pack away, for the steps that are about one
+/* ...the score lesson, with the pack away, for the steps that are about one
    corner of the screen and do not want a second bright thing in another.
    "I don't need the My Pack section highlighted." */
 const SCORE_NOPACK = {
   ranks: true, nobuild: true, nokeys: true, noquit: true
 };
+/* ...and with it, for the steps that read a cost while they read a score.
+   Everything in the corners stands down either way so the standings are the
+   only lit thing — END PRACTICE included, being a cream chip a thumb's width
+   from the counter being pointed at. */
 const SCORE_LESSON = {
   pack: true, ranks: true, nobuild: true, nokeys: true, noquit: true
 };
@@ -194,13 +191,13 @@ export function buildSteps(t) {
   };
   const cardsHeld = () => me.cards.length + (me.vpCards | 0);
 
-  /* The player's own seat colour, named rather than shown, because the step
+  /* The player's own seat color, named rather than shown, because the step
      that introduces the rail is read before the rail is looked at:
      "your color is blue". Read off the seat rather than hard-coded, so it
      cannot drift if the palette or the seat order ever changes. */
-  const myColourName = () => (me.color && me.color.key)
+  const myColorName = () => (me.color && me.color.key)
     ? String(me.color.key).toLowerCase()
-    : 'your colour';
+    : 'your color';
 
   /**
    * Where the ring goes while a trade is being made.
@@ -338,7 +335,7 @@ export function buildSteps(t) {
 
          The old line said WHICH hexes glow and never said why, which left the
          one rule this game turns on — you only collect where you have built —
-         to be inferred from a colour. */
+         to be inferred from a color. */
       text: 'You can only collect from a resource hex where you have a settlement on one of its corners. Those are the glowing ones.',
       live: true,
       /* The gold dots came off: the glow IS the mark, and a second one on top
@@ -365,8 +362,9 @@ export function buildSteps(t) {
        * which it usually will.
        */
       text: 'Everything growing on a hex you own is yours. Walk over it — no tapping, no waiting. Clear all of the items off one hex.',
+      /* No ring: the wash already says which hexes, and pointing at ONE item
+         on one of them is a smaller instruction than the step is giving. */
       size: 'big', place: 'top', hud: OPENING, spot: true,
-      world: () => t.itemOnHome(),
       check: () => t.sweptAny()
         || me.stats.gathered - t.base.gathered >= t.hexLoad()
     },
@@ -450,7 +448,7 @@ export function buildSteps(t) {
        * know is that the disc on the hex is the reason one comes back faster
        * than another.
        */
-      text: 'Every hex has a countdown once it is cleared. Different numbers take different amounts of time to reset.',
+      text: 'Every hex has a countdown, and different numbered hexes take different amounts of time to reset.',
       quiet: 2.5,
       live: true,
       size: 'big', place: 'top', hud: OPENING,
@@ -553,7 +551,12 @@ export function buildSteps(t) {
          button." The step names one control, so it lights one. */
       /* Raised, so PAUSE and MAP go dark with the island rather than sitting
          bright beside the one key being named. */
-      spotOverUi: true, spotDom: ['.hud-br .cbtn.gold'], spotGlow: true,
+      /* The ring names it; the box was a second answer to the same question.
+         What the key needed instead was to stop being DARK — it is a plate like
+         any other and the raised wash was sitting on it. Hole plus lift, no
+         border. */
+      spotOverUi: true, spotDom: ['.hud-br .cbtn.gold'],
+      spotBright: ['.hud-br .cbtn.gold'], spotLiftAmt: 0.22,
       holdNext: true,
       check: () => buildRowOpen()
     },
@@ -643,7 +646,7 @@ export function buildSteps(t) {
     {
       id: 'roadmapwho',
       title: 'Who else is here',
-      text: () => `On the right side are the four settlers and the colour each one builds in. You are ${myColourName()} — every road and settlement in that colour is yours.`,
+      text: () => `On the right side are the four settlers and the color each one builds in. You are ${myColorName()} — every road and settlement in that color is yours.`,
       /* The veil came off: it darkened the rail as well, which is the one thing
          this step is pointing at. The wash lights it instead, and it is raised
          above the interface because the rail lives inside the map. */
@@ -651,9 +654,13 @@ export function buildSteps(t) {
          dimmed — `spotBright` adds light to it instead. And the player's own
          pieces are NOT lit here: that is the next step's job.  */
       onMap: 'centre', size: 'big', place: 'centre',
+      /* "I don't need it darkened then artificially lightened, I just need
+         that part not darkened in the first place." So: a hole, at full
+         strength, and nothing else on top of it. The lift made it read flat
+         because it was adding light to something that had already lost its
+         own. */
       hud: MAP_KEEP_RAIL, railOpen: true,
-      spotDom: ['.ov-rail'], spotGlow: true,
-      spotBright: ['.ov-rail'], spotLiftAmt: 0.20
+      spotDom: ['.ov-rail']
     },
 
     /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
@@ -667,7 +674,7 @@ export function buildSteps(t) {
     {
       id: 'roadmapmine',
       title: 'These are yours',
-      text: () => `The ${myColourName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
+      text: () => `The ${myColorName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
       /* "Darken everything that isn't my own settlements and roads." Read off
          the map's own projection, roads included — see `minePieceXY`. */
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
@@ -758,13 +765,17 @@ export function buildSteps(t) {
       title: 'Two roads clear',
       text: 'A settlement must be at least TWO ROADS away from the nearest settlement or city — anyone’s, not just yours. The glowing corners are the only ones far enough.',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
-      spotMapTargets: true, spotMapR: 36
+      spotMapTargets: true, spotMapR: 36,
+      /* Tapping a corner while this is up means the rule has been read and the
+         player is already ahead of it — carry them straight to the confirm. */
+      check: () => t.placeArmed() || me.settlements.size > t.base.settlements
     },
 
     {
       id: 'settlepick',
       title: 'Pick a corner',
       text: 'Tap one of the glowing corners.',
+      skipIf: () => t.placeArmed(),
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
       check: () => t.placeArmed() || me.settlements.size > t.base.settlements
     },
@@ -799,8 +810,7 @@ export function buildSteps(t) {
         'The current standings are in the top right corner.',
         '',
         'Settlement  =  1 victory point',
-        'City  =  2 victory points',
-        'Victory card  =  1 victory point'
+        'City  =  2 victory points'
       ].join('\n'),
       /* Centred, and the pack goes with the rest: the step is about the
          standings and nothing else on the screen is being read. */
@@ -978,9 +988,10 @@ export function buildSteps(t) {
     {
       id: 'tradedone',
       title: 'Look what moved',
-      text: `Wheat went up by 1. Wood went down by ${TRADE_BASE}. That is the whole trade — four of something you had, for one of something you did not.`,
+      text: `Wheat is up by 1, wood is down by ${TRADE_BASE}.`,
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
-      spotOverUi: true, spotGlow: true,
+      /* White, not gold: a gold ring round a gold numeral says nothing. */
+      spotOverUi: true, spotGlow: 'white',
       spotDom: [
         '.sheet.trade .tr-col[data-res="wheat"] .tr-count',
         '.sheet.trade .tr-col[data-res="wood"] .tr-count'
@@ -1006,7 +1017,7 @@ export function buildSteps(t) {
      */
     {
       id: 'bulkask',
-      title: 'Now ask for four',
+      title: 'Bulk trading',
       text: 'Tap the UP arrow over ORE four times. The brown band underneath counts what it will cost you.',
       enter: () => t.give(TRADE_PACK),
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
@@ -1020,7 +1031,7 @@ export function buildSteps(t) {
     {
       id: 'bulkpay',
       title: 'Pay it in one press',
-      text: 'Instead of sixteen taps on an arrow: press the BRICK card itself, between its two arrows. It pays the whole bill out of that one pile.',
+      text: 'Instead of multiple taps on an arrow: press the BRICK card itself, between its two arrows. It pays the whole bill out of that one pile.',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .tr-col[data-res="brick"] .tr-card'],
@@ -1043,7 +1054,7 @@ export function buildSteps(t) {
     {
       id: 'bulkgo',
       title: 'And take it',
-      text: 'Four ore for sixteen brick, in three presses. Press TRADE.',
+      text: 'Four ore, paid in brick, in three presses. Press TRADE.',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
       spotDom: ['.sheet.trade .sheet-foot .btn'],
@@ -1058,6 +1069,10 @@ export function buildSteps(t) {
     {
       id: 'tradewhy',
       title: 'Why that mattered',
+      /* Shut the post on the way out. This card takes the whole screen behind a
+         veil, and a trade sheet still standing under it is a surface nobody can
+         reach and nobody was told about. */
+      enter: () => t.closeSheet(),
       text: 'If you cannot collect from a wheat hex, trading is the only way to get wheat — and without it you cannot build the settlements and cities that score. The post is how you buy what your own land does not grow.',
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
