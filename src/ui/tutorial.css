@@ -441,9 +441,12 @@
   border:2.5px solid #5a3a1e;
   box-shadow:inset 0 2px 0 rgba(255,255,255,.75),0 3px 0 rgba(90,58,30,.45);
 }
-.coach-step b{font:800 19px/1 var(--ff);color:#3a2208}
-.coach-step u{font:700 6.5px/1 var(--ff);text-decoration:none;letter-spacing:.1em;
-  text-transform:uppercase;color:#7a5228}
+/* "1a", "3d". Two or three characters where a running count used to be, so the
+   type comes down a little and the chapter's name gets the line under it. */
+.coach-step b{font:800 16px/1 var(--ff);color:#3a2208;letter-spacing:.01em}
+.coach-step u{font:700 6.5px/1 var(--ff);text-decoration:none;letter-spacing:.08em;
+  text-transform:uppercase;color:#7a5228;max-width:44px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}
 
 .coach-body{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px}
 .coach-h{
@@ -475,6 +478,18 @@
   font-size:10.5px !important}
 .coach-acts .btn.off{opacity:.34;filter:saturate(.5)}
 .coach-act{flex:0 0 auto}
+/* The closing card's second key. Cream, because PLAY A MATCH leaves the island
+   and FREE ROAM stays on it — the green one is the one that keeps you here. */
+.coach-act2{flex:0 0 auto;--f1:#f3ebd8;--f2:#ddcdaa;--f3:#c8b68f;--lip:#9a8460;
+  --fg:#4a3a20;font-size:10.5px !important}
+.coach-act2.hid{display:none !important}
+/* Two verbs plus BACK and NEXT is four keys, which will not go across a card
+   laid out as a row — the body ends up a column of single words. The closing
+   card stacks: words first, then the keys along the bottom. */
+.coach-card.twoacts{flex-direction:column;align-items:stretch;gap:9px}
+.coach-card.twoacts .coach-main{width:100%}
+.coach-card.twoacts .coach-acts{width:100%;justify-content:flex-end}
+.coach-card.slim .coach-act2{display:none}
 
 /* --- SLIM: what is left after OK ------------------------------------------
      "then they click okay, then just keep the highlight of what they're

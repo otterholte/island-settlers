@@ -717,7 +717,8 @@ export function createTutorial(state, game, deps = {}) {
     mapMoved, roadArmed, placeArmed, myPieces,
     tradeGetting, tradeGiving, scriptDeck, closeSheet,
     fakeAwards, clearFakeAwards,
-    restart: () => restart()
+    restart: () => restart(),
+    roam: () => roam()
   };
 
   /* ---------------------------------------------------------- the marker */
@@ -1298,6 +1299,8 @@ export function createTutorial(state, game, deps = {}) {
     coach.show({
       n: idx + 1,
       of: steps.length,
+      label: step.label,
+      tag: step.chapterTag,
       title: titleOf(brief ? step.brief.title : step.title),
       text: brief ? step.brief.text : textOf(step),
       /* The brief's key is always OK — it is dismissing an explanation, not
@@ -1308,6 +1311,8 @@ export function createTutorial(state, game, deps = {}) {
       onAction: brief
         ? () => { phase = 'body'; present(); }
         : (step.onAction || (() => advance(1))),
+      action2: brief ? null : (step.action2 || null),
+      onAction2: brief ? null : (step.onAction2 || null),
       onBack: () => back(),
       onNext: () => advance(1, true),
       canBack: idx > 0 || phase === 'brief',
@@ -1504,6 +1509,43 @@ export function createTutorial(state, game, deps = {}) {
     lastMs = 0;
     present();
     if (!raf) raf = requestAnimationFrame(tick);
+  }
+
+  /**
+   * Put the coach away and leave the player standing on the island.
+   *
+   *   "Let them have the option, when the tutorial is done, to roam around on
+   *    freeplay getting the feel for the game with the opponents still frozen,
+   *    or to go to the menu to play a real game."
+   *
+   * Deliberately NOT `quit()`. Quit is for leaving the practice: it hands the
+   * match's pacing beats and its stalemate cap back, which is right when the
+   * player is going somewhere else and wrong when they are staying here. Free
+   * roam keeps every one of the run's conditions — `deps.setPractice` stays
+   * true so no clock runs out, and the rivals stay frozen because
+   * `freezeRivals` swapped `bots.update` for a no-op at the start and nothing
+   * puts it back — and only takes the chrome away.
+   *
+   * The wardrobe IS cleared, because from here on the player wants the whole
+   * interface a real match would give them.
+   */
+  function roam() {
+    if (!running) return;
+    running = false;
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (coach) coach.hide();
+    if (spot) { spot.clear(); if (spot.over) spot.over(false); }
+    clearFakeAwards();
+    clearDeck();
+    clearHud();
+    const row = document.querySelector('.build-row');
+    if (row) toggle(row, 'hid', false);
+    try {
+      if (g.toast) {
+        g.toast('Free roam — the other three are still standing still. '
+          + 'Use the gear to leave when you are ready.');
+      }
+    } catch (e) { /* silent */ }
   }
 
   /** Leave the practice and start a real match: a fresh island, fresh rivals. */

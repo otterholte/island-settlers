@@ -174,6 +174,57 @@ const AWARD_LESSON = {
    build cards stand down so the closing badge can sit as low as step 11's. */
 const DONE = { pack: true, ranks: true, awards: true, nobuild: true };
 
+/* ============================================================ THE CHAPTERS
+ *
+ *   "Simplify the steps, since 43 is overwhelming. Split it into 1a, 2c, 5b
+ *    etc., grouping them into things like picking up resources, building a
+ *    road, building settlements, building a city, trading, development cards,
+ *    conclusion."
+ *
+ * "STEP 31 OF 50" is a true number and a discouraging one: it tells a player
+ * how much is left and nothing about what they are doing. "3d · ROADS" tells
+ * them they are four cards into a chapter about roads, which is a thing a
+ * person can hold in their head — and the chapter ends, visibly, which is the
+ * part that makes a long run feel finite.
+ *
+ * Listed by the id each chapter STARTS on rather than by count, so inserting a
+ * step in the middle of one costs nothing: the chapter it lands in is decided
+ * by where it sits, not by a number anybody has to keep true. `tag` is what
+ * fits under the badge's letter at 6.5px.
+ */
+const CHAPTERS = [
+  { at: 'hello',        n: 1, tag: 'Start',  name: 'Getting started' },
+  { at: 'land',         n: 2, tag: 'Gather', name: 'Picking up resources' },
+  { at: 'buildkey',     n: 3, tag: 'Roads',  name: 'Building a road' },
+  { at: 'reach',        n: 4, tag: 'Settle', name: 'Building settlements' },
+  { at: 'city',         n: 5, tag: 'Cities', name: 'Building a city' },
+  { at: 'market',       n: 6, tag: 'Trade',  name: 'Trading' },
+  { at: 'cards',        n: 7, tag: 'Cards',  name: 'Development cards' },
+  { at: 'awards',       n: 8, tag: 'Bonus',  name: 'Points you never build' },
+  { at: 'done',         n: 9, tag: 'Done',   name: 'Conclusion' }
+];
+
+/** a, b, c ... and then a2, b2 for a chapter longer than the alphabet. */
+function letterFor(i) {
+  const a = String.fromCharCode(97 + (i % 26));
+  return i < 26 ? a : a + (Math.floor(i / 26) + 1);
+}
+
+/** Stamp `chapter`, `label` and `chapterName` onto each step, in place. */
+function paginate(steps) {
+  let chap = CHAPTERS[0], within = 0;
+  for (const step of steps) {
+    const start = CHAPTERS.find(c => c.at === step.id);
+    if (start) { chap = start; within = 0; }
+    step.chapter = chap.n;
+    step.chapterTag = chap.tag;
+    step.chapterName = chap.name;
+    step.label = `${chap.n}${letterFor(within)}`;
+    within++;
+  }
+  return steps;
+}
+
 export function buildSteps(t) {
   const { state, me, game } = t;
 
@@ -227,7 +278,7 @@ export function buildSteps(t) {
     return ['.sheet.trade .tr-cap.give'];
   };
 
-  return [
+  return paginate([
     /* 1 ------------------------------------------------ THE ONE THAT STOPS YOU
      *
      *   "For step 1 the popup should actually be in the middle of the screen
@@ -1237,7 +1288,64 @@ export function buildSteps(t) {
       check: () => state.robberTile !== DESERT.id
     },
 
-    /* 22 ----------------------------------------------------------------- */
+    /* ------------------------------------------------------- THE TWO AWARDS
+     *
+     *   "Darken the screen again except for the longest road and largest army
+     *    counter in the top left corner. Make the popup instruction explaining
+     *    it use multiple slides and be extra clear. Even if the longest road and
+     *    largest army haven't been claimed, we're artificially adding in numbers
+     *    so you see that you have a 3 road streak and the longest is at 5, and
+     *    you've played 3 knights and that's the biggest."
+     *
+     * Three slides over a board worth reading. In a practice run the card says
+     * `0 > -` on both lines — the rivals are frozen and the player has laid two
+     * roads — which is a gauge with the needle at zero. So the run writes real
+     * numbers into `state`: one award you are chasing and one you already hold,
+     * because those are the two states the card has and both need reading. Taken
+     * back off at the closing step and on quit.
+     */
+    {
+      id: 'awards',
+      title: 'Points you never build',
+      brief: {
+        title: 'Two more ways to score',
+        text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard, top left. I have put some numbers on them so there is something to read.`
+      },
+      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 3 against 5 means three more takes it.`,
+      enter: () => t.fakeAwards(),
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
+    },
+
+    {
+      id: 'awards2',
+      title: 'Largest Army',
+      text: `LARGEST ARMY: ${LARGEST_ARMY_VP} points for ${LARGEST_ARMY_MIN}+ Knights PLAYED, not held. You are on 3 and nobody has beaten it, so the line reads YOURS and those points are already in your score.`,
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
+    },
+
+    {
+      id: 'awards3',
+      title: 'They can be taken',
+      text: 'Neither is yours to keep. The moment a rival lays a longer line or plays one more Knight, the points move to them.',
+      size: 'big', place: 'foot', hud: AWARD_LESSON,
+      spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']
+    },
+
+    /* --------------------------------------------------------- TWO WAYS OUT
+     *
+     *   "Then let them have the option, when the tutorial is done, to roam
+     *    around on freeplay getting the feel for the game with the opponents
+     *    still frozen — or to go to the menu to play a real game."
+     *
+     * The run used to end on one green key that reloaded the page, which is a
+     * strange thing to offer somebody who has just been told the whole game and
+     * might reasonably want to stand on the island for a minute and try it
+     * without three rivals racing them. FREE ROAM keeps everything the practice
+     * run set up — frozen rivals, no clock, no stalemate cap — and simply takes
+     * the coach away; see `roam` in systems/tutorial.js.
+     */
     {
       id: 'done',
       title: 'That is the whole game',
@@ -1245,14 +1353,17 @@ export function buildSteps(t) {
          would have a filled-in card to teach from; nothing invented may survive
          into the match the player is about to be handed. */
       enter: () => t.clearFakeAwards(),
-      text: 'Collect on land you own, build roads to reach more, turn corners into settlements and cities, and trade for what you are short of. Go and win one.',
-      action: 'Play a Match',
-      onAction: () => t.restart(),
+      text: 'Collect on land you own, build roads to reach more, turn corners into settlements and cities, and trade for what you are short of.',
+      text2: 'Take the island for a walk first if you like — the other three stay exactly where they are.',
+      action: 'Free Roam',
+      onAction: () => t.roam(),
+      action2: 'Play a Match',
+      onAction2: () => t.restart(),
       // Everything that was introduced stays introduced: the last thing the
       // player sees is the whole interface a real match will hand them.
       size: 'big', place: 'low', hud: DONE
     }
-  ];
+  ]);
 }
 
 export default buildSteps;

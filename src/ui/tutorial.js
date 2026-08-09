@@ -461,7 +461,7 @@ export function createCoach(root) {
   const body = el('div', { class: 'coach-body' }, headEl, textEl);
   const main = el('div', { class: 'coach-main' }, stepBox, body);
 
-  let onAct = null, onBack = null, onNext = null, onQuit = null;
+  let onAct = null, onAct2 = null, onBack = null, onNext = null, onQuit = null;
 
   /*
    * FORWARD AND BACKWARD, AND THEY ARE THE PAIR.
@@ -493,7 +493,17 @@ export function createCoach(root) {
     on: { click: () => onNext && onNext() }
   }, el('span', { class: 'sb-lab', text: 'Next' }));
 
-  const acts = el('div', { class: 'coach-acts' }, backBtn, actBtn, nextBtn);
+  /* A SECOND GREEN KEY, FOR THE ONE CARD THAT ENDS IN A CHOICE.
+   *
+   *   "Let them have the option, when the tutorial is done, to roam around on
+   *    freeplay ... or to go to the menu to play a real game."
+   *
+   * Only the closing card ever shows it, and it is hidden the rest of the run,
+   * so the nav row is BACK / verb / NEXT everywhere else exactly as before. */
+  const act2Btn = button('cream coach-act2 hid', { on: { click: () => onAct2 && onAct2() } },
+    el('span', { class: 'sb-lab', text: '' }));
+
+  const acts = el('div', { class: 'coach-acts' }, backBtn, actBtn, act2Btn, nextBtn);
 
   const railFill = el('i');
   const rail = el('span', { class: 'coach-rail' }, railFill);
@@ -576,17 +586,27 @@ export function createCoach(root) {
     const o = info || {};
     toggle(layer, 'hid', false);
     toggle(card, 'good', false);
-    setText(stepNum, String(o.n || 1));
-    setText(stepOf, o.of ? `of ${o.of}` : 'Step');
+    /* "1a", "3d" — see CHAPTERS in tutsteps.js — with the chapter's short name
+       under it instead of a running total. A count out of fifty tells a player
+       how much is left and nothing about what they are doing. */
+    setText(stepNum, String(o.label || o.n || 1));
+    setText(stepOf, o.tag || (o.of ? `of ${o.of}` : 'Step'));
     setText(headEl, o.title || '');
     setText(textEl, o.text || '');
 
     onAct = typeof o.onAction === 'function' ? o.onAction : null;
+    onAct2 = typeof o.onAction2 === 'function' ? o.onAction2 : null;
     onBack = typeof o.onBack === 'function' ? o.onBack : null;
     onNext = typeof o.onNext === 'function' ? o.onNext : null;
 
     toggle(actBtn, 'hid', !o.action);
     if (o.action) setText(actBtn.querySelector('.sb-lab'), o.action);
+    toggle(act2Btn, 'hid', !o.action2);
+    if (o.action2) setText(act2Btn.querySelector('.sb-lab'), o.action2);
+    /* Four keys do not fit across a card that is laid out as a row: BACK, two
+       verbs and NEXT leave the words about forty pixels wide. The card stacks
+       instead — body over keys — for the one step that has two. */
+    toggle(card, 'twoacts', !!o.action2);
     toggle(backBtn, 'off', !o.canBack);
     backBtn.disabled = !o.canBack;
     toggle(nextBtn, 'off', !o.canNext);
