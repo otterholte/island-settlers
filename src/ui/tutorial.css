@@ -282,6 +282,45 @@
   50%{transform:translateY(7px)}
 }
 
+/* --- the compass: which way to walk ---------------------------------------
+     "I want just an arrow near the middle of the screen pointing and gesturing
+      which direction I should go to see the city, if it's not already visible
+      on the screen."
+
+   One arm, pinned to the middle of the screen and rotated by JS; the head is
+   pushed out along the arm's own axis, so rotating the arm swings the head
+   round the centre and it always points outward. Nothing to recompute per
+   frame but one angle.
+
+   It sits at 92px out — far enough from the middle not to cover the settler,
+   close enough to read as an instruction rather than as a thing stuck to the
+   edge — and it bobs along its own axis, which reads as "go on, that way"
+   rather than as a static marker. */
+.coach-arrow{
+  position:absolute;left:50%;top:50%;width:0;height:0;
+  transform:translate(-50%,-50%);
+  opacity:0;pointer-events:none;
+  transition:opacity .25s ease,transform .3s cubic-bezier(.2,1,.35,1);
+}
+.coach-arrow.on{opacity:1}
+.coach-arrow-h{
+  position:absolute;left:92px;top:0;width:0;height:0;
+  margin:-17px 0 0 0;
+  border-top:17px solid transparent;
+  border-bottom:17px solid transparent;
+  border-left:26px solid var(--gold,#ffc93c);
+  filter:drop-shadow(0 0 2px rgba(10,20,32,1)) drop-shadow(0 3px 6px rgba(0,0,0,.75));
+  animation:coachPointBob 1.05s ease-in-out infinite;
+}
+@keyframes coachPointBob{
+  0%,100%{transform:translateX(0)}
+  50%{transform:translateX(16px)}
+}
+@media (max-height:500px),(max-width:1023px){
+  .coach-arrow-h{left:74px;
+    border-top-width:14px;border-bottom-width:14px;border-left-width:21px;margin-top:-14px}
+}
+
 /* ==========================================================================
    THE BADGE
 
@@ -784,5 +823,5 @@
 }
 
 @media (prefers-reduced-motion:reduce){
-  .coach-mark::before,.coach-mark::after{animation:none !important}
+  .coach-mark::before,.coach-mark::after,.coach-arrow-h{animation:none !important}
 }

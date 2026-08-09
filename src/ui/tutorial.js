@@ -446,7 +446,7 @@ export function createCoach(root) {
   if (!root || !root.appendChild || typeof document === 'undefined') {
     const noop = () => {};
     return {
-      show: noop, say: noop, mark: noop, progress: noop, hide: noop, good: noop,
+      show: noop, say: noop, mark: noop, point: noop, progress: noop, hide: noop, good: noop,
       chrome: noop, wear: noop, allowNext: noop, destroy: noop, onQuit: noop,
       get isOpen() { return false; }, get node() { return null; }
     };
@@ -513,6 +513,29 @@ export function createCoach(root) {
 
   const mark = el('div', { class: 'coach-mark' });
 
+  /*
+   * A COMPASS, FOR A THING THAT IS NOT ON THE SCREEN.
+   *
+   *   "I don't want a circle on step 5e. I want just an arrow near the middle
+   *    of the screen pointing and gesturing which direction I should go to see
+   *    the city, if it's not already visible on the screen."
+   *
+   * The gold ring cannot do this and should not try. It is a HIGHLIGHT — it
+   * says "this one" about something you can see — and `markerFor` clamps it
+   * into the frame precisely so it never leaves, which turns it into a ring
+   * sitting on the edge of the screen circling a patch of sea. What is wanted
+   * when the subject is off-screen is the opposite kind of mark: not "here" but
+   * "that way".
+   *
+   * So it is one element rotated about the middle of the screen, with the head
+   * pushed out along its own axis — rotate the arm, the arrow swings round the
+   * centre and keeps pointing outward. It is shown only while the target is
+   * genuinely out of the frame; walk far enough that the city comes into view
+   * and it takes itself away, which is the whole of its job.
+   */
+  const arrowHead = el('i', { class: 'coach-arrow-h' });
+  const arrow = el('div', { class: 'coach-arrow' }, arrowHead);
+
   const quitBtn = button('cream coach-quit', {
     'aria-label': 'Leave the practice run',
     on: { click: () => onQuit && onQuit() }
@@ -539,7 +562,7 @@ export function createCoach(root) {
    */
   const veil = el('div', { class: 'coach-veil' });
 
-  const layer = el('div', { class: 'coach hid' }, veil, mark, card, quitBtn);
+  const layer = el('div', { class: 'coach hid' }, veil, mark, arrow, card, quitBtn);
   root.appendChild(layer);
 
   let shown = false;
@@ -678,6 +701,16 @@ export function createCoach(root) {
     toggle(mark, 'on', true);
   }
 
+  /**
+   * `at` is `{ angle }` in radians, measured from the middle of the screen the
+   * way `Math.atan2` gives it, or null to take the arrow away.
+   */
+  function point(at) {
+    if (!at || typeof at.angle !== 'number') { toggle(arrow, 'on', false); return; }
+    arrow.style.transform = `translate(-50%,-50%) rotate(${at.angle}rad)`;
+    toggle(arrow, 'on', true);
+  }
+
   function good() {
     toggle(card, 'good', true);
     setTimeout(() => toggle(card, 'good', false), 700);
@@ -688,6 +721,7 @@ export function createCoach(root) {
     wantVeil = false;
     toggle(card, 'on', false);
     toggle(mark, 'on', false);
+    toggle(arrow, 'on', false);
     toggle(veil, 'on', false);
     toggle(quitBtn, 'on', false);
     setTimeout(() => toggle(layer, 'hid', !shown), 320);
@@ -725,7 +759,7 @@ export function createCoach(root) {
   }
 
   return {
-    show, say, progress, mark: place2, good, hide, chrome, wear, allowNext, destroy,
+    show, say, progress, mark: place2, point, good, hide, chrome, wear, allowNext, destroy,
     onQuit(fn) { onQuit = fn; },
     get isOpen() { return shown; },
     get size() { return size; },

@@ -958,7 +958,12 @@ export function buildSteps(t) {
          clamps it to the frame, so a city built behind the camera still has an
          arrow saying which way to look. */
       size: 'big', place: 'foot', hud: SCORING_NOKEYS,
-      world: () => t.newestCity(),
+      /* No ring. A ring says "this one" about something you can SEE, and
+         `markerFor` clamps it into the frame — which round the edge of the
+         screen turns into a circle drawn on a patch of sea. The wash still
+         lights the city when it is in view, and when it is not, the arrow says
+         which way to walk. */
+      pointTo: () => t.newestCity(),
       spotWorld: () => { const c = t.newestCity(); return c ? { x: c.x, z: c.z, lift: 2.2, r: 110 } : null; }
     },
 

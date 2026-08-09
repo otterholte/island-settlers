@@ -813,6 +813,39 @@ export function createTutorial(state, game, deps = {}) {
     return null;
   }
 
+  /**
+   * Which way to turn to see a thing that is not on the screen.
+   *
+   * Returns `{ angle }` for the arrow, or null when the target is comfortably
+   * in frame — because an arrow pointing at something you are already looking
+   * at is noise, and this one is only ever asked for when the answer might be
+   * "behind you".
+   *
+   * `MARGIN` is generous on purpose: a city three pixels inside the edge is not
+   * really visible, and the arrow going away exactly as the target scrapes into
+   * frame would flicker at the boundary.
+   *
+   * `projectGround` returns null for a point BEHIND the camera, which is the
+   * one case there is no screen direction to compute. That is not a failure —
+   * it is the most useful answer the step has, "turn round" — so it points at
+   * the bottom of the screen, which is where behind-you is in a third-person
+   * view looking forward.
+   */
+  function arrowFor(step) {
+    if (!step || typeof step.pointTo !== 'function') return null;
+    let w = null;
+    try { w = step.pointTo(); } catch (e) { w = null; }
+    if (!w) return null;
+    const W = host.clientWidth || window.innerWidth;
+    const H = host.clientHeight || window.innerHeight;
+    const MARGIN = 84;
+    const s = projectGround(w.x, w.z, 1.6);
+    if (s && s.x > MARGIN && s.x < W - MARGIN
+      && s.y > MARGIN && s.y < H - MARGIN) return null;
+    if (!s) return { angle: Math.PI / 2 };
+    return { angle: Math.atan2(s.y - H / 2, s.x - W / 2) };
+  }
+
   /** A point on the ground, in CSS pixels, or null if it is behind the camera. */
   function projectGround(x, z, lift) {
     const cam = g.camera && g.camera.camera;
@@ -1446,6 +1479,7 @@ export function createTutorial(state, game, deps = {}) {
     const c = chromeFor(step);
     coach.chrome(c.size, c.place);
     coach.mark(markerFor(step));
+    if (coach.point) coach.point(arrowFor(step));
     /* Nothing is washed while a step is holding its tongue. The gap exists so
        the player can watch something happen — a road landing, a card turning
        over — and darkening it is the opposite of the point. */
