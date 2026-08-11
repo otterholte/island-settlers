@@ -706,7 +706,9 @@ export function buildSteps(t) {
     {
       id: 'roadmapwho',
       title: 'Who else is here',
-      text: () => `On the right side are the four settlers and the color each one builds in. You are ${myColorName()} — every road and settlement in that color is yours.`,
+      /* "Simplify the step description — right now it's just not easy to
+         understand with a quick once-over." One idea a sentence. */
+      text: () => `The four players and their colors show up on the right side of the map. Your settler, and every road and settlement you build, will be ${myColorName()}.`,
       /* The veil came off: it darkened the rail as well, which is the one thing
          this step is pointing at. The wash lights it instead, and it is raised
          above the interface because the rail lives inside the map. */
@@ -721,14 +723,14 @@ export function buildSteps(t) {
          because it was adding light to something that had already lost its
          own. */
       hud: MAP_KEEP_RAIL, railOpen: true,
-      /*   "Make the players section a little brighter still — it looks a little
-       *    dark."
-       * The hole stops the wash dimming it, but the rail is a dark plate to
-       * begin with, so undimmed still reads dark next to a lit board. `spotLift`
-       * adds a touch of light INSIDE the hole — the gentle version of the
-       * `spotBright` treatment, on top of not being darkened rather than
-       * instead of it. */
-      spotDom: ['.ov-rail'], spotLift: true
+      /*   "The players section looks faded instead of bright — I want it to
+       *    look like it normally would, instead of having some faded film over
+       *    the top. Just keep the rest of the screen darker."
+       * So the lift came back off. A `lighter` composite ADDS colour, and on a
+       * dark blue plate a warm 16% addition reads as exactly the milky film
+       * described. The plain hole is the honest treatment: the rail at its own
+       * brightness, everything around it turned down. */
+      spotDom: ['.ov-rail']
     },
 
     /* 12 -------------------------------------------------- WHAT IS ALREADY YOURS
@@ -742,12 +744,17 @@ export function buildSteps(t) {
     {
       id: 'roadmapmine',
       title: 'These are yours',
-      text: () => `The ${myColorName()} pieces on the board are the two settlements and two roads you were dealt at the start. Everything you build joins onto them.`,
+      text: () => `You start with two settlements and two roads — the ${myColorName()} pieces here. Everything new you build must connect to them.`,
       /* "Darken everything that isn't my own settlements and roads." Read off
          the map's own projection, roads included — see `minePieceXY`. */
       needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
-      spotMapMine: true, spotMapR: 40
+      spotMapMine: true, spotMapR: 40,
+      /* "Remove the white glowing borders for where the user can place the
+         roads — too visually busy, and that's the focus of the next step
+         anyway." The map keeps its targets (taps, metrics); it just does not
+         PAINT them for this one step. See `setTargetsHidden` in overview.js. */
+      hideMapTargets: true
     },
 
     /* 13 ------------------------------------------------- WHERE A ROAD MAY GO
@@ -964,7 +971,10 @@ export function buildSteps(t) {
       /* Lit and pointed at: the ring carries a bobbing chevron and `markerFor`
          clamps it to the frame, so a city built behind the camera still has an
          arrow saying which way to look. */
-      size: 'big', place: 'foot', hud: SCORING_NOKEYS,
+      /* "On step 5e, remove the End Practice button" — `noquit` on top of the
+         usual scoring wardrobe, for this one step. */
+      size: 'big', place: 'foot',
+      hud: { pack: true, ranks: true, nobuild: true, noquit: true },
       /* No ring. A ring says "this one" about something you can SEE, and
          `markerFor` clamps it into the frame — which round the edge of the
          screen turns into a circle drawn on a patch of sea. The wash still
@@ -991,6 +1001,11 @@ export function buildSteps(t) {
       text: 'The Trading Post is the hex in the middle of the island. Walk onto it.',
       size: 'big', place: 'foot', hud: MARKET_WALK,
       spotMe: true,
+      /* "Give a little floating directional arrow, like they had on the step
+         that points to the new city you built" — the same compass, the same
+         rule: it appears when the post is off the edge of the screen and says
+         which way to walk. */
+      pointTo: () => ({ x: MARKET.x, z: MARKET.z }),
       spotWorld: () => ({ x: MARKET.x, z: MARKET.z, lift: 1.0, r: 120 }),
       check: () => !!me.nearTrade
     },
@@ -1175,7 +1190,10 @@ export function buildSteps(t) {
     {
       id: 'bulkgo',
       title: 'And take it',
-      text: 'Four ore, paid in brick, in three presses. Press TRADE.',
+      /* "The description doesn't make sense, and the number of presses is
+         incorrect and not relevant to mention specifically." Quite right —
+         it was counting its own choreography. Say what the deal is. */
+      text: 'Four ore, all paid out of your brick pile. Press TRADE to take it.',
       needs: 'sheet',
       onSheet: true, size: 'big', place: 'foot', hud: TRADE_STEP,
       spotOverUi: true, spotGlow: true,
@@ -1436,31 +1454,50 @@ export function buildSteps(t) {
     {
       id: 'awardsroad',
       title: 'Longest Road',
-      /* The two numbers quoted here are the two numbers `fakeAwards` writes —
-         yours 2, the record 4 — so the line and the card agree. Ties go to the
-         holder, so catching 4 wins nothing: it takes 5, hence three more. */
-      text: `LONGEST ROAD: ${LONGEST_ROAD_MIN}+ segments in one unbroken line, worth ${LONGEST_ROAD_VP} points. The small white number is yours, the gold one is the record — 2 against 4 means three more takes it.`,
+      /*
+       *   "Explain it a more clear way. Right now it tried to minimize the
+       *    number of words but made it confusing in the process — find a better
+       *    middle ground."
+       *
+       * The two numbers quoted are the two `fakeAwards` writes — yours 2, the
+       * record 4 — so the words and the card agree. Ties go to the holder, so
+       * the line asks for LONGER than the record, not for matching it.
+       */
+      text: `LONGEST ROAD: connect ${LONGEST_ROAD_MIN} or more of your roads in one unbroken line and it is worth ${LONGEST_ROAD_VP} points. On the counter, the white number is your longest line and the gold number is the current record. Yours is 2 and the record is 4 — build a longer line than the record and the points are yours.`,
       size: 'big', place: 'foot', hud: AWARD_LESSON,
-      /* Its own row and nothing else: the hole shrinks from the whole card to
-         the line being read, so the knight row stays under the wash while this
-         one is ringed and lifted. `:first-child` because the rows are built in
-         the order they are drawn — road on top, see `awardRow` in hud.js. */
-      spotOverUi: true, spotGlow: true, spotLift: true,
-      spotDom: ['.sc-awards .aw-row:first-child']
+      /*
+       *   "The counter is faded instead of its normal brightness. The whole
+       *    element should be brighter with the rest of the app dark — no faded
+       *    film — but I do still like the gold border around the one you're
+       *    specifically discussing."
+       *
+       * So: a plain hole over the WHOLE scorecard (its normal brightness, both
+       * rows readable), and the ring alone on the row being read. The lift is
+       * gone — a warm `lighter` film over a dark plate was the exact "faded
+       * film" being described. `:first-child` because the rows are built in
+       * the order they are drawn — road on top, see `awardRow` in hud.js.
+       */
+      spotOverUi: true,
+      spotDom: [
+        { sel: '.scorecard' },
+        { sel: '.sc-awards .aw-row:first-child', glow: true }
+      ]
     },
 
     {
       id: 'awardsarmy',
       title: 'Largest Army',
-      /*   "Please make the knights description more clear. And always spell
-       *    color without a u."
-       * Spelled out in full: what counts (played, not held), what it takes (the
-       * floor AND the lead), and what the card is showing right now. */
-      text: `LARGEST ARMY: every Knight you PLAY counts toward your army — Knights still in hand do not. Play ${LARGEST_ARMY_MIN} or more, and more than anyone else, and its ${LARGEST_ARMY_VP} points are yours. You have played ${LARGEST_ARMY_MIN} and nobody has more, so the line reads YOURS in your color.`,
+      /* "Don't mention Knights in your hand, since they are always used right
+         away — and the description is still confusing." One thing at a time:
+         what to do, what it is worth, what the card in the corner says now. */
+      text: `LARGEST ARMY: play ${LARGEST_ARMY_MIN} or more Knight cards, and more than anyone else, and it is worth ${LARGEST_ARMY_VP} points. You have played ${LARGEST_ARMY_MIN} Knights and nobody has played more, so the line reads YOURS in your color — those points are already in your score.`,
       size: 'big', place: 'foot', hud: AWARD_LESSON,
-      // The knight row's turn to be the lit one, same treatment as the road's.
-      spotOverUi: true, spotGlow: true, spotLift: true,
-      spotDom: ['.sc-awards .aw-row:last-child']
+      // The knight row's turn to wear the ring, same treatment as the road's.
+      spotOverUi: true,
+      spotDom: [
+        { sel: '.scorecard' },
+        { sel: '.sc-awards .aw-row:last-child', glow: true }
+      ]
     },
 
     {

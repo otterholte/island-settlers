@@ -913,7 +913,20 @@ export function createTutorial(state, game, deps = {}) {
      * gutters when a phone is rotated. */
     const domSel = typeof step.spotDom === 'function' ? step.spotDom() : step.spotDom;
     if (domSel) for (const s of domSel) {
-      const r = domRect(s);
+      /*
+       * A STRING, OR AN ENTRY THAT KNOWS ITS OWN DRESS.
+       *
+       *   "That whole element is brighter, but the rest of the app behind it is
+       *    dark... I do still like the gold border around the one you're
+       *    specifically discussing each step."
+       *
+       * One list, two treatments: the scorecard wants a plain hole and its row
+       * wants the ring. Step-level `spotGlow` painted every rect the same, so
+       * an entry may now be `{ sel, glow, lift }` and carry its own flags; a
+       * bare string keeps taking the step's, exactly as before.
+       */
+      const spec = (s && typeof s === 'object') ? s : { sel: s };
+      const r = domRect(spec.sel);
       if (!r) continue;
       /* A ROUND control wants a round hole. The rectangle read as a box drawn
          over the BUILD key rather than as the key simply not being dimmed. */
@@ -921,8 +934,8 @@ export function createTutorial(state, game, deps = {}) {
         holes.push({ x: r.x, y: r.y, r: Math.max(r.w, r.h) * 0.62 });
         continue;
       }
-      r.glow = step.spotGlow || false;
-      r.lift = step.spotLift || false;
+      r.glow = spec.glow !== undefined ? spec.glow : (step.spotGlow || false);
+      r.lift = spec.lift !== undefined ? spec.lift : (step.spotLift || false);
       rects.push(r);
     }
     /* A second list, for controls that want to be BRIGHTER rather than ringed —
@@ -1435,6 +1448,17 @@ export function createTutorial(state, game, deps = {}) {
       try { g.overview.setRail(true); } catch (e) { /* silent */ }
     }
 
+    /*   "Remove the white glowing borders for where the user can place the
+     *    roads — it's kind of just too visually busy, and that's the focus of
+     *    the next step anyway."
+     * Set on EVERY step, not just the one that asks: the flag lives on the map
+     * (see `setTargetsHidden` in overview.js), so a step that walked away
+     * without clearing it would leave the placement layer blank for the very
+     * step that is about it. */
+    if (g.overview && g.overview.setTargetsHidden) {
+      try { g.overview.setTargetsHidden(!!step.hideMapTargets); } catch (e) { /* silent */ }
+    }
+
     const brief = phase === 'brief' && step.brief;
     // Only a check that is false RIGHT NOW may carry this step. See `armed`.
     armed = phase === 'body' && !!step.check && !safeCheck(step);
@@ -1760,6 +1784,9 @@ export function createTutorial(state, game, deps = {}) {
     clearFakeAwards();
     clearDeck();
     clearHud();
+    try {
+      if (g.overview && g.overview.setTargetsHidden) g.overview.setTargetsHidden(false);
+    } catch (e) { /* silent */ }
     const row = document.querySelector('.build-row');
     if (row) toggle(row, 'hid', false);
     try {
@@ -1799,6 +1826,11 @@ export function createTutorial(state, game, deps = {}) {
     clearFakeAwards();
     clearDeck();
     clearHud();
+    // ...and the placement markers, if the run left them off (see
+    // `hideMapTargets` in present): a real match must always show its targets.
+    try {
+      if (g.overview && g.overview.setTargetsHidden) g.overview.setTargetsHidden(false);
+    } catch (e) { /* silent */ }
     // Whatever the run shut, the player gets back: leaving must never hand
     // somebody a match with no build cards in it.
     const row = document.querySelector('.build-row');

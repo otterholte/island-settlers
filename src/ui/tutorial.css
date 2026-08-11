@@ -582,10 +582,18 @@
 .coach-card.slim.at-side .coach-step{width:34px;height:34px;border-radius:11px}
 .coach-card.slim.at-side .coach-t{font-size:13.5px;line-height:1.5}
 
-/* A quiet progress rail across the top of the card. */
+/* A quiet progress rail across the top of the card.
+
+     "Sometimes I see a white line at the top of the app — it's thin and
+      shouldn't be there."
+
+   That was this rail's TRACK: a pale strip the full width of the card, and on
+   every step whose card stands at the top of the screen it read as a stray
+   hairline across the top of the whole app. The track is gone — transparent —
+   so all that shows is the gold fill, which reads as the progress it is. */
 .coach-rail{
   position:absolute;left:14px;right:14px;top:3px;height:3px;border-radius:2px;
-  background:rgba(90,58,30,.20);overflow:hidden;
+  background:transparent;overflow:hidden;
 }
 .coach-rail i{
   display:block;height:100%;width:0;border-radius:2px;

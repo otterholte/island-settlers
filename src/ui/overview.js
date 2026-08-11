@@ -604,6 +604,9 @@ export function createOverview(root, state, game) {
   };
   let railOpen = !compact();
   let railChosen = false;
+  /* The tutorial's "paint no placement markers this step" switch — see the
+     note at the draw call. Nothing in a real match ever sets it. */
+  let targetsHidden = false;
 
   const proj = {
     s: 1, ox: 0, oy: 0, w: 0, h: 0,
@@ -1164,7 +1167,14 @@ export function createOverview(root, state, game) {
     const tilted = tiltIn(ctx);
     const v = snapshot(pulse);
     tg.drawSpotlight(v);
-    tg.drawTargets(v);
+    /*   "Remove the white glowing borders for where the user can place the
+     *    roads — that's the focus of the NEXT step anyway."
+     * A practice-run switch (see `setTargetsHidden` below): one lesson talks
+     * about the pieces already on the board while the placement map is up, and
+     * thirty breathing road slots were shouting over it. The targets stay in
+     * `targets` — taps still land, metrics still report — they are simply not
+     * painted this frame. */
+    if (!targetsHidden) tg.drawTargets(v);
     paint.drawSettlers(state);
     if (tilted) ctx.restore();
     if (clipped) ctx.restore();
@@ -2028,6 +2038,8 @@ export function createOverview(root, state, game) {
      */
     setRail(open) { setRail(!!open); return railOpen; },
     get railOpen() { return railOpen; },
+    /** The tutorial's marker switch; see the note beside `drawTargets`. */
+    setTargetsHidden(v) { targetsHidden = !!v; },
     select, commit,
     destroy() {
       pan.destroy();

@@ -488,7 +488,18 @@
    small, flat and low-contrast; only their own row carries weight. */
 .hud-tr{
   position:absolute;right:var(--gR);top:var(--gT);
-  width:152px;padding:5px;
+  /* Sized to its contents, not to a constant.
+
+       "The point count itself is not fully fitting on the row — I won with 13
+        points, holding the Longest Road and Largest Army, and I think it needs
+        to be a bit wider in that instance."
+
+     152px was measured against a one-digit score and no award icons. A row can
+     legitimately carry a two-digit score at 20px AND two glowing award pips,
+     and at the old width the numeral was what gave. The panel now grows with
+     its widest row up to a cap, and stays exactly where it was the rest of the
+     time; names still truncate at the cap rather than the score. */
+  width:auto;min-width:152px;max-width:212px;padding:5px;
 }
 .ranks{display:flex;flex-direction:column;gap:3px}
 .rk{
@@ -547,7 +558,18 @@
 .bcard{
   position:relative;display:flex;flex-direction:column;align-items:center;
   justify-content:flex-start;gap:1px;
-  width:96px;height:112px;padding:6px 4px 0;overflow:hidden;
+  /* MIN-height, not height.
+
+       "On the Settlement card the bottom of the sheep and wheat chip is
+        getting cut off, including the 4/4, especially when highlighted gold.
+        It should be fully visible."
+
+     The cost band wraps to two lines on SETTLEMENT and CARD by design, and a
+     fixed 112px plus `overflow:hidden` clipped the second line's descenders —
+     with the gold `.bc-lip` bar sitting on top of what was left. The row is
+     bottom-anchored (`align-items:flex-end` above), so a card that needs a few
+     more pixels grows UPWARD into open board, never below the fold. */
+  width:96px;min-height:112px;padding:6px 4px 0;overflow:hidden;
   /* Empty is cold. Every point of colour on this card is earned. */
   background:linear-gradient(180deg,#e7e4dc 0%,#d3cfc5 100%);
   border:2px solid var(--brown);border-radius:13px;
@@ -603,7 +625,10 @@
      wrap to two lines EVERY time rather than only when somebody was holding ten
      of something, so the few pixels the second line was overflowing the card by
      were overflowing it permanently and being clipped. */
-  width:calc(100% + 8px);margin:auto -4px 0;padding:2px 0 3px;
+  /* 5px under the second line instead of 3: the gold `.bc-lip` bar is 3px at
+     the very bottom of the card, and the wrapped row's digits were finishing
+     inside it. */
+  width:calc(100% + 8px);margin:auto -4px 0;padding:2px 0 5px;
   border-top:1.5px solid rgba(90,58,30,.38);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),inset 0 -14px 16px rgba(90,58,30,.10);
 }
@@ -1176,7 +1201,9 @@
   .hud .res b{font-size:19px;min-width:12px}
   .hud .res-live{left:5px;right:5px}
 
-  .hud .hud-tr{width:126px;padding:4px}
+  /* Same contents-first sizing as the full-size rule: a 13-point winner with
+     both award pips outgrows 126px, and the numeral must never be what clips. */
+  .hud .hud-tr{width:auto;min-width:126px;max-width:176px;padding:4px}
   .hud .rk{height:24px;gap:5px;padding:0 5px 0 7px}
   .hud .rk.me{height:30px}
   .hud .rk-av svg{width:20px;height:20px}
@@ -1186,7 +1213,7 @@
   .hud .rk-vp b{font-size:13px;min-width:11px}
   .hud .rk.me .rk-vp b{font-size:17px}
 
-  .hud .bcard{width:70px;height:96px;padding:5px 3px 0;gap:0}
+  .hud .bcard{width:70px;min-height:96px;height:auto;padding:5px 3px 0;gap:0}
   .hud .build-row{gap:5px}
   .hud .bc-name{font-size:12px}
   .hud .bcard[data-kind="settlement"] .bc-name{font-size:10.5px}
@@ -1278,7 +1305,7 @@
    Budget at 375px tall: 98px card = 4 pad + 11 name + 25 icon row + 45 cost
    band, with 13px of slack. */
 @media (max-height:380px){
-  .hud .bcard{height:98px;padding:4px 3px 0}
+  .hud .bcard{min-height:98px;height:auto;padding:4px 3px 0}
   .hud .bc-name{font-size:11px}
   .hud .bcard[data-kind="settlement"] .bc-name{font-size:10px}
   .hud .bc-row{margin:0 0 1px}
