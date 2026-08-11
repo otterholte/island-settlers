@@ -11,7 +11,8 @@
  * is pointer-events:none except the knob itself.
  *
  * Keyboard fallback for desktop / headless testing:
- *   WASD + arrows -> stick, Space -> actionPressed, Tab -> mapPressed.
+ *   the four ARROW KEYS -> stick, Space -> actionPressed, Tab -> mapPressed.
+ *   W A S D are NOT movement — see the note over `MOVE_KEYS`.
  *
  * While a modal panel owns the keyboard (the trade sheet drives its selection
  * with the arrow keys) the UI calls `setKeyboardCapture(true)`. Movement keys
@@ -298,9 +299,25 @@ export function createInput(domRoot) {
 
   function onBlur() { endStick(); keys.clear(); }
 
-  /* ------------------------------------------------------------- keyboard */
+  /* ------------------------------------------------------------- keyboard
+   *
+   * THE ARROW KEYS, AND ONLY THE ARROW KEYS.
+   *
+   *   "Don't use WASD as options for moving around. Just use the arrow keys as
+   *    options for moving around as far as keyboard keys."
+   *
+   * W A S D used to be a second movement set, and it was the reason the build
+   * shortcuts could not have the letters they were asked for: S is "walk back"
+   * and D is "walk right", so `S` for a settlement and `D` for a development
+   * card would have deleted half of the settler's steering. Letting the letters
+   * go frees every one of them for `ui/hotkeys.js`, and it makes the answer to
+   * "how do I move?" one sentence on every screen that has to say it.
+   *
+   * The four arrows still `preventDefault` so the page never scrolls under the
+   * game, and the movement keys are still swallowed whole while a panel holds
+   * the keyboard — see `setKeyboardCapture`.
+   */
   const MOVE_KEYS = new Set([
-    'KeyW', 'KeyA', 'KeyS', 'KeyD',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
   ]);
 
@@ -309,7 +326,7 @@ export function createInput(domRoot) {
    *
    * If they are, every key is theirs and none of them are movement. This has
    * to be checked BEFORE the preventDefault calls below, not after: those run
-   * unconditionally, so W, A, S, D, the arrows, Space and Tab were being eaten
+   * unconditionally, so the arrows, Space and Tab were being eaten
    * out of every text input on the page. A name box that silently refuses four
    * of the commonest letters in English, the space bar, and the key you use to
    * reach the next field is not a name box.
@@ -396,10 +413,10 @@ export function createInput(domRoot) {
 
     if (!touchStick) {
       let kx = 0, ky = 0;
-      if (keys.has('KeyD') || keys.has('ArrowRight')) kx += 1;
-      if (keys.has('KeyA') || keys.has('ArrowLeft')) kx -= 1;
-      if (keys.has('KeyW') || keys.has('ArrowUp')) ky += 1;
-      if (keys.has('KeyS') || keys.has('ArrowDown')) ky -= 1;
+      if (keys.has('ArrowRight')) kx += 1;
+      if (keys.has('ArrowLeft')) kx -= 1;
+      if (keys.has('ArrowUp')) ky += 1;
+      if (keys.has('ArrowDown')) ky -= 1;
       const m = Math.hypot(kx, ky);
       if (m > 1) { kx /= m; ky /= m; }
       stick.x = kx; stick.y = ky;

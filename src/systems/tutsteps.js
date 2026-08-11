@@ -338,15 +338,15 @@ export function buildSteps(t) {
        * long edge — so a touchscreen laptop is told about its keyboard and an
        * iPad is told about its thumb, which is the right way round.
        *
-       * Both are true of both devices: systems/input.js takes WASD and the
-       * arrow keys as well as a drag from anywhere that is not a button. This
-       * only decides which one the sentence NAMES, and it names one, because a
-       * first instruction that offers two ways to walk is a first instruction
-       * that has to be read twice.
+       * Both are true of both devices: systems/input.js takes the arrow keys
+       * as well as a drag from anywhere that is not a button. This only decides
+       * which one the sentence NAMES, and it names one, because a first
+       * instruction that offers two ways to walk is a first instruction that
+       * has to be read twice.
        */
       text: () => (handheld()
         ? 'Press and drag anywhere on the screen to move.'
-        : 'Use the ARROW KEYS to move. WASD works too.'),
+        : 'Use the ARROW KEYS to move.'),
       size: 'big', place: 'top', hud: OPENING,
       /* "Let me walk a bit longer on step two before step three opens up."
          Six units is about two seconds of holding a direction — long enough to

@@ -88,12 +88,12 @@ Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
 
 | | Touch | Keyboard |
 |---|---|---|
-| Move | Drag anywhere on the screen — an invisible stick appears under your thumb | `W A S D` / arrows |
+| Move | Drag anywhere on the screen — an invisible stick appears under your thumb | arrow keys |
 | Gather | Run over a tree, clay pile, sheep, wheat stand or ore seam — it is yours on contact | — |
 | Board map | Tap **MAP** | `Tab` |
 | Pause | Tap **PAUSE** | `Space` or `P` |
 | Build cards | Tap **BUILD** | `B` |
-| Build | Tap a build card, then tap a highlighted spot on the map and tap it again | `R` road · `H` settlement · `C` city · `V` card |
+| Build | Tap a build card, then tap a highlighted spot on the map and tap it again | `R` road · `S` settlement · `C` city · `D` card |
 | Trade | Walk to the market or one of your unlocked docks, then tap the prompt | `T` Trading Post · `M` your dock |
 | Choose | Tap a target, tap it again to place | arrows move · `Enter` places · `Tab` cycles the piece |
 | Menus | Tap | arrows move · `Enter` presses · `Esc` backs out |
@@ -101,11 +101,11 @@ Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
 
 ### Playing with no mouse
 
-The build shortcuts are `R`, `H`, `C` and `V` rather than the more obvious
-`R`/`S`/`C`/`D`, because `S` and `D` are half of `W A S D` and a settler that
-will only walk up and left is a worse bug than a shortcut on a different
-letter. A settlement is drawn as a **h**ouse everywhere in the game, and a
-development card is a de**v**elopment card.
+**The four arrow keys are the only movement keys.** `W A S D` used to be a
+second set and it is gone on purpose: it was the only thing standing between
+the build shortcuts and the letters they should have, so the game trades a
+duplicate way to walk for `R`, `S`, `C` and `D` meaning road, settlement, city
+and development card.
 
 Everything on a desktop is reachable from the keyboard. The opening screen
 lands with **PLAY** already selected, the arrow keys walk a gold cursor round
@@ -128,7 +128,7 @@ slide listing every shortcut, as does the illustrated rules book on the opening
 screen.
 
 When the match ends and you put the scoreboard away, the island is yours to
-walk: the same joystick, the same keys, the same follow camera, with the match
+walk: the same joystick, the same arrow keys, the same follow camera, with the match
 frozen underneath — nothing gathers, builds or scores. **BOARD VIEW** on the
 review bar swaps that for the whole island pulled back, where dragging, pinching
 and the wheel move the camera instead. **CLOSE VIEW** hands the settler back.

@@ -509,7 +509,7 @@ export function createOvPan(cv, proj, opts = {}) {
     if (ev.cancelable) ev.preventDefault();
   }
 
-  /* Zoom keys only. Arrow keys and WASD belong to the settler for the whole
+  /* Zoom keys only. The arrow keys belong to the settler for the whole
      match, and this panel is open DURING play — so nothing here ever listens
      for one. Panning is the drag; the keyboard only ever changes the zoom. */
   function onKey(ev) {

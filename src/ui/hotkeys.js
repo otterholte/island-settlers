@@ -11,42 +11,41 @@
  *    without needing to use a mouse or trackpad on desktop."
  *
  * The game is a landscape phone game and everything in it is reachable with one
- * thumb. On a desktop that same design means a hand on WASD and a hand on the
- * mouse, reaching for a 44px circle in the corner every time you want to build.
+ * thumb. On a desktop that same design means a hand on the arrow keys and a
+ * hand on the mouse, reaching for a 44px circle in the corner every time you
+ * want to build.
  * These are the keys that make the second hand unnecessary:
  *
  *   Space   pause / resume
  *   B       show or hide the build cards
- *   R H C   build a road / a settlement (House) / a city — opens the map
- *   V       buy a de-Velopment card
+ *   R S C   build a road / a settlement / a city — opens the placement map
+ *   D       buy a development card
  *   T       open the Trading Post
  *   M       open your dock — or, with more than one, pick it off the map
  *   Esc     back out of whatever is in front of you; settings when nothing is
  *   P       pause (kept: it is the key the pause hint has always named)
  *
  * =============================================================================
- * H AND V, NOT S AND D — BECAUSE S AND D ALREADY WALK
+ * S AND D ARE FREE, BECAUSE MOVEMENT GAVE THEM UP
  * =============================================================================
  *
  *   "Maybe have shortcut keys inside of the game so like S opens the settlement
  *    map ... R opens the road map ... C does the same for cities, and D
  *    purchases a development card."
  *
- * R and C are free and they are exactly as asked. S and D are not free: they
- * are half of W A S D, which is how a desktop player walks (systems/input.js
- * `MOVE_KEYS`), and this module runs in the CAPTURE phase — so taking them
- * would have silently deleted "back" and "right" from the game, and a settler
- * that will only walk up and left is a much worse bug than a shortcut on a
- * different letter.
+ * The first pass could not have S and D: they were half of W A S D, this module
+ * runs in the CAPTURE phase, and taking them would have deleted "walk back" and
+ * "walk right" from the game. They went to H and V instead, and that was the
+ * wrong trade — the player would rather lose the second movement set than the
+ * mnemonic:
  *
- * The arrow keys are not a way out of that either: they are the same movement
- * set, and the player asked for them to drive every menu and map cursor as
- * well, so the settler needs W A S D intact.
+ *   "Update the WASD, go back to what I originally requested, and don't use
+ *    WASD as options for moving around. Just use the arrow keys."
  *
- * So the two colliding letters move to the ones the game's own words suggest:
- * a settlement is drawn as a HOUSE and called one on every rules page, and a
- * development card is a de-VELOPMENT card. Both are listed on the keyboard
- * slide (ui/hud-help.js) and in the README, and nothing else claims either key.
+ * So `MOVE_KEYS` in systems/input.js is the four arrows and nothing else, every
+ * letter on the keyboard is available here, and all four build shortcuts are
+ * the ones that were asked for. Nothing in this file has to be defensive about
+ * it: a letter cannot collide with a key that is no longer movement.
  *
  * =============================================================================
  * ESCAPE IS A LADDER, NOT A KEY
@@ -93,13 +92,13 @@ import { ports, tiles, tileAt } from '../board/layout.js';
 /** Letters that only ever mean something while a match is actually running. */
 /** Every letter this module answers to. Used to stand the settings drawer down
  *  before one of them raises something over it. */
-const LETTERS = new Set(['KeyB', 'KeyT', 'KeyM', 'KeyR', 'KeyH', 'KeyC', 'KeyV']);
+const LETTERS = new Set(['KeyB', 'KeyT', 'KeyM', 'KeyR', 'KeyS', 'KeyC', 'KeyD']);
 
 const BUILD_KEYS = {
   KeyR: 'road',
-  KeyH: 'settlement',      // a settlement is a House everywhere else in the game
+  KeyS: 'settlement',
   KeyC: 'city',
-  KeyV: 'card'             // de-Velopment
+  KeyD: 'card'
 };
 
 function isTyping(ev) {

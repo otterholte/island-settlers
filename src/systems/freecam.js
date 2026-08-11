@@ -19,13 +19,13 @@
  *   two fingers              pinch to zoom, twist to turn
  *   right drag / shift drag  orbit (yaw and pitch)
  *   wheel                    zoom about the cursor
- *   W A S D / arrows         pan
+ *   arrows                   pan
  *   Q E                      turn        R F   tilt
  *   + - (and = _)            zoom        0     back to the preset framing
  *
  * WHAT IT MUST NEVER DO
  * ---------------------
- * Arrow keys and WASD drive the settler during play. Nothing here listens until
+ * The arrow keys drive the settler during play. Nothing here listens until
  * `arm()` is called, which only happens once the match is over and the results
  * panel has been dismissed (hud-end.js drives it off the review bar). Even then
  * the keyboard is dropped the moment `input.keyboardCaptured` goes true, so the
@@ -59,7 +59,7 @@ const STYLE_ID = 'freecam-style';
  *   pinch twist              1.00x         0.45x
  *   Q / E hold               1.60 rad/s    0.65 rad/s
  *   R / F hold               0.80 rad/s    0.34 rad/s
- *   W A S D hold             see camera.js freeStep (0.65 -> 0.28 of distance)
+ *   arrow hold               see camera.js freeStep (0.65 -> 0.28 of distance)
  */
 
 /* Radians per pixel for an orbit drag, and per press of a turn / tilt key. */
@@ -175,7 +175,7 @@ export function createFreeCam(game, opts = {}) {
     hint = doc.createElement('div');
     hint.className = 'fcam-hint hid';
     hint.innerHTML = '<b>Drag</b><i>to look around</i>'
-      + '<b>Scroll</b><i>to zoom</i><b>WASD</b><i>to move</i>';
+      + '<b>Scroll</b><i>to zoom</i><b>Arrows</b><i>to move</i>';
     root.appendChild(hint);
   }
 
@@ -294,8 +294,11 @@ export function createFreeCam(game, opts = {}) {
 
   /* ------------------------------------------------------------- keyboard */
   const keys = new Set();
+  /* Arrows only, to match the settler. W A S D stopped being movement anywhere
+     in the game when the build shortcuts took S and D — see the note over
+     `MOVE_KEYS` in systems/input.js — and a review camera that still answered
+     to them would be the one place the answer to "how do I move?" differed. */
   const PAN_KEYS = new Set([
-    'KeyW', 'KeyA', 'KeyS', 'KeyD',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'
   ]);
   const OWN_KEYS = new Set([
@@ -340,10 +343,10 @@ export function createFreeCam(game, opts = {}) {
     if (boardBusy()) { keys.clear(); return; }
 
     let fwd = 0, right = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) fwd += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) fwd -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) right += 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) right -= 1;
+    if (keys.has('ArrowUp')) fwd += 1;
+    if (keys.has('ArrowDown')) fwd -= 1;
+    if (keys.has('ArrowRight')) right += 1;
+    if (keys.has('ArrowLeft')) right -= 1;
     if ((fwd || right) && c.freeStep) {
       const m = Math.hypot(fwd, right) || 1;
       c.freeStep(fwd / m, right / m, dt);

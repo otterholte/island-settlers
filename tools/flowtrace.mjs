@@ -803,7 +803,7 @@ if (TRACE === 'camera') {
   row('pinch power / twist', WAS.pinchPower + ' / ' + WAS.pinchTwist, rates.pinchPower + ' / ' + rates.pinchTwist);
   row('Q E held', WAS.keyYaw + ' rad/s', rates.keyYaw + ' rad/s');
   row('R F held', WAS.keyPitch + ' rad/s', rates.keyPitch + ' rad/s');
-  row('WASD held', WAS.stepK + ' x dist ' + JSON.stringify(WAS.stepClamp),
+  row('arrow held', WAS.stepK + ' x dist ' + JSON.stringify(WAS.stepClamp),
     rates.stepK + ' x dist ' + JSON.stringify(rates.stepClamp));
   row('pose ease', WAS.ease + '/s', rates.ease + '/s');
   say('measured through the real driver', measured);
@@ -816,7 +816,7 @@ if (TRACE === 'camera') {
     `yaw ${(WAS.yawPerPx / rates.yawPerPx).toFixed(2)}x, pan ${(WAS.panGain / rates.panGain).toFixed(2)}x slower`);
   check('every keyboard axis is slower than it was',
     slower('keyYaw') && slower('keyPitch') && slower('stepK'),
-    `Q/E ${(WAS.keyYaw / rates.keyYaw).toFixed(2)}x, WASD ${(WAS.stepK / rates.stepK).toFixed(2)}x slower`);
+    `Q/E ${(WAS.keyYaw / rates.keyYaw).toFixed(2)}x, arrows ${(WAS.stepK / rates.stepK).toFixed(2)}x slower`);
   /* The on-screen pad is deliberately gone — every key on it duplicated a
      gesture the player already had and it covered the corner of the board it
      was there to help inspect. `yawPerPadPress` is kept in the table as a

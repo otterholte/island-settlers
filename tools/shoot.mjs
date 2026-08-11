@@ -232,7 +232,7 @@ if (STAGE === 'intro') {
   await finishDraft();
   await sleep(2500);
   await shot('03-play-start');
-  await hold('w', 'KeyW', 87, 1200);
+  await hold('ArrowUp', 'ArrowUp', 38, 1200);
   await sleep(1500);
   await shot('04-running');
 

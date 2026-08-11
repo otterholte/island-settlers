@@ -47,6 +47,12 @@ interfaces so parallel work integrates without merge pain.
   Every listener is on `window`, so a handler that consumes a key must call
   `stopImmediatePropagation` — plain `stopPropagation` does nothing between
   listeners on the same node.
+- **Movement is the four ARROW KEYS and nothing else.** `W A S D` is not a
+  movement set anywhere in the build — not in `systems/input.js`, not in the
+  post-match `systems/freecam.js` — because every letter belongs to
+  `ui/hotkeys.js` (`R` `S` `C` `D` build, `B` `T` `M` open things). Re-adding a
+  letter to `MOVE_KEYS` silently breaks a shortcut, since hotkeys runs in the
+  capture phase and gets the key first.
 - **The ground is not at y=0.** Tile tops run ~1.76–3.71. Everything placed in
   the world must sit on `heightAt(x, z)` exported by `src/world/terrain.js`.
 

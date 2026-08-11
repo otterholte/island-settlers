@@ -221,8 +221,8 @@ function buildPages() {
       title: 'Keyboard',
       h: 'Playing without a mouse',
       body: [
-        'W A S D or the arrow keys run. Space pauses and resumes. B shows and hides the build cards.',
-        'R starts a road, H a settlement (a house), C a city, and V buys a development card — S and D are left alone because they are how you walk. T opens the Trading Post and M opens your dock.',
+        'The four arrow keys walk. Space pauses and resumes. B shows and hides the build cards.',
+        'R starts a road, S a settlement, C a city, and D buys a development card. T opens the Trading Post and M opens your dock.',
         'In any map or menu the arrow keys move between choices and Enter takes one. Esc backs out — it clears a staged trade first, then closes the sheet.'
       ]
     });

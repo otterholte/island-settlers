@@ -132,7 +132,7 @@ export function createEndgame(root, state, game, hooks = {}) {
    * different sets of hands:
    *
    *   walking (default)  the ordinary third-person game. Drag anywhere to run,
-   *                      WASD, the camera follows the settler. The free camera
+   *                      arrow keys, the camera follows the settler. The free camera
    *                      is DISARMED, so nothing competes for the drag.
    *   board view         the whole island, pulled back, nobody to follow —
    *                      here dragging the view is the right verb, so the free

@@ -112,7 +112,7 @@ function buildSlides() {
       title: 'Moving & Collecting',
       icon: 'log',
       rows: [
-        ['Move', 'Drag anywhere on the screen to run — no need to find anything, the stick appears under your thumb. W A S D or the arrow keys work too.'],
+        ['Move', 'Drag anywhere on the screen to run — no need to find anything, the stick appears under your thumb. On a keyboard, the four arrow keys walk.'],
         ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
         ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.']
       ]
@@ -168,13 +168,13 @@ function buildSlides() {
       title: 'Keyboard Shortcuts',
       icon: 'help',
       keys: [
-        ['W A S D · Arrows', 'Run'],
+        ['Arrows', 'Walk'],
         ['Space', 'Pause and resume'],
         ['B', 'Show or hide the build cards'],
         ['R', 'Build a road'],
-        ['H', 'Build a settlement (a House)'],
+        ['S', 'Build a settlement'],
         ['C', 'Upgrade to a city'],
-        ['V', 'Buy a de-Velopment card'],
+        ['D', 'Buy a development card'],
         ['T', 'Open the Trading Post'],
         ['M', 'Open your dock — or pick one on the map'],
         ['Tab', 'Board map · in the map, cycle what you are building'],

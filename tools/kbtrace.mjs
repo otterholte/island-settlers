@@ -158,6 +158,24 @@ async function tap(name, gap = 120) {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
   await sleep(gap);
 }
+/**
+ * Hold a key down for `n` rendered FRAMES, so the settler actually travels.
+ *
+ * Frames, not milliseconds: `input.update()` turns a held key into a stick
+ * value once per animation frame, and under a capture run (SwiftShader at 0.6
+ * pixel ratio, 3D scene visible) that is a couple of frames a second. A wall
+ * clock hold measured "did not move" on a game that was merely starving. Same
+ * reasoning as `frames()` itself — see the note above it.
+ */
+async function holdKey(name, n = 24) {
+  const [key, code, kc] = KEYS[name];
+  const base = { key, code, windowsVirtualKeyCode: kc, nativeVirtualKeyCode: kc };
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+  await frames(n, 20000);
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+  await sleep(140);
+}
+
 async function clickAt(x, y) {
   const base = { x, y, button: 'left', clickCount: 1 };
   await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
@@ -465,25 +483,21 @@ if (STAGE === 'keys') {
   ok((await uiState()).mapOpen === false, 'Escape closes the placement map');
   ok((await uiState()).captured === false, 'and hands the arrows back');
 
-  /* S AND D STILL WALK.
-     "R, S, C, D" was the request and S and D are half of W A S D, so the two
-     that collide moved to H and V. This is the half of that which can actually
-     break a match: the movement keys must still be movement. */
-  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
-    p.x=0;p.z=0;p.vx=0;p.vz=0; return 1;})()`);
-  await frames(4);
-  const beforeS = await uiState();
-  await tap('KeyS', 300);
-  const afterS = await uiState();
-  ok(afterS.mapOpen === false && afterS.panel === null,
-    'S does not open anything — it is still the back key',
-    `map=${afterS.mapOpen} panel=${afterS.panel}`);
-  const cardsBefore = await ev(`window.__ISLAND__.state.players[0].cards.length`);
-  await tap('KeyD', 300);
-  const cardsAfter = await ev(`window.__ISLAND__.state.players[0].cards.length`);
-  ok(cardsAfter === cardsBefore, 'and D does not buy a card — it is still right',
-    `${cardsBefore} -> ${cardsAfter}`);
-  void beforeS;
+  /* THE ARROWS WALK AND NOTHING ELSE DOES.
+     W A S D was dropped as a second movement set so that R, S, C and D could be
+     the build shortcuts they were asked to be. Both halves are asserted, because
+     each one on its own would look fine while the other was broken. */
+  const walkBy = async key => ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    p.x=0;p.z=0;p.vx=0;p.vz=0; return 1;})()`)
+    .then(() => holdKey(key, 24))
+    .then(() => ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+      return +Math.hypot(p.x,p.z).toFixed(2);})()`));
+
+  const arrowWalk = await walkBy('ArrowUp');
+  ok(arrowWalk > 1, 'ArrowUp walks the settler', `${arrowWalk}u`);
+  const wWalk = await walkBy('KeyW');
+  ok(wWalk < 0.5, 'and W does not — the arrows are the whole movement set',
+    `${wWalk}u`);
 
   /* Straight out of the draft there is often nowhere legal to settle — every
      road end is still inside the distance rule — so lay roads until there is,
@@ -499,10 +513,10 @@ if (STAGE === 'keys') {
     for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=40;
     return R.legalSettlements(state,0).length;})()`);
   await frames(6);
-  await tap('KeyH', 400);
+  await tap('KeyS', 400);
   const mapH = await uiState();
   ok(mapH.mapOpen && mapH.mapMode === 'place-settlement',
-    `H opens the settlement map (${room} legal corners)`, mapH.mapMode);
+    `S opens the settlement map (${room} legal corners)`, mapH.mapMode);
 
   /* Tab must never SPEND anything: 'card' is in BUILD_KINDS for the chip bar
      and buying one is not a cycle step. */
@@ -516,9 +530,9 @@ if (STAGE === 'keys') {
   await tap('Escape', 400);
 
   const cardsPreV = await ev(`window.__ISLAND__.state.players[0].cards.length`);
-  await tap('KeyV', 400);
+  await tap('KeyD', 400);
   const cardsPostV = await ev(`window.__ISLAND__.state.players[0].cards.length`);
-  ok(cardsPostV === cardsPreV + 1, 'V buys a development card',
+  ok(cardsPostV === cardsPreV + 1, 'D buys a development card',
     `${cardsPreV} -> ${cardsPostV}`);
   /* A Knight raises its own board on the way in, which is the game working —
      put the card back in the deck and stand every cue down so the rest of the
