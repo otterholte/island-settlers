@@ -129,7 +129,9 @@ export function createInput(domRoot) {
     update, dispose, setEnabled, setKeyboardCapture,
     /** Readable so a rig can prove the stick was actually handed back. */
     get enabled() { return enabled; },
-    get keyboardCaptured() { return keyCapture; }
+    get keyboardCaptured() { return keyCapture; },
+    /** Who is holding the keyboard right now. Read by tools/kbtrace.mjs. */
+    get keyboardHolders() { return [...captureHolders]; }
   };
 
   /* ------------------------------------------------------------------ DOM */
@@ -430,9 +432,26 @@ export function createInput(domRoot) {
    * Both edges drop every held key and zero the stick: opening a sheet while
    * running must not leave a direction latched, and closing one must not
    * inherit a key whose keyup the panel swallowed.
+   *
+   * IT IS A SET OF OWNERS, NOT A BOOLEAN.
+   *
+   * There are four things that can want the keyboard now — the trade/cards
+   * sheets (ui/panels.js), the board map (ui/overview.js), the menu cursor
+   * (ui/kbnav.js) and the rules sheet through it — and they overlap. As one
+   * flag, the LAST release won: opening the trade sheet from the settings
+   * drawer left the drawer's scope closing a moment later and handing the
+   * keyboard back to the settler underneath an open sheet, so a key held while
+   * trading stayed latched and the settler bolted the instant the sheet closed.
+   *
+   * Each caller passes a name and gets a lock; the keyboard is captured while
+   * any lock is held. Callers that pass nothing share one legacy lock, which
+   * keeps every existing two-argument-free call site behaving exactly as before.
    */
-  function setKeyboardCapture(v) {
-    const on = !!v;
+  const captureHolders = new Set();
+
+  function setKeyboardCapture(v, owner = 'default') {
+    if (v) captureHolders.add(owner); else captureHolders.delete(owner);
+    const on = captureHolders.size > 0;
     if (on === keyCapture) return;
     keyCapture = on;
     keys.clear();

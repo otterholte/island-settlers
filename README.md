@@ -1,4 +1,4 @@
-﻿# Island Settlers
+# Island Settlers
 
 A Catan-inspired real-time 3D strategy game for landscape mobile web. You run a
 settler around a fixed 19-hex island, chop wood, dig clay, shear sheep, reap
@@ -21,7 +21,7 @@ Open it on a phone in landscape, or on a desktop browser. Nothing to install.
 ---
 
 ## Run it locally
-The game is plain ES modules, so it has to be served over HTTP â€” module imports
+The game is plain ES modules, so it has to be served over HTTP — module imports
 do not work from `file://`. A dependency-free server is included:
 
 ```bash
@@ -36,7 +36,7 @@ If port 5173 is busy, pass another: `node serve.mjs 5174`.
 > **On Windows, don't use `python3 -m http.server`.** Unless you installed Python
 > yourself, `python3` resolves to the Microsoft Store stub at
 > `AppData\Local\Microsoft\WindowsApps\python3.exe`, which exits silently without
-> starting a server â€” you get no error and nothing on the port. Use `node serve.mjs`.
+> starting a server — you get no error and nothing on the port. Use `node serve.mjs`.
 
 ### Play on your phone
 
@@ -45,7 +45,7 @@ address and open `http://<that-address>:5173` on the phone, then turn it
 landscape. The game will prompt you to rotate if you are in portrait.
 
 - **macOS:** `ipconfig getifaddr en0`
-- **Windows:** `ipconfig` â†’ the IPv4 address of your wi-fi adapter
+- **Windows:** `ipconfig` → the IPv4 address of your wi-fi adapter
 - **Linux:** `hostname -I | awk '{print $1}'`
 
 ### Playing with friends
@@ -88,11 +88,44 @@ Icons are generated, not drawn by hand — `node tools/mkicons.mjs`.
 
 | | Touch | Keyboard |
 |---|---|---|
-| Move | Drag anywhere on the screen â€” an invisible stick appears under your thumb | `W A S D` / arrows |
-| Gather | Walk up to a tree, clay pit, sheep, wheat stand or ore seam and stop â€” gathering starts automatically | `Space` |
+| Move | Drag anywhere on the screen — an invisible stick appears under your thumb | `W A S D` / arrows |
+| Gather | Run over a tree, clay pile, sheep, wheat stand or ore seam — it is yours on contact | — |
 | Board map | Tap **MAP** | `Tab` |
-| Build | Tap a build card, then tap a highlighted spot on the map and confirm | â€” |
-| Trade | Walk to the market or one of your unlocked docks, then tap the prompt | â€” |
+| Pause | Tap **PAUSE** | `Space` or `P` |
+| Build cards | Tap **BUILD** | `B` |
+| Build | Tap a build card, then tap a highlighted spot on the map and tap it again | `R` road · `H` settlement · `C` city · `V` card |
+| Trade | Walk to the market or one of your unlocked docks, then tap the prompt | `T` Trading Post · `M` your dock |
+| Choose | Tap a target, tap it again to place | arrows move · `Enter` places · `Tab` cycles the piece |
+| Menus | Tap | arrows move · `Enter` presses · `Esc` backs out |
+| Settings | Tap the gear | `Esc` with nothing else open |
+
+### Playing with no mouse
+
+The build shortcuts are `R`, `H`, `C` and `V` rather than the more obvious
+`R`/`S`/`C`/`D`, because `S` and `D` are half of `W A S D` and a settler that
+will only walk up and left is a worse bug than a shortcut on a different
+letter. A settlement is drawn as a **h**ouse everywhere in the game, and a
+development card is a de**v**elopment card.
+
+Everything on a desktop is reachable from the keyboard. The opening screen
+lands with **PLAY** already selected, the arrow keys walk a gold cursor round
+every screen, menu, toggle and sheet, and `Enter` presses whatever the cursor is
+on. Inside the board map the arrows move between glowing targets and `Tab`
+switches between the pieces you can currently afford.
+
+`Esc` always means "back out of the innermost thing": it clears a staged trade
+before it closes the trade sheet, cancels a placement map, closes the settings —
+and opens the settings when there is nothing in front of you.
+
+In the trade sheet, `Enter` on a resource card pays the whole lot in one press;
+if that balances the deal the cursor jumps to the green **TRADE** button, so a
+second `Enter` completes it.
+
+**HOW TO PLAY** under the gear opens the rules as a set of slides in the middle
+of the screen, and the match genuinely stops while it is up — no board map, and
+the sheet says PAUSED. On a screen bigger than an iPad it carries an extra
+slide listing every shortcut, as does the illustrated rules book on the opening
+screen.
 
 When the match ends and you put the scoreboard away, the island is yours to
 walk: the same joystick, the same keys, the same follow camera, with the match
@@ -114,25 +147,41 @@ put MAP, PAUSE and BUILD in the corner you can reach.
 Each player places two settlements and two roads. Your second settlement pays
 out its adjacent resources immediately, as in the tabletop game.
 
-**Gathering is real-time, not dice-driven.** The number on a region still
-matters: it sets how *fast* that region gives up its resources. A 6 or 8 yields
-one resource every 0.96s; a 2 or 12 takes 1.84s. Owning a settlement on a corner
-of a region doubles what you take from it; a city triples it. That is what makes
-placement matter when there are no dice.
+**Gathering is real-time, and nothing is ever rolled.** Every hex wears a wooden
+disc numbered **1 to 10**, and the number is a plain rank rather than a dice
+probability: **10 is the richest hex on the island and 1 is the poorest**. It
+sets two things and only two — how many things the hex holds when it is full,
+and how long it stays bare after you sweep it clean:
 
-**Costs.** Road 2 wood + 2 brick Â· Settlement 2 wood + 2 brick + 2 wheat + 2 wool
-Â· City 4 wheat + 6 ore Â· Development card 2 wool + 2 wheat + 2 ore.
+| number | things on it | back in |
+|---|---|---|
+| 9 · 10 | 28 | 6s |
+| 7 · 8 | 23 | 10s |
+| 5 · 6 | 17 | 16s |
+| 3 · 4 | 8 | 28s |
+| 1 · 2 | 5 | 34s |
 
-**Scoring to 12.** Settlement 1 Â· City 2 Â· Longest Road 4 Â· Largest Army 2 Â·
+You may only collect on a hex where you own a settlement or a city on one of its
+corners; everywhere else yields nothing at all. The board deals two of every
+number except 1 and 2, which appear once each, and the two best hexes — the 9s
+and 10s, printed in red — never share a corner. That is what makes placement
+matter when there are no dice.
+
+**Costs.** Road 4 wood + 4 brick · Settlement 4 wood + 4 brick + 4 wheat + 4 wool
+· City 8 wheat + 12 ore · Development card 4 wool + 4 wheat + 4 ore.
+(Read from `src/core/constants.js` — change them there and every card, chip and
+rules page follows.)
+
+**Scoring to 12.** Settlement 1 · City 2 · Longest Road 4 · Largest Army 2 ·
 Victory Point card 1.
 
-**Development cards.** *Knight* â€” rivals drop half of everything they carry and
+**Development cards.** *Knight* — rivals drop half of everything they carry and
 you move the Raider onto a region, which blocks everyone but you. *Road
-Building* â€” two free roads. *Victory Point* â€” one point, immediately.
+Building* — two free roads. *Victory Point* — one point, immediately.
 
 **The bots have real identities.** Alex expands and chases Longest Road, Maya
 builds and upgrades to cities, Finn buys cards and hunts Largest Army. They walk
-to every resource they gather and every dock they trade at â€” no teleporting, and
+to every resource they gather and every dock they trade at — no teleporting, and
 every resource they own comes from a rules call. That is asserted automatically
 across 60 simulated matches.
 
@@ -146,12 +195,14 @@ node tools/boardsync.mjs                         # one seed, separate processes,
 node tools/simulate.mjs --matches=60 --gathersys # headless bot-vs-bot pacing + balance
 node tools/nettest.mjs                           # a real server, two sockets, a whole match
 node tools/testmatch.mjs                         # drives the real game in headless Chrome
+node tools/kbtrace.mjs --stage=keys               # every desktop shortcut, over real key events
+node tools/kbtrace.mjs --stage=trade              # the trade sheet, driven entirely by keyboard
 node tools/shoot.mjs --stage=play --w=960 --h=444 # capture real screenshots
 node tools/mkicons.mjs                           # redraw the home-screen icons
 ```
 
 `testmatch.mjs` and `shoot.mjs` need a Chrome binary; set `--chrome=/path/to/chrome`
-if it is not at the default. Start the dev server first â€” they drive the live page
+if it is not at the default. Start the dev server first — they drive the live page
 over the DevTools protocol rather than mocking anything.
 
 Current state: **17 of 19 verification checks pass**, 74 draw calls and 123.7k
@@ -172,6 +223,9 @@ src/
   entities/           settler (skinned rig), carry, controller
   systems/            camera, input, gathering, economy, bots, matchflow
   ui/                 hud, overview, panels, icons, stylesheets
+                      kbnav.js   arrow-key cursor for every menu and sheet
+                      hotkeys.js the in-match letters and the Escape ladder
+                      hud-help.js HOW TO PLAY, as a paused slide sheet
   audio/              synth, sfx bank, music + ambience beds
   fx/                 particles, floating labels, rings
 tools/                verify, simulate, shoot, testmatch
@@ -182,7 +236,7 @@ progress/             build status page, screenshots, reference art
 with no three.js or DOM references. The 3D game and the headless simulator run
 exactly the same rules code, which is why the pacing numbers mean anything.
 
-Open `progress/index.html` for the full build report â€” screenshots, the critic
+Open `progress/index.html` for the full build report — screenshots, the critic
 findings that drove each art pass, the verification table, and the pacing
 distribution.
 
@@ -191,15 +245,15 @@ distribution.
 ## Known gaps
 
 - **Match length has wide tails.** Median is 3m24s and 70% of matches land in the
-  3â€“5 minute window, but 22% finish under three minutes and 8% run past five.
-- **Bot trading is nearly vestigial** (~0.19 trades per bot per match) â€” walking
+  3–5 minute window, but 22% finish under three minutes and 8% run past five.
+- **Bot trading is nearly vestigial** (~0.19 trades per bot per match) — walking
   to a resource almost always beats a 4:1 swap. A human can trade end to end
   without trouble; this is a balance question rather than a defect.
 - **Strategy balance skews to the card bot**, 40% against an expected 33%.
 - **Frame rate is unmeasured on real hardware.** The capture rig runs SwiftShader
   at about 3fps, which proves correctness, not performance. Draw calls and
   triangles are inside budget, but device fps is unconfirmed.
-- **The audio has never actually been heard** â€” headless Chrome produces no
+- **The audio has never actually been heard** — headless Chrome produces no
   sound. It is structurally verified (every effect schedules real nodes, no NaN
   envelopes) but unauditioned.
 - **Safe-area insets are unverified on a notched phone**, because `env()` returns

@@ -21,7 +21,7 @@
  */
 
 import {
-  TILE_ITEMS, TILE_REGEN, COST, VICTORY_POINTS,
+  TILE_ITEMS, TILE_REGEN, COST, VICTORY_POINTS, isHotNumber,
   TRADE_BASE, PORT_GENERIC, PORT_SPECIAL,
   LONGEST_ROAD_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_MIN, LARGEST_ARMY_VP
 } from '../core/constants.js';
@@ -159,9 +159,9 @@ function hexPlate(ctx, cx, cy, R, terrainKey, opt = {}) {
   ctx.stroke();
 }
 
-/** The wooden number disc, pips and all — as drawn on the board map. */
+/** The wooden number disc — as drawn on the board map. */
 function token(ctx, cx, cy, r, number) {
-  const hot = number === 6 || number === 8;
+  const hot = isHotNumber(number);
   ctx.beginPath(); ctx.arc(cx, cy + r * 0.2, r * 1.06, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(0,0,0,.42)'; ctx.fill();
 
@@ -181,18 +181,12 @@ function token(ctx, cx, cy, r, number) {
     ctx.strokeStyle = 'rgba(192,39,27,.85)'; ctx.stroke();
   }
 
+  // The dot row is gone island-wide — see world/paint.js — so the numeral is
+  // centred on the face and drawn a size larger.
   ctx.fillStyle = hot ? '#bd2114' : '#33200a';
-  ctx.font = f(800, Math.round(r * 1.18));
+  ctx.font = f(800, Math.round(r * 1.36));
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(String(number), cx, cy - r * 0.15);
-
-  const pips = number ? 6 - Math.abs(7 - number) : 0;
-  const pr = Math.max(1.5, r * 0.115);
-  for (let i = 0; i < pips; i++) {
-    const x = cx + (i - (pips - 1) / 2) * pr * 2.9;
-    ctx.beginPath(); ctx.arc(x, cy + r * 0.56, pr, 0, Math.PI * 2);
-    ctx.fillStyle = hot ? '#bd2114' : '#523318'; ctx.fill();
-  }
+  ctx.fillText(String(number), cx, cy + r * 0.02);
 }
 
 /* ================================================================== pieces */
@@ -441,8 +435,8 @@ function sceneNumber(ctx, w, h) {
   const R = Math.min(w * 0.16, h * 0.30);
   const cy = h * 0.40;
   const pairs = [
-    { x: w * 0.27, n: 8, pips: 5, terrain: 'forest' },
-    { x: w * 0.73, n: 2, pips: 1, terrain: 'fields' }
+    { x: w * 0.27, n: 10, pips: 5, terrain: 'forest' },
+    { x: w * 0.73, n: 1, pips: 1, terrain: 'fields' }
   ];
   for (const p of pairs) {
     hexPlate(ctx, p.x, cy, R, p.terrain, { seed: p.n * 5, density: p.pips >= 4 ? 1.3 : 0.5 });
@@ -452,7 +446,7 @@ function sceneNumber(ctx, w, h) {
     label(ctx, p.x, cy + R * 1.45 + Math.max(13, h * 0.082),
       `BACK IN ${TILE_REGEN[p.pips]}s`, Math.max(9, h * 0.056), '#7a5228', w * 0.44);
   }
-  label(ctx, w / 2, h * 0.93, 'A BIGGER NUMBER MEANS MORE, AND FASTER',
+  label(ctx, w / 2, h * 0.93, '1 IS THE POOREST HEX \u00b7 10 IS THE RICHEST',
     Math.max(9, h * 0.055), '#5a3a1e', w * 0.94);
 }
 

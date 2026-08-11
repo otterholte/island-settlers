@@ -12,7 +12,9 @@
  * The reading route is a PAGER on purpose. `ui-base.css` suppresses native
  * scrollbars everywhere — a full-screen game must never grow browser
  * furniture — so a long page is a design bug, not a scroll region. Ten pages,
- * one idea each, one picture each.
+ * one idea each, one picture each — eleven on a screen with a keyboard, where
+ * the last one is the shortcut list. The route card counts them itself, so
+ * neither number is written down anywhere.
  *
  * Every picture is drawn by src/systems/flowTutArt.js on a canvas in the
  * board map's own art language, or is the real inline-SVG icon from
@@ -30,12 +32,14 @@
 
 import {
   RES_LABEL, COST, VICTORY_POINTS, TILE_ITEMS, TILE_REGEN,
+  NUMBER_MIN, NUMBER_MAX,
   TRADE_BASE, PORT_GENERIC, PORT_SPECIAL, CARD_LABEL,
   LONGEST_ROAD_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_MIN, LARGEST_ARMY_VP
 } from '../core/constants.js';
 import { el, button, clear, toggle, setText } from './dom.js';
 import { icon, resIcon } from './icons.js';
 import { paintScene } from '../systems/flowTutArt.js';
+import { showKeysSlide } from './hud-help.js';
 
 const lc = s => String(s).toLowerCase();
 
@@ -51,12 +55,13 @@ function costRow(cost) {
 /* ==================================================================== pages */
 
 /**
- * Ten pages, in the order somebody who has never played would need them.
+ * Ten pages, in the order somebody who has never played would need them, plus
+ * a keyboard page on a desktop-sized screen (see the note at the bottom).
  * `scene` names an illustration in flowTutArt.js; `extra()` may append live
  * markup (cost chips built from COST) under the prose.
  */
 function buildPages() {
-  return [
+  const pages = [
     {
       scene: 'goal',
       title: 'The Goal',
@@ -83,10 +88,20 @@ function buildPages() {
       scene: 'number',
       title: 'The Number',
       h: 'What the number means',
+      /* ONE TO TEN, AND NOTHING IS EVER ROLLED.
+       *
+       *   "Since the game isn't based on dice rolls and probabilities, I think
+       *    [2-12 with pips] might be a bit confusing for new users."
+       *
+       * This page used to say "5-pip" and "1-pip", which is a term from a game
+       * with dice in it and a row of dots that no longer exists. The disc now
+       * prints a plain rank, so the page can too — and the two numbers it
+       * quotes are still read out of `core/constants.js`, so the strongest and
+       * weakest hex on the island can never be described wrongly here. */
       body: [
-        'Every hex wears a wooden number disc. It tells you two things, and only two.',
-        `How much the hex holds: a 5-pip hex carries ${TILE_ITEMS[5]} things, a 1-pip hex only ${TILE_ITEMS[1]}.`,
-        `And how fast it comes back: ${TILE_REGEN[5]} seconds against ${TILE_REGEN[1]}. A big number is simply a better hex.`
+        `Every hex wears a wooden disc numbered ${NUMBER_MIN} to ${NUMBER_MAX}. Nothing is ever rolled — the number is just a rank, and it tells you two things.`,
+        `How much the hex holds: a ${NUMBER_MAX} carries ${TILE_ITEMS[5]} things, a ${NUMBER_MIN} only ${TILE_ITEMS[1]}.`,
+        `And how fast it comes back: ${TILE_REGEN[5]} seconds against ${TILE_REGEN[1]}. A higher number is simply a better hex, and the best two wear a red numeral.`
       ]
     },
     {
@@ -180,6 +195,40 @@ function buildPages() {
       ]
     }
   ];
+
+  /*
+   * ...AND ONE MORE PAGE, ON A SCREEN THAT HAS A KEYBOARD.
+   *
+   *   "Maybe add an additional slide in the tutorial written instructions for
+   *    the keyboard shortcuts. Only add that slide for if the screen is larger
+   *    than an iPad."
+   *
+   * `showKeysSlide()` lives in ui/hud-help.js and is shared with the in-match
+   * rules sheet, so the two never disagree about what counts as a desktop —
+   * and, more to the point, so the shortcut list itself exists in exactly one
+   * place. Read at BUILD time rather than at open time, which is right for a
+   * pager whose page count is baked into its dots: a browser window dragged
+   * across a display boundary mid-read would otherwise renumber the book under
+   * the reader.
+   *
+   * The page is appended rather than slotted in, because it is the only page
+   * that is about the DEVICE rather than about the island, and a reader on a
+   * phone has to be able to reach the end of the book without it.
+   */
+  if (showKeysSlide()) {
+    pages.push({
+      scene: 'goal',
+      title: 'Keyboard',
+      h: 'Playing without a mouse',
+      body: [
+        'W A S D or the arrow keys run. Space pauses and resumes. B shows and hides the build cards.',
+        'R starts a road, H a settlement (a house), C a city, and V buys a development card — S and D are left alone because they are how you walk. T opens the Trading Post and M opens your dock.',
+        'In any map or menu the arrow keys move between choices and Enter takes one. Esc backs out — it clears a staged trade first, then closes the sheet.'
+      ]
+    });
+  }
+
+  return pages;
 }
 
 /* ===================================================================== book */

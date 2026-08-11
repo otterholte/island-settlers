@@ -90,6 +90,7 @@ import { icon, avatar, personPip } from './icons.js';
 import { createPainter, pipRadius, dockOverhang } from './ovmap.js';
 import { createTargets } from './ovtargets.js';
 import { createOvPan } from './ovpan.js';
+import { createMapKeys } from './ovkeys.js';
 import { createBuyBar, buyCount } from './hud-build.js';
 import { BUILD_KINDS } from './hud-guide.js';
 import { netCommit } from '../systems/economy.js';
@@ -102,6 +103,11 @@ const MODE_INFO = {
   'place-settlement':  { title: 'Place a Settlement', hint: 'Tap a glowing corner · tap it again to place' },
   'place-city':        { title: 'Upgrade to a City', hint: 'Tap one of your settlements · tap it again to upgrade' },
   'place-robber':      { title: 'Send the Knight', hint: 'Tap a region · tap it again to send' },
+  /* The M key's overflow. Not a placement: nothing is built, and the "commit"
+     is opening that dock's trade sheet. It borrows the whole target machine —
+     arm, re-tap, arrow keys — because a dock and a corner are the same gesture
+     from the player's side. See `openMaritime` in ui/hotkeys.js. */
+  'pick-port':         { title: 'Your Docks', hint: 'Tap a dock · tap it again to trade' },
   'draft-watch':       { title: 'Opening Draft', hint: 'Watch the board' }
 };
 
@@ -164,13 +170,15 @@ const ARM_SAY = {
   'place-road':       'Tap again to build',
   'place-settlement': 'Tap again to build',
   'place-city':       'Tap again to upgrade',
-  'place-robber':     'Tap again to send'
+  'place-robber':     'Tap again to send',
+  'pick-port':        'Tap again to trade here'
 };
 const IDLE_SAY = {
   'place-road':       'Tap an edge, then tap it again',
   'place-settlement': 'Tap a corner, then tap it again',
   'place-city':       'Tap a settlement, then tap it again',
-  'place-robber':     'Tap a region, then tap it again'
+  'place-robber':     'Tap a region, then tap it again',
+  'pick-port':        'Pick one of your docks'
 };
 /** What a build sheet says for a beat after a piece goes down. */
 const BUILT_NOUN = { road: 'road', settlement: 'settlement', city: 'city' };
@@ -1215,13 +1223,26 @@ export function createOverview(root, state, game) {
       }
       return best;
     }
-    const src = mode === 'place-road' ? edges : intersections;
+    const src = targetSource();
     for (const id of targets) {
       const o = src[id];
+      if (!o) continue;
       const d = (PX(o.x) - px) ** 2 + (PY(o.z) - py) ** 2;
       if (d < bd) { bd = d; best = id; }
     }
     return best;
+  }
+
+  /**
+   * The array a target id indexes into, for whatever the panel is offering.
+   * Everything that has to know where a target IS goes through here — the hit
+   * test, the arrow keys and the target painter — so a new mode is one line.
+   */
+  function targetSource() {
+    if (mode === 'place-road') return edges;
+    if (mode === 'place-robber') return tiles;
+    if (mode === 'pick-port') return ports;
+    return intersections;
   }
 
   /**
@@ -1400,6 +1421,9 @@ export function createOverview(root, state, game) {
       else if (mode === 'place-settlement' || mode === 'place-city') {
         if (st.ghostSettlement) st.ghostSettlement(sel, 0);
       }
+      // 'pick-port' arms a dock that already exists — there is nothing to
+      // preview, and asking for a settlement ghost at a PORT id would put a
+      // translucent house on whichever corner happened to share that number.
     } catch (err) { /* the 3D preview is optional */ }
   }
 
@@ -1480,6 +1504,75 @@ export function createOverview(root, state, game) {
     refreshBuy(true);
     return ok;
   }
+
+  /* ========================================================== the keyboard
+   *
+   * `ui/ovkeys.js` owns the routing; this is the panel's half of it. Two
+   * things live here because only this file can answer them — where a target
+   * sits on screen, and what Tab should switch to next — and everything else
+   * (nearest-in-direction, the wrap, the capture-phase listener) is over there.
+   * See that file's header for why the cursor is scored on screen positions
+   * rather than walked through the board graph.
+   */
+
+  /** Screen position of a target, tilt and all. */
+  function targetXY(id) {
+    const o = targetSource()[id];
+    if (!o) return null;
+    return { x: PX(o.x), y: tiltY(PY(o.z)) };
+  }
+
+  /** Tab: the next purchase there is anything to do with. */
+  function cycleKind(back) {
+    const kind = buildKind();
+    if (!kind) return false;
+    /* NEVER 'card'. It is in BUILD_KINDS because the chip bar shows it, but it
+       has nowhere to be placed — `pickKind('card')` BUYS one on the spot. A key
+       whose whole job is "show me the settlements instead" must not be able to
+       spend four wool, four wheat and four ore on its way past, and holding Tab
+       would have done it once per repeat. */
+    const usable = BUILD_KINDS
+      .map(b => b.kind)
+      .filter(k => k !== 'card' && buyCount(state, k) > 0);
+    if (usable.length < 2) return false;
+    let at = usable.indexOf(kind);
+    if (at < 0) at = 0;
+    const next = usable[(at + (back ? -1 : 1) + usable.length) % usable.length];
+    if (next === kind) return false;
+    pickKind(next);
+    return true;
+  }
+
+  /*
+   * While the map is up the arrows belong to the map.
+   *
+   * Offline the frame loop is already frozen (see `mapPaused` in main.js), so
+   * this changes nothing there; ONLINE nothing freezes, and without it every
+   * press that moved the cursor would also have walked the settler somewhere.
+   * The same handshake `ui/panels.js` uses, for the same reason.
+   */
+  let keysHeld = false;
+  function grabKeys(on) {
+    const want = !!on;
+    if (want === keysHeld) return;
+    keysHeld = want;
+    const inp = game && game.input;
+    if (inp && typeof inp.setKeyboardCapture === 'function') {
+      try { inp.setKeyboardCapture(want, 'overview'); } catch (e) { /* optional */ }
+    }
+  }
+
+  const mapKeys = createMapKeys({
+    isOpen: () => openFlag,
+    isPlacing: () => mode !== 'view' && mode !== 'draft-watch',
+    targets: () => targets,
+    selected: () => sel,
+    xyOf: targetXY,
+    select,
+    commit: () => commit(),
+    cycleKind,
+    action: () => (action ? fireAction : null)
+  });
 
   /** What the board looks like right now, cheaply. */
   function signature() {
@@ -1602,6 +1695,12 @@ export function createOverview(root, state, game) {
     if (m === 'place-settlement') return legalSettlements(state, 0, setup);
     if (m === 'place-city') return legalCities(state, 0);
     if (m === 'place-robber') return tiles.filter(t => t.id !== state.robberTile).map(t => t.id);
+    /* Every dock this player has unlocked. Port ids, not corner ids — the one
+       mode whose targets index `ports` rather than the board graph. */
+    if (m === 'pick-port') {
+      const mine = state.players[0].ports;
+      return ports.filter(p => mine.has(p.id)).map(p => p.id);
+    }
     return [];
   }
 
@@ -1702,6 +1801,7 @@ export function createOverview(root, state, game) {
      * out for exactly as long as the map is up. Its own countdown keeps running
      * underneath, so it is usually gone by the time the map comes down. */
     toggle(root, 'ov-live', true);
+    grabKeys(true);
     if (wasOpen) return true;
 
     // A fresh open starts on the whole board; re-dressing in place (the draft,
@@ -1733,6 +1833,7 @@ export function createOverview(root, state, game) {
     // The objective card and anything else in the match-flow layer may have the
     // screen back. Paired with the `toggle(root, 'ov-live', true)` in `open`.
     toggle(root, 'ov-live', false);
+    grabKeys(false);
     if (pan.disarm) pan.disarm();
     closeTimer = 0.26;
     if (game.camera && game.camera.setOverview) game.camera.setOverview(false);
@@ -1746,6 +1847,15 @@ export function createOverview(root, state, game) {
   function commit() {
     if (sel === null) return false;
     const id = sel;
+    /* A DOCK IS NOT A PLACEMENT. Nothing is built and nothing is paid: the
+       "commit" is the trade sheet for that dock, and the map gets out of the
+       way behind it. Handled before `onConfirm` so a caller cannot accidentally
+       route a port id into `placeSettlement`. */
+    if (mode === 'pick-port') {
+      close();
+      if (typeof game.openTrade === 'function') game.openTrade(id);
+      return true;
+    }
     let ok = false;
     if (typeof opts.onConfirm === 'function') {
       ok = opts.onConfirm(id) !== false;
@@ -1884,6 +1994,10 @@ export function createOverview(root, state, game) {
     open, close, update,
     get isOpen() { return openFlag; },
     get mode() { return mode; },
+    /** False for a panel whose caller hid the X on purpose — the opening draft
+     *  and the networked board, which must not be closable at all. Read by
+     *  ui/hotkeys.js so Escape cannot do what the missing button cannot. */
+    get closable() { return !(mode !== 'view' && opts.cancellable === false); },
     /** Pan / zoom of the board — pose, clamp box, and whether it is on screen. */
     get panInfo() { return pan.info; },
     /** Capture-rig hook: one notch out, so a rig can walk to the floor. */
@@ -1905,8 +2019,7 @@ export function createOverview(root, state, game) {
         sel,
         /** where the chosen target sits on the canvas, so a rig can crop it */
         selXY: sel === null || sel === undefined ? null : (() => {
-          const o = mode === 'place-road' ? edges[sel]
-            : (mode === 'place-robber' ? tiles[sel] : intersections[sel]);
+          const o = targetSource()[sel];
           return o ? [Math.round(PX(o.x)), Math.round(PY(o.z))] : null;
         })(),
         ids: targets.slice(0, 80),
@@ -1925,8 +2038,10 @@ export function createOverview(root, state, game) {
          * not against flat board space.
          */
         targetsXY: targets.slice(0, 80).map(id => {
-          const o = mode === 'place-road' ? edges[id]
-            : (mode === 'place-robber' ? tiles[id] : intersections[id]);
+          // Via `targetSource()` so a new mode never has to be added here too —
+          // 'pick-port' indexes `ports`, and reading it out of `intersections`
+          // would report a corner that merely shares the dock's number.
+          const o = targetSource()[id];
           return o ? [Math.round(PX(o.x)), Math.round(tiltY(PY(o.z)))] : null;
         }).filter(Boolean),
         /** ...and the player's own pieces, for the step that names them. */
@@ -2043,6 +2158,8 @@ export function createOverview(root, state, game) {
     select, commit,
     destroy() {
       pan.destroy();
+      grabKeys(false);
+      mapKeys.destroy();
       if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
     }
   };

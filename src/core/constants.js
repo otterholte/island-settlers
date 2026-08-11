@@ -51,10 +51,67 @@ export const RES_COLOR = {
 export const VICTORY_POINTS = 12;
 export const MATCH_SOFT_CAP_SEC = 420;   // safety net; match should end well before
 
-// Productivity: pips = 6 - |7 - number|  (6/8 -> 5 pips, 2/12 -> 1 pip)
+/* =============================================================== the numbers
+ *
+ * ONE TO TEN, AND TEN IS THE BEST ONE.
+ *
+ *   "Since the game isn't based on dice rolls and probabilities, I think
+ *    [2-12 with pips] might be a bit confusing for new users, and the pips/dots
+ *    aren't necessary either ... switch it to having the numbers be 1 through
+ *    10, with the 10 being the best number and producing the most resources,
+ *    and the 1 providing the least."
+ *
+ * The old tokens were the tabletop's: 2..12 with no 7, worth `6 - |7 - n|`
+ * pips, so 6 and 8 were the strong hexes and 2 and 12 the weak ones. That is a
+ * probability curve, and it is a probability curve for a mechanic this game
+ * does not have — nothing is ever rolled here. A player who has never met the
+ * board game reads "8" as bigger than "5" and is right about the outcome for
+ * entirely the wrong reason, and reads "12" as the best hex on the island and
+ * is simply wrong.
+ *
+ * So the token now says what it means: a rank from 1 to 10, low to high, and a
+ * 10 is the richest hex on the island.
+ *
+ * WHAT DID NOT CHANGE, ON PURPOSE. The productivity LADDER underneath is
+ * untouched — five rungs, the same item counts in `TILE_ITEMS` and the same
+ * recovery times in `TILE_REGEN`, because the player asked for exactly that:
+ *
+ *   "I do think that the number of resources for distribution based on the
+ *    numbers is great right now though, as well as the amount of time it's
+ *    taking for different numbered resources to reload."
+ *
+ * `pips` is therefore kept as the internal 1..5 rung index that the whole
+ * economy, the bots and the fairness sampler already speak, and the printed
+ * number is a 1..10 label sitting two-to-a-rung on top of it:
+ *
+ *   number   1  2 | 3  4 | 5  6 | 7  8 | 9 10
+ *   rung     1  1 | 2  2 | 3  3 | 4  4 | 5  5
+ *   items       5 |    8 |   17 |   23 |   28
+ *   back in    34s|   28s|   16s|   10s|    6s
+ *
+ * The bag in `board/shuffle.js` deals two of every number except 1 and 2, which
+ * appear once each — which is the same eighteen tokens and the same 58 total
+ * rungs the old bag held, so every fairness threshold in that file still means
+ * what it meant and the pacing measured over 60 simulated matches is unmoved.
+ *
+ * "Pips" survives as a word in the code and dies as a thing on the screen:
+ * nothing draws dots any more (see `world/paint.js` and `ui/ovmap.js`).
+ */
+export const NUMBER_MIN = 1;
+export const NUMBER_MAX = 10;
+
+/** Productivity rung 1..5 for a printed number 1..10. 0 for the blank hex. */
 export function pipsFor(number) {
   if (!number) return 0;
-  return 6 - Math.abs(7 - number);
+  return Math.max(1, Math.min(5, Math.ceil(number / 2)));
+}
+
+/** The two best numbers on the island. They are printed red, as 6/8 used to be. */
+export const HOT_NUMBER_MIN = 9;
+
+/** Is this one of the island's top hexes? Drives the red numeral everywhere. */
+export function isHotNumber(number) {
+  return number >= HOT_NUMBER_MIN;
 }
 
 /* ------------------------------------------------------------- gathering

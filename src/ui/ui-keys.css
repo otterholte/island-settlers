@@ -1,0 +1,251 @@
+/* ==========================================================================
+   Island Settlers — the keyboard layer.
+
+   Two unrelated things that arrived together and are kept together so neither
+   has to be wedged into a stylesheet another agent owns:
+
+     1. the KEYBOARD CURSOR — the ring `ui/kbnav.js` draws on whatever the
+        arrow keys are pointing at, on every screen in the game
+     2. HOW TO PLAY — the paused rules sheet from `ui/hud-help.js`
+
+   Linked from index.html rather than @import-ed into ui.css for the same
+   reason ui-build.css is: ui.css is owned by the UI agent and is already at
+   its line budget.
+
+   Owner: UI agent.
+   ========================================================================== */
+
+/* ============================================================ focus cursor */
+/*
+ * ONE RING, DRAWN THE SAME WAY EVERYWHERE.
+ *
+ * The browser's own focus ring is not usable here: `.btn` is a bevelled slab
+ * with a coloured under-lip and a 2px ink outline, so a 1px platform outline
+ * either disappears into the outline it is drawn on top of or, on the cream
+ * buttons, lands on a light face and reads as an artefact. And the ring has to
+ * survive on a navy glass sheet, on a cream panel and on a gold slab.
+ *
+ * So it is a double ring: a dark seat against the light faces and a warm gold
+ * halo against the dark plates. It is applied to `.kb-on`, a class the
+ * navigator adds — not to `:focus` — because a tap should never leave a ring
+ * glowing on a button somebody pressed with a finger. `:focus-visible` would
+ * almost do it, but Safari's idea of "visible" and this game's are not the
+ * same, and a control the arrow keys just moved to must be marked whatever the
+ * platform thinks.
+ */
+#ui .kb-on,
+#ui .kb-on:focus{
+  outline:none;
+  box-shadow:
+    0 0 0 2px rgba(20,12,4,.85),
+    0 0 0 5px rgba(255,201,60,.92),
+    0 0 16px 5px rgba(255,201,60,.35),
+    0 6px 16px rgba(0,0,0,.45) !important;
+  z-index:3;
+}
+/* The bevelled buttons keep their under-lip: overwriting box-shadow outright
+   would flatten them, so the lip is re-stated inside the cursor's own shadow. */
+#ui .btn.kb-on,
+#ui .btn.kb-on:focus{
+  box-shadow:
+    0 4px 0 var(--lip,#a8641a),
+    0 0 0 2px rgba(20,12,4,.85),
+    0 0 0 5px rgba(255,201,60,.92),
+    0 0 18px 6px rgba(255,201,60,.30),
+    inset 0 2px 0 rgba(255,255,255,.62) !important;
+}
+#ui .btn.kb-on:active,
+#ui .btn.kb-on.press{
+  box-shadow:
+    0 0 0 2px rgba(20,12,4,.85),
+    0 0 0 5px rgba(255,201,60,.92),
+    inset 0 2px 0 rgba(255,255,255,.5) !important;
+}
+/* Text fields are outlined rather than haloed — a glow around a caret is noise. */
+#ui input.kb-on{
+  box-shadow:0 0 0 3px rgba(255,201,60,.55) !important;
+}
+
+/* Everything else keeps the platform ring off. The cursor above is the only
+   focus affordance the game has. */
+#ui button:focus{outline:none}
+
+/* THE SAME CURSOR, ON THE TRADE SHEET'S OWN BUTTON.
+   `ui/trade.js` draws its cursor rather than focusing anything — the sheet
+   moves a `.cur` class along the five resource columns — and the cursor can now
+   step off the row onto the foot button when a deal balances. This is that
+   button wearing the ring, matched to `.tr-col.cur`'s dotted outline in ui.css
+   so the two positions read as one cursor. */
+#ui .btn.cur{
+  box-shadow:
+    0 4px 0 var(--lip,#a8641a),
+    0 0 0 2px rgba(20,12,4,.85),
+    0 0 0 5px rgba(255,255,255,.92),
+    0 0 20px 7px rgba(120,255,160,.42),
+    inset 0 2px 0 rgba(255,255,255,.62);
+  transform:translateY(-1px);
+}
+
+/* ======================================================== how to play sheet */
+
+.hh{
+  position:absolute;inset:0;z-index:60;
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s ease;
+}
+.hh.on{opacity:1;pointer-events:auto}
+.hh.hid{display:none}
+
+.hh-scrim{
+  position:absolute;inset:0;
+  background:radial-gradient(120% 120% at 50% 45%,rgba(6,18,34,.62),rgba(4,12,24,.88));
+  /* The map is deliberately NOT behind this. The player asked for the rules,
+     not for the island, so the world just dims. */
+  backdrop-filter:blur(2.5px);
+}
+
+.hh-sheet{
+  position:relative;
+  width:min(760px,calc(100vw - 40px - var(--sal,0px) - var(--sar,0px)));
+  max-height:calc(100vh - 32px - var(--sat,0px) - var(--sab,0px));
+  display:flex;flex-direction:column;
+  padding:12px 16px 12px;
+  border-radius:20px;
+  transform:translateY(10px) scale(.98);
+  transition:transform .22s cubic-bezier(.2,1.3,.4,1);
+}
+.hh.on .hh-sheet{transform:none}
+
+/* ------------------------------------------------------------------- head */
+.hh-head{
+  display:flex;align-items:center;gap:10px;
+  padding-bottom:8px;margin-bottom:8px;
+  border-bottom:1px solid rgba(255,201,60,.24);
+}
+.hh-ico{display:flex;align-items:center;flex:0 0 auto;opacity:.95}
+.hh-title{
+  font:800 17px/1 var(--ff);letter-spacing:.10em;text-transform:uppercase;
+  color:#ffd977;text-shadow:0 2px 0 rgba(0,0,0,.45);
+}
+.hh-count{
+  font:800 11px/1 var(--ff);letter-spacing:.12em;color:rgba(255,255,255,.62);
+}
+/* THE BADGE THAT SAYS THE MATCH IS STOPPED.
+   "Also obvious that the game is paused in the background." A dot that does
+   not blink, next to the word, in the header the eye lands on first. */
+.hh-paused{
+  margin-left:auto;display:flex;align-items:center;gap:7px;
+  padding:5px 11px;border-radius:999px;
+  background:rgba(255,201,60,.14);border:1px solid rgba(255,201,60,.42);
+  font:800 10px/1 var(--ff);letter-spacing:.14em;text-transform:uppercase;
+  color:#ffd977;
+}
+.hh-paused i{
+  width:8px;height:8px;border-radius:2px;background:#ffd977;
+  box-shadow:0 0 8px rgba(255,201,60,.8);
+}
+/* Online there is no pausing anything, so the badge stops claiming there is. */
+.hh-paused.live{
+  background:rgba(120,200,255,.12);border-color:rgba(120,200,255,.42);color:#a8d8ff;
+}
+.hh-paused.live i{background:#7cc4ff;box-shadow:0 0 8px rgba(120,200,255,.8)}
+
+.hh-x{min-width:40px;min-height:40px;padding:0;border-radius:12px;flex:0 0 auto}
+.hh-x .ico{display:flex}
+
+/* ------------------------------------------------------------------- body */
+/*
+ * A slide, not a scroll region — but never a slide with its own top cut off.
+ *
+ * `ui-base.css` suppresses scrollbars game-wide, so if a slide does not fit it
+ * is the slide that is wrong, and every one of them is written to fit a
+ * landscape phone. What that reasoning missed is the browser window a laptop
+ * actually has: at 667x235 (a short window, not a phone) a centred flex column
+ * taller than its box overflows in BOTH directions, and `overflow:hidden`
+ * then eats the first line as well as the last — the one failure mode where
+ * the reader cannot tell there is more.
+ *
+ * `safe center` is the fix and it is exactly what it is for: centre while there
+ * is room, and fall back to flush-start the moment there is not, so the top
+ * line is always the top line. Overflow is left scrollable behind hidden
+ * scrollbars as insurance rather than as a design — a drag or a wheel reaches
+ * the rest, and no browser furniture appears.
+ */
+.hh-body{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  scrollbar-width:none;-ms-overflow-style:none;
+  display:flex;flex-direction:column;gap:9px;
+  justify-content:flex-start;
+  justify-content:safe center;
+  padding:4px 2px;
+}
+.hh-body::-webkit-scrollbar{width:0;height:0;display:none}
+.hh-row{margin:0;font:500 14px/1.44 var(--ff);color:rgba(255,255,255,.90)}
+.hh-row b{
+  display:block;margin-bottom:1px;
+  font:800 11px/1 var(--ff);letter-spacing:.13em;text-transform:uppercase;
+  color:#ffd977;
+}
+
+/* The shortcut slide is a two-column table rather than prose. */
+.hh-body.keys{
+  display:grid;grid-template-columns:1fr 1fr;
+  align-content:start;align-content:safe center;
+  gap:6px 18px;
+}
+.hh-key{
+  margin:0;display:flex;align-items:baseline;gap:9px;
+  font:600 12.5px/1.4 var(--ff);color:rgba(255,255,255,.86);
+}
+.hh-key kbd{
+  flex:0 0 auto;min-width:74px;
+  padding:4px 8px;border-radius:7px;
+  background:linear-gradient(180deg,#f8efd8,#e0cba0);
+  border:1.5px solid #2a1a0c;box-shadow:0 2px 0 #a98d5c;
+  font:800 10.5px/1 var(--ff);letter-spacing:.06em;color:#3f2a12;
+  text-align:center;
+}
+
+/* -------------------------------------------------------------------- nav */
+.hh-nav-row{
+  display:flex;align-items:center;gap:10px;
+  padding-top:9px;margin-top:6px;
+  border-top:1px solid rgba(255,201,60,.20);
+}
+.hh-nav{min-height:42px;padding:0 16px}
+.hh-done{margin-left:0;min-height:42px;padding:0 18px}
+.hh-dots{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:7px}
+.hh-dots i{
+  width:8px;height:8px;border-radius:50%;
+  background:rgba(255,255,255,.26);transition:background .18s ease,transform .18s ease;
+}
+.hh-dots i.on{background:#ffc93c;transform:scale(1.35)}
+
+/* ------------------------------------------------------------ short screens */
+@media (max-height:470px){
+  .hh-sheet{padding:9px 13px}
+  .hh-title{font-size:15px}
+  .hh-row{font-size:12.5px;line-height:1.35}
+  .hh-body{gap:6px}
+  .hh-key{font-size:11px}
+  .hh-key kbd{min-width:64px;font-size:9.5px;padding:3px 6px}
+  .hh-nav,.hh-done{min-height:38px}
+}
+/* A short desktop window rather than a phone. Everything tightens once more so
+   a five-line slide still lands whole instead of relying on the scroll. */
+@media (max-height:360px){
+  .hh-sheet{padding:6px 11px;border-radius:15px}
+  .hh-head{padding-bottom:5px;margin-bottom:5px}
+  .hh-title{font-size:13px}
+  .hh-paused{padding:3px 8px;font-size:9px}
+  .hh-row{font-size:11.5px;line-height:1.3}
+  .hh-row b{font-size:10px;letter-spacing:.10em}
+  .hh-body{gap:5px;padding:2px}
+  .hh-nav-row{padding-top:6px;margin-top:4px}
+  .hh-nav,.hh-done{min-height:34px;padding:0 13px;font-size:11px}
+  .hh-x{min-width:34px;min-height:34px}
+}
+@media (max-width:620px){
+  .hh-body.keys{grid-template-columns:1fr}
+}

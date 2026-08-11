@@ -61,7 +61,7 @@
  */
 
 import { HEX_SIZE } from '../core/constants.js';
-import { tiles, intersections, edges } from '../board/layout.js';
+import { tiles, intersections, edges, ports } from '../board/layout.js';
 import { pipRadius } from './ovmap.js';
 
 export function createTargets(ctx, proj, paint, state) {
@@ -549,6 +549,60 @@ export function createTargets(ctx, proj, paint, state) {
     ctx.restore();
   }
 
+  /**
+   * A dock the M key is offering.
+   *
+   *   "It opens the map, and highlights all of your maritime ports and lets you
+   *    use the arrow keys to select the port you want."
+   *
+   * Drawn OVER the painted harbour sign rather than instead of it, because the
+   * sign already says which dock trades what at what rate and that is most of
+   * what the player is choosing between. A gold ring around the berth is the
+   * whole treatment; the armed one gets the ring filled and the same bobbing
+   * chevron every other armed target wears, so a dock and a corner read as the
+   * same gesture.
+   */
+  function drawPortTarget(id, chosen, warm, beat, glow) {
+    const p = ports[id];
+    if (!p) return;
+    const x = PX(p.x), y = PY(p.z);
+    const r = Math.max(13, HEX_SIZE * proj.s * 0.33);
+
+    ctx.save();
+    if (chosen) {
+      ctx.beginPath(); ctx.arc(x, y, r * (1.16 + 0.05 * beat), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,201,60,${0.24 + 0.12 * glow})`;
+      ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(2.2, r * (chosen ? 0.26 : 0.17));
+    ctx.strokeStyle = chosen
+      ? 'rgba(255,214,90,.98)'
+      : `rgba(255,201,60,${warm ? 0.92 : 0.52 + 0.24 * beat})`;
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, r * 0.07);
+    ctx.strokeStyle = 'rgba(28,16,4,.55)';
+    ctx.stroke();
+    ctx.restore();
+
+    if (!chosen) return;
+    // The same bobbing chevron every other armed target wears.
+    const lift = r * (1.1 + 0.14 * beat);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, y - lift);
+    ctx.lineTo(x - r * 0.42, y - lift - r * 0.54);
+    ctx.lineTo(x + r * 0.42, y - lift - r * 0.54);
+    ctx.closePath();
+    ctx.fillStyle = '#ffd24a';
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.4, r * 0.11);
+    ctx.strokeStyle = 'rgba(24,14,4,.75)';
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /* ------------------------------------------------------------------ draw */
 
   function drawTargets(view) {
@@ -557,8 +611,8 @@ export function createTargets(ctx, proj, paint, state) {
        outside this file (overview's `metrics`, and the capture rig through it),
        and a stale count left over from the last mode would have it reporting a
        ring size that nothing on screen is drawn at. */
-    ringCount = (!targets || mode === 'place-road' || mode === 'place-robber')
-      ? 0 : targets.length;
+    ringCount = (!targets || mode === 'place-road' || mode === 'place-robber'
+      || mode === 'pick-port') ? 0 : targets.length;
     if (!targets || !targets.length) return;
     const pulse = view.pulse || 0;
     const beat = 0.5 + 0.5 * Math.sin(pulse * 4.2);
@@ -575,12 +629,14 @@ export function createTargets(ctx, proj, paint, state) {
       const warm = id === hover;
       if (mode === 'place-road') drawRoadTarget(id, warm, beat, slow);
       else if (mode === 'place-robber') drawRobberTarget(id, false, warm, beat);
+      else if (mode === 'pick-port') drawPortTarget(id, false, warm, beat, glow);
       else drawCornerTarget(id, false, warm, beat, glow, halo);
     }
 
     if (sel === null || sel === undefined) return;
     if (mode === 'place-road') drawRoadChosen(sel, beat, slow);
     else if (mode === 'place-robber') drawRobberTarget(sel, true, false, beat);
+    else if (mode === 'pick-port') drawPortTarget(sel, true, false, beat, glow);
     else {
       drawCornerTarget(sel, true, false, beat, glow, halo);
       drawChosenPiece(sel, mode === 'place-city', beat);

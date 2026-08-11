@@ -518,7 +518,9 @@ export function createPanels(root, state, game) {
   function grabKeys(on) {
     const inp = game && game.input;
     if (inp && typeof inp.setKeyboardCapture === 'function') {
-      try { inp.setKeyboardCapture(!!on); } catch (e) { /* optional */ }
+      // A named lock — see `setKeyboardCapture` in systems/input.js. Three other
+    // surfaces hold the keyboard too and they overlap this sheet.
+    try { inp.setKeyboardCapture(!!on, 'panels'); } catch (e) { /* optional */ }
     }
   }
 

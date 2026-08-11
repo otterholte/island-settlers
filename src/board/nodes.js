@@ -398,7 +398,7 @@ function edgeClear(lx, lz, margin = RIM) {
  * SCATTER ORDER. `scatterField` lays a 32-point pool by Mitchell
  * best-candidate — each new point is the one of 26 darts furthest from
  * everything already down — and `tileItemCount` then draws the first
- * TILE_ITEMS[pips] of them, which is 5 on a 2/12 hex. The first point of a
+ * TILE_ITEMS[pips] of them, which is 5 on a 1 or 2 hex. The first point of a
  * farthest-point sequence is a uniform dart and every point after it is, by
  * construction, as far from its predecessors as the region allows: in a convex
  * region that means the CORNERS. Measured over twenty boards the first five

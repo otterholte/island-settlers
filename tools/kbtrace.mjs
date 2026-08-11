@@ -143,7 +143,12 @@ const KEYS = {
   ArrowRight: ['ArrowRight', 'ArrowRight', 39],
   ArrowUp: ['ArrowUp', 'ArrowUp', 38],
   ArrowDown: ['ArrowDown', 'ArrowDown', 40],
-  Tab: ['Tab', 'Tab', 9]
+  Tab: ['Tab', 'Tab', 9],
+  Space: [' ', 'Space', 32],
+  KeyB: ['b', 'KeyB', 66], KeyC: ['c', 'KeyC', 67], KeyD: ['d', 'KeyD', 68],
+  KeyH: ['h', 'KeyH', 72], KeyM: ['m', 'KeyM', 77], KeyP: ['p', 'KeyP', 80],
+  KeyR: ['r', 'KeyR', 82], KeyS: ['s', 'KeyS', 83], KeyT: ['t', 'KeyT', 84],
+  KeyV: ['v', 'KeyV', 86], KeyW: ['w', 'KeyW', 87]
 };
 async function tap(name, gap = 120) {
   const [key, code, kc] = KEYS[name];
@@ -319,6 +324,376 @@ const endState = async () => ev(`(()=>{
     overview:!!(g.camera&&g.camera.isOverview),
     banner:seen('.endwin'), bar:seen('.endbar'), results:seen('.results'),
     lit:document.querySelectorAll('.rs-row').length };})()`);
+
+/* =============================================================== keys stage */
+/*
+ * The desktop keyboard, end to end.
+ *
+ *   node tools/kbtrace.mjs --stage=keys
+ *
+ * Everything in this block is driven with real CDP key events, so it proves the
+ * shortcut, the listener order and the guard conditions together rather than
+ * proving that a function exists.
+ */
+if (STAGE === 'keys') {
+  const activeInfo = async () => ev(`(()=>{const a=document.activeElement;
+    if(!a||a===document.body) return {tag:'-',cls:'',text:''};
+    return {tag:a.tagName,cls:a.className,
+      text:(a.textContent||'').replace(/\\s+/g,' ').trim().slice(0,40),
+      ring:a.classList.contains('kb-on')};})()`);
+
+  const uiState = async () => ev(`(()=>{
+    const I=window.__ISLAND__, g=I.game;
+    const seen=n=>{const e=document.querySelector(n);return !!(e&&!e.classList.contains('hid'));};
+    return {
+      phase:I.state.phase, time:+I.state.time.toFixed(3),
+      home:seen('.mf-view.mf-home'), setup:seen('.mf-view.mf-setup'),
+      settingsOpen:!!(g.hud&&g.hud.settingsOpen),
+      helpOpen:!!(g.hud&&g.hud.helpOpen),
+      helpUp:seen('.hh'),
+      helpTitle:(document.querySelector('.hh-title')||{}).textContent||'',
+      helpPaged:(document.querySelector('.hh-count')||{}).textContent||'',
+      buildOpen:!!(g.hud&&g.hud.buildOpen),
+      paused:!!(g.hud&&g.hud.isPaused),
+      mapOpen:!!(g.overview&&g.overview.isOpen),
+      mapMode:g.overview?g.overview.mode:null,
+      panel:g.panels?g.panels.kind:null,
+      captured:!!(g.input&&g.input.keyboardCaptured)
+    };})()`);
+
+  /* ---- 1. the opening screen ------------------------------------------- */
+  await frames(8);
+  const first = await activeInfo();
+  ok(/mf-play/.test(first.cls),
+    'the opening screen lands with PLAY already selected', JSON.stringify(first));
+  ok(first.ring === true, 'and it wears the keyboard ring so you can see it');
+
+  await tap('ArrowRight', 200);
+  const right = await activeInfo();
+  ok(!/mf-play/.test(right.cls) && right.tag === 'BUTTON',
+    'Right moves the cursor off PLAY', JSON.stringify(right.cls));
+  await tap('ArrowLeft', 200);
+  ok(/mf-play/.test((await activeInfo()).cls), 'and Left brings it back');
+  await shot(`kb${TAG}-k1-home`);
+
+  /* The rules BOOK gains the same keyboard page on the same test, so the two
+     places the shortcuts are written can never disagree about who sees them. */
+  await ev(`(()=>{document.querySelector('.mf-i-tut,.mf-tut,[aria-label*="Tutorial" i]').click();
+    return 1;})()`);
+  await frames(4);
+  await ev(`(()=>{const b=document.querySelector('.tut-route.read'); if(b) b.click();
+    return 1;})()`);
+  await frames(4);
+  const book = await ev(`(()=>{const n=document.querySelector('.tut-count');
+    return {count:(n&&n.textContent||'').trim(),w:innerWidth,h:innerHeight};})()`);
+  const bookWantKeys = Math.max(book.w, book.h) > 1024;
+  const bookPages = +String(book.count).split('/')[1];
+  ok(bookWantKeys ? bookPages === 11 : bookPages === 10,
+    bookWantKeys ? 'the rules book gains a keyboard page on a desktop screen'
+      : 'the rules book has no keyboard page on a phone',
+    `${book.w}x${book.h} -> ${book.count}`);
+  await ev(`(()=>{const b=document.querySelector('.tut .tut-x'); if(b) b.click(); return 1;})()`);
+  await frames(6);
+  await ev(`(()=>{const b=document.querySelector('.mf-play'); b.focus();
+    b.classList.add('kb-on'); return 1;})()`);
+
+  await tap('Enter', 400);
+  const setup = await uiState();
+  ok(setup.setup === true && setup.home === false,
+    'Enter on PLAY opens Match Setup', JSON.stringify([setup.home, setup.setup]));
+  const setupFocus = await activeInfo();
+  ok(setupFocus.tag === 'BUTTON',
+    'and the cursor is already on a control there', setupFocus.text);
+
+  /* Arrow around the setup panel and prove a toggle answers to Enter. */
+  const diffBefore = await ev(`(()=>{const b=document.querySelector('.mf-diff.on');
+    return b?b.getAttribute('data-level'):null;})()`);
+  await ev(`(()=>{const b=[...document.querySelectorAll('.mf-diff')].find(
+    x=>!x.classList.contains('on')); b.focus(); b.classList.add('kb-on'); return 1;})()`);
+  await tap('Enter', 300);
+  const diffAfter = await ev(`(()=>{const b=document.querySelector('.mf-diff.on');
+    return b?b.getAttribute('data-level'):null;})()`);
+  ok(diffAfter !== null && diffAfter !== diffBefore,
+    'Enter works the segmented toggles', `${diffBefore} -> ${diffAfter}`);
+
+  await shot(`kb${TAG}-k2-setup`);
+  await tap('Escape', 400);
+  ok((await uiState()).home === true, 'Escape backs out of Match Setup');
+
+  /* ---- 2. into a match -------------------------------------------------- */
+  await ev(`(()=>{window.__ISLAND__.game.flow.skipIntro&&window.__ISLAND__.game.flow.skipIntro();
+    return 1;})()`);
+  await finishDraft();
+  await frames(24);
+  const playing = await uiState();
+  ok(playing.phase === 'play', 'the match is running', playing.phase);
+
+  /* ---- 3. the build row, the map, and Tab ------------------------------- */
+  const bWas = (await uiState()).buildOpen;
+  await tap('KeyB', 250);
+  ok((await uiState()).buildOpen !== bWas, 'B toggles the build cards');
+  await tap('KeyB', 250);
+  ok((await uiState()).buildOpen === bWas, 'and B puts them back');
+
+  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=20; return 1;})()`);
+  await tap('KeyR', 400);
+  const mapR = await uiState();
+  ok(mapR.mapOpen && mapR.mapMode === 'place-road',
+    'R opens the road placement map', mapR.mapMode);
+  ok(mapR.captured === true,
+    'and the map takes the arrows off the settler while it is up');
+
+  const selOf = async () => ev(`window.__ISLAND__.game.overview.metrics().selXY?1:0`);
+  await tap('ArrowRight', 220);
+  const armed = await ev(`(()=>{const m=window.__ISLAND__.game.overview.metrics();
+    return m.selXY?m.selXY.join(','):null;})()`);
+  ok(armed !== null, 'an arrow key arms a target on the map', String(armed));
+  await tap('ArrowLeft', 220);
+  const armed2 = await ev(`(()=>{const m=window.__ISLAND__.game.overview.metrics();
+    return m.selXY?m.selXY.join(','):null;})()`);
+  ok(armed2 !== null && armed2 !== armed,
+    'and the next arrow moves it somewhere else', `${armed} -> ${armed2}`);
+
+  await shot(`kb${TAG}-k3-map`);
+  await tap('Tab', 400);
+  const tabbed = await uiState();
+  ok(tabbed.mapOpen && tabbed.mapMode !== 'place-road',
+    'Tab cycles the map to another piece', tabbed.mapMode);
+
+  await tap('Escape', 400);
+  ok((await uiState()).mapOpen === false, 'Escape closes the placement map');
+  ok((await uiState()).captured === false, 'and hands the arrows back');
+
+  /* S AND D STILL WALK.
+     "R, S, C, D" was the request and S and D are half of W A S D, so the two
+     that collide moved to H and V. This is the half of that which can actually
+     break a match: the movement keys must still be movement. */
+  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    p.x=0;p.z=0;p.vx=0;p.vz=0; return 1;})()`);
+  await frames(4);
+  const beforeS = await uiState();
+  await tap('KeyS', 300);
+  const afterS = await uiState();
+  ok(afterS.mapOpen === false && afterS.panel === null,
+    'S does not open anything — it is still the back key',
+    `map=${afterS.mapOpen} panel=${afterS.panel}`);
+  const cardsBefore = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  await tap('KeyD', 300);
+  const cardsAfter = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  ok(cardsAfter === cardsBefore, 'and D does not buy a card — it is still right',
+    `${cardsBefore} -> ${cardsAfter}`);
+  void beforeS;
+
+  /* Straight out of the draft there is often nowhere legal to settle — every
+     road end is still inside the distance rule — so lay roads until there is,
+     the way a player would, before asking the key to open the map. */
+  const room = await ev(`(()=>{const {state}=window.__ISLAND__,R=window.__R__;
+    for(let i=0;i<8 && !R.legalSettlements(state,0).length;i++){
+      const L=R.legalRoads(state,0); if(!L.length) break;
+      const p=state.players[0];
+      for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=40;
+      R.placeRoad(state,0,L[L.length-1]);
+    }
+    const p=state.players[0];
+    for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=40;
+    return R.legalSettlements(state,0).length;})()`);
+  await frames(6);
+  await tap('KeyH', 400);
+  const mapH = await uiState();
+  ok(mapH.mapOpen && mapH.mapMode === 'place-settlement',
+    `H opens the settlement map (${room} legal corners)`, mapH.mapMode);
+
+  /* Tab must never SPEND anything: 'card' is in BUILD_KINDS for the chip bar
+     and buying one is not a cycle step. */
+  const cardsPreTab = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  await tap('Tab', 350);
+  await tap('Tab', 350);
+  await tap('Tab', 350);
+  const cardsPostTab = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  ok(cardsPostTab === cardsPreTab, 'Tab cycles without ever buying a card',
+    `${cardsPreTab} -> ${cardsPostTab}`);
+  await tap('Escape', 400);
+
+  const cardsPreV = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  await tap('KeyV', 400);
+  const cardsPostV = await ev(`window.__ISLAND__.state.players[0].cards.length`);
+  ok(cardsPostV === cardsPreV + 1, 'V buys a development card',
+    `${cardsPreV} -> ${cardsPostV}`);
+  /* A Knight raises its own board on the way in, which is the game working —
+     put the card back in the deck and stand every cue down so the rest of the
+     run is measuring keys rather than a card it happened to draw. */
+  await ev(`(()=>{const g=window.__ISLAND__.game,{state}=window.__ISLAND__;
+    state.players[0].cards.length=0;
+    if(g.knightCue&&g.knightCue.dismiss) g.knightCue.dismiss();
+    if(g.roadCue&&g.roadCue.dismiss) g.roadCue.dismiss();
+    state.players[0].freeRoads=0;
+    if(g.panels&&g.panels.close) g.panels.close();
+    if(g.overview&&g.overview.isOpen) g.closeOverview();
+    return 1;})()`);
+  await frames(10);
+
+  /* ---- 4. pause, settings, and the rules sheet -------------------------- */
+  await tap('Space', 400);
+  const paused = await uiState();
+  ok(paused.paused === true && paused.mapMode === 'view',
+    'Space pauses the match', JSON.stringify([paused.paused, paused.mapMode]));
+  await tap('Space', 400);
+  ok((await uiState()).paused === false, 'and Space resumes it');
+
+  await tap('Escape', 350);
+  ok((await uiState()).settingsOpen === true, 'Escape opens the settings');
+  await tap('Escape', 350);
+  ok((await uiState()).settingsOpen === false, 'and Escape closes them again');
+
+  await ev(`(()=>{window.__ISLAND__.game.hud.openHelp();return 1;})()`);
+  await frames(6);
+  const help = await uiState();
+  ok(help.helpOpen === true && help.helpUp === true,
+    'HOW TO PLAY comes up as its own sheet', help.helpTitle);
+  ok(help.mapOpen === false,
+    'and it does NOT raise the board map behind it', String(help.mapMode));
+  const t0 = (await uiState()).time;
+  await frames(20);
+  const t1 = (await uiState()).time;
+  ok(t1 === t0, 'the match is genuinely frozen while it is up', `${t0} -> ${t1}`);
+  const pausedBadge = await ev(`(()=>{const n=document.querySelector('.hh-paused');
+    return n?(n.textContent||'').trim():null;})()`);
+  ok(/paused/i.test(String(pausedBadge)), 'and it says so on the sheet', String(pausedBadge));
+
+  /* The shortcut slide is desktop-only — "only add that slide for if the screen
+     is larger than an iPad" — so on a wide viewport it must be there and on a
+     phone-sized one it must not. `--w` decides which run this is. */
+  const keySlide = await ev(`(()=>{const n=[...document.querySelectorAll('.hh-count')][0];
+    return {count:(n&&n.textContent||'').trim(),w:innerWidth,h:innerHeight};})()`);
+  const wantKeys = Math.max(keySlide.w, keySlide.h) > 1024;
+  const slideCount = +String(keySlide.count).split('/')[1];
+  ok(wantKeys ? slideCount === 6 : slideCount === 5,
+    wantKeys ? 'a desktop-sized screen gets the keyboard slide'
+      : 'a phone-sized screen does not get the keyboard slide',
+    `${keySlide.w}x${keySlide.h} -> ${keySlide.count}`);
+  await shot(`kb${TAG}-k4-help`);
+  /* EVERY SLIDE HAS TO FIT.
+     The sheet is a pager, not a scroll region, so a slide whose body is taller
+     than its box is a slide that needs fewer words — the overflow is only there
+     so a short desktop window degrades to a drag instead of eating the first
+     line. Measured on the real DOM, one slide at a time. */
+  const fits = await ev(`(async()=>{
+    const b=document.querySelector('.hh-body');
+    const next=[...document.querySelectorAll('.hh-nav')].find(x=>/next/i.test(x.textContent));
+    const n=+((document.querySelector('.hh-count')||{}).textContent||'0/0').split('/')[1];
+    const over=[];
+    for(let i=0;i<n;i++){
+      if(b.scrollHeight > b.clientHeight+2)
+        over.push(((document.querySelector('.hh-title')||{}).textContent||'?')
+          +' ('+b.scrollHeight+'>'+b.clientHeight+')');
+      if(i<n-1) next.click();
+      await new Promise(r=>setTimeout(r,30));
+    }
+    return {over,n,h:innerHeight};})()`, true);
+  ok(fits.over.length === 0 || fits.h < 300,
+    `all ${fits.n} slides fit their box at ${await ev('innerWidth')}x${fits.h}`,
+    fits.over.join(' · '));
+  await ev(`(()=>{const g=window.__ISLAND__.game.hud;
+    g.closeHelp(); g.openHelp();
+    const b=[...document.querySelectorAll('.hh-nav')].find(x=>/back/i.test(x.textContent));
+    for(let i=0;i<12;i++) b.click();      // back to slide one for the next check
+    return 1;})()`);
+  await frames(4);
+
+  const page0 = (await uiState()).helpPaged;
+  await tap('ArrowRight', 250);
+  await ev(`(()=>{const b=[...document.querySelectorAll('.hh-nav')].find(
+    x=>/next/i.test(x.textContent)); b.click(); return 1;})()`);
+  await frames(4);
+  const page1 = (await uiState()).helpPaged;
+  ok(page1 !== page0, 'the slides page back and forth', `${page0} -> ${page1}`);
+  if (wantKeys) {
+    await ev(`(()=>{window.__ISLAND__.game.hud.closeHelp();return 1;})()`);
+    await ev(`(()=>{const h=window.__ISLAND__.game.hud;h.openHelp();return 1;})()`);
+    await frames(4);
+    await ev(`(()=>{const b=[...document.querySelectorAll('.hh-nav')].find(
+      x=>/next/i.test(x.textContent));
+      for(let i=0;i<5;i++) b.click(); return 1;})()`);
+    await frames(4);
+    ok(/keyboard/i.test((await uiState()).helpTitle),
+      'and the last slide is the shortcut list', (await uiState()).helpTitle);
+    await shot(`kb${TAG}-k6-keys`);
+  }
+  await tap('Escape', 350);
+  ok((await uiState()).helpOpen === false, 'Escape leaves the rules');
+  await frames(12);
+  ok((await uiState()).time > t1, 'and the match starts again', 'clock moving');
+
+  /* ---- 5. trading by key ------------------------------------------------ */
+  /* T is a GLOBAL key: it raises the sheet wherever the settler happens to be,
+     which is the whole of "make the T button always open the trading post".
+     The RULE is untouched — the sheet away from a post shows the rates and says
+     where to go, and nothing can be exchanged until you are standing there. */
+  await ev(`(()=>{const p=window.__ISLAND__.state.players[0];
+    p.x=0;p.z=40;p.vx=0;p.vz=0;            // nowhere near the market
+    return 1;})()`);
+  await frames(6);
+  await tap('KeyT', 400);
+  ok((await uiState()).panel === 'trade',
+    'T opens the Trading Post from anywhere on the island');
+  const away = await ev(`(()=>{const s=document.querySelector('.sheet.trade');
+    return [...s.querySelectorAll('.tr-cap.say .tc-live')].map(
+      n=>(n.textContent||'').trim()).join(' | ');})()`);
+  ok(/Trading Post|dock/i.test(String(away)),
+    'and away from a post it says where to go rather than trading',
+    String(away));
+  await tap('Escape', 350);
+  ok((await uiState()).panel === null, 'Escape leaves it again');
+
+  /* ...and standing on it, the same key does the whole deal in two presses. */
+  await ev(`(()=>{const {state}=window.__ISLAND__,M=window.__L__.MARKET;
+    const p=state.players[0];
+    p.x=M.x;p.z=M.z+1.2;p.vx=0;p.vz=0;
+    for(const r of ['wood','brick','wool','wheat','ore']) p.res[r]=12;
+    return 1;})()`);
+  await frames(8);
+  await tap('KeyT', 400);
+  ok((await uiState()).panel === 'trade', 'T opens it at the post too');
+  await tap('ArrowUp', 250);
+  await tap('ArrowRight', 250);
+  await tap('Enter', 300);
+  const staged = await ev(`(()=>{const s=document.querySelector('.sheet.trade');
+    return {give:[...s.querySelectorAll('.tr-col.giving')].length,
+      cur:!!s.querySelector('.sheet-foot .btn.cur')};})()`);
+  ok(staged.give >= 1, 'Enter on a card pays the whole lot in one press',
+    JSON.stringify(staged));
+  ok(staged.cur === true,
+    'and with the deal balanced the cursor moves to the green button');
+  const tradesBefore = await ev(`window.__ISLAND__.state.players[0].stats.traded`);
+  await tap('Enter', 400);
+  const tradesAfter = await ev(`window.__ISLAND__.state.players[0].stats.traded`);
+  ok(tradesAfter === tradesBefore + 1,
+    'a second Enter completes the trade', `${tradesBefore} -> ${tradesAfter}`);
+  await tap('Escape', 300);
+  ok((await uiState()).panel === null, 'Escape leaves the trading post');
+
+  /* ---- 6. the docks ----------------------------------------------------- */
+  const two = await ev(`(()=>{const {state}=window.__ISLAND__,L=window.__L__;
+    const p=state.players[0];
+    p.ports.add(L.ports[0].id); p.ports.add(L.ports[3].id);
+    p.x=0; p.z=40;
+    return p.ports.size;})()`);
+  await frames(4);
+  await tap('KeyM', 450);
+  const picking = await uiState();
+  ok(picking.mapOpen && picking.mapMode === 'pick-port',
+    `M with ${two} docks raises the dock picker`, String(picking.mapMode));
+  await tap('ArrowRight', 250);
+  await shot(`kb${TAG}-k5-ports`);
+  await tap('Enter', 450);
+  const opened = await uiState();
+  ok(opened.panel === 'trade' && opened.mapOpen === false,
+    'and Enter on a dock opens that dock', JSON.stringify([opened.panel, opened.mapOpen]));
+  await tap('Escape', 300);
+  await tap('Escape', 300);
+  await shot(`kb${TAG}-keys-end`);
+}
 
 /* ============================================================== trade stage */
 
@@ -626,7 +1001,20 @@ if (STAGE === 'trade') {
     ok(tapd.get.length === 1, 'tapping the top arrow asks for one, for a thumb too',
       `get=[${tapd.get}]`);
   } else ok(false, 'the receive arrows are tappable');
+
+  /* ---- Escape is two presses now -----------------------------------------
+     "Esc in an active trade clears the trade, and esc a second time when no
+     trade is active closes the trading post." There is a staged ask on the row
+     from the arrow tap above, so the first press must empty it and LEAVE THE
+     SHEET UP, and only the second may close it. */
+  await tap('Escape', 300);
+  const esc1 = await readTrade();
+  ok(esc1.kind === 'trade' && esc1.get.length === 0,
+    'Escape clears a staged trade and keeps the sheet open',
+    `kind=${esc1.kind} get=[${esc1.get}]`);
   await tap('Escape', 400);
+  ok((await readTrade()).kind === null,
+    'and a second Escape, with nothing staged, closes the trading post');
   }
 
   if (partB) {

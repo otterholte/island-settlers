@@ -66,8 +66,13 @@ ok(items.length >= 280 && items.length <= 620, 'harvestable field items', String
 const nums = tiles.filter(t => t.number).map(t => t.number).sort((a, b) => a - b);
 ok(nums.length === 18, 'number tokens = 18');
 const counts = tallyOf(nums);
-ok(counts[2] === 1 && counts[12] === 1 && [3,4,5,6,8,9,10,11].every(n => counts[n] === 2),
-   'classic token distribution');
+// One to ten, low to high: a single 1 and a single 2, two of everything else.
+ok(counts[1] === 1 && counts[2] === 1 && [3,4,5,6,7,8,9,10].every(n => counts[n] === 2),
+   'token distribution is 1..10');
+ok(nums[0] === 1 && nums[nums.length - 1] === 10, 'numbers run 1 to 10');
+// The printed number and the productivity rung must never disagree.
+ok(tiles.filter(t => t.number).every(t => t.pips === Math.ceil(t.number / 2)),
+   'every printed number matches its productivity rung');
 
 /** Two hexes share a corner iff they are neighbours, so this tests adjacency
  *  exactly. Computed off the real graph, not off shuffle.js. */
@@ -79,7 +84,7 @@ function touchingReds() {
   }
   return null;
 }
-ok(!touchingReds(), 'no two 6/8 tiles touch');
+ok(!touchingReds(), 'no two 9/10 tiles touch');
 ok(BOUNDS.width > 70 && BOUNDS.width < 85, 'island spans ~78 units', BOUNDS.width.toFixed(1));
 
 /* ================================================= 200+ shuffled islands */

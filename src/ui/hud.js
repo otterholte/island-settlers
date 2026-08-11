@@ -24,7 +24,7 @@
 
 import {
   RES, RES_LABEL, COST, VICTORY_POINTS,
-  CARD_LABEL, LONGEST_ROAD_MIN, LARGEST_ARMY_MIN, LONGEST_ROAD_VP, LARGEST_ARMY_VP,
+  CARD_LABEL, LONGEST_ROAD_MIN, LARGEST_ARMY_MIN,
   canAfford, missingFrom
 } from '../core/constants.js';
 
@@ -41,40 +41,34 @@ import { createKnightCue } from './hud-knight.js';
 import { createRoadCue } from './hud-road.js';
 import { createRaidCue } from './hud-raid.js';
 import { createNotice } from './hud-notice.js';
+import { createHelp } from './hud-help.js';
+import { keyNav } from './kbnav.js';
 import {
   regionReport, pieceCapped, hasSomewhere
 } from './hud-guide.js';
 
 const RES_ICON_PX = 28;
 
-/* Built per match: the two Knight lines are removed outright when the option is
-   switched off before the draft, because a How to Play that explains a mechanic
-   the match does not have is worse than one that says nothing about it. */
-const HOW_TO_ALL = [
-  ['Move', 'Drag anywhere on the screen to run — no need to find anything, the stick appears under your thumb.'],
-  ['Gather', 'Run straight over a tree, a sheep, a clay pile — it is yours the moment you touch it. No holding, no waiting.'],
-  ['Your land', 'You may only pick things up on a hex where you own a settlement or a city. Everywhere else you run through and collect nothing.'],
-  ['Regions', 'Sweep a hex clean and the whole field rests, then comes back at once. The bars under the resource pill show what is still standing.'],
-  ['Build', 'Each card fills as you gather. When it glows gold you can afford it — tap it, then pick a glowing spot.'],
-  ['Score', `Settlement 1 point, city 2, victory card 1. First to ${VICTORY_POINTS} wins.`],
-  /* Read from the constants rather than typed, because they have both moved
-     once already — Longest Road went 4 -> 3 when the target went 13 -> 12 — and
-     a rules card that quietly keeps quoting the old number is worse than one
-     that does not mention it. */
-  ['Awards', `Longest Road is ${LONGEST_ROAD_VP} points, Largest Army ${LARGEST_ARMY_VP}.`],
-  ['Trade', 'The Trading Post swaps 4:1; a dock you own does 3:1 or 2:1.'],
-  ['Cards', 'A Knight opens the whole board so you can pick the region it shuts down. Road Building opens the map and lays two roads for nothing.'],
-  ['The Knight', 'Send it to a hex and everyone with a settlement or city THERE loses half of every resource they hold, rounded down and gone rather than stolen. Nobody else pays, and nor do you. The hex then gives nothing to anybody but you.'],
-  ['Pause', 'Tap PAUSE, or press P or Escape. The clock, the bots and every settler stop, and the board and standings stay up for as long as you want them.']
-];
+/* THE RULES MOVED OUT OF THIS FILE.
+ *
+ *   "The How to Play button within the settings dropdown within the game
+ *    itself ... should be a larger popup in the middle of the screen, where the
+ *    game technically pauses in the background."
+ *
+ * What used to live here was `HOW_TO`, eleven `[topic, paragraph]` pairs that
+ * `howBody` unfolded INSIDE the settings sheet — which is how a 250px drawer on
+ * a 444px-tall phone ended up being the game's rules reference, and why
+ * `paintSheetEdges` had to re-measure a scroll region every time it opened.
+ *
+ * Every one of those paragraphs is now a row on a slide in `ui/hud-help.js`,
+ * which also freezes the match while it is up and says so. The button below
+ * raises that instead. The per-match Knights filter went with it — the sheet
+ * asks `knightsOn()` when it is built, so a match with Knights switched off
+ * still never reads a word about them.
+ *
+ * (The old array survives, word for word, as the rows of `buildSlides()`.)
+ */
 
-const KNIGHT_TOPICS = new Set(['Cards', 'The Knight']);
-const HOW_TO = knightsOn() ? HOW_TO_ALL : HOW_TO_ALL
-  .filter(([t]) => !KNIGHT_TOPICS.has(t))
-  .concat([
-    ['Cards', 'Road Building opens the map and lays two roads for nothing. Victory Point scores the moment you draw it.'],
-    ['No Knights', 'You switched Knights off before the draft, so there are no Knight cards, nothing ever blocks a region, and Largest Army is out of play for everyone.']
-  ]);
 
 export function createHUD(root, state, game) {
   const me = state.players[0];
@@ -350,9 +344,14 @@ export function createHUD(root, state, game) {
       el('span', { class: 'cb-lab', text: label }), badge);
     return { node, badge };
   };
-  const btnBuild = mkCircle('hammer', 'Build', 'gold', () => {
-    toggle(buildRow, 'hid', !buildRow.classList.contains('hid'));
-  });
+  /** Show or hide the row of build cards. The B key is the other way in. */
+  function toggleBuildRow(force) {
+    const want = force === undefined
+      ? buildRow.classList.contains('hid') : !!force;
+    toggle(buildRow, 'hid', !want);
+    return want;
+  }
+  const btnBuild = mkCircle('hammer', 'Build', 'gold', () => toggleBuildRow());
   /* THERE IS NO CARDS BUTTON.
    *
    *   "Remove the Cards button, I don't need it, since the build button lets
@@ -449,8 +448,6 @@ export function createHUD(root, state, game) {
     el('span', { class: 'sb-ico', html: icon('sound', 20) }),
     el('span', { class: 'sb-lab', text: 'Sound: On' }));
 
-  const howBody = el('div', { class: 'how hid' },
-    HOW_TO.map(([t, d]) => el('p', {}, el('b', { text: t }), el('span', { text: d }))));
 
   /* --- where the controls live --------------------------------------------
    *
@@ -552,15 +549,13 @@ export function createHUD(root, state, game) {
     soundBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node,
-    button('wide cream', { on: { click: () => {
-      toggle(howBody, 'hid', !howBody.classList.contains('hid'));
-      // The rules are eleven paragraphs; opening them is what turns this sheet
-      // into a scroller, so the edges have to be re-read the moment it happens.
-      paintSheetEdges();
-    } } },
+    /* The rules are no longer a drawer inside a drawer. This closes the
+       settings and raises the paused slide sheet in the middle of the screen —
+       see ui/hud-help.js. The settings sheet therefore never scrolls on
+       account of the rules again, which is most of why it scrolled at all. */
+    button('wide cream', { on: { click: () => { toggleSettings(false); help.open(); } } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
       el('span', { class: 'sb-lab', text: 'How to Play' })),
-    howBody,
     /* ONE WAY OUT, AND IT IS RED.
      *
      *   "Please get rid of the restart match, I don't need that AND leave
@@ -584,6 +579,42 @@ export function createHUD(root, state, game) {
      second and it must not disappear behind the resource pill halfway there. */
   hud.appendChild(vpFly);
   root.appendChild(hud);
+
+  /* ------------------------------------------------------------ the rules
+   * Appended to the interface ROOT rather than to the HUD, because it is a
+   * modal over the whole game rather than another cluster in it — and because
+   * `.hud` is `pointer-events:none` with each control opting back in, which is
+   * exactly the wrong default for a full-screen sheet. */
+  const help = createHelp(root, state, game);
+
+  /* ------------------------------------------------------- keyboard scopes
+   *
+   *   "The up down left and right arrow keys all work to navigate any page I'm
+   *    on to all of the different buttons on all of the different screens
+   *    including the menus, settings, match setup, etc."
+   *
+   * The settings drawer is a menu like any other, so it registers like one.
+   * `captures` is what keeps the settler still while somebody arrows around it:
+   * `ui/kbnav.js` hands the keyboard over the same way `ui/panels.js` does. The
+   * rules sheet registers itself inside hud-help.js at a higher priority, so a
+   * sheet raised FROM the settings still out-ranks the settings. */
+  const nav = keyNav();
+  const offSettings = nav.registerScope({
+    node: settings, priority: 50, captures: true,
+    /* OPEN IS NOT ENOUGH — IT ALSO HAS TO BE THE FRONT-MOST THING.
+     *
+     * The drawer stays in the DOM, visible, behind anything raised over it, and
+     * a scope that only asked `settingsOpen` went on claiming the arrow keys
+     * while the trade sheet was on top of it — so the row of resource cards
+     * stopped answering to Left and Right for no reason the player could see.
+     * The sheets do not know this drawer exists and should not have to. */
+    isOpen: () => settingsOpen
+      && !(game.panels && game.panels.isOpen)
+      && !(game.overview && game.overview.isOpen)
+      && !help.isOpen,
+    first: () => soundBtn,
+    onEscape: () => toggleSettings(false)
+  });
 
   /* The world-anchored trade banner. It lives inside the HUD layer so it can
      measure itself against the same box everything else is laid out in. */
@@ -1340,22 +1371,33 @@ export function createHUD(root, state, game) {
   }
 
   /**
-   * P toggles. Escape pauses, and un-pauses.
+   * P toggles the pause, and that is now ALL this handler does.
    *
-   * Everything that could already own the keyboard is checked first and left
-   * alone: panels.js runs its own Escape handler for the trade, cards and
-   * results sheets, and a placement map has a Cancel button of its own that
-   * means something different from "resume".
+   *   "The space bar pauses and plays the game ... Esc should open the
+   *    settings."
+   *
+   * Escape used to live here too, and it cannot any more: it has four other
+   * jobs first (clear a staged trade, close a sheet, cancel a placement map,
+   * close the settings) and deciding between them from inside the HUD would
+   * mean the HUD reaching into the trade sheet. `ui/hotkeys.js` owns that whole
+   * ladder, and Space with it. P stays here because it is unambiguous and
+   * because it is the key the pause hint has always named.
+   *
+   * Everything that could already own the keyboard is still checked first:
+   * panels.js runs its own handler for the trade, cards and results sheets,
+   * and a placement map has a Cancel of its own that means something different
+   * from "resume".
    */
   function onPauseKey(ev) {
     const code = ev.code || ev.key;
-    if (code !== 'KeyP' && code !== 'Escape') return;
+    if (code !== 'KeyP') return;
     if (game.panels && game.panels.isOpen) return;
+    if (help && help.isOpen) return;
     if (mapOpen() && !viewOpen()) return;
     if (state.phase !== 'play') return;
     if (ev.preventDefault) ev.preventDefault();
-    // A map the player opened themselves is not a pause, but Escape closing it
-    // is still the least surprising thing that key can do.
+    // A map the player opened themselves is not a pause, but this key closing
+    // it is still the least surprising thing it can do.
     if (!paused && viewOpen()) { game.closeOverview(); return; }
     togglePause();
   }
@@ -1432,6 +1474,19 @@ export function createHUD(root, state, game) {
     update, toast, announce, pulseResource, flashCost, requestBuild, onPlayBegan,
     get root() { return hud; },
     openSettings: () => toggleSettings(true),
+    closeSettings: () => toggleSettings(false),
+    toggleSettings: force => toggleSettings(force),
+    get settingsOpen() { return settingsOpen; },
+    /* The rules sheet. `main.js` reads `helpOpen` to freeze the match while it
+       is up — that freeze IS the pause the player asked for, and it is why the
+       sheet does not simply raise the board map the way PAUSE does. */
+    openHelp: () => help.open(),
+    closeHelp: () => help.close(),
+    toggleHelp: force => help.toggle(force),
+    get helpOpen() { return help.isOpen; },
+    /** The B key, and the BUILD circle, are the same switch. */
+    toggleBuild: force => toggleBuildRow(force),
+    get buildOpen() { return !buildRow.classList.contains('hid'); },
     get knightCue() { return knightCue; },
     get roadCue() { return roadCue; },
     /** Put the Knight's bill on screen. Driven by main.js's `knight` event. */
@@ -1450,6 +1505,8 @@ export function createHUD(root, state, game) {
         window.removeEventListener('pointerdown', onDocDown, true);
         window.removeEventListener('pointerup', onDocUp, true);
       }
+      try { offSettings(); } catch (e) { /* already gone */ }
+      help.destroy();
       notice.destroy();
       tradeCue.destroy();
       knightCue.destroy();

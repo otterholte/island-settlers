@@ -286,6 +286,21 @@ export function createTradeSheet(state, game, opts = {}) {
 
   let portId = null;
   let focus = 0;
+  /*
+   * THE CURSOR CAN LEAVE THE ROW AND SIT ON THE BUTTON.
+   *
+   *   "If the trade popup is open and I press Enter while a middle icon for a
+   *    resource is selected then it does the bulk trade. And when the trade is
+   *    valid, it switches to select the confirm green button so I can just press
+   *    Enter a second time to complete the trade."
+   *
+   * Which is two presses of one key for the whole transaction, and it only
+   * works if the cursor has somewhere to go that is not a resource column. So
+   * `focus` still names the column and `onConfirm` says whether the cursor has
+   * stepped off the row onto the foot button. Left/Right/Up/Down bring it back;
+   * the moment a deal balances it goes there by itself.
+   */
+  let onConfirm = false;
   let ready = false;
   /* What the foot button was last painted as. See the note where it is built:
      the paint is written only on a change, because this refresh runs at 5Hz and
@@ -406,13 +421,13 @@ export function createTradeSheet(state, game, opts = {}) {
       class: 'tr-arr up', type: 'button', 'data-ui': '',
       'aria-label': `Receive ${RES_LABEL[r]}`
     });
-    pressable(up, () => { focus = i; step(r, 1); });
+    pressable(up, () => { aimAt(i); step(r, 1); });
 
     const dn = el('button', {
       class: 'tr-arr dn', type: 'button', 'data-ui': '',
       'aria-label': `Give ${RES_LABEL[r]}`
     });
-    pressable(dn, () => { focus = i; step(r, -1); });
+    pressable(dn, () => { aimAt(i); step(r, -1); });
 
     /* Only ever shown when this card's rate DISAGREES with the headline rate in
        the sheet's title bar — which at the Great Market is never, and at a 2:1
@@ -435,7 +450,7 @@ export function createTradeSheet(state, game, opts = {}) {
     const card = el('button', {
       class: 'tr-card', type: 'button', 'data-ui': '', 'data-res': r,
       'aria-label': RES_LABEL[r],
-      on: { click: () => { focus = i; payAll(r); } }
+      on: { click: () => { aimAt(i); payAll(r); } }
     }, rate,
        el('span', { class: 'tr-face' },
          el('span', { class: 'tr-ico', html: icon(resIcon(r), ICON_PX) }), count),
@@ -767,6 +782,18 @@ export function createTradeSheet(state, game, opts = {}) {
     return best === null ? headlineRatio(R) : best;
   }
 
+  /* A TAP MOVES THE CURSOR, INCLUDING OFF THE BUTTON.
+   *
+   * Every pointer route into the row writes `focus`, and while `onConfirm` was
+   * only cleared by keys, a click on a column with a balanced deal left the
+   * ring sitting on TRADE with `focus` somewhere else — so the next Enter
+   * completed the deal instead of paying the column that had just been
+   * pressed. One helper, called by everything that aims at a column. */
+  function aimAt(i) {
+    focus = i;
+    onConfirm = false;
+  }
+
   function step(r, dir) {
     const R = rates();
     if (!canStep(r, dir, R)) { ping('deny'); nudge(); return false; }
@@ -822,9 +849,31 @@ export function createTradeSheet(state, game, opts = {}) {
   }
 
   function moveFocus(d) {
+    // Coming back off the foot button lands on the column it left, not on the
+    // one after it — the press that moved you down there was not a step along
+    // the row and undoing it should not be either.
+    if (leaveConfirm()) return;
     focus = (focus + d + RES.length) % RES.length;
     sync();
     ping('pick');
+  }
+
+  /** Bring the cursor back off the foot button onto the row it left. */
+  function leaveConfirm() {
+    if (!onConfirm) return false;
+    onConfirm = false;
+    sync();
+    ping('pick');
+    return true;
+  }
+
+  /** Put the cursor on the green button, if there is a deal for it to take. */
+  function armConfirm() {
+    if (!ready || onConfirm) return false;
+    onConfirm = true;
+    sync();
+    ping('pick');
+    return true;
   }
 
   function clearStage() {
@@ -896,7 +945,7 @@ export function createTradeSheet(state, game, opts = {}) {
       if (c.rateTxt !== rateTxt) { c.rateTxt = rateTxt; setText(c.rate, rateTxt); }
       toggle(c.rate, 'on', !!rateTxt);
 
-      toggle(c.col, 'cur', i === focus);
+      toggle(c.col, 'cur', i === focus && !onConfirm);
       toggle(c.col, 'giving', give > 0);
       toggle(c.col, 'getting', take > 0);
       /* One fact about the pack, and it never moves as the ask grows. */
@@ -969,6 +1018,10 @@ export function createTradeSheet(state, game, opts = {}) {
     setText(headRate, `${base}:1`);
 
     ready = R.ok && !short && tt >= 1 && tg === tt && state.phase === 'play';
+    // A cursor parked on a button that has stopped being TRADE is a cursor
+    // pointed at a Clear the player never asked for.
+    if (onConfirm && !ready) onConfirm = false;
+    toggle(tradeBtn, 'cur', onConfirm);
     /* Green TRADE when the deal balances, stone CLEAR while it does not — see
        the note where the button is built. Written only on a CHANGE, because
        this runs at 5Hz and rewriting a class every sync is the same hazard that
@@ -1127,21 +1180,73 @@ export function createTradeSheet(state, game, opts = {}) {
     switch (code) {
       case 'ArrowLeft': moveFocus(-1); return true;
       case 'ArrowRight': moveFocus(1); return true;
-      case 'ArrowUp': step(RES[focus], 1); return true;
-      case 'ArrowDown': step(RES[focus], -1); return true;
+      case 'ArrowUp':
+        if (onConfirm) { leaveConfirm(); return true; }
+        step(RES[focus], 1); return true;
+      case 'ArrowDown':
+        // Down off the row is how you reach the button by hand, when the deal
+        // balanced before the cursor got there — and Down again comes straight
+        // back up rather than doing nothing, because a key that is visibly
+        // present and silently inert is the worst kind of control.
+        if (onConfirm) { leaveConfirm(); return true; }
+        if (ready) { armConfirm(); return true; }
+        step(RES[focus], -1); return true;
       // The keyboard route to the one-tap payer. Space is what a focused
       // button answers to everywhere else, and the cursor here IS a focused
       // button — it just happens to be drawn rather than browser-focused.
-      case 'Space': payAll(RES[focus]); return true;
+      case 'Space':
+        if (onConfirm) { if (ready) confirm(); else leaveConfirm(); return true; }
+        payAll(RES[focus]);
+        armConfirm();
+        return true;
+
+      /* ESCAPE IS TWO PRESSES, AND THE FIRST ONE IS NOT THE DOOR.
+       *
+       *   "Esc in an active trade clears the trade, and Esc a second time when
+       *    no trade is active closes the trading post."
+       *
+       * Which is the right shape: the expensive thing on this sheet is a
+       * half-built deal, and the key everybody reaches for to undo one used to
+       * throw the whole sheet away instead — so backing out of a mis-staged
+       * pile cost the walk back to the market. Now the first press empties the
+       * row and the second leaves, and the row being already empty makes the
+       * first press the second one. */
+      case 'Escape':
+        // Stepping off the button is not one of the two presses: the player
+        // asked for "clears the trade, then closes", and spending a press
+        // moving a cursor they can see is not either of those.
+        onConfirm = false;
+        if (clearStage()) return true;
+        requestClose();
+        return true;
+
       case 'Tab': clearStage(); return true;
-      case 'Escape': requestClose(); return true;
+
+      /* ENTER IS THE WHOLE TRANSACTION, TWICE.
+       *
+       *   "If the trade popup is open and I press Enter while a middle icon for
+       *    a resource is selected then it does the bulk trade. And when the
+       *    trade is valid, it switches to select the confirm green button so I
+       *    can just press Enter a second time to complete the trade."
+       *
+       * So: on the row, Enter is the middle card — the one-tap payer that
+       * stages the whole lot. If that balanced the deal the cursor drops onto
+       * the green button, and the next Enter is the trade. On a sheet nobody
+       * has touched it still leaves, because a player who opened the wrong
+       * thing should not have to find a different key to get out. */
       case 'Enter':
       case 'NumpadEnter':
-        // Enter both finishes and leaves: it does the deal when there is one,
-        // and closes the sheet when the row is untouched.
-        if (ready) confirm();
-        else if (!anythingStaged()) requestClose();
-        else nudge();
+        if (onConfirm) {
+          if (ready) confirm(); else { leaveConfirm(); nudge(); }
+          return true;
+        }
+        if (ready) { confirm(); return true; }
+        if (!anythingStaged() && !payOffer(RES[focus], rates()).lots) {
+          requestClose();
+          return true;
+        }
+        payAll(RES[focus]);
+        armConfirm();
         return true;
       default: return false;
     }
@@ -1182,6 +1287,7 @@ export function createTradeSheet(state, game, opts = {}) {
       }
     });
     focus = best;
+    onConfirm = false;
     node.classList.remove('done');
     sync();
   }

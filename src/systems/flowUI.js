@@ -24,6 +24,7 @@
  */
 
 import { el, toggle, setText } from '../ui/dom.js';
+import { keyNav } from '../ui/kbnav.js';
 import { buildIntro, INTRO_CSS, FRIENDS_EVENT } from './flowIntro.js';
 
 const STYLE_ID = 'mf-flow-style';
@@ -168,6 +169,47 @@ export function createFlowUI(root, state, game) {
     layer = el('div', { class: 'mf-layer' }, intro, draft, objective);
     root.appendChild(layer);
 
+    /* ------------------------------------------------------ keyboard menus
+     *
+     *   "The up down left and right arrow keys all work to navigate any page
+     *    I'm on to all of the different buttons on all of the different
+     *    screens including the menus, settings, match setup, etc."
+     *
+     * Four scopes, in modal order. Each one is a node that is either on screen
+     * or is not — `ui/kbnav.js` re-reads that on every key, so nothing here
+     * has to tell it when a view changes. The FIRST control of each is the one
+     * the cursor lands on the moment the screen appears, which is where PLAY
+     * being pre-selected on the title screen comes from.
+     */
+    const nav = keyNav();
+    const homeView = intro.querySelector('.mf-home');
+    const setupView = intro.querySelector('.mf-setup');
+    const offScopes = [];
+    if (homeView) {
+      offScopes.push(nav.registerScope({
+        node: homeView, priority: 10,
+        isOpen: () => introOn,
+        first: () => built.playBtn
+      }));
+    }
+    if (setupView) {
+      offScopes.push(nav.registerScope({
+        node: setupView, priority: 10,
+        isOpen: () => introOn,
+        first: () => built.startBtn,
+        // Back out of Match Setup rather than doing nothing, so Escape is the
+        // way out of every screen in the game and not only most of them.
+        onEscape: () => { if (built.backBtn) built.backBtn.click(); }
+      }));
+    }
+    if (built.settingsPanel) {
+      offScopes.push(nav.registerScope({
+        node: built.settingsPanel, priority: 30,
+        isOpen: () => introOn,
+        onEscape: () => built.showSettings(false)
+      }));
+    }
+
     /* -------------------------------------------------------------- logic */
     let skipFn = null;
     let introOn = false;
@@ -284,6 +326,8 @@ export function createFlowUI(root, state, game) {
 
     function destroy() {
       clearStagger();
+      for (const off of offScopes) { try { off(); } catch (e) { /* gone already */ } }
+      offScopes.length = 0;
       toggle(root, 'mf-introlive', false);
       if (typeof document !== 'undefined' && document.removeEventListener) {
         document.removeEventListener(FRIENDS_EVENT, openFriends);
@@ -318,6 +362,13 @@ export function createFlowUI(root, state, game) {
           // the page into the right island.
           onClose: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); }
         });
+        /* The friends panel throws its own body away and rebuilds it on every
+           socket push, so the navigator is told to look at the wrapper and
+           re-find the cursor rather than being handed any control inside it. */
+        offScopes.push(nav.registerScope({
+          node: friends.node, priority: 40,
+          onEscape: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); }
+        }));
         toggle(intro, 'mf-hid', true);
         friends.show();
       } catch (err) {

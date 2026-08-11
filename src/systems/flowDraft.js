@@ -102,11 +102,12 @@ export function placeName(iid) {
   return `the ${compassOf(n.x, n.z)} ${noun}`;
 }
 
-function pipTotal(iid) {
+/** The three printed numbers on a corner, added up — what the tip quotes. */
+function numberTotal(iid) {
   const n = intersections[iid];
   if (!n) return 0;
   let s = 0;
-  for (const tid of n.tiles) s += tiles[tid].pips;
+  for (const tid of n.tiles) s += tiles[tid].number || 0;
   return s;
 }
 
@@ -406,9 +407,9 @@ export function createDraft(state, game, deps) {
   function humanTip(second) {
     const legal = legalSettlements(state, 0, true);
     let best = 0;
-    for (const iid of legal) best = Math.max(best, pipTotal(iid));
+    for (const iid of legal) best = Math.max(best, numberTotal(iid));
     const bits = [
-      `Corners score by pips — the best spot open right now is worth ${best}.`,
+      `Add up the three numbers on a corner — the best spot open right now totals ${best}.`,
       'Three different resources beats two rich ones.',
       'A corner on a dock unlocks 2:1 or 3:1 trading for the whole match.'
     ];
@@ -553,7 +554,7 @@ export function createDraft(state, game, deps) {
       : {
           title: state.setupIndex >= state.players.length
             ? 'Your Second Corner' : 'Claim Your Corner',
-          hint: 'High pips · three resources · a dock',
+          hint: 'High numbers · three resources · a dock',
           pickLabel: 'Pick a corner',
           onConfirm: iid => humanSettlement(iid)
         };

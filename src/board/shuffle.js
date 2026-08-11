@@ -26,21 +26,24 @@
  *  1. COMPOSITION — exactly 4 forest, 4 fields, 4 pasture, 3 hills,
  *     3 mountains, 1 desert.
  *
- *  2. TOKENS — exactly the classic eighteen: one 2, one 12, and two each of
- *     3,4,5,6,8,9,10,11. There is no 7. The desert carries no token.
+ *  2. TOKENS — exactly the eighteen in `TOKEN_BAG`: one 1, one 2, and two each
+ *     of 3,4,5,6,7,8,9,10. The centre hex carries no token.
  *
  *  3. DESERT IN THE CENTRE — the desert is always the (0,0) hex. The Great
  *     Market is built on it and `MARKET` is derived from its position, so it
  *     may never move.
  *
- *  4. NO TOUCHING REDS — no two 5-pip tiles (a 6 or an 8) share a corner. This
- *     is the classic "no adjacent red numbers" rule. Because every trio of
- *     hexes that meets at a corner is mutually adjacent, testing corners tests
- *     adjacency exactly.
+ *  4. NO TOUCHING TOP HEXES — no two 5-rung tiles (a 9 or a 10) share a corner.
+ *     The rule the tabletop states as "no adjacent red numbers", restated for a
+ *     board whose numbers are a rank rather than a probability: the two best
+ *     hexes on the island may never be worked from one settlement. Because
+ *     every trio of hexes that meets at a corner is mutually adjacent, testing
+ *     corners tests adjacency exactly. It is also why the 9s and 10s keep the
+ *     red numeral — the colour is the warning that goes with this rule.
  *
  *  5. CORNER CEILING — no intersection's adjacent tiles may total more than
- *     `maxCornerPips` (13) pips. With rule 4 in force a three-tile corner can
- *     hold at most one 5-pip tile, so 5+4+4 = 13 is the strongest corner the
+ *     `maxCornerPips` (13) rungs. With rule 4 in force a three-tile corner can
+ *     hold at most one 5-rung tile, so 5+4+4 = 13 is the strongest corner the
  *     rules can produce; anything above it means the generator is broken.
  *
  *  6. OPENING-SEAT BALANCE — the real dominance test. We replay the first
@@ -117,9 +120,27 @@ export const TERRAIN_BAG = Object.freeze([
   'mountains', 'mountains', 'mountains'
 ]);
 
-/** The classic eighteen number tokens. No 7; the desert takes none. */
+/**
+ * The eighteen number tokens: 1 to 10, low to high, ten being the best hex on
+ * the island. The blank centre hex (the Trading Post) takes none.
+ *
+ * TWO OF EVERYTHING EXCEPT THE BOTTOM TWO. The productivity ladder under the
+ * numbers has five rungs and the printed number is two-to-a-rung
+ * (`pipsFor` in core/constants.js), so this bag is
+ *
+ *   rung 1   1, 2          <- one each: the island only ever carries two duds
+ *   rung 2   3, 3, 4, 4
+ *   rung 3   5, 5, 6, 6
+ *   rung 4   7, 7, 8, 8
+ *   rung 5   9, 9, 10, 10
+ *
+ * which is rung-for-rung the same eighteen tokens the old 2..12 dice bag dealt
+ * (2 and 12 were the singletons there), and therefore the same 58 total rungs
+ * — so `TOTAL_PIPS`, `maxCornerPips`, `maxOpeningSpread` and the resource-share
+ * band below all keep the meanings they were measured with.
+ */
 export const TOKEN_BAG = Object.freeze([
-  2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12
+  1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10
 ]);
 
 /** Nine docks: four generic 3:1 and one 2:1 for each resource. The berths are
@@ -143,10 +164,15 @@ const RESOURCE_OF = Object.freeze({
   fields: 'wheat', mountains: 'ore', desert: null
 });
 
-/** pips = 6 - |7 - number|, so 6/8 are worth 5 and 2/12 are worth 1. */
+/**
+ * Productivity rung 1..5 for a printed number 1..10 — `ceil(n / 2)`, so 9 and
+ * 10 are worth 5 and 1 and 2 are worth 1. Duplicated from
+ * `core/constants.js#pipsFor` to keep this module dependency-free; the two must
+ * agree, and `tools/verify.mjs` asserts that they do.
+ */
 export function pipsOf(number) {
   if (!number) return 0;
-  return 6 - Math.abs(7 - number);
+  return Math.max(1, Math.min(5, Math.ceil(number / 2)));
 }
 
 /** Total pips on the board — 58, and the denominator of the balance test. */
@@ -260,11 +286,11 @@ export function boardViolations(terrain, numbers, topo, cfg = FAIRNESS) {
 
   const pips = numbers.map(pipsOf);
 
-  // 4. no two 5-pip tiles share a corner
+  // 4. no two top hexes (9 or 10) share a corner
   for (const c of topo.corners) {
     let reds = 0;
     for (const t of c.tiles) if (pips[t] === 5) reds++;
-    if (reds > 1) { add('red-adjacency', `${reds} reds on one corner`); break; }
+    if (reds > 1) { add('red-adjacency', `${reds} top hexes on one corner`); break; }
   }
 
   // 5. corner ceiling

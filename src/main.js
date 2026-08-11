@@ -512,6 +512,32 @@ async function boot() {
   game.flow = flow;
   if (ecoM && ecoM.attach) ecoM.attach(game);
 
+  /* ------------------------------------------------------------- keyboard
+   *
+   *   "Can you also help me update the controls for making it easier to play
+   *    without needing to use a mouse or trackpad on desktop."
+   *
+   * Two pieces, built here because this is the only place that has all of the
+   * hud, the map, the sheets and the economy at once:
+   *
+   *   hotkeys   the in-match letters — build, trade, pause, the Escape ladder
+   *   keyNav    the menu cursor, which was created with the opening screen long
+   *             before `createInput` existed and needs handing the input layer
+   *             so it can take the arrows off the settler while a sheet is up
+   *
+   * Both are no-ops without a window, so the headless simulator is untouched.
+   */
+  let hotkeys = null;
+  try {
+    const keysM = await load('./ui/hotkeys.js', null);
+    if (keysM && keysM.createHotkeys) hotkeys = keysM.createHotkeys(state, game);
+    const navM = await load('./ui/kbnav.js', null);
+    if (navM && navM.keyNav) navM.keyNav().setInput(input);
+  } catch (err) {
+    if (typeof console !== 'undefined') console.warn('[boot] keyboard —', err.message);
+  }
+  game.hotkeys = hotkeys;
+
   /* ------------------------------------------------------------ multiplayer
      One connection per page, shared by the friends screen and the match. It
      dials only when somebody asks for it — a solo player never opens a socket
@@ -946,7 +972,21 @@ async function boot() {
     // move under your hands. See `netHold` below and hud.js's `latchResources`.
     const online = !!(net && net.active);
     const sheetPaused = !online && !!(panels && panels.isOpen && state.phase === 'play');
-    const mapPaused = !online && (!!(overview && overview.isOpen) || sheetPaused);
+    /* AND THE RULES SHEET IS THE THIRD ONE.
+     *
+     *   "It should be a larger popup in the middle of the screen, where the
+     *    game technically pauses in the background (but without the map showing
+     *    up) ... and also obvious that the game is paused in the background."
+     *
+     * PAUSE has always been the board map with `keepOpen` — the map IS the
+     * freeze, because `overview.isOpen` is what this line reads. The rules
+     * sheet wants the same stop without the island behind it, so it gets its
+     * own term rather than borrowing the map's. Offline only, like the other
+     * two: three other people cannot be frozen because one of them opened the
+     * rules, and `ui/hud-help.js` says so on its own badge when it is online. */
+    const helpPaused = !online && !!(hud && hud.helpOpen && state.phase === 'play');
+    const mapPaused = !online
+      && (!!(overview && overview.isOpen) || sheetPaused || helpPaused);
 
     while (acc >= FIXED && steps++ < 4) {
       acc -= FIXED;
@@ -1011,9 +1051,14 @@ async function boot() {
     // proved unreliable, so this reconciles from state instead: any frame the
     // player is owed a road and nothing else is in the way, offer the map.
     // Self-healing, so cancelling and finishing later works too.
+    // `hud.helpOpen` is in the "nothing else is in the way" list for the same
+    // reason the sheets are: it is a full-screen modal that stops the match, and
+    // this reconciler runs OUTSIDE the fixed-step loop `helpPaused` short-
+    // circuits — so without it the placement map came up behind the rules sheet,
+    // every frame, for as long as somebody read them.
     if (ecoM && ecoM.placeFreeRoads && state.phase === 'play' &&
         (state.players[0].freeRoads | 0) > 0 &&
-        !overview.isOpen && !(panels.kind) &&
+        !overview.isOpen && !(panels.kind) && !hud.helpOpen &&
         !(flow.stage && flow.stage !== 'play')) {
       ecoM.placeFreeRoads(game);
     }

@@ -32,6 +32,21 @@ interfaces so parallel work integrates without merge pain.
   means only two things: how many items it holds and how fast the whole hex
   grows back. Read the header of `src/board/nodes.js` for the full API
   (`items`, `tileItems`, `tileRecovery`, `canGatherTile`, `playerOwnsTile`).
+- **The number on a hex is a rank from 1 to 10, not a dice roll.** Nothing is
+  rolled in this game, so the tokens are `1..10` low to high — 10 is the best
+  hex on the island — and there are no pips drawn anywhere. `pips` survives in
+  the code as the internal 1..5 productivity RUNG (`pipsFor(n) = ceil(n/2)`,
+  `core/constants.js`) that `TILE_ITEMS` and `TILE_REGEN` are keyed on; two
+  printed numbers share each rung. `isHotNumber(n)` is the red numeral (9 and
+  10), and the fairness rule those two carry is that they may never share a
+  corner. See the long note at the top of `core/constants.js`.
+- **Keyboard.** Three modules own it and nothing else may bind a window key
+  without reading them first: `ui/kbnav.js` (arrow cursor over registered menu
+  SCOPES, priority-ordered), `ui/hotkeys.js` (in-match letters and the Escape
+  ladder) and each sheet's own handler (`ui/trade.js#key`, `ui/overview.js`).
+  Every listener is on `window`, so a handler that consumes a key must call
+  `stopImmediatePropagation` — plain `stopPropagation` does nothing between
+  listeners on the same node.
 - **The ground is not at y=0.** Tile tops run ~1.76–3.71. Everything placed in
   the world must sit on `heightAt(x, z)` exported by `src/world/terrain.js`.
 
@@ -82,6 +97,9 @@ Presentation code reads `state` and consumes `drainEvents(state)` each frame.
 | `src/ui/overview.js` | `createOverview(root, state, game) -> { open(mode,opts), close, update, isOpen }` | UI |
 | `src/ui/panels.js` | `createPanels(root, state, game) -> { openTrade, openCards, showResults, close, update }` | UI |
 | `src/ui/icons.js` | inline-SVG icon set | UI |
+| `src/ui/kbnav.js` | `createKeyNav()`, `keyNav()` -> `{ registerScope, focusTop }` | UI |
+| `src/ui/hotkeys.js` | `createHotkeys(state, game) -> { destroy }` | UI |
+| `src/ui/hud-help.js` | `createHelp(root, state, game) -> { open, close, isOpen }` | UI |
 | `src/ui/ui.css` | all interface styling | UI |
 | `src/audio/audio.js` | `createAudio() -> { sfx, music, ambience, unlock }` | Audio |
 | `src/fx/effects.js` | `createEffects(scene) -> { burst, floatText, ring, shockwave, update }` | FX |

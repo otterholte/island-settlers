@@ -497,8 +497,8 @@ export function createBuyBar(state, game, hooks = {}) {
          * appears on a board the player is already looking at somewhere else,
          * and the resource pill is off at the top of the screen. So the tile
          * takes one short bounce with a gold wash under it. Only on the way
-         * down: a count going UP is a rival's road opening an edge or a dice
-         * roll paying out, neither of which is anything this player did, and a
+         * down: a count going UP is a rival's road opening an edge or a hex
+         * coming back, neither of which is anything this player did, and a
          * bar that jumped at those would be the "overstimulating" the whole
          * sheet is built against. `c.n < 0` is the first paint. */
         if (c.n > n && c.n >= 0) replay(c.node, 'tick', 620);

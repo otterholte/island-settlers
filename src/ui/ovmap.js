@@ -16,7 +16,7 @@
  * Owner: UI agent.
  */
 
-import { HEX_SIZE, pipsFor, TRADE_BASE } from '../core/constants.js';
+import { HEX_SIZE, isHotNumber, TRADE_BASE } from '../core/constants.js';
 import { tiles, intersections, edges, ports, BOUNDS, cornerOffset } from '../board/layout.js';
 import { knightsOn } from '../core/options.js';
 import { hash01 } from './dom.js';
@@ -467,7 +467,7 @@ export function createPainter(ctx, proj) {
     if (!t.number) return;
     const r = tokenR();
     const cx = PX(t.x), cy = PY(t.z);
-    const hot = t.number === 6 || t.number === 8;
+    const hot = isHotNumber(t.number);
     const up = billboard(cx, cy);
 
     ctx.beginPath(); ctx.arc(cx, cy + r * 0.2, r * 1.06, 0, Math.PI * 2);
@@ -494,18 +494,13 @@ export function createPainter(ctx, proj) {
       ctx.strokeStyle = 'rgba(192,39,27,.85)'; ctx.stroke();
     }
 
+    /* No dot row under the numeral any more — see world/paint.js. The glyph
+       takes the whole face and is centred in it. */
     ctx.fillStyle = hot ? '#bd2114' : '#33200a';
-    ctx.font = f(800, Math.round(r * 1.18));
+    ctx.font = f(800, Math.round(r * 1.36));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(t.number), cx, cy - r * 0.15);
+    ctx.fillText(String(t.number), cx, cy + r * 0.02);
 
-    const pips = pipsFor(t.number);
-    const pr = Math.max(1.5, r * 0.115);
-    for (let i = 0; i < pips; i++) {
-      const x = cx + (i - (pips - 1) / 2) * pr * 2.9;
-      ctx.beginPath(); ctx.arc(x, cy + r * 0.56, pr, 0, Math.PI * 2);
-      ctx.fillStyle = hot ? '#bd2114' : '#523318'; ctx.fill();
-    }
     if (up) ctx.restore();
   }
 

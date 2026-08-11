@@ -6,6 +6,7 @@
  */
 
 import * as THREE from 'three';
+import { isHotNumber } from '../core/constants.js';
 
 const STACK = '"Trebuchet MS","Arial Black",Impact,system-ui,sans-serif';
 
@@ -64,11 +65,11 @@ function ring(g, x, y, r, w, stroke) {
  *   FACE     #dbc4a4 -> (210,183,140)  warm cream, well clear of the ceiling
  *   RIM      #5f544e -> ( 86, 60, 42)  dark brown ring
  *   INK      #323533 -> ( 30, 26, 18)  near-black numerals
- *   HOT      #bf4335 -> (198, 44, 29)  6 and 8, unmistakably red
+ *   HOT      #bf4335 -> (198, 44, 29)  9 and 10, unmistakably red
  *
  * If the lighting rig in sky.js changes, these need re-solving.
  */
-const HOT = '#bf4335';       // 6 and 8
+const HOT = '#bf4335';       // 9 and 10 — the island's two best hexes
 const HOT_EDGE = '#642a24';  // outline that keeps a red glyph heavy
 const INK = '#323533';
 const FACE = '#dbc4a4';
@@ -82,8 +83,21 @@ const TAU = Math.PI * 2;
  */
 export const DISC_FRAC = 0.86;
 
-function paintToken(g, cx, cy, R, number, pips) {
-  const hot = number === 6 || number === 8;
+/*
+ * NO DOTS UNDER THE NUMERAL ANY MORE.
+ *
+ *   "The pips/dots aren't necessary either."
+ *
+ * They were a probability read-out — one dot per way of rolling the number —
+ * and this game rolls nothing. With the token now printing a plain 1..10 rank
+ * (see the long note in core/constants.js) the row of dots said the same thing
+ * as the numeral, in a second notation, at a size nobody could count at play
+ * distance. The disc is the numeral and the numeral is the whole message, so
+ * the glyph moves back to the centre of the face and grows into the room the
+ * dots used to take.
+ */
+function paintToken(g, cx, cy, R, number) {
+  const hot = isHotNumber(number);
 
   // ---- cast shadow: a squashed pool below the disc, not a halo around it.
   // A ring of shadow on every side made the token look like a cut-out sticker;
@@ -121,9 +135,12 @@ function paintToken(g, cx, cy, R, number, pips) {
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   // Large, but leaving a clear cream margin inside the rim like the reference.
-  const size = label.length > 1 ? R * 0.86 : R * 1.10;
+  // Both figures are up a notch from the pipped version: the dots are gone, so
+  // the glyph owns the face instead of sharing it with a row underneath.
+  const size = label.length > 1 ? R * 1.02 : R * 1.28;
   g.font = `900 ${size}px ${STACK}`;
-  const ny = cy - R * 0.150;
+  // Centred now, rather than lifted to clear a row of dots.
+  const ny = cy + R * 0.015;
   g.lineJoin = 'round';
   g.lineCap = 'round';
   // a one-pixel warm lift under the glyph reads as engraving, not as a halo
@@ -135,15 +152,6 @@ function paintToken(g, cx, cy, R, number, pips) {
   g.strokeText(label, cx, ny);
   g.fillStyle = hot ? HOT : INK;
   g.fillText(label, cx, ny);
-
-  // ---------------------------------------------------------------- pips
-  const pr = R * 0.060;
-  const gap = pr * 3.1;
-  const py = cy + R * 0.560;
-  const x0 = cx - (pips - 1) * gap * 0.5;
-  for (let i = 0; i < pips; i++) {
-    disc(g, x0 + i * gap, py, pr, hot ? HOT : INK);
-  }
 }
 
 /**
@@ -164,7 +172,7 @@ export function tokenAtlas(specs) {
     specs.forEach((s, i) => {
       const cx = (i % cols) * CELL + CELL / 2;
       const cy = Math.floor(i / cols) * CELL + CELL / 2;
-      paintToken(g, cx, cy, CELL * DISC_FRAC * 0.5, s.number, s.pips);
+      paintToken(g, cx, cy, CELL * DISC_FRAC * 0.5, s.number);
     });
   }, { aniso: 8 });
   specs.forEach((s, i) => {

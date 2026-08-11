@@ -226,6 +226,27 @@ export function createEndgame(root, state, game, hooks = {}) {
     el('span', { class: 'eb-hint' }, hintKey, hintTxt));
   root.appendChild(dock);
 
+  /* ------------------------------------------------ NOT a navigator scope
+   *
+   * The review bar is three buttons and it looks exactly like the screens
+   * `ui/kbnav.js` was built for — and it must not be one, for two reasons that
+   * both came out of trying it:
+   *
+   *   ARROWS ARE THE CAMERA HERE. Once the match is over the same keys walk the
+   *   settler and swing the free camera (systems/freecam.js). A cursor stealing
+   *   them would take away the island walk, which is the entire point of this
+   *   bar existing.
+   *
+   *   ENTER ALREADY MEANS THE SCORE. `ui/panels.js` maps Enter to "bring the
+   *   results back" for the whole of `phase === 'over'`, and the left-most
+   *   button on this bar is HOME — which leaves the match. A cursor that parks
+   *   itself there and then answers to Enter turns the score key into a quit
+   *   key, which is the one keyboard mistake in this game that cannot be undone.
+   *
+   * So the bar keeps its pointer and its one documented key, and the hint on it
+   * still names that key rather than a cursor.
+   */
+
   /**
    * Show or hide the bar, and mark the interface root so the HUD stands down.
    *
