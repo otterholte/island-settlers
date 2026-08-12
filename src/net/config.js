@@ -45,7 +45,25 @@
  * constant only matters for the copy on GitHub Pages, which has no idea where
  * its multiplayer lives.
  */
-export const DEFAULT_SERVER = 'wss://island-settlers-production.up.railway.app/ws';
+/*
+ * THIS IS THE ONE STRING THAT MUST NEVER BE A HOSTING COMPANY'S AGAIN.
+ *
+ * It used to be `wss://island-settlers-production.up.railway.app/ws`, and that
+ * address is compiled into every Android build ever shipped — Capacitor bundles
+ * `www/` into the APK, so a phone that installed the game last month will dial
+ * whatever this line said last month, forever, no matter what the server does
+ * afterwards. Which means the old value made "change hosting provider" into
+ * "break the game for everybody who has not taken an update yet", and Play
+ * updates are neither instant nor universal.
+ *
+ * Behind our own domain it is a DNS record. Moving hosts, adding a second
+ * region, or putting something in front of the server is now invisible to
+ * every installed copy.
+ *
+ * The CNAME for `play` must exist and Railway must have the custom domain
+ * attached BEFORE a build carrying this line ships — see NEXT-STEPS.md.
+ */
+export const DEFAULT_SERVER = 'wss://play.islandsettlers.com/ws';
 
 const STORE_KEY = 'island-settlers.server';
 

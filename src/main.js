@@ -850,7 +850,14 @@ async function boot() {
      draws at 30, which halves the GPU bill outright and, in a game about
      walking around an island, changes nothing else. */
   const MIN_FRAME_MS = 15;
+  /** ~22fps, for when a full-screen modal means nobody can see the scene.
+   *  High enough that the map's hover pulse and the sea visible past the
+   *  frame margins still read as moving; low enough to matter to a battery. */
+  const MODAL_FRAME_MS = 45;
   let lastDraw = 0;
+  /** Wall time banked by rAF callbacks that were gated out before drawing, so
+   *  the decorative updates below still advance at true speed. */
+  let visAcc = 0;
 
   /* Context loss, handled rather than watched. three.js already prevents the
      default (which is what makes a restore possible at all) and re-initialises
@@ -1063,24 +1070,68 @@ async function boot() {
       ecoM.placeFreeRoads(game);
     }
 
-    if (quality) quality.update(dt);
-    props.update(dt);
-    structures.update(dt);
-    market.update(dt);
-    portsView.update(dt);
-    water.update(now / 1000);
-    island.update(dt, camera);
-    effects.update(dt);
-    gameCamera.update(dt, state, overview.isOpen);
+    /* ============================================ THE FRAME GATE, MOVED UP
+     *
+     * This used to sit BELOW the block of visual updates, and the comment
+     * proudly explained that it "only skips the DRAW". That was the bug. On a
+     * 120Hz Android panel — which is most Android sold since about 2021 — rAF
+     * fires 120 times a second, so every line below ran 120 times a second to
+     * feed a renderer that drew 60. Twice the cloud matrices, twice the boat
+     * matrices, twice the sheep, twice the villagers, twice the dock crews,
+     * twice the full-screen board-map repaint, for frames nobody ever saw.
+     *
+     * The fixed-step simulation above is untouched: it runs off its own
+     * accumulator and must keep doing so. What moves is the decorative half.
+     * `visAcc` banks the wall time the skipped callbacks represent so the
+     * animations below still advance at the right speed — they get one larger
+     * dt instead of two small ones, which is the same distance travelled.
+     *
+     * AND A HARD CAP WHILE A MODAL IS UP. The board map, PAUSE, the trade and
+     * card sheets and the rules are all full-screen: they cover the 3D almost
+     * entirely, and the map additionally repaints its own canvas at up to
+     * twice the pixel ratio of the scene behind it. Rendering both at 60Hz so
+     * that a player who paused and put the phone down can not see either one
+     * is the single most expensive thing this game does with a battery.
+     *
+     * THE INTERFACE IS NOT DECORATION AND STAYS ABOVE THE GATE.
+     *
+     * The first version of this moved `hud`, `overview` and `panels` below it
+     * too, and testmatch went from 19/19 to 16/19 — the board map, road
+     * legality and yield checks all failed. The reason is worth writing down:
+     * putting them under the gate ties how fast the interface responds to how
+     * fast the machine can draw, so on a device that is struggling the menus
+     * get sluggish exactly when the player is most likely to be prodding them.
+     * Under SwiftShader at 3fps that is the difference between a working game
+     * and a broken one, and a cheap phone is the same problem in slower
+     * motion. They are cheap anyway — each already throttles its own DOM work
+     * internally to 10Hz, 5Hz and 4Hz. */
     hud.update(dt);
     overview.update(dt);
     panels.update(dt);
+
+    visAcc += dt;
+    const modalUp = !!((overview && overview.isOpen) || (panels && panels.isOpen)
+      || (hud && hud.helpOpen));
+    const capMs = modalUp
+      ? MODAL_FRAME_MS
+      : (quality ? quality.frameMs : MIN_FRAME_MS);
+    if (now - lastDraw < capMs) return;
+    // Clamped for the same reason the simulation clamps: coming back from a
+    // long stall must not teleport every animation at once.
+    const vdt = Math.min(visAcc, 0.1);
+    visAcc = 0;
+
+    if (quality) quality.update(vdt);
+    props.update(vdt);
+    structures.update(vdt);
+    market.update(vdt);
+    portsView.update(vdt);
+    water.update(now / 1000);
+    island.update(vdt, camera);
+    effects.update(vdt);
+    gameCamera.update(vdt, state, overview.isOpen);
     sky.update(now / 1000);
 
-    // The 60Hz cap. Everything above has already run — the world is stepped and
-    // the interface is current — this only skips the DRAW, which is the part
-    // that costs a laptop its fan.
-    if (now - lastDraw < (quality ? quality.frameMs : MIN_FRAME_MS)) return;
     if (quality) quality.frame(now);      // one subtraction; nothing is drawn
     lastDraw = now;
     draws++;

@@ -98,7 +98,26 @@ export function buildSky(scene, renderer) {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(430, 24, 14), domeMat);
   dome.name = 'sky-dome';
   dome.frustumCulled = false;
-  dome.renderOrder = -1000;
+  /* DRAWN LAST AMONG THE OPAQUES, NOT FIRST.
+   *
+   * This was -1000, which three's painterSortStable honours literally: the
+   * dome went down before anything else, every frame. It covers the entire
+   * framebuffer and its shader is the most expensive per-pixel thing in the
+   * scene bar the water — two pow() calls at exponents 220 and 14, two exp(),
+   * a mix chain and the tonemap — and because `depthWrite` is false it did not
+   * even occlude what came after it. So a phone shaded a full screen of sky,
+   * kept none of it, then painted the sea over the top and the island over
+   * that. The tile-based GPUs in phones cannot save you here: their hidden
+   * surface removal culls fragments BEHIND existing depth, and the dome went
+   * first, so there was no depth to cull against.
+   *
+   * At +1000 it is drawn after the ground and the sea, and the depth buffer
+   * rejects every pixel of it they already cover. The image is identical — the
+   * dome is at radius 430 with the camera far plane at 900, so it is
+   * geometrically behind everything and depth ordering cannot change what you
+   * see. The clouds are `transparent: true` and so live in a different queue
+   * entirely; they still draw after all opaques and need no change. */
+  dome.renderOrder = 1000;
   group.add(dome);
 
   /* ---------------------------------------------------------- clouds */

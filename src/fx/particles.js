@@ -68,16 +68,44 @@ const FRAG = /* glsl */`
   }
 `;
 
-/** Physical-pixel scale factor for gl_PointSize, refreshed occasionally. */
+const _bufSize = new THREE.Vector2();
+
+/**
+ * Physical-pixel scale factor for gl_PointSize, refreshed occasionally.
+ *
+ * ASK THE RENDERER HOW BIG THE FRAMEBUFFER IS. DO NOT GUESS FROM devicePixelRatio.
+ *
+ * `gl_PointSize` is in framebuffer pixels, so the correct scale is
+ * `drawingBufferHeight / (2 * tan(fov/2))`. This used to compute the height as
+ * `innerHeight * min(devicePixelRatio, 2)` — but the quality ladder pins the
+ * pixel ratio to 1 on every phone, so the real buffer is `innerHeight * 1`
+ * while this said `* 2`. Every point sprite came out twice as wide as
+ * authored: four times the fragments, all of them alpha-blended and texture
+ * sampled, on the most fill-rate-limited hardware the game runs on.
+ *
+ * That is not an edge case — `effects.burst()` fires a dozen-plus particles on
+ * every single pickup, and picking things up is the game. It was wrong on
+ * desktop too whenever the ratio budget clamped below the device's own.
+ */
 function viewScale() {
-  const h = (G.innerHeight && isFinite(G.innerHeight)) ? G.innerHeight : 800;
-  const dpr = Math.min((G.devicePixelRatio && isFinite(G.devicePixelRatio))
-    ? G.devicePixelRatio : 1, 2);
+  let hPx = 0;
   let fov = 48;
   const I = G.__ISLAND__;
   if (I && I.camera && isFinite(I.camera.fov)) fov = I.camera.fov;
+  if (I && I.renderer && I.renderer.getDrawingBufferSize) {
+    // The truth, whatever the quality ladder has done to the pixel ratio.
+    hPx = I.renderer.getDrawingBufferSize(_bufSize).y || 0;
+  }
+  if (!hPx) {
+    // Before boot finishes there is no renderer to ask. viewScale() is re-read
+    // twice a second, so this stands in for at most a frame or two.
+    const h = (G.innerHeight && isFinite(G.innerHeight)) ? G.innerHeight : 800;
+    const dpr = Math.min((G.devicePixelRatio && isFinite(G.devicePixelRatio))
+      ? G.devicePixelRatio : 1, 2);
+    hPx = h * dpr;
+  }
   const t = Math.tan((fov * Math.PI) / 360) || 0.44;
-  return (h * dpr) / (2 * t);
+  return hPx / (2 * t);
 }
 
 export function createParticleField(scene, opts) {
