@@ -14,10 +14,12 @@
 # prefers in the working copy.
 * text=auto
 
-# The vendored three.js is 108,310 lines of it on its own, and it is a build
-# artefact from upstream rather than source anybody edits here. Freeze it
-# byte-for-byte so no platform ever rewrites it.
-vendor/three.module.js -text
+# The vendored three.js was briefly marked `-text` here to "freeze it". That
+# was wrong and it is instructive: `-text` means "compare raw bytes", and since
+# the working copy had already been written with CRLF endings, marking it -text
+# made that difference permanent and visible — the single file went straight
+# back to reading as modified forever, which is the exact noise this file
+# exists to remove. It is covered by `* text=auto` above like everything else.
 
 # Binary, so git should never try to be clever about their contents.
 *.png binary
