@@ -33,13 +33,35 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
+import { matchCeiling, memoryHeadroom, describe } from './capacity.mjs';
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WORKER = resolve(HERE, 'matchworker.mjs');
 
-/** Tunable by env for a bigger machine; the default suits a 256MB Fly VM. */
-const MAX_MATCHES = Number(process.env.MAX_MATCHES || 6);
-/** A worker that has not posted anything in this long is wedged. */
-const SILENCE_MS = 20000;
+/** Measured from the machine rather than guessed — see capacity.mjs. `6` was
+ *  a constant written for a 256MB VM and it capped the entire game at
+ *  twenty-four players regardless of what it was running on. Set MAX_MATCHES
+ *  to override; leave it unset and the box decides. */
+const MAX_MATCHES = Number(process.env.MAX_MATCHES) || matchCeiling();
+
+/**
+ * A worker that has not posted anything in this long is wedged.
+ *
+ * THIS USED TO BE 20 SECONDS AND THAT WAS AN OUTAGE WAITING TO HAPPEN.
+ * Measured under load at 83% CPU, healthy workers stalled for as long as 12.7
+ * seconds before their accumulator caught them up — well inside a 20s budget,
+ * but not by much. The failure mode is vicious: a busy box starts killing
+ * LIVE MATCHES, which frees memory, which lets more matches start, which
+ * makes it busier. Overload must shed new matches, never running ones, so
+ * this is now far enough out that only a genuinely dead worker trips it.
+ */
+const SILENCE_MS = Number(process.env.MATCH_SILENCE_MS) || 60000;
+/** A worker quiet for this long is not dead, but it is suffering — and a box
+ *  with several of them should not be accepting new work. */
+const STALL_MS = 3000;
+/** Refuse new matches once memory is this close to the limit, whatever the
+ *  match count says. The static ceiling is an estimate; this is the truth. */
+const MIN_MEMORY_HEADROOM = 0.15;
 /** How long the results stay live after the winner is known. */
 const LINGER_MS = 20000;
 /** A match cannot run forever, whatever the worker thinks. */
@@ -50,8 +72,33 @@ export function createMatchHost(opts = {}) {
   const onExit = typeof opts.onExit === 'function' ? opts.onExit : () => {};
   const matches = new Map();   // matchId -> record
 
+  /**
+   * May another match start right now?
+   *
+   * Three questions, and a no to any of them means the same polite refusal.
+   * The point is that this is asked at the DOOR. Once a match is running it is
+   * somebody's evening and it does not get sacrificed to make room for
+   * somebody else's — a server under pressure turns people away, it does not
+   * kill games it already promised.
+   */
+  function admit() {
+    if (matches.size >= MAX_MATCHES) return 'busy';
+    if (memoryHeadroom() < MIN_MEMORY_HEADROOM) return 'busy';
+    // If a meaningful share of what is already running is struggling to keep
+    // its 50ms snapshot cadence, this box is past its real ceiling whatever
+    // the arithmetic said. Stop adding to it.
+    const now = Date.now();
+    let stalling = 0;
+    for (const rec of matches.values()) {
+      if (!rec.stopping && !rec.over && now - rec.lastPost > STALL_MS) stalling++;
+    }
+    if (matches.size >= 4 && stalling / matches.size > 0.2) return 'busy';
+    return null;
+  }
+
   function start(cfg) {
-    if (matches.size >= MAX_MATCHES) return { error: 'busy' };
+    const refusal = admit();
+    if (refusal) return { error: refusal };
     const matchId = randomBytes(6).toString('base64url');
     let worker;
     try {
@@ -176,10 +223,16 @@ export function createMatchHost(opts = {}) {
   }, 5000);
   watch.unref?.();
 
+  console.log(`[match] capacity: ${describe()}`);
+
   return {
     start, stop, get, post, input, act, peer,
+    /** Exposed so /health can show it: "full" is a thing an operator should be
+     *  able to see coming rather than infer from complaints. */
+    admit,
     get size() { return matches.size; },
     get max() { return MAX_MATCHES; },
+    get headroom() { return +memoryHeadroom().toFixed(3); },
     all: () => [...matches.values()],
     shutdown() {
       clearInterval(watch);

@@ -18,10 +18,12 @@ primary_region = "iad"
 
 [env]
   PORT = "8080"
-  # Six concurrent matches on a 256MB machine. Each one is a worker thread
-  # holding its own island and item field — about 40MB — so this number and
-  # the memory below move together.
-  MAX_MATCHES = "6"
+  # MAX_MATCHES IS DELIBERATELY NOT SET. It used to be pinned at 6 — twenty-four
+  # players, on any machine, forever — because the number was written for a
+  # 256MB VM and never revisited. `server/capacity.mjs` now reads the cgroup
+  # limits this VM actually has and sizes the ceiling from a measured cost per
+  # match (~0.008 cores, 15-25MB; see tools/loadbench.mjs). Set this only to
+  # override a machine it has read wrongly.
 
 [http_service]
   internal_port = 8080
@@ -46,9 +48,13 @@ primary_region = "iad"
 # separate games: a code made on one would not exist on the other, which is
 # precisely the failure this whole screen was rewritten to make impossible.
 # Scaling past this means moving the room registry out of the process.
+# 512MB and one shared core held about 30 matches once the ceiling stopped
+# being hardcoded. Two cores and 2GB is roughly 100 — a few hundred players —
+# and is the smallest step that stops a modest influx hitting a wall. Both
+# numbers are read at boot; `fly scale` and a restart is the whole procedure.
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = "shared-cpu-2x"
+  memory = "2gb"
 
 [[http_service.checks]]
   grace_period = "10s"

@@ -95,7 +95,9 @@ is no directory to persist:
 | `PORT` | what to listen on (default 8787) |
 | `HOST` | what to bind (default `0.0.0.0`) |
 | `STATIC` | `1` to also serve the game files |
-| `MAX_MATCHES` | concurrent matches (default 6; each is ~40MB) |
+| `MAX_MATCHES` | concurrent matches. **Leave it unset** — `capacity.mjs` sizes it from the machine's real cgroup limits at ~0.008 cores and 45MB budgeted per match. Set it only to override a box it has misread |
+| `MAX_ROOMS` | ceiling on open lobbies (default 5000) |
+| `MATCH_SILENCE_MS` | how long a worker may go quiet before it is judged dead (default 60000) |
 
 On your own machine behind a home router, the easiest way to let friends in
 without touching port forwarding is a Cloudflare Tunnel:

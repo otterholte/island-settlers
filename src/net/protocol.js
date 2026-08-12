@@ -173,6 +173,11 @@ export const E = {
   NAME_BAD: 'name.bad',
   CODE_BAD: 'code.bad',
   RATE: 'rate.limited',
+  /* Not the same thing as RATE, and telling them apart matters. RATE means
+     "you are doing this too often"; SERVER_FULL means "you did nothing wrong,
+     there is no room on the machine right now". Sending the first when you
+     mean the second reads as an accusation and makes people stop trying. */
+  SERVER_FULL: 'server.full',
   NO_ROOM: 'room.unknown',
   ROOM_FULL: 'room.full',
   ROOM_BUSY: 'room.playing',
@@ -192,6 +197,7 @@ export const E_TEXT = {
   [E.NAME_BAD]: 'Names are 2 to 14 letters, numbers, spaces, dots, dashes or underscores.',
   [E.CODE_BAD]: 'A room code is five letters and numbers.',
   [E.RATE]: 'Too many tries — wait a moment.',
+  [E.SERVER_FULL]: 'The server is full right now. Try again in a minute.',
   [E.NO_ROOM]: 'No room with that code. Check it and try again.',
   [E.ROOM_FULL]: 'That room is full — it seats four.',
   [E.ROOM_BUSY]: 'That match has already started.',

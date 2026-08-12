@@ -1,0 +1,30 @@
+# Line endings, settled once.
+#
+# Without this file, a Windows checkout rewrites every text file to CRLF on
+# disk while the repository stores LF, so `git status` reports all 143 tracked
+# files as modified when nothing has been edited. `git diff -w` comes back
+# empty, which is the tell: 130,757 insertions and exactly 130,757 deletions,
+# every one of them an invisible character at the end of a line.
+#
+# The cost of that is not cosmetic. It buries real changes in noise, it makes
+# every commit look enormous, and it means nobody can tell at a glance whether
+# a file was actually touched.
+#
+# `text=auto` puts LF in the repository and lets each machine use whatever it
+# prefers in the working copy.
+* text=auto
+
+# The vendored three.js is 108,310 lines of it on its own, and it is a build
+# artefact from upstream rather than source anybody edits here. Freeze it
+# byte-for-byte so no platform ever rewrites it.
+vendor/three.module.js -text
+
+# Binary, so git should never try to be clever about their contents.
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.aab binary
+*.apk binary
+*.jks binary
+*.keystore binary

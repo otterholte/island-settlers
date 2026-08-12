@@ -41,6 +41,22 @@ import {
  *  needs about four thousand years per open lobby. */
 const JOIN_TRIES = 20;
 const JOIN_WINDOW_MS = 60000;
+/**
+ * Rooms MADE per IP per window.
+ *
+ * The limiter above guards other people's lobbies. This one guards the
+ * machine: making a room costs a code, a seat table and an entry in a Map,
+ * and nothing anywhere asked how many times one connection could do that. A
+ * loop doing it as fast as the socket allows would have filled the rooms
+ * registry and, once each was started, every match slot on the box. Ten a
+ * minute is far more than a person pressing CREATE A ROOM and far less than a
+ * script is interested in.
+ */
+const CREATE_TRIES = 10;
+/** And a ceiling on the registry itself, for the case the limiter does not
+ *  catch — many IPs, or one very patient one. Lobbies are small; this is
+ *  about refusing to grow without bound, not about being stingy. */
+const MAX_ROOMS = Number(process.env.MAX_ROOMS) || 5000;
 /** Anything at all, per connection, per second. A generous ceiling that only
  *  a broken or malicious client will ever touch. */
 const MSG_PER_SEC = 120;
@@ -51,6 +67,7 @@ export function createHub(deps) {
   const live = new Map();       // userId -> peer
   const byPeer = new Set();     // every attached peer, greeted or not
   const joinHits = new Map();   // ip -> { n, until }
+  const createHits = new Map(); // ip -> { n, until }
 
   /* ---------------------------------------------------------------- send */
 
@@ -78,12 +95,27 @@ export function createHub(deps) {
     peer.send({ i, t: ERR, code, ...(extra || {}) });
   }
 
-  function joinRateOk(ip) {
+  /** Both limiters are the same shape: a count and a window, per IP. The maps
+   *  are swept alongside the rooms rather than growing forever — see sweep(). */
+  function rateOk(map, ip, tries, windowMs) {
     const now = Date.now();
-    let hit = joinHits.get(ip);
-    if (!hit || now > hit.until) { hit = { n: 0, until: now + JOIN_WINDOW_MS }; joinHits.set(ip, hit); }
+    let hit = map.get(ip);
+    if (!hit || now > hit.until) { hit = { n: 0, until: now + windowMs }; map.set(ip, hit); }
     hit.n++;
-    return hit.n <= JOIN_TRIES;
+    return hit.n <= tries;
+  }
+
+  const joinRateOk = ip => rateOk(joinHits, ip, JOIN_TRIES, JOIN_WINDOW_MS);
+  const createRateOk = ip => rateOk(createHits, ip, CREATE_TRIES, JOIN_WINDOW_MS);
+
+  /** Drop expired rate-limit entries. Called on the same timer that sweeps
+   *  idle rooms; without it these two maps are a slow leak keyed by every IP
+   *  that has ever connected. */
+  function sweepRates() {
+    const now = Date.now();
+    for (const map of [joinHits, createHits]) {
+      for (const [ip, hit] of map) if (now > hit.until) map.delete(ip);
+    }
   }
 
   /**
@@ -162,6 +194,10 @@ export function createHub(deps) {
       case REQ.ROOM_CREATE: {
         const existing = rooms.forUser(me.id);
         if (existing && existing.state === 'playing') return fail(peer, i, E.ROOM_BUSY);
+        // Re-making the room you are already sitting in is the one case that
+        // must not be counted: pressing CREATE twice is a person, not a flood.
+        if (!existing && !createRateOk(peer.remote)) return fail(peer, i, E.RATE);
+        if (rooms.size >= MAX_ROOMS) return fail(peer, i, E.SERVER_FULL);
         if (existing) leaveRoom(me.id);
         const room = rooms.create(me);
         pushRoom(room);
@@ -335,7 +371,10 @@ export function createHub(deps) {
       knights: room.settings.knights
     });
     if (started.error) {
-      return { error: started.error === 'busy' ? E.RATE : E.INTERNAL };
+      // 'busy' is the machine being full, not this player misbehaving. It used
+      // to be reported as RATE — "Too many tries, wait a moment" — which
+      // blames somebody who pressed START once on a popular evening.
+      return { error: started.error === 'busy' ? E.SERVER_FULL : E.INTERNAL };
     }
     const byUser = new Map();
     for (const s of roster) if (s.userId) byUser.set(s.userId, s.pid);
@@ -553,6 +592,32 @@ export function createHub(deps) {
       detach(peer, 'closed');
     };
   }
+
+  /* ================================================================ janitor
+
+     `rooms.sweep()` and `players.sweep()` were both written, both exported and
+     NEITHER WAS EVER CALLED. Nothing here noticed, because an abandoned lobby
+     is a few hundred bytes and the server has never had enough players for a
+     few hundred bytes to add up to anything. It adds up at ten thousand: every
+     room nobody ever started and every device that ever said hello stayed in
+     memory until the process restarted, which made "how much memory does this
+     need" a question about total visitors rather than current ones.
+
+     Five minutes is far more often than either sweep needs — rooms idle out
+     after two hours, players after twelve — and the cost of asking is walking
+     two small Maps. */
+  const janitor = setInterval(() => {
+    try {
+      rooms.sweep();
+      // A player is in use if they are connected, or still hold a seat. Losing
+      // the record of somebody mid-match would take their settler with it.
+      players.sweep(id => live.has(id) || !!rooms.forUser(id));
+      sweepRates();
+    } catch (e) {
+      console.error('[hub] sweep:', e && e.stack ? e.stack : e);
+    }
+  }, 5 * 60 * 1000);
+  janitor.unref?.();
 
   return {
     attach,

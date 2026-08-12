@@ -1,4 +1,4 @@
-﻿node_modules/
+node_modules/
 .DS_Store
 
 # Development artefacts: screenshots from the headless capture rig, the
@@ -8,3 +8,10 @@ progress/
 server/data/
 .playwright-cli/
 output/
+
+# The Android wrapper. It is a SEPARATE Capacitor project that happens to be
+# unzipped next to the game — its own package.json, its own node_modules, its
+# own Gradle build output, and a signing keystore that must never be committed
+# anywhere. The game repo is not where it lives; see android-app/.
+IslandSettlersApp/
+android-app/

@@ -147,6 +147,11 @@ const server = createServer((req, res) => {
       uptimeSec: Math.round((Date.now() - started) / 1000),
       ...hub.stats,
       matchCap: matches.max,
+      /* Whether the door is open, and how close the memory is to the wall.
+         `full: true` here is the difference between "players are complaining"
+         and "I can see why" — it is the one number worth alerting on. */
+      full: matches.admit() !== null,
+      memoryHeadroom: matches.headroom,
       /* Nothing is stored, so there is nothing to report about a disk. What is
          worth reporting is the live shape of the server: how many people are
          connected and how many lobbies are open. */
