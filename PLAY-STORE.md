@@ -95,12 +95,15 @@ aren't really in the game — that's a listing violation.
 | Full description | **4,000 characters** |
 
 **Title rules that get listings rejected:** no "Free", no "#1" or "Best", no
-ALL CAPS, no emojis, nothing implying a link to another company. So
-"Island Settlers" is fine; "Island Settlers — #1 FREE Catan Game!" is three
-separate violations. Also: don't put "Catan" anywhere. Your README is careful to
-say the game is inspired by the genre and uses no trademarked names — keep the
-listing equally careful, because trademark complaints are handled fast and
-unsympathetically.
+ALL CAPS, no emojis, and nothing implying a link to another company. Keep the
+default listing brand-neutral.
+
+**Owner decision (14 Aug 2026):** the custom search-keyword listing deliberately
+targets Catan searches and describes Island Settlers as an independently
+developed, real-time 3D alternative. The custom copy must always state that the
+game is not affiliated with, endorsed by, or connected to Catan Studio, CATAN
+GmbH, or any Catan publisher. This is an intentional trademark/metadata-review
+risk; never imply official status, shared ownership, or compatibility.
 
 ---
 
