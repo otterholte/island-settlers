@@ -95,12 +95,15 @@ aren't really in the game — that's a listing violation.
 | Full description | **4,000 characters** |
 
 **Title rules that get listings rejected:** no "Free", no "#1" or "Best", no
-ALL CAPS, no emojis, nothing implying a link to another company. So
-"Island Settlers" is fine; "Island Settlers — #1 FREE Catan Game!" is three
-separate violations. Also: don't put "Catan" anywhere. Your README is careful to
-say the game is inspired by the genre and uses no trademarked names — keep the
-listing equally careful, because trademark complaints are handled fast and
-unsympathetically.
+ALL CAPS, no emojis, and nothing implying a link to another company. Keep the
+default listing brand-neutral.
+
+**Owner decision (14 Aug 2026):** the custom search-keyword listing deliberately
+targets Catan searches and describes Island Settlers as an independently
+developed, real-time 3D alternative. The custom copy must always state that the
+game is not affiliated with, endorsed by, or connected to Catan Studio, CATAN
+GmbH, or any Catan publisher. This is an intentional trademark/metadata-review
+risk; never imply official status, shared ownership, or compatibility.
 
 ---
 
@@ -116,7 +119,7 @@ of these must be green before you can submit.
 | **Ads** | No |
 | **Content rating** (IARC questionnaire) | See below |
 | **Target audience** | You already filed 13+ |
-| **Data safety** | No data collected — your server is memory-only. This is honest and it's Play's ephemeral-processing exemption |
+| **Data safety** | Data collected: Name, Device or other IDs, and App activity → Other actions. Collection is optional and used for multiplayer app functionality; the device ID also supports reconnects and security. No advertising, analytics or sale. See the exact answers below. |
 | **Advertising ID** | No |
 | **Government apps** | No |
 | **Financial features** | None of these |
@@ -141,6 +144,26 @@ Two answers that matter for you specifically:
   Your multiplayer lets strangers share a room via a code. Under-declaring this
   is a common rejection cause.
 - **Purchases / loot boxes / gambling** — No, none.
+
+### Data safety — exact multiplayer answers
+
+Play defines data as collected when it is transmitted off the device. Keeping
+it only in server memory does not make the answer “No.” Multiplayer is optional,
+uses encrypted `wss://` transport, and sends:
+
+- **Personal info → Name:** the player-chosen display name.
+- **Device or other IDs:** the random app-specific identifier used to restore a
+  seat after a reload or connection loss.
+- **App activity → Other actions:** live movement, gathering, building and
+  trading actions.
+
+Mark each as **collected**, **optional**, and used for **App functionality**.
+Mark the device identifier as also used for **Security, fraud prevention and
+compliance**. Do not mark advertising, marketing, analytics or personalization.
+The data is not sold. Transfers to the hosting provider are service-provider
+processing; display names and live actions shown to the room are user-initiated
+multiplayer behavior. Use the Console's user-initiated/service-provider sharing
+exceptions rather than marking the data as sold or broadly shared.
 
 ---
 

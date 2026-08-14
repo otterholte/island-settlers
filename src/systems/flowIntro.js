@@ -964,7 +964,7 @@ export function buildIntro(state, onBegin) {
         el('span', { text: 'Saved on this device' })),
       el('div', { class: 'mf-p-body' },
         el('div', { class: 'mf-p-row' },
-          el('div', { class: 'mf-i-dlab', text: 'Your name' }), nameInput),
+          el('div', { class: 'mf-i-dlab', text: 'Display name' }), nameInput),
         el('div', { class: 'mf-p-row' }, soundBtn),
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Graphics' }),

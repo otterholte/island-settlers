@@ -50,9 +50,9 @@ landscape. The game will prompt you to rotate if you are in portrait.
 
 ### Playing with friends
 
-Press **PLAY WITH FRIENDS**, type your name once — it is saved on your device
-and never asked for again — and either **CREATE A ROOM** or type somebody
-else's five-character code and press **JOIN**.
+Press **PLAY WITH FRIENDS**, choose a display name once — it is saved on your
+device and shown to players in your room — and either **CREATE A ROOM** or type
+somebody else's five-character code and press **JOIN**.
 
 There are no accounts, no passwords, no friends list and nothing to accept.
 Whoever types the code while the room is open is in, up to four of you; empty
