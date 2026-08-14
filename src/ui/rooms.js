@@ -156,7 +156,7 @@ export function createRooms(root, opts = {}) {
     const name = el('input', {
       class: 'fr-input fr-nameinput', type: 'text', spellcheck: 'false',
       autocapitalize: 'words', autocomplete: 'nickname',
-      maxlength: '14', placeholder: 'Your name',
+      maxlength: '14', placeholder: 'Display name',
       /* Blank when they have never said, so the placeholder is what they see
          rather than a name they did not choose. `DEFAULT_NAME` in client.js
          still stands behind it, so somebody who never touches this field is
@@ -174,10 +174,10 @@ export function createRooms(root, opts = {}) {
       nameT = setTimeout(pushName, 350);
     });
     name.addEventListener('blur', pushName);
-    body.appendChild(el('label', { class: 'fr-lab', text: 'You are' }));
+    body.appendChild(el('label', { class: 'fr-lab', text: 'Display name' }));
     body.appendChild(name);
     body.appendChild(el('p', { class: 'fr-hint', text:
-      'Saved on this device — you will not have to type it again.' }));
+      'Saved on this device and visible to players in your room.' }));
 
     /* --- make one -------------------------------------------------------- */
     body.appendChild(el('div', { class: 'fr-sec', text: 'Start a game' }));

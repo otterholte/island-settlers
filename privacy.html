@@ -39,14 +39,15 @@
 <main>
 
   <h1>Island Settlers — Privacy Policy</h1>
-  <p class="sub">Last updated: 11 August 2026</p>
+  <p class="sub">Last updated: 13 August 2026</p>
 
   <p class="lede">
-    <strong>Island Settlers does not collect, store or share personal
-    information.</strong> There are no accounts, no sign-in, no advertising, no
-    analytics, and no third-party tracking of any kind. This policy covers both
-    the Android app (<code>com.otterholte.islandsettlersapp</code>) and the web
-    version at otterholte.github.io/island-settlers.
+    <strong>Island Settlers has no accounts, advertising, analytics, purchases
+    or cross-app tracking.</strong> Single-player play stays on your device. If
+    you choose multiplayer, the limited session data described below is sent
+    securely to our match server so the room can function. This policy covers
+    both the Android app (<code>com.otterholte.islandsettlersapp</code>) and the
+    web version at <a href="https://islandsettlers.com/">islandsettlers.com</a>.
   </p>
 
   <h2>What the app stores on your device</h2>
@@ -62,11 +63,11 @@
         device apart from another player's inside a multiplayer room.</li>
   </ul>
   <p>
-    All of this stays on your device. None of it is transmitted anywhere except
-    as described under multiplayer below, none of it is backed up to the cloud
-    by the app, and all of it is deleted when you uninstall the app or clear
-    its storage. The random identifier is not an advertising ID, is not linked
-    to you, and is not shared with anyone.
+    None of this is backed up to the cloud by the app, and it is deleted when
+    you uninstall the app or clear its storage. The display name and random
+    identifier are transmitted only if you open multiplayer, as described
+    below. The identifier is not an advertising ID and is not used for
+    advertising, analytics or tracking.
   </p>
 
   <h2>Playing on your own</h2>
@@ -79,26 +80,33 @@
   <h2>Playing with friends (multiplayer)</h2>
   <p>
     If — and only if — you choose <strong>Play with friends</strong>, the game
-    opens a connection to the match server at
-    <code>island-settlers-production.up.railway.app</code>. While you are in a
-    room, the following is sent to that server so the other players in your
-    room can see it:
+    opens an encrypted connection to the match server at
+    <code>play.islandsettlers.com</code>. The following data is sent so the
+    multiplayer room can function:
   </p>
   <ul>
-    <li>the display name you typed;</li>
+    <li>the display name you typed, which other players in your room can see;</li>
+    <li>a random app-specific identifier, used to return you to the same seat
+        after a reload or brief connection loss;</li>
     <li>the five-character room code;</li>
     <li>your moves in the match — where your settler is, what you gather,
         build and trade.</li>
   </ul>
   <p>
-    The server holds this <strong>in memory only, for the length of the
-    match</strong>. There is no database, no user account and no log of past
-    games; when the room closes or the server restarts, everything about your
-    session is gone. Your name is whatever you typed and is not verified,
-    connected to any identity, or used for anything other than labelling your
-    seat on the other players' screens. As with any internet connection, your
-    device's IP address is visible to the server while connected; it is used to
-    carry the connection and is not recorded.
+    The game server keeps multiplayer state in memory and does not write names,
+    identifiers, room state or match actions to a database. Room data is
+    removed when the room closes; an inactive player record is removed within
+    12 hours; and a server restart removes all in-memory session data. Your
+    display name is not verified or connected to an account.
+  </p>
+  <p>
+    As with any online service, your IP address is processed to establish the
+    connection. It is also held temporarily in memory when needed to limit
+    repeated room creation or invalid room-code attempts, then removed after
+    the one-minute rate-limit window expires. Our hosting provider may process
+    connection information as our service provider to operate and secure the
+    server. We do not use IP addresses to determine your location, advertise to
+    you or track you across apps or websites.
   </p>
   <p>
     Please do not use your real full name, an email address, or any other
@@ -112,30 +120,30 @@
     <li>No analytics, crash reporting or telemetry.</li>
     <li>No in-app purchases and no payment processing.</li>
     <li>No access to your contacts, photos, files, camera, microphone,
-        location, or calendar. The app requests exactly two Android
-        permissions: <code>INTERNET</code>, used only for multiplayer, and
-        <code>VIBRATE</code>, used for haptic feedback.</li>
-    <li>No selling or sharing of data with third parties, because there is no
-        data to sell or share.</li>
+        precise or approximate location, or calendar.</li>
+    <li>The app uses Android's <code>INTERNET</code> permission for multiplayer
+        and <code>VIBRATE</code> for haptic feedback. Google Play may add its
+        licensing and internal app-receiver permissions during delivery.</li>
+    <li>No sale of personal data. Multiplayer data is handled by our hosting
+        provider only to operate and secure the match service.</li>
   </ul>
 
   <h2>Children</h2>
   <p>
-    Island Settlers is suitable for a general audience and is not directed at
-    children under 13 in particular, but it is safe for them: it collects no
-    personal information from anyone, of any age. Because the multiplayer mode
-    lets players choose a display name that other players in the same room can
-    see, parents may prefer that younger children play the single-player game,
-    or use a nickname.
+    Island Settlers is intended for players aged 13 and older and is not
+    directed to children under 13. Multiplayer lets players choose a display
+    name that other players in the same room can see; do not use a real full
+    name, email address or other personal detail as a display name.
   </p>
 
   <h2>Your rights</h2>
   <p>
-    Because no personal data is collected or retained, there is nothing to
-    request access to, correct, export or delete. Removing everything the game
-    has ever stored about you is done by uninstalling the app or clearing its
-    storage on your device. If you have a question about this, write to the
-    address below and it will be answered.
+    You can remove the information stored on your device by clearing the app's
+    storage or uninstalling it. Leaving a multiplayer room removes the room
+    data when the room closes, and inactive player records expire automatically
+    within 12 hours. Because there are no accounts, we normally cannot connect
+    a server record to a real person. For a privacy question or request, email
+    the address below.
   </p>
 
   <h2>Changes to this policy</h2>
