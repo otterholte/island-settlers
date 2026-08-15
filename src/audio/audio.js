@@ -47,7 +47,7 @@ function silentAudio() {
   const a = {
     sfx: NOOP, music: NOOP, ambience: NOOP, unlock: NOOP,
     setMuted: NOOP, mute: NOOP, setListener: NOOP, dispose: NOOP,
-    setSfxOn: NOOP, setMusicOn: NOOP, applyPrefs: NOOP, sleep: NOOP,
+    setSfxOn: NOOP, applyPrefs: NOOP, sleep: NOOP,
     muted: false, ok: false
   };
   return a;
@@ -83,7 +83,6 @@ export function createAudio() {
    * and `wantAmb` already remembers it across a mute.
    */
   let sfxOn = true;
-  let musicWanted = true;
 
   /* ------------------------------------------------------------- listener */
   const lis = { x: 0, z: 0, rx: 1, rz: 0, known: false };
@@ -207,11 +206,8 @@ export function createAudio() {
   function music(mode) {
     if (!beds) return;
     const m = mode === 'play' || mode === 'victory' ? mode : 'off';
-    // Remembered even while the switch is off, so turning music back on
-    // mid-match starts the loop that should be playing rather than silence
-    // until the next thing that happens to call this.
     lastMusic = m;
-    if ((muted || !musicWanted) && m !== 'off') return;
+    if (muted && m !== 'off') return;
     try { beds.music(m); } catch (e) { /* ignore */ }
   }
 
@@ -228,33 +224,22 @@ export function createAudio() {
     return sfxOn;
   }
 
-  /** The music bed on or off, resuming whatever should be playing. */
-  function setMusicOn(on) {
-    const want = !!on;
-    if (want === musicWanted) return musicWanted;
-    musicWanted = want;
-    if (!beds) return musicWanted;
-    try {
-      if (!musicWanted) beds.music('off');
-      else if (!muted && lastMusic && lastMusic !== 'off') beds.music(lastMusic);
-    } catch (e) { /* ignore */ }
-    return musicWanted;
-  }
-
   /**
-   * All three at once, from `core/options.js`.
+   * Both channels at once, from `core/options.js`.
    *
    * Both settings panels — the gear on the opening screen and the gear in the
    * match — call this and nothing else, so they cannot drift apart in what
    * they do to the engine. Missing keys are left alone rather than defaulted,
-   * so a caller may change one channel without knowing about the others.
+   * so a caller may change one channel without knowing about the other.
+   *
+   * There is deliberately no `music` key: the bed has no switch (see
+   * OPTION_DEFAULTS) and `music()` above is the only thing that starts it.
    */
   function applyPrefs(prefs) {
     const p = prefs || {};
     if (typeof p.sfx === 'boolean') setSfxOn(p.sfx);
-    if (typeof p.music === 'boolean') setMusicOn(p.music);
     if (typeof p.ocean === 'boolean') ambience(p.ocean);
-    return { sfx: sfxOn, music: musicWanted, ocean: wantAmb };
+    return { sfx: sfxOn, ocean: wantAmb };
   }
 
   function unlock() {
@@ -369,9 +354,8 @@ export function createAudio() {
 
   const api = {
     sfx, music, ambience, unlock, setMuted, sleep,
-    setSfxOn, setMusicOn, applyPrefs,
+    setSfxOn, applyPrefs,
     get sfxOn() { return sfxOn; },
-    get musicOn() { return musicWanted; },
     get oceanOn() { return wantAmb; },
     /** Capture-rig hook: is the whole engine parked because the page is away? */
     get asleep() { return asleep; },

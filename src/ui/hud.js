@@ -31,7 +31,7 @@ import {
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
 import {
   knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower,
-  soundOn, setSoundOn, oceanOn, setOceanOn, musicOn, setMusicOn
+  soundOn, setSoundOn, oceanOn, setOceanOn
 } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, fmtTime } from './dom.js';
@@ -446,26 +446,27 @@ export function createHUD(root, state, game) {
    * time a match booted, so turning the sound off and leaving put it back on
    * again for the next one. It is a device setting now — see core/options.js.
    *
-   * THREE CHANNELS, THREE ROWS — the same builder as the opening screen's gear
+   * TWO CHANNELS, TWO ROWS — the same builder as the opening screen's gear
    * (`systems/flowIntro.js`), because the two panels must not disagree about
-   * what a switch does or what it is called.
+   * what a switch does or what it is called. The music bed has no row in
+   * either of them; see the note in flowIntro.js for why it lost the one it
+   * briefly had.
    *
    *   "Separate the sound effects from the ocean sound. So they can toggle one
    *    on or off instead of always turning both on or off."
    *
-   * The engine keeps the three on separate busses and always has; `applyPrefs`
-   * in audio/audio.js is the one call that puts the player's choice into it.
+   * The engine keeps them on separate busses and always has; `applyPrefs` in
+   * audio/audio.js is the one call that puts the player's choice into it.
    */
   function pushAudio() {
     const a = game.audio;
     if (!a) return;
     if (typeof a.applyPrefs === 'function') {
-      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn(), music: musicOn() });
+      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn() });
       return;
     }
     if (typeof a.setMuted === 'function') a.setMuted(!soundOn());
     if (typeof a.ambience === 'function') a.ambience(oceanOn());
-    if (typeof a.music === 'function' && !musicOn()) a.music('off');
   }
 
   function audioRow(label, read, write) {
@@ -484,7 +485,6 @@ export function createHUD(root, state, game) {
 
   const soundBtn = audioRow('Sound effects', soundOn, setSoundOn);
   const oceanBtn = audioRow('Ocean', oceanOn, setOceanOn);
-  const musicBtn = audioRow('Music', musicOn, setMusicOn);
 
 
   /* --- where the controls live --------------------------------------------
@@ -586,7 +586,6 @@ export function createHUD(root, state, game) {
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     soundBtn,
     oceanBtn,
-    musicBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node,
     /* The rules are no longer a drawer inside a drawer. This closes the

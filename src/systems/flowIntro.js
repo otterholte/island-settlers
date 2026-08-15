@@ -40,7 +40,7 @@ import {
 } from './difficulty.js';
 import {
   knightsOn, setKnights, autoDraft, setAutoDraft,
-  soundOn, setSoundOn, oceanOn, setOceanOn, musicOn, setMusicOn,
+  soundOn, setSoundOn, oceanOn, setOceanOn,
   lowPower, setLowPower, playerName, setPlayerName
 } from '../core/options.js';
 
@@ -914,17 +914,22 @@ export function buildIntro(state, onBegin) {
 
   /*
    * ------------------------------------------------------------------------
-   * THREE SOUND ROWS WHERE THERE WAS ONE
+   * TWO SOUND ROWS WHERE THERE WAS ONE
    * ------------------------------------------------------------------------
    *
    *   "Separate the sound effects from the ocean sound. So they can toggle one
    *    on or off instead of always turning both on or off."
-   *   "I feel like I've never heard the music — make it its own toggle."
    *
-   * One builder for all three, so the rows cannot drift apart in behaviour or
+   * A third row for the music bed was here briefly and came straight back out
+   * — "remove the music toggle, I still don't hear anything" — because the bed
+   * is mixed far too low to hear and a switch for an inaudible thing only
+   * teaches the player that the settings do not work. See OPTION_DEFAULTS in
+   * core/options.js for what is actually wrong with it.
+   *
+   * One builder for both, so the rows cannot drift apart in behaviour or
    * wording, and so the same shape can be lifted into the in-match gear (see
    * `ui/hud.js`, which does exactly this). The icon carries the state and the
-   * label carries the channel — three identical speaker glyphs would say
+   * label carries the channel — two identical speaker glyphs would say
    * nothing, but a speaker that becomes a muted speaker says everything.
    *
    * There is no match and therefore no audio engine yet on a cold boot; when
@@ -936,13 +941,12 @@ export function buildIntro(state, onBegin) {
       ? window.__ISLAND__.game && window.__ISLAND__.game.audio : null;
     if (!a) return;
     if (typeof a.applyPrefs === 'function') {
-      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn(), music: musicOn() });
+      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn() });
       return;
     }
     // An engine from before the split. Approximate rather than throw.
     if (typeof a.setMuted === 'function') a.setMuted(!soundOn());
     if (typeof a.ambience === 'function') a.ambience(oceanOn());
-    if (typeof a.music === 'function' && !musicOn()) a.music('off');
   }
 
   function audioRow(label, read, write) {
@@ -961,7 +965,6 @@ export function buildIntro(state, onBegin) {
 
   const soundBtn = audioRow('Sound effects', soundOn, setSoundOn);
   const oceanBtn = audioRow('Ocean', oceanOn, setOceanOn);
-  const musicBtn = audioRow('Music', musicOn, setMusicOn);
 
   /* Full / Saver, the same two words as the gear in the match. The ladder in
      systems/quality.js reads `lowPower()` on the way up, so a choice made here
@@ -998,13 +1001,13 @@ export function buildIntro(state, onBegin) {
       el('div', { class: 'mf-p-body' },
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Display name' }), nameInput),
-        /* One labelled GROUP rather than three loose rows. Three switches at
-           a full row gap each pushed Graphics off the bottom of a 460px-tall
-           landscape phone and made the sheet scroll — and they are one subject
-           anyway, which a heading says better than spacing does. */
+        /* One labelled GROUP rather than two loose rows: they are one subject,
+           and a heading says so better than spacing does. It also keeps
+           Graphics on screen without the sheet scrolling on a 460px-tall
+           landscape phone, which two full row gaps did not. */
         el('div', { class: 'mf-p-row mf-p-sound' },
           el('div', { class: 'mf-i-dlab', text: 'Sound' }),
-          soundBtn, oceanBtn, musicBtn),
+          soundBtn, oceanBtn),
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Graphics' }),
           el('div', { class: 'side-seg' }, gfxBtns))),

@@ -64,27 +64,34 @@ export const OPTION_DEFAULTS = Object.freeze({
    * and the gear in the match — and a device setting is exactly the kind of
    * thing this file is for.
    *
-   * THREE SWITCHES, NOT ONE.
+   * TWO SWITCHES, NOT ONE.
    *
    *   "Separate the sound effects from the ocean sound, so they can toggle one
    *    on or off instead of always turning both on or off."
-   *   "I feel like I've never heard the music — make it its own toggle, make it
-   *    louder, and make the ocean quieter."
    *
-   * The engine has had three separate busses since it was written (`sfxBus`,
+   * The engine has had separate busses since it was written (`sfxBus`,
    * `ambBus`, `musicBus` in audio/synth.js); only the interface insisted they
-   * were one thing. So this is three flags rather than one, and `sound` keeps
+   * were one thing. So this is two flags rather than one, and `sound` keeps
    * its old key and its old meaning of SOUND EFFECTS — a player who muted the
    * game before this change stays muted for the sounds they were muting, and
-   * gets the two beds back, which is the safer way round to be wrong.
+   * gets the ocean back, which is the safer way round to be wrong.
+   *
+   * THERE IS NO MUSIC FLAG, AND THAT IS NOT AN OVERSIGHT.
+   *
+   *   "Remove the music toggle. I still don't hear anything."
+   *
+   * A switch briefly existed here for the music bed. It came out because the
+   * bed is inaudible and a switch for something nobody can hear is worse than
+   * no switch — it invites the player to keep pressing it. The music itself is
+   * still scheduled and still routed correctly; it is simply mixed about 25x
+   * below the sound effects, because three gains multiply on the way out (see
+   * `scheduleMusic` in audio/beds.js). Raising it is a mix change, not a
+   * settings change, and is not being made behind the player's back.
    */
   sound: true,
 
   /** The ocean bed: swell, surf, wind, gulls, distant market. */
   ocean: true,
-
-  /** The four-bar loop and the victory cadence. */
-  music: true,
 
   /* ------------------------------------------------------- reach
    *
@@ -245,7 +252,7 @@ export function lowPower() { return !!current.lowPower; }
 export function setLowPower(v) { return setOption('lowPower', !!v); }
 
 /*
- * The three audio channels, each its own switch. `soundOn` is the effects one
+ * The two audio channels, each its own switch. `soundOn` is the effects one
  * and keeps the name it has had since there was only one — renaming it would
  * touch a dozen call sites to say the same thing, and the stored key has to
  * stay `sound` regardless so existing devices keep their choice.
@@ -258,10 +265,6 @@ export function setSoundOn(v) { return setOption('sound', !!v) !== false; }
 /** The ocean bed. */
 export function oceanOn() { return current.ocean !== false; }
 export function setOceanOn(v) { return setOption('ocean', !!v) !== false; }
-
-/** The music bed. */
-export function musicOn() { return current.music !== false; }
-export function setMusicOn(v) { return setOption('music', !!v) !== false; }
 
 const TILT_MAX = 1;
 export function mapTilt() {
@@ -329,6 +332,6 @@ export default {
   getOption, setOption, onOptionsChange,
   knightsOn, setKnights, buttonsSide, setButtonsSide, mapTilt, setMapTilt,
   autoDraft, setAutoDraft, lowPower, setLowPower,
-  soundOn, setSoundOn, oceanOn, setOceanOn, musicOn, setMusicOn,
+  soundOn, setSoundOn, oceanOn, setOceanOn,
   playerName, setPlayerName, cleanPlayerName
 };
