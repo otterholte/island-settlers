@@ -62,7 +62,6 @@ export function createAudio() {
 
   let muted = false;
   let wantAmb = false;
-  let lastMusic = 'off';
 
   /*
    * ------------------------------------------------------------------------
@@ -203,10 +202,10 @@ export function createAudio() {
     }
   }
 
+  /** The victory fanfare, or silence. There is no music loop — see beds.js. */
   function music(mode) {
     if (!beds) return;
-    const m = mode === 'play' || mode === 'victory' ? mode : 'off';
-    lastMusic = m;
+    const m = mode === 'victory' ? 'victory' : 'off';
     if (muted && m !== 'off') return;
     try { beds.music(m); } catch (e) { /* ignore */ }
   }
@@ -289,8 +288,11 @@ export function createAudio() {
    * of the PWA and the screen locking; `pagehide` and `freeze` cover the rest of
    * the way out on iOS and a bfcache'd tab.
    *
-   * Coming back restores exactly what was playing — `wantAmb` and `lastMusic`
-   * are the same two flags `setMuted` uses, so a player who muted stays muted.
+   * Coming back restores the ocean if it was on — `wantAmb` is the same flag
+   * `setMuted` uses, so a player who muted stays muted. The fanfare is NOT
+   * restored: it is a two-second event tied to a moment that has passed, and
+   * replaying it because somebody switched apps would be a lie about the
+   * match. Anything still scheduled on the audio clock resumes by itself.
    */
   let asleep = false;
 
@@ -310,10 +312,7 @@ export function createAudio() {
           const r = E.ctx.resume();
           if (r && typeof r.catch === 'function') r.catch(NOOP);
         }
-        if (beds && !muted) {
-          if (wantAmb) beds.ambience(true);
-          if (lastMusic && lastMusic !== 'off') beds.music(lastMusic);
-        }
+        if (beds && !muted && wantAmb) beds.ambience(true);
       }
     } catch (e) { /* an audio engine is never worth an exception */ }
     return asleep;
@@ -344,10 +343,7 @@ export function createAudio() {
     if (beds) {
       try {
         if (muted) { beds.ambience(false); beds.music('off'); }
-        else {
-          if (wantAmb) beds.ambience(true);
-          if (lastMusic === 'play') beds.music('play');
-        }
+        else if (wantAmb) beds.ambience(true);
       } catch (e) { /* ignore */ }
     }
   }

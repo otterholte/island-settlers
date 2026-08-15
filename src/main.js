@@ -828,7 +828,6 @@ async function boot() {
           break;
         case 'setupComplete':
           hud.onPlayBegan();
-          audio.music('play');
           // The scene is only now everything a match contains, which is the
           // one moment worth measuring. See PLAY_PROBE_SEC in quality.js.
           if (quality && typeof quality.matchBegan === 'function') quality.matchBegan();

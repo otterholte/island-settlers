@@ -1,40 +1,49 @@
 /**
- * Island Settlers — continuous beds: ambience and music.
- *
- * Both are driven by one lookahead scheduler (a single interval that wakes
- * every ~90ms and schedules the next ~400ms of events onto the audio clock).
- * The interval only runs while something is actually sounding, so a muted or
- * idle game costs nothing.
+ * Island Settlers — the ocean bed, and the victory fanfare.
  *
  * Ambience: ocean swell (filtered noise with a slow LFO on the cutoff), wind,
  * distant gulls and faint market activity. Everything loops from seamless
- * procedural noise buffers, so it never seams or thuds.
+ * procedural noise buffers, so it never seams or thuds. It is driven by one
+ * lookahead scheduler — a single interval that wakes every ~90ms and schedules
+ * the next stretch of events onto the audio clock — and that interval only
+ * runs while the bed is actually sounding, so a quiet game costs nothing.
  *
- * Music: a light four-bar loop — pad, bass, arpeggio and a soft percussive
- * pulse — plus a short victory cadence that resolves and hands back to a
- * quieter version of the same bed.
+ * =============================================================================
+ * THERE USED TO BE MUSIC HERE
+ * =============================================================================
+ * A four-bar loop in D — pad, bass, arpeggio and a soft percussive pulse,
+ * scheduled by the same lookahead timer. It is gone.
+ *
+ *   "I feel like I've never heard the music."
+ *   "Remove the music toggle. I still don't hear anything."
+ *   "I don't like the music anyway, you can keep it without."
+ *
+ * The first two were a mix fault and it is worth recording what it actually
+ * was, because the diagnosis took three tries. The loop was audible in the
+ * sense that it was scheduled, routed and rendering; it simply came out at
+ * about 0.10 peak against a sound effect's 0.43, because three gains multiply
+ * on the way to the bus and every one of them was small. Rendering the synth
+ * offline and metering it settled it — the ocean was NOT drowning the music,
+ * the two beds measure within a hair of each other. Both just sat around 30dB
+ * under the effects, which are what a player sets their volume by.
+ *
+ * The third quote is why none of that got fixed: once the loop was audible
+ * enough to judge, it was not wanted. So the whole scheduler half of this file
+ * came out rather than being turned up.
+ *
+ * WHAT SURVIVES is the victory fanfare below, which is not background music —
+ * it is a two-second event that fires once, when somebody wins, in the same
+ * family as the horn and the build sounds. It never shared anything with the
+ * loop except a bus and a triad table.
  */
 
 import { clamp, fin, rnd, setAt, linTo } from './synth.js';
 
-const BPM = 108;
-const BEAT = 60 / BPM;
-const BEATS_PER_BAR = 4;
-const BARS = 4;
-const LOOKAHEAD = 0.45;   // seconds scheduled ahead of the audio clock
+const LOOKAHEAD = 0.45;   // seconds of ambience scheduled ahead of the clock
 const TICK_MS = 90;
 
-/* Four-bar progression in D: D - A - Bm - G. Warm, folky, non-fatiguing. */
-const PROG = [
-  { root: 146.83, kind: 'maj' },   // D3
-  { root: 110.00, kind: 'maj' },   // A2
-  { root: 123.47, kind: 'min' },   // B2
-  { root: 98.00,  kind: 'maj' }    // G2
-];
+/* Kept for the fanfare, which is the only thing that still builds a chord. */
 const TRIAD = { maj: [1, 1.2599, 1.4983], min: [1, 1.1892, 1.4983] };
-
-/* Eighth-note arpeggio pattern, indices into the chord tone list. */
-const ARP = [0, 2, 1, 3, 2, 4, 1, 2];
 
 export function createBeds(E) {
   if (!E) return null;
@@ -42,13 +51,7 @@ export function createBeds(E) {
 
   let timer = null;
   let ambOn = false;
-  let musicMode = 'off';        // 'off' | 'play' | 'victory'
-  let bedLevel = 0.34;
-
-  // music clock
-  let nextBeat = 0;
-  let beatIndex = 0;
-  let resumeAt = 0;
+  let musicMode = 'off';        // 'off' | 'victory'
 
   // ambience event clocks
   let nextGull = 0;
@@ -61,9 +64,11 @@ export function createBeds(E) {
     if (typeof setInterval !== 'function') return;
     timer = setInterval(tick, TICK_MS);
   }
+  /* The ocean is the only thing on this clock now. The fanfare is scheduled
+     whole, in one call, so it needs no wake-ups at all. */
   function maybeStopTimer() {
     if (timer === null) return;
-    if (ambOn || musicMode !== 'off') return;
+    if (ambOn) return;
     clearInterval(timer);
     timer = null;
   }
@@ -73,14 +78,6 @@ export function createBeds(E) {
     try { now = E.now(); } catch (e) { return; }
     if (!isFinite(now)) return;
     try {
-      if (musicMode === 'play') scheduleMusic(now);
-      if (musicMode === 'victory' && resumeAt > 0 && now >= resumeAt) {
-        musicMode = 'play';
-        bedLevel = 0.26;                       // hand back to a quieter bed
-        nextBeat = now + 0.12;
-        beatIndex = 0;
-        linTo(E.musicBus.gain, bedLevel, now + 1.4);
-      }
       if (ambOn) scheduleAmbienceEvents(now);
     } catch (e) { /* never let the bed take the frame loop down */ }
   }
@@ -208,83 +205,7 @@ export function createBeds(E) {
     }
   }
 
-  /* ----------------------------------------------------------------- music */
-
-  function padChord(t, chord, level) {
-    const ch = E.channel({ gain: level * 0.55, rev: 0.4, bus: E.musicBus });
-    const tones = TRIAD[chord.kind];
-    for (let i = 0; i < tones.length; i++) {
-      const f = chord.root * tones[i] * 2;    // up an octave for the pad
-      E.tone({ dest: ch, t, type: 'triangle', f0: f, gain: 0.16 - i * 0.02,
-               attack: 0.42, hold: BEAT * 2.4, release: 0.9, lp: 1500, q: 0.6,
-               detune: -5 });
-      E.tone({ dest: ch, t, type: 'triangle', f0: f * 1.0035, gain: 0.11,
-               attack: 0.5, hold: BEAT * 2.2, release: 0.9, lp: 1300, q: 0.6,
-               detune: 6 });
-    }
-  }
-
-  function bassNote(t, chord, level, low) {
-    const ch = E.channel({ gain: level * 0.85, rev: 0.12, bus: E.musicBus });
-    const f = chord.root * (low ? 0.5 : 1);
-    E.tone({ dest: ch, t, type: 'sine', f0: f, dur: BEAT * 0.85,
-             gain: 0.3, attack: 0.012 });
-    E.tone({ dest: ch, t, type: 'triangle', f0: f * 2, dur: BEAT * 0.4,
-             gain: 0.07, attack: 0.01, lp: 900 });
-  }
-
-  function arpNote(t, chord, step, level) {
-    const tones = TRIAD[chord.kind];
-    const idx = ARP[step % ARP.length];
-    const oct = idx >= tones.length ? 2 : 1;
-    const f = chord.root * tones[idx % tones.length] * 4 * oct;
-    const ch = E.channel({ gain: level * 0.5, pan: (step % 2 ? 0.22 : -0.22),
-                           rev: 0.35, bus: E.musicBus });
-    E.tone({ dest: ch, t, type: 'triangle', f0: f, dur: 0.3, gain: 0.16,
-             attack: 0.004, lp: 4200, q: 0.7 });
-    E.tone({ dest: ch, t, type: 'sine', f0: f * 2, dur: 0.16, gain: 0.05,
-             attack: 0.004 });
-  }
-
-  function pulse(t, strong, level) {
-    const ch = E.channel({ gain: level, rev: 0.1, bus: E.musicBus });
-    if (strong) {
-      E.tone({ dest: ch, t, type: 'sine', f0: 120, f1: 52, glide: 0.06,
-               dur: 0.2, gain: 0.32, attack: 0.003 });
-      E.noiseVoice({ dest: ch, t, lp: 420, fEnd: 160, noise: 'brown',
-                     dur: 0.1, gain: 0.09, attack: 0.002 });
-    } else {
-      E.noiseVoice({ dest: ch, t, hp: 5200, dur: 0.035, gain: 0.055,
-                     attack: 0.001 });
-    }
-  }
-
-  function scheduleMusic(now) {
-    if (nextBeat <= 0 || nextBeat < now - 1) { nextBeat = now + 0.1; beatIndex = 0; }
-    const horizon = now + LOOKAHEAD;
-    let guard = 0;
-    while (nextBeat < horizon && guard++ < 32) {
-      const t = nextBeat;
-      const bar = ((beatIndex / BEATS_PER_BAR) | 0) % BARS;
-      const beat = beatIndex % BEATS_PER_BAR;
-      const chord = PROG[bar];
-      const L = bedLevel;
-
-      if (beat === 0) padChord(t, chord, L);
-      if (beat === 0 || beat === 2) bassNote(t, chord, L, beat === 0);
-      pulse(t, beat === 0 || beat === 2, L * 0.9);
-      pulse(t + BEAT * 0.5, false, L * 0.7);
-
-      // arpeggio: two eighths per beat, thinned on bar 3 so it breathes
-      const step = beatIndex * 2;
-      const thin = bar === 3 && beat >= 2;
-      arpNote(t, chord, step, thin ? L * 0.5 : L);
-      if (!thin) arpNote(t + BEAT * 0.5, chord, step + 1, L * 0.8);
-
-      beatIndex = (beatIndex + 1) % (BEATS_PER_BAR * BARS);
-      nextBeat += BEAT;
-    }
-  }
+  /* --------------------------------------------------------------- fanfare */
 
   /** Short triumphant cadence: G -> A -> D with a fanfare and a timpani roll. */
   function victoryCadence() {
@@ -316,27 +237,26 @@ export function createBeds(E) {
     E.noiseVoice({ dest: ch, t: t0 + 1.2, hp: 6500, dur: 1.4, gain: 0.06, attack: 0.05 });
     E.noiseVoice({ dest: ch, t: t0 + 1.18, lp: 180, fEnd: 60, noise: 'brown',
                    dur: 1.1, gain: 0.3, attack: 0.006 });
-    resumeAt = t0 + 2.9;
+    // This used to set `resumeAt`, which handed the bus back to a quieter copy
+    // of the four-bar loop once the cadence had rung out. There is no loop to
+    // hand back to; `music('victory')` closes the bus itself.
   }
 
   /* ---------------------------------------------------------------- the mix
    *
-   *   "I feel like I've never heard the music — make it louder, and make the
-   *    ocean quieter."
+   *   "Make the ocean quieter."
    *
-   * Two bus gains, and they were the wrong way round: the ocean ran at 0.5
-   * against music at 0.38, so the bed that never stops was always the louder
-   * of the two and the four-bar loop sat underneath it for the whole match.
-   * The ocean is meant to be the room, not the record.
+   * `AMB_LEVEL` is the only number that should move for a complaint about the
+   * ocean. The per-voice gains inside `startAmbience` are shaped against each
+   * other — quieting the swell alone would leave the gulls and the distant
+   * market sitting on top of a bed that had gone away underneath them.
    *
-   * These are the ONLY numbers that should move for a complaint about the mix.
-   * The per-voice gains inside `startAmbience` and the note builders are shaped
-   * against each other — quieting the swell alone would leave the gulls and the
-   * distant market sitting on top of a bed that had gone away underneath them.
+   * For the record, since it was measured properly in the end: at AMB_LEVEL
+   * 0.30 the ocean renders at about 0.086 peak / 0.016 RMS, and a chop lands
+   * at 0.435. The bed is meant to be the room, and it is.
    */
   const AMB_LEVEL = 0.30;          // was 0.5
-  const MUSIC_LEVEL = 0.58;        // was 0.38
-  const MUSIC_VICTORY = 0.82;      // was 0.62
+  const MUSIC_VICTORY = 0.82;      // the fanfare, and the only thing left on this bus
 
   /* ------------------------------------------------------------------- api */
   return {
@@ -361,29 +281,29 @@ export function createBeds(E) {
       }
     },
 
+    /**
+     * 'victory' fires the fanfare. Anything else closes the bus.
+     *
+     * There is no 'play' any more — see the note at the top of the file. The
+     * bus is opened and closed by this one call because the cadence is
+     * scheduled WHOLE: every voice in it is written onto the audio clock at an
+     * absolute time before this returns, so the ramp down can be written at
+     * the same moment and no timer is involved in any of it.
+     */
     music(mode) {
       const t = E.now();
-      if (mode === 'play') {
-        if (musicMode === 'play') return;
-        musicMode = 'play';
-        bedLevel = 0.34;
-        nextBeat = t + 0.15;
-        beatIndex = 0;
-        setAt(E.musicBus.gain, 0.0001, t);
-        linTo(E.musicBus.gain, MUSIC_LEVEL, t + 2.0);
-        ensureTimer();
-      } else if (mode === 'victory') {
+      if (mode === 'victory') {
         musicMode = 'victory';
-        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, MUSIC_LEVEL), 0, 1), t);
+        setAt(E.musicBus.gain, 0.0001, t);
         linTo(E.musicBus.gain, MUSIC_VICTORY, t + 0.12);
         victoryCadence();
-        ensureTimer();
+        // Hold through the cadence (~2.9s), then close behind it.
+        setAt(E.musicBus.gain, MUSIC_VICTORY, t + 3.2);
+        linTo(E.musicBus.gain, 0, t + 4.4);
       } else {                                   // 'off' / 'stop' / anything
         musicMode = 'off';
-        resumeAt = 0;
-        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, MUSIC_LEVEL), 0, 1), t);
+        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, MUSIC_VICTORY), 0, 1), t);
         linTo(E.musicBus.gain, 0, t + 0.6);
-        maybeStopTimer();
       }
     },
 
