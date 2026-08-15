@@ -60,6 +60,9 @@
  */
 
 import { RES, PLAYER_COLORS } from '../core/constants.js';
+// A pure read over `state.roadOwner`, which this file writes itself. It
+// decides nothing — see `onBuild` for why that distinction is the whole rule.
+import { longestRoadFor } from '../core/rules.js';
 import { items, collectItem, restoreTile, tileRegenSeconds } from '../board/nodes.js';
 import { readSeat, SNAP_STRIDE } from './protocol.js';
 
@@ -215,6 +218,13 @@ export function createMirror(state, opts = {}) {
     if (ev.kind === 'road') {
       state.roadOwner.set(ev.at, ev.player);
       p.roads.add(ev.at);
+      // Re-derived, not replayed: a length is a pure function of the map that
+      // was just written, so working it out here cannot disagree with the
+      // server. WHO HOLDS THE AWARD is a different question and stays the
+      // server's — that arrives as an `award` event. Without this line the
+      // HUD's award row read every player's road as 0 all match, because
+      // nothing else on the client ever fills `longestRoadLen` in.
+      p.longestRoadLen = longestRoadFor(state, ev.player);
     } else if (ev.kind === 'settlement') {
       state.buildings.set(ev.at, { owner: ev.player, type: 'settlement' });
       p.settlements.add(ev.at);
@@ -311,15 +321,51 @@ export function createMirror(state, opts = {}) {
     return ev;
   }
 
+  /* ---------------------------------------------------------------- awards
+   *
+   * FIVE POINTS THAT WERE NOT ON THE BOARD.
+   *
+   *   "how many points it takes to win on play with friends mode, because it
+   *    doesn't seem consistent with the rest of the game."
+   *
+   * Twelve, the same as everywhere else — `VICTORY_POINTS` is one constant and
+   * the server imports the same one. What was inconsistent was the SCORE, not
+   * the target. `rules.scoreOf` counts Longest Road and Largest Army off the
+   * per-player flags `hasLongestRoad` / `hasLargestArmy`, and this pair of
+   * handlers used to record only the holder id. So online, every award was
+   * worth nothing on the client: the HUD track, the overview badges and the
+   * results line all ran up to five points light, the trophy lit next to a
+   * number that plainly was not counting it, and somebody won the match while
+   * your corner still said 7 of 12.
+   *
+   * The flags are set from the event and only from the event. The server
+   * decided; agreeing with it is this file's entire job.
+   */
+
   function onAward(ev) {
-    if (ev.kind === 'longestRoad') state.longestRoadHolder = ev.player;
-    else if (ev.kind === 'largestArmy') state.largestArmyHolder = ev.player;
+    if (ev.kind === 'longestRoad') {
+      state.longestRoadHolder = ev.player;
+      for (const p of state.players) p.hasLongestRoad = p.id === ev.player;
+      // The winning length rides along on the event. `onBuild` derives the
+      // same number a moment earlier; taking it here too costs nothing and
+      // covers a client that joined mid-match and missed those builds.
+      const holder = state.players[ev.player];
+      if (holder && Number.isFinite(ev.value)) holder.longestRoadLen = ev.value | 0;
+    } else if (ev.kind === 'largestArmy') {
+      state.largestArmyHolder = ev.player;
+      for (const p of state.players) p.hasLargestArmy = p.id === ev.player;
+    }
     return ev;
   }
 
   function onAwardLost(ev) {
-    if (ev.kind === 'longestRoad') state.longestRoadHolder = -1;
-    else if (ev.kind === 'largestArmy') state.largestArmyHolder = -1;
+    if (ev.kind === 'longestRoad') {
+      state.longestRoadHolder = -1;
+      for (const p of state.players) p.hasLongestRoad = false;
+    } else if (ev.kind === 'largestArmy') {
+      state.largestArmyHolder = -1;
+      for (const p of state.players) p.hasLargestArmy = false;
+    }
     return ev;
   }
 

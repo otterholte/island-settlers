@@ -473,7 +473,11 @@ function sceneOwnership(ctx, w, h) {
   label(ctx, right, line1, 'SOMEBODY ELSE’S', Math.max(9, h * 0.056), '#a33a22', colW);
   label(ctx, right, line2, 'YOU GET NOTHING', Math.max(10, h * 0.064), '#5a3a1e', colW);
 
-  label(ctx, w / 2, h * 0.93, 'SAME SETTLER · SAME RUN · DIFFERENT HEX',
+  /* The two pips in this picture are the whole lesson, and the reader had no
+     way to tell which one was them — "make it more clear that I'm the blue
+     character". The caption is where that belongs, and putting it here buys
+     the page back the line of prose that used to carry it. */
+  label(ctx, w / 2, h * 0.93, 'BLUE IS YOU · RED IS A RIVAL',
     Math.max(8.5, h * 0.05), '#7a5228', w * 0.94);
 }
 
@@ -596,7 +600,11 @@ function sceneTrade(ctx, w, h) {
     ctx.fillText(give, x, y0 + bh * 0.52);
     label(ctx, x, y0 + bh * 0.82, sub, Math.max(8, h * 0.048), '#7a5228', bw * 0.92);
   };
-  box(w * 0.26, 'THE GREAT MARKET', `${TRADE_BASE} : 1`,
+  /* "Make sure the trading post is always referred to as the trading post and
+     not the great market or anything else." This plate was the last place left
+     in the build that said otherwise, and it sat on the page ABOUT trading,
+     which is the worst place in the book to use the other name. */
+  box(w * 0.26, 'THE TRADING POST', `${TRADE_BASE} : 1`,
     `ANY ${TRADE_BASE} FOR ANY 1`, false);
   box(w * 0.74, 'A DOCK YOU OWN', `${PORT_GENERIC} : 1`,
     `OR ${PORT_SPECIAL} : 1 ON ITS GOODS`, true);

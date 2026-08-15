@@ -367,7 +367,18 @@ export function createFlowUI(root, state, game) {
            re-find the cursor rather than being handed any control inside it. */
         offScopes.push(nav.registerScope({
           node: friends.node, priority: 40,
-          onEscape: () => { friends.hide(); toggle(intro, 'mf-hid', !introOn); }
+          /* The panel names its own main control per screen — JOIN A ROOM on
+             the choice, JOIN on the code box, START in the lobby — because
+             the wrapper's first control is the X in the corner, and landing
+             the cursor on the way out of a screen is not a default worth
+             having. */
+          first: () => friends.primary,
+          /* One step back, then out. See `back()` in ui/rooms.js. */
+          onEscape: () => {
+            if (friends.back && friends.back()) return;
+            friends.hide();
+            toggle(intro, 'mf-hid', !introOn);
+          }
         }));
         toggle(intro, 'mf-hid', true);
         friends.show();

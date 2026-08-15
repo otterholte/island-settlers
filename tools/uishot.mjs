@@ -2724,11 +2724,13 @@ if (STAGE === 'home') {
   const ladder = await ev(`(async()=>{
     const g=window.__ISLAND__.game, r=window.__ISLAND__.renderer;
     const Q=await import('/src/systems/quality.js');
-    const guessLow=Q.guessLevel({navigator:{deviceMemory:8,hardwareConcurrency:4},
-      renderer:'Intel(R) Iris(R) Xe Graphics', stored:{}});
+    const guessLow=Q.guessLevel({navigator:{deviceMemory:8,hardwareConcurrency:2},
+      renderer:'Google SwiftShader', stored:{}});
+    const guessPhone=Q.guessLevel({navigator:{deviceMemory:8,hardwareConcurrency:8},
+      renderer:'Adreno (TM) 730', stored:{}});
     const guessHigh=Q.guessLevel({navigator:{deviceMemory:32,hardwareConcurrency:16},
       renderer:'NVIDIA GeForce RTX 4080', stored:{}});
-    return {probeAtSec:Q.PROBE_AT_SEC, rungs:Q.RUNGS, guessLow, guessHigh,
+    return {probeAtSec:Q.PROBE_AT_SEC, rungs:Q.RUNGS, guessLow, guessHigh, guessPhone,
       level:g.quality && g.quality.level, blurOff:document.getElementById('ui')
         .classList.contains('saver')};})()`, true);
   console.log('  LADDER ' + JSON.stringify(ladder));
@@ -2852,9 +2854,10 @@ if (STAGE === 'home') {
     aLostContextTurnsItOnByItself: auto.low === true && auto.stored === true
       && auto.shadows === false && auto.losses > 0,
     andTheGuessWasAlreadyLowOnThisMachine: bootLevel && bootLevel.level < 2,
-    aLaptopIsGuessedLowBeforeTheFirstFrame: ladder.guessLow.level === 1
+    aSoftwareRasteriserIsGuessedLowBeforeTheFirstFrame: ladder.guessLow.level === 1
       && ladder.guessLow.why.length > 0,
     aRealGpuIsNot: ladder.guessHigh.level === 2,
+    andNeitherIsAPhone: ladder.guessPhone.level === 2,
     thereIsOneLookAndItIsEarly: ladder.probeAtSec <= 12,
     andTheBottomRungIsHalfTheFrameRate: ladder.rungs[0].fps === 30
       && ladder.rungs[0].ratio < 1,

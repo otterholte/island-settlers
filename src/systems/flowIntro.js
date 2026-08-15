@@ -40,7 +40,8 @@ import {
 } from './difficulty.js';
 import {
   knightsOn, setKnights, autoDraft, setAutoDraft,
-  soundOn, setSoundOn, lowPower, setLowPower, playerName, setPlayerName
+  soundOn, setSoundOn, oceanOn, setOceanOn, musicOn, setMusicOn,
+  lowPower, setLowPower, playerName, setPlayerName
 } from '../core/options.js';
 
 export const INTRO_CSS = `
@@ -444,7 +445,11 @@ export const INTRO_CSS = `
   pointer-events:auto;
 }
 .mf-settings.hid{display:none}
-.mf-settings .mf-p-body{max-height:min(62vh,420px);overflow-y:auto}
+.mf-settings .mf-p-body{max-height:min(72vh,460px);overflow-y:auto}
+/* The three sound switches sit closer to each other than to the sections
+   either side of them, which is what makes them read as one control. */
+.mf-p-sound{gap:clamp(4px,0.9vh,7px)}
+.mf-p-sound .mf-i-dlab{margin-bottom:clamp(0px,0.3vh,3px)}
 .mf-s-name{
   width:min(280px,74vw);min-height:44px;padding:0 14px;
   border-radius:12px;border:2px solid rgba(255,201,60,.42);
@@ -907,28 +912,56 @@ export function buildIntro(state, onBegin) {
     return name;
   }
 
-  const soundBtn = button('wide cream mf-s-row', { on: { click: () => setSound(!soundOn()) } },
-    el('span', { class: 'sb-ico', html: icon('sound', 20) }),
-    el('span', { class: 'sb-lab', text: 'Sound: On' }));
-
-  function setSound(on) {
-    setSoundOn(!!on);
-    soundBtn.childNodes[0].innerHTML = icon(on ? 'sound' : 'mute', 20);
-    soundBtn.childNodes[1].textContent = 'Sound: ' + (on ? 'On' : 'Off');
-    /* There is no match and therefore no audio engine yet on a cold boot; when
-       there is one — a second match from the same page — tell it now rather
-       than waiting for the HUD to be rebuilt. */
+  /*
+   * ------------------------------------------------------------------------
+   * THREE SOUND ROWS WHERE THERE WAS ONE
+   * ------------------------------------------------------------------------
+   *
+   *   "Separate the sound effects from the ocean sound. So they can toggle one
+   *    on or off instead of always turning both on or off."
+   *   "I feel like I've never heard the music — make it its own toggle."
+   *
+   * One builder for all three, so the rows cannot drift apart in behaviour or
+   * wording, and so the same shape can be lifted into the in-match gear (see
+   * `ui/hud.js`, which does exactly this). The icon carries the state and the
+   * label carries the channel — three identical speaker glyphs would say
+   * nothing, but a speaker that becomes a muted speaker says everything.
+   *
+   * There is no match and therefore no audio engine yet on a cold boot; when
+   * there is one — a second match from the same page — it is told now rather
+   * than waiting for the HUD to be rebuilt.
+   */
+  function pushAudio() {
     const a = (typeof window !== 'undefined' && window.__ISLAND__)
       ? window.__ISLAND__.game && window.__ISLAND__.game.audio : null;
-    if (a) {
-      a.muted = !on;
-      if (typeof a.setMuted === 'function') a.setMuted(!on);
-      else if (typeof a.mute === 'function') a.mute(!on);
-      if (typeof a.ambience === 'function') a.ambience(!!on);
-      if (typeof a.music === 'function' && !on) a.music('off');
+    if (!a) return;
+    if (typeof a.applyPrefs === 'function') {
+      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn(), music: musicOn() });
+      return;
     }
+    // An engine from before the split. Approximate rather than throw.
+    if (typeof a.setMuted === 'function') a.setMuted(!soundOn());
+    if (typeof a.ambience === 'function') a.ambience(oceanOn());
+    if (typeof a.music === 'function' && !musicOn()) a.music('off');
   }
-  setSound(soundOn());
+
+  function audioRow(label, read, write) {
+    const btn = button('wide cream mf-s-row', { on: { click: () => set(!read()) } },
+      el('span', { class: 'sb-ico', html: icon('sound', 20) }),
+      el('span', { class: 'sb-lab', text: label + ': On' }));
+    function set(on) {
+      write(!!on);
+      btn.childNodes[0].innerHTML = icon(on ? 'sound' : 'mute', 20);
+      btn.childNodes[1].textContent = label + ': ' + (on ? 'On' : 'Off');
+      pushAudio();
+    }
+    set(read());
+    return btn;
+  }
+
+  const soundBtn = audioRow('Sound effects', soundOn, setSoundOn);
+  const oceanBtn = audioRow('Ocean', oceanOn, setOceanOn);
+  const musicBtn = audioRow('Music', musicOn, setMusicOn);
 
   /* Full / Saver, the same two words as the gear in the match. The ladder in
      systems/quality.js reads `lowPower()` on the way up, so a choice made here
@@ -965,7 +998,13 @@ export function buildIntro(state, onBegin) {
       el('div', { class: 'mf-p-body' },
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Display name' }), nameInput),
-        el('div', { class: 'mf-p-row' }, soundBtn),
+        /* One labelled GROUP rather than three loose rows. Three switches at
+           a full row gap each pushed Graphics off the bottom of a 460px-tall
+           landscape phone and made the sheet scroll — and they are one subject
+           anyway, which a heading says better than spacing does. */
+        el('div', { class: 'mf-p-row mf-p-sound' },
+          el('div', { class: 'mf-i-dlab', text: 'Sound' }),
+          soundBtn, oceanBtn, musicBtn),
         el('div', { class: 'mf-p-row' },
           el('div', { class: 'mf-i-dlab', text: 'Graphics' }),
           el('div', { class: 'side-seg' }, gfxBtns))),
@@ -978,6 +1017,20 @@ export function buildIntro(state, onBegin) {
     on: { click: () => showSettings(settingsPanel.classList.contains('hid')) }
   }, el('span', { class: 'mf-g-ico', html: icon('gear', 20) }));
 
+  /*
+   * Opening the sheet does NOT touch the name field.
+   *
+   *   "When I open the settings, it doesn't automatically open my name text
+   *    field. I don't want the keyboard on my phone to show up unless I click
+   *    on the field for Display name."
+   *
+   * Nothing here ever called `focus()` — the keyboard came from `ui/kbnav.js`,
+   * which lands the cursor on a newly-opened scope's first control, and the
+   * first control in this panel is an `<input>`. That is fixed at the source
+   * (see `defaultTarget` there, which now skips text fields when it is
+   * GUESSING); this note is here because this is the panel the player was
+   * looking at when it happened.
+   */
   function showSettings(on) {
     settingsPanel.classList.toggle('hid', !on);
     if (on) { nameInput.value = playerName(); paintGfx(); }

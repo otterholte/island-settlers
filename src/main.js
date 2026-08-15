@@ -829,6 +829,9 @@ async function boot() {
         case 'setupComplete':
           hud.onPlayBegan();
           audio.music('play');
+          // The scene is only now everything a match contains, which is the
+          // one moment worth measuring. See PLAY_PROBE_SEC in quality.js.
+          if (quality && typeof quality.matchBegan === 'function') quality.matchBegan();
           break;
       }
     }
@@ -1163,9 +1166,19 @@ async function boot() {
   }
   requestAnimationFrame(frame);
 
-  // First touch unlocks WebAudio on mobile.
+  /* First touch unlocks WebAudio on mobile.
+   *
+   * The ocean is no longer started unconditionally here: it is one of three
+   * switches the player owns now (see `core/options.js`), and this line ran
+   * after the HUD had already applied their choice — so a player who had
+   * turned the ocean off got it back the first time they touched the screen.
+   * The import is dynamic because everything else on this path is, and a
+   * failure to read an option must not cost the game its audio unlock. */
   const unlock = () => {
-    audio.unlock(); audio.ambience(true);
+    audio.unlock();
+    import('./core/options.js')
+      .then(opt => audio.ambience(opt.oceanOn ? opt.oceanOn() : true))
+      .catch(() => audio.ambience(true));
     removeEventListener('pointerdown', unlock);
   };
   addEventListener('pointerdown', unlock);

@@ -30,7 +30,8 @@ import {
 
 import { scoreOf, rankings, drawCard } from '../core/rules.js';
 import {
-  knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower, soundOn, setSoundOn
+  knightsOn, buttonsSide, setButtonsSide, lowPower, setLowPower,
+  soundOn, setSoundOn, oceanOn, setOceanOn, musicOn, setMusicOn
 } from '../core/options.js';
 
 import { el, button, setText, toggle, replay, fmtTime } from './dom.js';
@@ -440,13 +441,50 @@ export function createHUD(root, state, game) {
   const annWrap = notice.node;
 
   /* --- settings ----------------------------------------------------------- */
-  /* Read, not assumed. Muting used to be a local `let` that started true every
-     time a match booted, so turning the sound off and leaving put it back on
-     again for the next one. It is a device setting now — see core/options.js. */
-  let sound = soundOn();
-  const soundBtn = button('wide cream', { on: { click: () => setSound(!sound) } },
-    el('span', { class: 'sb-ico', html: icon('sound', 20) }),
-    el('span', { class: 'sb-lab', text: 'Sound: On' }));
+  /*
+   * Read, not assumed. Muting used to be a local `let` that started true every
+   * time a match booted, so turning the sound off and leaving put it back on
+   * again for the next one. It is a device setting now — see core/options.js.
+   *
+   * THREE CHANNELS, THREE ROWS — the same builder as the opening screen's gear
+   * (`systems/flowIntro.js`), because the two panels must not disagree about
+   * what a switch does or what it is called.
+   *
+   *   "Separate the sound effects from the ocean sound. So they can toggle one
+   *    on or off instead of always turning both on or off."
+   *
+   * The engine keeps the three on separate busses and always has; `applyPrefs`
+   * in audio/audio.js is the one call that puts the player's choice into it.
+   */
+  function pushAudio() {
+    const a = game.audio;
+    if (!a) return;
+    if (typeof a.applyPrefs === 'function') {
+      a.applyPrefs({ sfx: soundOn(), ocean: oceanOn(), music: musicOn() });
+      return;
+    }
+    if (typeof a.setMuted === 'function') a.setMuted(!soundOn());
+    if (typeof a.ambience === 'function') a.ambience(oceanOn());
+    if (typeof a.music === 'function' && !musicOn()) a.music('off');
+  }
+
+  function audioRow(label, read, write) {
+    const btn = button('wide cream', { on: { click: () => set(!read()) } },
+      el('span', { class: 'sb-ico', html: icon('sound', 20) }),
+      el('span', { class: 'sb-lab', text: label + ': On' }));
+    function set(on) {
+      write(!!on);
+      btn.childNodes[0].innerHTML = icon(on ? 'sound' : 'mute', 20);
+      btn.childNodes[1].textContent = label + ': ' + (on ? 'On' : 'Off');
+      pushAudio();
+    }
+    set(read());
+    return btn;
+  }
+
+  const soundBtn = audioRow('Sound effects', soundOn, setSoundOn);
+  const oceanBtn = audioRow('Ocean', oceanOn, setOceanOn);
+  const musicBtn = audioRow('Music', musicOn, setMusicOn);
 
 
   /* --- where the controls live --------------------------------------------
@@ -547,6 +585,8 @@ export function createHUD(root, state, game) {
    * as the way back in. See `setGearGlyph`. */
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     soundBtn,
+    oceanBtn,
+    musicBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node,
     /* The rules are no longer a drawer inside a drawer. This closes the
@@ -764,21 +804,6 @@ export function createHUD(root, state, game) {
     const teaching = !!(game.tutorial && game.tutorial.running);
     game.openOverview('place-' + kind, teaching ? { once: true } : {});
     return true;
-  }
-
-  function setSound(on) {
-    sound = !!on;
-    setSoundOn(sound);
-    const a = game.audio;
-    if (a) {
-      a.muted = !sound;
-      if (typeof a.setMuted === 'function') a.setMuted(!sound);
-      else if (typeof a.mute === 'function') a.mute(!sound);
-      if (typeof a.ambience === 'function') a.ambience(sound);
-      if (typeof a.music === 'function' && !sound) a.music('off');
-    }
-    soundBtn.childNodes[0].innerHTML = icon(sound ? 'sound' : 'mute', 20);
-    soundBtn.childNodes[1].textContent = 'Sound: ' + (sound ? 'On' : 'Off');
   }
 
   /**
@@ -1466,7 +1491,7 @@ export function createHUD(root, state, game) {
     announce('Settle the Island', me.color.css);
   }
 
-  setSound(soundOn());
+  pushAudio();
   refreshAll(true);
   if (state.phase === 'play') toggle(hud, 'pre', false);
 

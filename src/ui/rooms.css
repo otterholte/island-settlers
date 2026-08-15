@@ -138,9 +138,23 @@
   letter-spacing:.3em;text-indent:.3em;
   min-height:54px;
 }
-.fr-joinrow{display:flex;justify-content:stretch;margin-top:2px}
-.fr-joinrow .btn{width:100%}
 .fr-input.fr-nameinput{letter-spacing:.1em}
+
+/* ---------------------------------------------------------------- choose
+   The two answers, stacked and full width, because there is no reading order
+   between them — they are one question and either is a whole reply. Side by
+   side at this panel width gives each about 220px, which turns CREATE A ROOM
+   into two lines while JOIN A ROOM stays on one, and a pair of buttons that
+   are not the same height stops reading as a pair. */
+.fr-choices{
+  display:flex;flex-direction:column;gap:clamp(7px,1.5vh,11px);
+  margin-top:clamp(4px,1.2vh,9px);
+}
+.btn.fr-choice{
+  width:100%;min-height:52px;border-radius:14px;
+  font-size:clamp(11px,1.7vw,14px);letter-spacing:.13em;
+  --f1:#a6e58c;--f2:#4bab53;--f3:#2f8a3d;--lip:#1a5526;--fg:#0c2c13;
+}
 
 /* ------------------------------------------------------------------ rows */
 .fr-row{
@@ -285,6 +299,8 @@
   .fr-seat{min-height:46px;padding:5px 8px 6px 14px}
   .btn.fr-go{min-height:42px}
   .btn.fr-alt{min-height:38px}
+  .btn.fr-choice{min-height:46px}
+  .fr-choices{gap:6px}
   .btn.fr-tiny{min-height:32px;min-width:32px}
 }
 

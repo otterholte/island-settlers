@@ -31,11 +31,31 @@
  * A code cannot do that. Everyone typing the same five characters is, without
  * any further machinery, one room.
  *
- * TWO PANELS, ONE AT A TIME
- * -------------------------
- *   home      your name, CREATE A ROOM, and a box to type a code into
+ * THREE PANELS, ONE AT A TIME
+ * ---------------------------
+ *   choose    your name, and the only two things anybody came here to do
+ *   join      a code box and nothing else
  *   lobby     the code in large letters, four seats, the settings, and a START
  *             everybody presses
+ *
+ * It used to be two, and the first of them was one screen doing both jobs: a
+ * name field, a paragraph about making a room, a code box, a JOIN button and a
+ * CREATE A ROOM button, all at once.
+ *
+ *   "Make it be the first thing you see, a popup with two buttons, Join a room
+ *    or Create a room. Then if they click join a room it can be a simpler next
+ *    popup screen, that doesn't have the start a game text paragraph. But if
+ *    you press create a room, you go straight to that screen."
+ *
+ * Which is the right shape, and it is worth saying why: the paragraph existed
+ * to explain the room-code idea to somebody who had not chosen anything yet,
+ * and it was in the way of both people who had. Somebody joining does not need
+ * to be told how hosting works — they need the box. Somebody hosting does not
+ * need to read about it either — the code is on the very next screen. Asking
+ * the question first means neither of them reads a word meant for the other.
+ *
+ * The name field stays on `choose` rather than moving to `join`, because it is
+ * the one thing BOTH answers need and the only screen both paths pass through.
  *
  * There used to be a third, behind a SERVER button: a text field for the
  * websocket address.
@@ -76,8 +96,11 @@ export function createRooms(root, opts = {}) {
   const client = opts.client;
   const onClose = typeof opts.onClose === 'function' ? opts.onClose : () => {};
 
-  let panel = 'home';
+  let panel = 'choose';
   let renderedPanel = null;
+  /** The button an arrow-key cursor should land on for the panel on screen.
+   *  Read by the scope in systems/flowUI.js; see `first` there. */
+  let primaryBtn = null;
   let room = null;
   let busy = false;
   /** Kept across redraws so a half-typed code survives a `room` push. */
@@ -136,23 +159,15 @@ export function createRooms(root, opts = {}) {
 
   const meId = () => (client.user ? client.user.id : null);
 
-  /* ================================================================== home
+  /* ============================================================= your name
    *
-   * Your name, then the two things you can do with a code: make one, or use
-   * one. No account, nothing to accept, and no list of people.
+   * Saved on THIS DEVICE and nowhere else, which is the whole of the request.
+   * It is filled in from localStorage on the first paint, so a returning
+   * player never types it twice, and it is written back on every keystroke
+   * rather than on a Save button — there is nothing to submit and no way to
+   * get it wrong.
    */
-
-  function drawHome() {
-    resetPanels();
-    setText(title, 'Play with Friends');
-    setText(sub, 'Make a room, or type a friend’s code');
-
-    /* --- your name ------------------------------------------------------
-     * Saved on THIS DEVICE and nowhere else, which is the whole of the
-     * request. It is filled in from localStorage on the first paint, so a
-     * returning player never types it twice, and it is written back on every
-     * keystroke rather than on a Save button — there is nothing to submit and
-     * no way to get it wrong. */
+  function nameField() {
     const name = el('input', {
       class: 'fr-input fr-nameinput', type: 'text', spellcheck: 'false',
       autocapitalize: 'words', autocomplete: 'nickname',
@@ -174,20 +189,48 @@ export function createRooms(root, opts = {}) {
       nameT = setTimeout(pushName, 350);
     });
     name.addEventListener('blur', pushName);
+    return name;
+  }
+
+  /* ================================================================ choose
+   *
+   * The question, and nothing else that could be mistaken for it.
+   */
+
+  function drawChoose() {
+    resetPanels();
+    setText(title, 'Play with Friends');
+    setText(sub, 'Join a friend’s room, or make your own');
+
     body.appendChild(el('label', { class: 'fr-lab', text: 'Display name' }));
-    body.appendChild(name);
+    body.appendChild(nameField());
+    /* The wording is a Play listing commitment, not a style choice — it says
+       where the name goes as well as where it is kept. See PLAY-STORE.md. */
     body.appendChild(el('p', { class: 'fr-hint', text:
       'Saved on this device and visible to players in your room.' }));
 
-    /* --- make one -------------------------------------------------------- */
-    body.appendChild(el('div', { class: 'fr-sec', text: 'Start a game' }));
-    body.appendChild(el('p', { class: 'fr-copy', text:
-      'Make a room and read the five-character code out to your friends. Anyone '
-      + 'who types it before you start is in — up to four of you. Empty seats '
-      + 'play as bots.' }));
+    /* Both in the body rather than the foot, because they are the CHOICE and
+       not the way onward from one. The foot on this panel therefore carries
+       only the connection status, which is worth reading before either. */
+    const joinBtn = button('green fr-choice', { on: { click: () => go('join') } },
+      el('span', { class: 'sb-lab', text: 'Join a Room' }));
+    const makeBtn = button('green fr-choice', { on: { click: () => makeRoom() } },
+      el('span', { class: 'sb-lab', text: room ? 'Back to Your Room' : 'Create a Room' }));
+    body.appendChild(el('div', { class: 'fr-choices' }, joinBtn, makeBtn));
+    primaryBtn = joinBtn;
+  }
 
-    /* --- or use one ------------------------------------------------------ */
-    body.appendChild(el('div', { class: 'fr-sec', text: 'Join a game' }));
+  /* ================================================================== join
+   *
+   * A code box, and the way back. Somebody who pressed JOIN has already
+   * decided; the paragraph that used to sit here explained hosting to them.
+   */
+
+  function drawJoin() {
+    resetPanels();
+    setText(title, 'Join a Room');
+    setText(sub, 'Type your friend’s code');
+
     const code = el('input', {
       class: 'fr-input fr-code', type: 'text', spellcheck: 'false',
       autocapitalize: 'characters', autocomplete: 'off',
@@ -207,18 +250,25 @@ export function createRooms(root, opts = {}) {
       toggle(joinBtn, 'off', !!codeProblem(code.value));
     });
     code.addEventListener('keydown', ev => { if (ev.key === 'Enter') joinRoom(code.value); });
+    body.appendChild(el('label', { class: 'fr-lab', text: `${CODE_LEN}-character code` }));
     body.appendChild(code);
+    body.appendChild(el('p', { class: 'fr-hint', text:
+      'Ask whoever made the room to read theirs out.' }));
 
-    const joinBtn = button('green fr-alt' + (codeProblem(codeDraft) ? ' off' : ''), {
+    const joinBtn = button('green fr-go' + (codeProblem(codeDraft) ? ' off' : ''), {
       on: { click: () => joinRoom(code.value) }
     }, el('span', { class: 'sb-lab', text: 'Join' }));
-    body.appendChild(el('div', { class: 'fr-joinrow' }, joinBtn));
 
     /* --- feet ------------------------------------------------------------ */
-    foot.appendChild(button('green fr-go', { on: { click: () => makeRoom() } },
-      el('span', { class: 'sb-lab', text: room ? 'Back to Your Room' : 'Create a Room' })));
+    foot.appendChild(button('cream fr-alt', { on: { click: () => go('choose') } },
+      el('span', { class: 'sb-lab', text: 'Back' })));
+    foot.appendChild(joinBtn);
+    primaryBtn = joinBtn;
   }
 
+  /* Straight through: CREATE A ROOM asks the server for one and lands on the
+     lobby, which IS the create screen. There was never a step in between and
+     it should not look like there is. */
   async function makeRoom() {
     if (room) { go('lobby'); return; }
     setBusy(true);
@@ -455,11 +505,11 @@ export function createRooms(root, opts = {}) {
   function draw() {
     if (!client) return;
     let result;
-    if (panel === 'lobby' && room) result = drawLobby();
-    else {
-      if (panel === 'lobby' && !room) panel = 'home';
-      result = drawHome();
-    }
+    primaryBtn = null;
+    if (panel === 'lobby' && !room) panel = 'choose';
+    if (panel === 'lobby') result = drawLobby();
+    else if (panel === 'join') result = drawJoin();
+    else { panel = 'choose'; result = drawChoose(); }
     /* `fr-body` is deliberately reused so live room pushes do not throw away
        the reader's place. A real panel transition is different: if the room
        code field scrolled Home down for the mobile keyboard, carrying that
@@ -495,14 +545,15 @@ export function createRooms(root, opts = {}) {
     offs.push(client.on('status', () => { paintStatus(); draw(); }));
     offs.push(client.on('ping', paintStatus));
     offs.push(client.on('session', () => {
-      // Redraw the lobby (names on seats change) but never the home panel,
-      // which would blow away the field the player is typing their name into.
+      // Redraw the lobby (names on seats change) but never `choose`, which
+      // would blow away the field the player is typing their name into, nor
+      // `join`, which would take the caret out of a half-typed code.
       if (panel === 'lobby') draw();
     }));
     offs.push(client.on(PUSH.ROOM, msg => {
       room = msg.room || null;
       if (room && panel !== 'lobby') panel = 'lobby';
-      if (!room && panel === 'lobby') panel = 'home';
+      if (!room && panel === 'lobby') panel = 'choose';
       draw();
     }));
     offs.push(client.on(PUSH.KICKED, msg => {
@@ -521,7 +572,7 @@ export function createRooms(root, opts = {}) {
   function show() {
     toggle(node, 'hid', false);
     if (room) panel = 'lobby';
-    else panel = 'home';
+    else panel = 'choose';
     renderedPanel = null;
     paintStatus();
     draw();
@@ -533,10 +584,26 @@ export function createRooms(root, opts = {}) {
     toggle(node, 'hid', true);
   }
 
+  /**
+   * Escape, and the Android back gesture behind it.
+   *
+   * Returns true when this screen consumed it. `join` is a step INTO the flow
+   * rather than a sheet over it, so backing out of it belongs here — a panel
+   * that can only be left by the X in the corner is a dead end, and on a phone
+   * the system back gesture would otherwise leave the game entirely from a
+   * screen the player is two taps into.
+   */
+  function back() {
+    if (panel === 'join') { go('choose'); return true; }
+    return false;
+  }
+
   return {
-    node, show, hide, draw,
+    node, show, hide, draw, back,
     get panel() { return panel; },
     get room() { return room; },
+    /** Where an arrow-key cursor should land on the panel that is up. */
+    get primary() { return primaryBtn; },
     destroy() {
       for (const off of offs) { try { off(); } catch (e) { /* fine */ } }
       offs.length = 0;

@@ -497,12 +497,30 @@ console.log('\n--- the Knight raid ---');
     'and the one look happens while the opening screen is still up',
     `${Q.PROBE_AT_SEC}s`);
 
-  ok(Q.guessLevel({ navigator: { deviceMemory: 8, hardwareConcurrency: 4 },
-    renderer: 'Intel(R) Iris(R) Xe Graphics', stored: {} }).level === Q.SAVER,
-  'a shared-memory laptop is guessed low before the first frame');
+  /* THE PHONE STARTS AT FULL. This is the whole of the request that changed
+     `guessLevel`, and it is the check that stops it drifting back: every one
+     of these was guessed SAVER before, by a `deviceMemory <= 8` test that is
+     true everywhere and a GPU list that named every phone ever made. */
+  for (const [what, nav, gpu] of [
+    ['a Qualcomm Android', { deviceMemory: 8, hardwareConcurrency: 8 }, 'Adreno (TM) 730'],
+    ['an iPhone', { deviceMemory: 8, hardwareConcurrency: 6 }, 'Apple GPU'],
+    ['a Mali Android', { deviceMemory: 8, hardwareConcurrency: 8 }, 'Mali-G78 MP14'],
+    ['an integrated laptop', { deviceMemory: 8, hardwareConcurrency: 8 }, 'Intel(R) Iris(R) Xe Graphics']
+  ]) {
+    const g = Q.guessLevel({ navigator: nav, renderer: gpu, stored: {} });
+    ok(g.level === Q.FULL, `${what} starts at full quality and is measured, not assumed`,
+      g.why.join(', '));
+  }
+
+  ok(Q.guessLevel({ navigator: { deviceMemory: 8, hardwareConcurrency: 2 },
+    renderer: 'Google SwiftShader', stored: {} }).level === Q.SAVER,
+  'a software rasteriser is guessed low before the first frame');
   ok(Q.guessLevel({ navigator: { deviceMemory: 32, hardwareConcurrency: 16 },
     renderer: 'NVIDIA GeForce RTX 4080', stored: {} }).level === Q.FULL,
   'and a real GPU is not');
+  ok(Q.PLAY_PROBE_SEC > 0 && Q.PLAY_PROBE_SEC <= 15,
+    'and a second look happens once the match is carrying its real load',
+    `${Q.PLAY_PROBE_SEC}s after the draft`);
   ok(Q.guessLevel({ navigator: { deviceMemory: 32, hardwareConcurrency: 16 },
     renderer: 'NVIDIA GeForce RTX 4080', stored: { losses: 1 } }).level === Q.SAVER,
   'a machine that dropped a context here before is believed over its spec sheet');

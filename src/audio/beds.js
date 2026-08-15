@@ -319,23 +319,42 @@ export function createBeds(E) {
     resumeAt = t0 + 2.9;
   }
 
+  /* ---------------------------------------------------------------- the mix
+   *
+   *   "I feel like I've never heard the music — make it louder, and make the
+   *    ocean quieter."
+   *
+   * Two bus gains, and they were the wrong way round: the ocean ran at 0.5
+   * against music at 0.38, so the bed that never stops was always the louder
+   * of the two and the four-bar loop sat underneath it for the whole match.
+   * The ocean is meant to be the room, not the record.
+   *
+   * These are the ONLY numbers that should move for a complaint about the mix.
+   * The per-voice gains inside `startAmbience` and the note builders are shaped
+   * against each other — quieting the swell alone would leave the gulls and the
+   * distant market sitting on top of a bed that had gone away underneath them.
+   */
+  const AMB_LEVEL = 0.30;          // was 0.5
+  const MUSIC_LEVEL = 0.58;        // was 0.38
+  const MUSIC_VICTORY = 0.82;      // was 0.62
+
   /* ------------------------------------------------------------------- api */
   return {
     ambience(on) {
       const want = !!on;
       const t = E.now();
       if (want === ambOn) {
-        if (want) linTo(E.ambBus.gain, 0.5, t + 0.5);
+        if (want) linTo(E.ambBus.gain, AMB_LEVEL, t + 0.5);
         return;
       }
       ambOn = want;
       if (want) {
         startAmbience();
         setAt(E.ambBus.gain, Math.max(0.0001, fin(E.ambBus.gain.value, 0)), t);
-        linTo(E.ambBus.gain, 0.5, t + 2.2);
+        linTo(E.ambBus.gain, AMB_LEVEL, t + 2.2);
         ensureTimer();
       } else {
-        setAt(E.ambBus.gain, clamp(fin(E.ambBus.gain.value, 0.5), 0, 1), t);
+        setAt(E.ambBus.gain, clamp(fin(E.ambBus.gain.value, AMB_LEVEL), 0, 1), t);
         linTo(E.ambBus.gain, 0, t + 0.7);
         stopAmbience();
         maybeStopTimer();
@@ -351,18 +370,18 @@ export function createBeds(E) {
         nextBeat = t + 0.15;
         beatIndex = 0;
         setAt(E.musicBus.gain, 0.0001, t);
-        linTo(E.musicBus.gain, 0.38, t + 2.0);
+        linTo(E.musicBus.gain, MUSIC_LEVEL, t + 2.0);
         ensureTimer();
       } else if (mode === 'victory') {
         musicMode = 'victory';
-        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, 0.38), 0, 1), t);
-        linTo(E.musicBus.gain, 0.62, t + 0.12);
+        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, MUSIC_LEVEL), 0, 1), t);
+        linTo(E.musicBus.gain, MUSIC_VICTORY, t + 0.12);
         victoryCadence();
         ensureTimer();
       } else {                                   // 'off' / 'stop' / anything
         musicMode = 'off';
         resumeAt = 0;
-        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, 0.38), 0, 1), t);
+        setAt(E.musicBus.gain, clamp(fin(E.musicBus.gain.value, MUSIC_LEVEL), 0, 1), t);
         linTo(E.musicBus.gain, 0, t + 0.6);
         maybeStopTimer();
       }

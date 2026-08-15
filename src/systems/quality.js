@@ -90,6 +90,25 @@ export const FULL = 2;
  */
 export const PROBE_AT_SEC = 8;
 
+/*
+ * AND A SECOND LOOK, ONCE THE MATCH IS ACTUALLY RUNNING.
+ *
+ *   "Only switch to saver if it's not doing well."
+ *
+ * The probe above happens on the opening screen, which is the lightest thing
+ * this game ever draws: no settlers walking, no pickup bursts, no build
+ * effects, no interface panels sliding over the top. While every phone started
+ * in SAVER that did not matter much, because the ladder had nowhere to send
+ * them anyway. Now that a phone starts at FULL, a verdict taken over a menu is
+ * the only thing standing between it and a match it cannot hold — so there is
+ * a second probe a few seconds into play, when the scene finally contains
+ * everything a match contains.
+ *
+ * It is still DOWN ONLY, and still at most one move, so the worst this can do
+ * is what the player would have asked for anyway.
+ */
+export const PLAY_PROBE_SEC = 6;
+
 /** Seconds of frames per probe. Long enough to see a tail, short enough that a
  *  hiccup while it happens to be sampling does not decide anything on its own. */
 const PROBE_SEC = 2.5;
@@ -127,7 +146,16 @@ export const RUNGS = [
 const STRUGGLING_MS = 30;
 const DROWNING_MS = 50;
 
-const STORE_KEY = 'island-settlers.quality';
+/*
+ * The key carries a version because the meaning of what is stored under it has
+ * changed. Every phone that ever ran the old build measured itself into SAVER
+ * on its first frame — see `guessLevel` — and `stored.level === SAVER` is a
+ * signal strong enough to hold a device there forever. Bumping the key retires
+ * every one of those verdicts in one line, so the ladder gets to judge each
+ * machine again on what it actually does rather than on what the old rule
+ * assumed about it. Nothing reads the old key; it is simply left behind.
+ */
+const STORE_KEY = 'island-settlers.quality.v2';
 
 function store() {
   try { return typeof localStorage !== 'undefined' ? localStorage : null; }
@@ -168,10 +196,32 @@ export function rendererName(gl) {
   } catch (e) { return ''; }
 }
 
-/** Adapters whose memory is the machine's memory. Not slow — SHARED, which is
- *  the property that makes a browser evict a WebGL context under pressure. */
-const SHARED_MEMORY_GPU =
-  /(intel|iris|uhd graphics|hd graphics|mali|adreno|powervr|apple gpu|llvmpipe|swiftshader|software)/i;
+/*
+ * ADAPTERS THAT ARE NOT ADAPTERS.
+ *
+ * This list used to read
+ *
+ *   /(intel|iris|uhd graphics|hd graphics|mali|adreno|powervr|apple gpu|
+ *     llvmpipe|swiftshader|software)/i
+ *
+ * under the heading "adapters whose memory is the machine's memory", and every
+ * name in the first two thirds of it is the GPU in a PHONE or a laptop —
+ * Adreno is every Qualcomm Android, Mali is most of the rest, Apple GPU is
+ * every iPhone, Intel and Iris are most laptops ever sold. Between that and
+ * the `deviceMemory <= 8` test below, nothing anybody actually plays this game
+ * on could reach FULL. Shared memory was a real observation about why a
+ * browser evicts a context under pressure, but it is a property of nearly all
+ * hardware, and a signal that is true of nearly all hardware is not a signal.
+ *
+ * What is left is the case that is CONCLUSIVE rather than suggestive: there is
+ * no GPU here at all and the frames are being drawn on the CPU. A software
+ * rasteriser will not cope, no measurement is going to change that, and it is
+ * worth not making it prove the point at 4fps first.
+ *
+ * Everything else starts at FULL and gets measured — see `finishProbe`, which
+ * runs twice now: once on the opening screen and once under match load.
+ */
+const SOFTWARE_GPU = /(llvmpipe|swiftshader|softpipe|software|basic render)/i;
 
 /**
  * What to start at, before a single frame has been drawn.
@@ -181,7 +231,6 @@ const SHARED_MEMORY_GPU =
  */
 export function guessLevel(env = {}) {
   const nav = env.navigator || (typeof navigator !== 'undefined' ? navigator : {});
-  const mem = Number(nav.deviceMemory) || 0;         // GB, coarse, Chrome only
   const cores = Number(nav.hardwareConcurrency) || 0;
   const gpu = String(env.renderer || '');
   const stored = env.stored || readStored() || {};
@@ -194,9 +243,35 @@ export function guessLevel(env = {}) {
   if (stored.losses > 0) { low = true; why.push(`lost ${stored.losses} context(s) before`); }
   if (stored.level === SAVER) { low = true; why.push('ended in saver last time'); }
 
-  if (mem && mem <= 8) { low = true; why.push(`deviceMemory ${mem}GB`); }
-  if (cores && cores <= 4) { low = true; why.push(`${cores} cores`); }
-  if (gpu && SHARED_MEMORY_GPU.test(gpu)) { low = true; why.push(`shared-memory GPU (${gpu.slice(0, 42)})`); }
+  /*
+   * WHY THERE IS NO `deviceMemory` TEST HERE ANY MORE.
+   *
+   *   "Have the default for a smartphone be full instead of saver. Only switch
+   *    to saver if it's not doing well."
+   *
+   * This used to read `if (mem && mem <= 8)`, and `navigator.deviceMemory` is
+   * specified to be CLAMPED AT 8 — a machine with 64GB reports 8, exactly like
+   * a budget phone. So the test was true on every Chromium browser in
+   * existence, every Android WebView and every desktop Chrome included, and
+   * FULL was unreachable: the rung existed but nothing could ever start on it.
+   * It was not a heuristic, it was a constant wearing a heuristic's clothes.
+   *
+   * What replaces it is the thing that was always the better answer, and it
+   * was already written — `finishProbe` measures the first seconds of real
+   * frames and drops a struggling machine to SAVER on the evidence. Guessing
+   * badly costs a few seconds of a bad frame rate on a weak phone; guessing
+   * the way it did cost every good phone its shadows and its pixel ratio for
+   * the entire life of the app.
+   *
+   * The two signals left are the ones that are conclusive rather than
+   * suggestive. A core count the spec does NOT clamp, at the bottom end where
+   * it means a device from another decade — it was `<= 4`, which is a current
+   * budget Android and a machine that should be allowed to try. And a renderer
+   * that has named itself as software; see SOFTWARE_GPU above. Everything else
+   * starts at FULL and is measured.
+   */
+  if (cores && cores <= 2) { low = true; why.push(`${cores} cores`); }
+  if (gpu && SOFTWARE_GPU.test(gpu)) { low = true; why.push(`software renderer (${gpu.slice(0, 42)})`); }
 
   // A stored level above saver from a machine that has been measured is worth
   // more than the hints — it is the same machine, and it coped.
@@ -215,6 +290,8 @@ export function createQuality(opts = {}) {
   const stored = readStored() || {};
   let level = Number.isInteger(opts.level) ? opts.level : FULL;
   let pinned = false;                 // the player chose; stop deciding for them
+  let playAt = 0;                     // when the under-load probe is due
+  let playProbed = false;             // ...and whether it has happened
   let losses = stored.losses | 0;
   let elapsed = 0;                    // seconds since the page opened
   let probed = false;                 // the one look has been taken
@@ -357,7 +434,19 @@ export function createQuality(opts = {}) {
     last.verdict = 'steady';
   }
 
-  /** Seconds of wall clock. Drives the one probe and the sampling window. */
+  /**
+   * The match has started. Arms the second probe — see PLAY_PROBE_SEC.
+   * Idempotent: a rematch on the same page has already been measured under
+   * load, and re-measuring would only risk demoting a machine over the
+   * allocations of a scene being rebuilt.
+   */
+  function matchBegan() {
+    if (playProbed || pinned) return false;
+    playAt = elapsed + PLAY_PROBE_SEC;
+    return true;
+  }
+
+  /** Seconds of wall clock. Drives the two probes and the sampling window. */
   function update(dt) {
     const d = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 1 / 60;
     elapsed += d;
@@ -368,6 +457,11 @@ export function createQuality(opts = {}) {
     }
     // One look, while the opening screen is up and nothing is at stake.
     if (!probed && elapsed >= PROBE_AT_SEC) { probed = true; startProbe(); }
+    // And one under load, a few seconds into the match itself.
+    else if (!playProbed && playAt > 0 && elapsed >= playAt) {
+      playProbed = true;
+      startProbe();
+    }
   }
 
   /** The browser took the context away. Nothing to measure — this IS the
@@ -388,11 +482,12 @@ export function createQuality(opts = {}) {
   function pin(next) {
     pinned = true;
     probed = true;
+    playProbed = true;
     return apply(next, 'chosen');
   }
 
   return {
-    apply, frame, update, loss, pin,
+    apply, frame, update, loss, pin, matchBegan,
     startProbe, finishProbe,
     get level() { return level; },
     /** Milliseconds the frame loop should leave between draws at this rung. */
@@ -404,6 +499,7 @@ export function createQuality(opts = {}) {
         fps: RUNGS[level].fps, ratioScale: RUNGS[level].ratio,
         elapsed: Math.round(elapsed),
         probeAt: probed ? null : PROBE_AT_SEC,
+        playProbeAt: playProbed || !playAt ? null : Math.round(playAt),
         probing: probing > 0,
         last: { ...last }
       };

@@ -199,6 +199,26 @@ export function createKeyNav(opts = {}) {
     return list;
   }
 
+  /*
+   * WHERE THE CURSOR LANDS WHEN A SCREEN OPENS — AND NEVER IN A TEXT BOX.
+   *
+   *   "When I open the settings, it doesn't automatically open my name text
+   *    field. I don't want the keyboard on my phone to show up unless I click
+   *    on the field for Display name."
+   *
+   * `sync()` puts the cursor on a scope's first control the moment that scope
+   * comes to the front, which is what makes PLAY pre-selected on the title
+   * screen. On a phone that same focus call is a keyboard: the settings sheet
+   * and the friends screen both open with a text input first in DOM order, so
+   * half the display slid away behind a keyboard nobody asked for, over a
+   * sheet whose actual controls are all buttons.
+   *
+   * So the DEFAULT never lands on a text field. A scope that genuinely wants
+   * one focused can still say so explicitly, through `first()` or
+   * `[data-kb-first]` — this only governs the fallback, which is a guess. A
+   * field the player taps is unaffected; that is the browser's own focus and
+   * nothing here touches it.
+   */
   function defaultTarget(scope, list) {
     if (typeof scope.first === 'function') {
       let want = null;
@@ -207,7 +227,7 @@ export function createKeyNav(opts = {}) {
     }
     const marked = scope.node.querySelector && scope.node.querySelector('[data-kb-first]');
     if (marked && list.indexOf(marked) >= 0) return marked;
-    return list[0] || null;
+    return list.find(n => !isTextField(n)) || null;
   }
 
   function focusNode(node) {

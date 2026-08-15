@@ -108,10 +108,20 @@ function buildPages() {
       scene: 'ownership',
       title: 'Your Land',
       h: 'You only collect on your own hexes',
+      /*
+       *   "Make it more clear that I'm the blue character, but keep it simpler
+       *    and clear, the slide is getting a bit overcrowded."
+       *
+       * Both halves at once. The line this replaces said only that the rule is
+       * easy to miss — which the reader can neither act on nor remember — so
+       * naming the colour costs the page nothing and the slide gains no rows.
+       * The illustration captions the same fact under the two pips it draws
+       * (`sceneOwnership` in flowTutArt.js), so words and picture agree.
+       */
       body: [
-        'This is the one rule everybody misses.'
+        'You are blue. Blue houses and roads are yours — the other three colours are rivals.'
       ],
-      key: 'You may only pick things up on a hex where you own a settlement or a city on one of its corners. Anywhere else you run straight through and collect nothing at all.',
+      key: 'You can only pick things up on a hex where you own a settlement or city on one of its corners. Anywhere else you run straight through and collect nothing.',
       tail: 'So a new settlement is not just a point — it is new land to work.'
     },
     {
@@ -142,13 +152,31 @@ function buildPages() {
       scene: 'build',
       title: 'Building',
       h: 'Roads, settlements, cities',
+      /*
+       *   "Simplify the building step on slide 7, so it makes more sense. I
+       *    feel like that's overcomplicated in the language for someone who's
+       *    never played it before."
+       *
+       * Same three paragraphs, because a fourth would trade one problem for
+       * the other one this book has — but every sentence in them is shorter
+       * and says one thing. What went: "and tap it again to place it. There
+       * is no confirm button" (two claims, and the second only makes sense if
+       * you were expecting a confirm button); "a corner your roads reach"
+       * buried mid-list; and "two roads of clear space between it and any
+       * other settlement on the island — your own and your rivals alike",
+       * which is rulebook grammar for "leave room, from everyone".
+       *
+       * Nothing has been dropped. The pieces are still introduced in the
+       * order the player will actually build them: road, settlement, city.
+       *
+       * "Mention that the settlement has to be two roads away from any other
+       * settlement, even your competitors'" is still the last line; it is the
+       * rule that decides which corners glow.
+       */
       body: [
-        'Tap BUILD, pick what you want, then tap a glowing spot on the map — and tap it again to place it. There is no confirm button.',
-        // "Mention that the settlement has to be two roads away from any other
-        // settlement, even your competitors'." It is the rule that decides
-        // which corners glow, and the book never said it once.
-        'A road joins two corners. A settlement sits on a corner your roads reach, and is worth 1 point. A city replaces a settlement you already own and is worth 2.',
-        'Every settlement needs two roads of clear space between it and any other settlement on the island — your own and your rivals alike.'
+        'Tap BUILD, choose a piece, then tap a glowing spot on the map. Tap the same spot again to place it.',
+        'Roads connect corners. A settlement goes on a corner your roads reach and is worth 1 point. A city upgrades a settlement you already own, and is worth 2.',
+        'Settlements need elbow room: leave two roads of space between yours and anybody else’s, including your rivals’.'
       ],
       extra: () => el('div', { class: 'tut-costs' },
         el('span', { class: 'tut-cost' },
