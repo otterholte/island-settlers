@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<!-- viewport-fit=cover is the whole point: without it iOS never reports an
+     inset at all and this page would read zero on a notched phone. -->
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Safe area probe — Island Settlers</title>
+<style>
+  :root{
+    --sat:env(safe-area-inset-top,0px);
+    --sar:env(safe-area-inset-right,0px);
+    --sab:env(safe-area-inset-bottom,0px);
+    --sal:env(safe-area-inset-left,0px);
+    --ff:'Trebuchet MS','Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;width:100%;overflow:hidden;
+    background:#06203c;color:#fff;font-family:var(--ff);
+    -webkit-text-size-adjust:100%;-webkit-user-select:none;user-select:none}
+
+  /* Each bar is EXACTLY as wide/tall as the inset that side reports. If a bar
+     is sitting under the sensor housing, that is the side the housing is on. */
+  .bar{position:fixed;z-index:2;display:flex;align-items:center;
+    justify-content:center;font:800 13px/1 var(--ff);letter-spacing:.1em;
+    text-transform:uppercase;color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.8)}
+  .bl{left:0;top:0;bottom:0;width:var(--sal);background:rgba(214,54,44,.85)}
+  .br{right:0;top:0;bottom:0;width:var(--sar);background:rgba(59,127,212,.9)}
+  .bt{top:0;left:0;right:0;height:var(--sat);background:rgba(63,154,82,.85)}
+  .bb{bottom:0;left:0;right:0;height:var(--sab);background:rgba(255,201,60,.85);color:#3a2208}
+  .bl b,.br b{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:800}
+  .br b{transform:none}
+
+  .wrap{position:fixed;inset:0;display:flex;align-items:center;
+    justify-content:center;padding:calc(var(--sat) + 6px) calc(var(--sar) + 6px)
+    calc(var(--sab) + 6px) calc(var(--sal) + 6px);z-index:3}
+  .card{width:100%;max-width:640px;max-height:100%;overflow:auto;
+    padding:12px 16px 14px;border-radius:16px;
+    background:linear-gradient(180deg,rgba(12,32,58,.96),rgba(6,20,40,.96));
+    border:2px solid rgba(255,201,60,.5);box-shadow:0 8px 26px rgba(0,0,0,.6)}
+  h1{margin:0 0 2px;font-size:13px;letter-spacing:.22em;text-transform:uppercase;
+    color:#ffe79a;font-weight:800}
+  .sub{margin:0 0 10px;font-size:11px;color:rgba(198,220,242,.75);line-height:1.35}
+  .big{font:800 30px/1 var(--ff);color:#ffc93c;margin:6px 0 2px}
+  .row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0}
+  .chip{padding:5px 9px 6px;border-radius:9px;background:rgba(255,255,255,.08);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.12);font:700 12px/1.2 var(--ff)}
+  .chip em{font-style:normal;color:rgba(198,220,242,.7);font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;font-size:9px;display:block;
+    margin-bottom:3px}
+  .chip b{font-size:15px;color:#eaf2fb}
+  .verdict{margin-top:10px;padding:8px 10px 9px;border-radius:10px;
+    font:800 13px/1.35 var(--ff);letter-spacing:.02em}
+  .sym{background:rgba(214,54,44,.22);box-shadow:inset 0 0 0 1.5px rgba(255,140,120,.6);color:#ffd9cf}
+  .asym{background:rgba(63,154,82,.22);box-shadow:inset 0 0 0 1.5px rgba(120,220,140,.6);color:#d6ffdf}
+  .ask{margin-top:9px;font:700 12px/1.4 var(--ff);color:#ffe79a}
+</style>
+</head>
+<body>
+  <div class="bar bl"><b id="ll"></b></div>
+  <div class="bar br"><b id="rr"></b></div>
+  <div class="bar bt" id="tt"></div>
+  <div class="bar bb" id="bb"></div>
+
+  <div class="wrap"><div class="card">
+    <h1>Safe area probe</h1>
+    <p class="sub">Island Settlers · turn the phone <b>both</b> ways and read the
+      big number each time.</p>
+
+    <div class="big" id="angle">—</div>
+    <p class="sub" id="otype">—</p>
+
+    <div class="row">
+      <div class="chip"><em>left</em><b id="cl">—</b></div>
+      <div class="chip"><em>right</em><b id="cr">—</b></div>
+      <div class="chip"><em>top</em><b id="ct">—</b></div>
+      <div class="chip"><em>bottom</em><b id="cb">—</b></div>
+      <div class="chip"><em>viewport</em><b id="cv">—</b></div>
+      <div class="chip"><em>dpr</em><b id="cd">—</b></div>
+    </div>
+
+    <div class="verdict" id="verdict">—</div>
+    <p class="ask">Which physical side is the notch on right now — the RED bar
+      or the BLUE bar?</p>
+  </div></div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* Read the resolved insets by measuring a probe rather than parsing the
+     custom property, because env() only resolves in a used value. */
+  function px(prop) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;top:0;height:1px;width:' + prop +
+      ';visibility:hidden;pointer-events:none';
+    document.body.appendChild(d);
+    var w = d.getBoundingClientRect().width;
+    d.parentNode.removeChild(d);
+    return Math.round(w * 10) / 10;
+  }
+
+  function paint() {
+    var L = px('env(safe-area-inset-left,0px)');
+    var R = px('env(safe-area-inset-right,0px)');
+    var T = px('env(safe-area-inset-top,0px)');
+    var B = px('env(safe-area-inset-bottom,0px)');
+
+    var so = window.screen && window.screen.orientation;
+    var ang = so && typeof so.angle === 'number' ? so.angle
+      : (typeof window.orientation === 'number' ? window.orientation : null);
+
+    $('angle').textContent = 'angle ' + (ang === null ? '(none)' : ang);
+    $('otype').textContent =
+      'screen.orientation.type: ' + ((so && so.type) || '(none)') +
+      '  ·  window.orientation: ' +
+      (typeof window.orientation === 'number' ? window.orientation : '(none)');
+
+    $('cl').textContent = L + 'px';
+    $('cr').textContent = R + 'px';
+    $('ct').textContent = T + 'px';
+    $('cb').textContent = B + 'px';
+    $('cv').textContent = window.innerWidth + '×' + window.innerHeight;
+    $('cd').textContent = String(window.devicePixelRatio || 1);
+
+    // A label wider than its own bar spills onto the page, so a bar too thin
+    // to hold one goes unlabelled — the chips above already carry the number.
+    $('ll').textContent = L > 24 ? 'left ' + L : '';
+    $('rr').textContent = R > 24 ? 'right ' + R : '';
+    $('tt').textContent = T > 8 ? 'top ' + T : '';
+    $('bb').textContent = B > 8 ? 'bottom ' + B : '';
+
+    var v = $('verdict');
+    if (L === 0 && R === 0) {
+      v.className = 'verdict asym';
+      v.textContent = 'NO SIDE INSET — this screen has no sensor housing to ' +
+        'clear (or viewport-fit is not applying).';
+    } else if (L === R) {
+      v.className = 'verdict sym';
+      v.textContent = 'SYMMETRIC — both sides report ' + L + 'px, so the ' +
+        'inset alone cannot say which side the housing is on.';
+    } else {
+      v.className = 'verdict asym';
+      v.textContent = 'ASYMMETRIC — only the ' + (L > R ? 'LEFT' : 'RIGHT') +
+        ' side reports an inset, so the housing is on that side and no ' +
+        'detection is needed at all.';
+    }
+  }
+
+  paint();
+  window.addEventListener('resize', paint);
+  window.addEventListener('orientationchange', function () {
+    setTimeout(paint, 260);          // iOS reports the old size for a moment
+  });
+  if (window.screen && window.screen.orientation
+    && window.screen.orientation.addEventListener) {
+    window.screen.orientation.addEventListener('change', function () {
+      setTimeout(paint, 260);
+    });
+  }
+})();
+</script>
+</body>
+</html>
