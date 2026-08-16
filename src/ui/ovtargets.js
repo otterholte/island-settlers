@@ -151,7 +151,7 @@ export function createTargets(ctx, proj, paint, state) {
   const targetR = () => {
     const base = (ringCount > 0 && ringCount <= CROWD)
       ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.15)
-      : Math.max(4.6, HEX_SIZE * proj.s * 0.15);
+      : HEX_SIZE * proj.s * 0.15;
     return ringCity ? base * CITY_RING : base;
   };
 
@@ -165,7 +165,7 @@ export function createTargets(ctx, proj, paint, state) {
    * of that, so an available edge is a ~15px slab on a ~28px edge: unmistakably
    * road-shaped, and impossible to confuse with the map's own strokes.
    */
-  const roadBodyW = () => Math.max(10, proj.s * 1.7);
+  const roadBodyW = () => proj.s * 1.7;
 
   /** Radius of the tap zone around any target. >= 22 gives >= 44px across. */
   const hitRadius = () => Math.max(26, HEX_SIZE * proj.s * 0.5);
@@ -568,13 +568,12 @@ export function createTargets(ctx, proj, paint, state) {
       ctx.fillStyle = `rgba(9,20,34,${0.12 + 0.06 * k})`;
       ctx.fill();
     }
-    // Wider and brighter than the first pass at every step of the stack —
-    // "a bit more obvious" — and still the road slot's four passes, from a
-    // broad faint halo down to a bright hairline.
-    ghost(Math.max(9, rr * 1.05), 0.07 + 0.09 * k);    // the halo
-    ghost(7.0, 0.13 + 0.19 * k);                       // the bloom
-    ghost(3.4, 0.40 + 0.44 * k);                       // the edge
-    ghost(1.6, 0.62 + 0.38 * k);                       // the hairline
+    // Four restrained, projection-relative passes: enough contrast to remain
+    // obvious without turning a crowded draft board into a field of white discs.
+    ghost(rr * 0.62, 0.04 + 0.06 * k);                 // the halo
+    ghost(rr * 0.40, 0.08 + 0.12 * k);                 // the bloom
+    ghost(rr * 0.22, 0.28 + 0.30 * k);                 // the edge
+    ghost(rr * 0.10, 0.50 + 0.28 * k);                 // the hairline
     ctx.restore();
   }
 
@@ -594,8 +593,8 @@ export function createTargets(ctx, proj, paint, state) {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r * (1.24 + 0.07 * beat), 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(1.8, r * 0.15);
-    ctx.strokeStyle = `rgba(255,201,60,${0.5 + 0.28 * beat})`;
+    ctx.lineWidth = r * 0.10;
+    ctx.strokeStyle = `rgba(255,201,60,${0.38 + 0.20 * beat})`;
     ctx.stroke();
     ctx.globalAlpha = 0.98;
     paint.ownerPip(x, y, r, state.players[0].color, city, true);
@@ -705,10 +704,7 @@ export function createTargets(ctx, proj, paint, state) {
     if (mode === 'place-road') drawRoadChosen(sel, beat, slow);
     else if (mode === 'place-robber') drawRobberTarget(sel, true, false, beat);
     else if (mode === 'pick-port') drawPortTarget(sel, true, false, beat, glow);
-    else {
-      drawCornerTarget(sel, true, false, beat, glow, halo, slow);
-      drawChosenPiece(sel, mode === 'place-city', beat);
-    }
+    else drawChosenPiece(sel, mode === 'place-city', beat);
   }
 
   /**

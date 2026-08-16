@@ -56,6 +56,20 @@
   pointer-events:none;
 }
 .hud.btn-left .hud-bl{left:auto;right:var(--gCorner);align-items:flex-end}
+
+/* On iPhone the awards are easier to check in the upper corner and the single
+   settings key is less intrusive below them. A 24px corner gutter is only six
+   pixels more than the shared layout, but it keeps both the controls and the
+   tutorial ring around the awards inside the curved display corners. */
+html.apple-phone .hud-tl{
+  top:auto;bottom:24px;left:24px;
+}
+html.apple-phone .hud-bl{
+  top:14px;bottom:auto;left:24px;
+}
+html.apple-phone .hud.btn-left .hud-bl{
+  left:auto;right:24px;
+}
 /* With the match over, the bottom band clears for the end-of-match bar. */
 #ui.endgame .hud-bl{opacity:0;pointer-events:none;transition:opacity .25s ease}
 .tl-row{display:flex;align-items:center;gap:8px}
@@ -1025,11 +1039,13 @@
    MATCH button three pixels below the fold with no scrollbar to hint at it (the
    game hides them all — see ui-base.css). It scrolls instead of overflowing. */
 .pop{
-  /* Under the gear it drops out of, which moved to `--gCorner` when the awards
-     card left its column — see `.hud-tl`. */
-  position:absolute;left:var(--gCorner);top:calc(var(--gT) + 56px);
+  /* Settings is a modal-sized popover, not a drawer attached to one edge. A
+     centred panel clears every notch orientation and behaves the same no matter
+     which corner owns the gear. */
+  position:absolute;left:50%;top:50%;
+  transform:translate(-50%,-50%);
   width:238px;
-  max-height:min(74vh,calc(100dvh - var(--gT) - var(--gB) - 64px));
+  max-height:min(82vh,calc(100dvh - var(--gT) - var(--gB) - 24px));
   overflow:auto;padding:9px;
   display:flex;flex-direction:column;gap:7px;
   border-radius:16px;
@@ -1057,8 +1073,9 @@
  * straight out of the gear again, everywhere, at every size.
  */
 .hud .pop{
-  top:calc(var(--gT) + 56px);
-  max-height:min(74vh,calc(100dvh - var(--gT) - var(--gB) - 64px));
+  left:50%;top:50%;
+  transform:translate(-50%,-50%);
+  max-height:min(82vh,calc(100dvh - var(--gT) - var(--gB) - 24px));
 }
 /* COVERING means covering. The shared `.plate` fill is 94% opaque over a blur,
    which is right for a bar with the island moving behind it and wrong for a
@@ -1088,7 +1105,10 @@
  * `#ui` permanently would put the whole HUD over the coach, which is the
  * arrangement half the tutorial's wardrobe exists to prevent. */
 #ui.sheet-open{z-index:60}
-@keyframes popIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1}}
+@keyframes popIn{
+  from{opacity:0;transform:translate(-50%,calc(-50% - 8px)) scale(.96)}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
 .pop .sb-ico{line-height:0}
 
 /* IT LOOKS SCROLLABLE BECAUSE IT IS.
@@ -1354,7 +1374,7 @@
  * a build card that cannot be pressed. */
 @media (max-height:500px) and (max-width:820px){
   .hud .pop.settings{
-    max-height:calc(100dvh - var(--gT) - var(--gB) - 162px);
+    max-height:calc(100dvh - var(--gT) - var(--gB) - 24px);
   }
 }
 

@@ -607,7 +607,10 @@ html.notch-right .coach-card.at-side{
    A trade sheet is 612px wide on a 640px screen and the placement map owns its
    own top strip and its whole bottom bar. There is no corner left, so the badge
    does not try to find one. */
-.coach-card.gone{display:none !important}
+.coach-card.gone{
+  opacity:0 !important;pointer-events:none !important;
+}
+.coach-card.gone *{pointer-events:none !important}
 
 /* ...AND THE SIDE COLUMN OUTRANKS BOTH OF THEM.
  *

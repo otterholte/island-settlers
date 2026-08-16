@@ -323,6 +323,13 @@
      `orientationchange` and after the viewport has actually settled. */
   (function () {
     var el = document.documentElement;
+    /* The iPhone HUD deliberately swaps its two left-corner clusters. Keep the
+       platform decision in one early, testable class rather than scattering
+       user-agent checks through the HUD. WKWebView and iPhone Safari both
+       identify themselves as iPhone/iPod; iPad keeps the all-version layout. */
+    var nav = window.navigator || {};
+    var applePhone = /iP(hone|od)/.test((nav.platform || '') + ' ' + (nav.userAgent || ''));
+    el.classList.toggle('apple-phone', applePhone);
     function side() {
       var so = window.screen && window.screen.orientation;
       var a = so && typeof so.angle === 'number' ? so.angle
