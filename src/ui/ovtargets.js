@@ -75,6 +75,9 @@ export function createTargets(ctx, proj, paint, state) {
    * read by `targetR` — see the note there for why the ring has two sizes.
    */
   let ringCount = 0;
+  /* True while the map is offering CITY upgrades, which is the one mode whose
+     ring is not the size of the thing being placed — see `targetR`. */
+  let ringCity = false;
 
   /**
    * A field of corners is CROWDED above this many; below it, it is a shortlist.
@@ -115,17 +118,42 @@ export function createTargets(ctx, proj, paint, state) {
    * reads as a hairline"); the corner ring was exempt from it by accident.
    *
    * So on a SHORTLIST the ring is sized off `pipRadius` — the settlement that
-   * will stand on the spot — at 0.74 of it: unmissable beside a road slab, and
-   * still visibly smaller than a placed piece so the two can never be read as
-   * the same thing. On a CROWDED board nothing changes at all, which is the
-   * board the player was looking at when they asked for smaller circles.
+   * will stand on the spot. 0.74 of it was the first answer and it was still
+   * too quiet:
+   *
+   *   "i also want the white glowing circles for the settlements to be a bit
+   *    more obvious."
+   *
+   * 0.95 is that: the ring is now very nearly the footprint of the settlement
+   * it is offering, which is the same argument the road slot won years ago.
+   *
+   * THE CITY RING IS A DIFFERENT SIZE, AND IT HAS TO BE.
+   *
+   *   "for the cities, right now the white glow is the same size as the current
+   *    settlement thats on it, i would prefer that the white glowing circle is
+   *    larger and occupys a space larger and around the perimeter of the
+   *    settlement, like maybe the width of where the new city would actually
+   *    be, since cities are wider then settlements."
+   *
+   * Every other mode offers an EMPTY spot, so a ring the size of the piece is
+   * exactly right. A city upgrade offers a spot that is already occupied — the
+   * settlement disc is standing in it — so a ring at settlement size lands on
+   * top of the thing it is pointing at and reads as a highlight rather than as
+   * a footprint. `drawBuildings` in ovmap.js paints a city at `pipRadius * 1.22`
+   * against a settlement's 1.0, so 1.58 of the ring's own 0.95 puts the stroke
+   * at 1.5 pips: clear of the disc already there, and about where the city's
+   * own edge is going to be.
    *
    * What the finger gets is unchanged either way: `hitRadius()` owns the hit
    * test and still claims a 52px zone around every corner, nearest wins.
    */
-  const targetR = () => (ringCount > 0 && ringCount <= CROWD
-    ? Math.max(pipRadius(proj) * 0.74, HEX_SIZE * proj.s * 0.15)
-    : Math.max(4.6, HEX_SIZE * proj.s * 0.15));
+  const CITY_RING = 1.58;
+  const targetR = () => {
+    const base = (ringCount > 0 && ringCount <= CROWD)
+      ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.15)
+      : Math.max(4.6, HEX_SIZE * proj.s * 0.15);
+    return ringCity ? base * CITY_RING : base;
+  };
 
   /**
    * The coloured core of a road target, in css px.
@@ -532,14 +560,21 @@ export function createTargets(ctx, proj, paint, state) {
     // ...and every other corner is a road slot that happens to be round.
     const k = warm ? 1 : 0.52 + 0.48 * (slow === undefined ? beat : slow);
     ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
-    // A whisper of shade inside the ring. Not a fill — a seat, so the white has
-    // something to sit against on bright sand and gold wheat.
-    ctx.fillStyle = `rgba(9,20,34,${0.10 + 0.05 * k})`;
-    ctx.fill();
-    ghost(Math.max(7, rr * 0.9), 0.055 + 0.075 * k);   // the halo
-    ghost(5.0, 0.10 + 0.16 * k);                       // the bloom
-    ghost(2.6, 0.34 + 0.40 * k);                       // the edge
-    ghost(1.2, 0.55 + 0.45 * k);                       // the hairline
+    /* A whisper of shade inside the ring. Not a fill — a seat, so the white has
+       something to sit against on bright sand and gold wheat. The CITY ring
+       does not get one: there is a settlement disc inside that circle already,
+       and washing it grey would dim the very thing being pointed at. */
+    if (!ringCity) {
+      ctx.fillStyle = `rgba(9,20,34,${0.12 + 0.06 * k})`;
+      ctx.fill();
+    }
+    // Wider and brighter than the first pass at every step of the stack —
+    // "a bit more obvious" — and still the road slot's four passes, from a
+    // broad faint halo down to a bright hairline.
+    ghost(Math.max(9, rr * 1.05), 0.07 + 0.09 * k);    // the halo
+    ghost(7.0, 0.13 + 0.19 * k);                       // the bloom
+    ghost(3.4, 0.40 + 0.44 * k);                       // the edge
+    ghost(1.6, 0.62 + 0.38 * k);                       // the hairline
     ctx.restore();
   }
 
@@ -643,6 +678,9 @@ export function createTargets(ctx, proj, paint, state) {
        ring size that nothing on screen is drawn at. */
     ringCount = (!targets || mode === 'place-road' || mode === 'place-robber'
       || mode === 'pick-port') ? 0 : targets.length;
+    // Set beside `ringCount` and for the same reason: `targetR()` is read from
+    // outside this file, so both have to be true before the early return.
+    ringCity = mode === 'place-city';
     if (!targets || !targets.length) return;
     const pulse = view.pulse || 0;
     const beat = 0.5 + 0.5 * Math.sin(pulse * 4.2);
