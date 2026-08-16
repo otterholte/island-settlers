@@ -795,8 +795,27 @@ export function buildIntro(state, onBegin) {
    * iOS never fires the event and has no programmatic install at all, so there
    * the chip says where the button actually is: Share, then Add to Home Screen.
    */
-  const iOS = typeof navigator !== 'undefined'
-    && /iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
+  /*
+   * IS THIS AN APPLE DEVICE?
+   *
+   * `/iP(hone|ad|od)/` on `navigator.platform` was the whole test, and it has
+   * not been able to see an iPad since 2019. **iPadOS 13 and later report
+   * `platform: "MacIntel"` and a Macintosh user-agent** — desktop-class
+   * browsing is the default, and the point of it is that a site cannot tell.
+   * Worse, the `||` chain never even reached the user-agent, because
+   * `platform` is a truthy "MacIntel" on exactly the device being missed.
+   *
+   * The one thing an iPad cannot hide is the touch screen: a real Mac reports
+   * `maxTouchPoints: 0`. Mac-plus-touch is the standard iPad test and it is
+   * what makes "hide it on Apple devices" true on all of them rather than only
+   * on the phone. Both spellings are kept because a Capacitor WKWebView still
+   * says "iPad" outright.
+   */
+  const nav = typeof navigator !== 'undefined' ? navigator : null;
+  const plat = (nav && nav.platform) || '';
+  const agent = (nav && nav.userAgent) || '';
+  const iOS = /iP(hone|ad|od)/.test(plat) || /iP(hone|ad|od)/.test(agent)
+    || (/^Mac/.test(plat) && !!nav && nav.maxTouchPoints > 1);
 
   /*
    * Is this a device with a home screen to add anything to?

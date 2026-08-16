@@ -51,15 +51,26 @@
      clear is the display's own rounded corner. So it takes the inset capped at
      22px and hugs the edge.
 
+     A CLAMP, NOT A CAP, AND THE FLOOR IS THE SAME 18px AS ABOVE. These are the
+     gutters on every device, not a phone special case, so a corner control on
+     an iPad, a desktop or a non-notched Android has to land exactly where it
+     landed before — those screens have nothing for a bigger gutter to buy, and
+     the 18px floor above exists for browsers that report no inset at all. With
+     no inset the clamp returns 18 and 10, which is `--gL`/`--gT` to the pixel.
+     Only a device that inflates the gutter past the cap changes at all, which
+     is the one device the report was written on.
+
      THIS IS NOT A REPLACEMENT FOR --gL/--gR. Anything that spans the middle of
      a side — the map's player rail, the pip strip, the coach's side column —
      is squarely in the housing's band and still owes it the full inset. Those
      run to the physical edge and pad their CONTENTS by `--sar` instead, which
-     is the only shape that is both flush and safe. */
-  --gLc:max(var(--edge),min(var(--sal),22px));
-  --gRc:max(var(--edge),min(var(--sar),22px));
-  --gTc:max(var(--edge),min(var(--sat),12px));
-  --gBc:max(var(--edge),min(var(--sab),12px));
+     is the only shape that is both flush and safe. So is anything that can GROW
+     into that band: the top-left scoreboard sprouts two award rows in the late
+     game and is deliberately left on `--gL`. */
+  --gLc:clamp(18px,calc(var(--edge) + var(--sal)),22px);
+  --gRc:clamp(18px,calc(var(--edge) + var(--sar)),22px);
+  --gTc:clamp(10px,calc(var(--edge) + var(--sat)),12px);
+  --gBc:clamp(10px,calc(var(--edge) + var(--sab)),12px);
 
   --pad:10px;
   --shadow:0 6px 16px rgba(0,0,0,.42);
