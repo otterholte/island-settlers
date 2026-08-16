@@ -107,6 +107,9 @@ const TRADE_STEP = { pack: true, nokeys: true, noquit: true, sidepanel: true };
  *    cards have to stay lit, so the wash does the work and the card simply
  *    stands in the middle of it. */
 const CARD_LESSON = { pack: true, nokeys: true };
+/* ...and the one card step that stands in the pack's own slot, so the pack
+   cannot be up while it is there. See the `cards` step. */
+const CARD_STEP = { nokeys: true };
 
 /*
  * WHAT IS IN THE PACK WHEN THE BUILDING LESSONS START.
@@ -972,9 +975,17 @@ export function buildSteps(t) {
          clamps it to the frame, so a city built behind the camera still has an
          arrow saying which way to look. */
       /* "On step 5e, remove the End Practice button" — `noquit` on top of the
-         usual scoring wardrobe, for this one step. */
+         usual scoring wardrobe, for this one step.
+         ...and then, from the phone build:
+         "On step 5e, in the live tutorial, hide the build map and pause
+          buttons, and push the instructions for the step lower to the bottom of
+          the screen."
+         `nokeys` is the first half. The second half is free: `at-foot` already
+         drops onto the gutter the moment the band under it is empty — see
+         `.coach.tut-nokeys .coach-card.at-foot` in tutorial.css — so taking the
+         keys away IS pushing the card down. */
       size: 'big', place: 'foot',
-      hud: { pack: true, ranks: true, nobuild: true, noquit: true },
+      hud: { pack: true, ranks: true, nobuild: true, nokeys: true, noquit: true },
       /* No ring. A ring says "this one" about something you can SEE, and
          `markerFor` clamps it into the frame — which round the edge of the
          screen turns into a circle drawn on a patch of sea. The wash still
@@ -1235,7 +1246,17 @@ export function buildSteps(t) {
       text: `You can also purchase development cards. There are three different types in the deck, and each one costs ${COST.card.wool} wool, ${COST.card.wheat} wheat and ${COST.card.ore} ore. Tap the CARD tile.`,
       enter: () => { t.give(CARD_PACK); t.scriptDeck(); },
       needs: 'buildcards',
-      size: 'big', place: 'centre', hud: CARD_LESSON,
+      /*   "the popup for instructions is covering of the 4 build cards, can you
+       *    actually hide the Your Stack section for this step, and so the popup,
+       *    can be at the top of the screen."
+       *
+       * The step's whole instruction is TAP THE CARD TILE, and the card tile is
+       * one of the four it was standing on — a lesson that hides its own target
+       * is the one arrangement that cannot work. TOP is the only band left, and
+       * the only thing already living there is the pack, so the pack stands
+       * down for the one step: `CARD_STEP` is `CARD_LESSON` without `pack`.
+       * The costs the sentence quotes are on the card tile itself anyway. */
+      size: 'big', place: 'top', hud: CARD_STEP,
       dom: ['.bcard[data-kind="card"]'],
       spotDom: ['.hud-bc'],
       holdNext: true,

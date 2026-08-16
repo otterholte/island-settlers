@@ -29,8 +29,9 @@
  *
  * The HOME key
  * ------------
- * The top key on the pad is not a map control. It used to be a house glyph
- * wired to fit-to-frame, which is not what a house means to anybody:
+ * The pad is now a single key and it is not a map control. It used to be a
+ * house glyph wired to fit-to-frame, which is not what a house means to
+ * anybody:
  *
  *   "If I've already started a game, let the home button on the left of the
  *    screen work all the time and exit the game back to the home screen even
@@ -41,7 +42,7 @@
  * including `draft-watch` — which is exactly the moment the quote is about, when
  * the board is locked and there is otherwise no way out of the match.
  *
- * There is no FIT key under the +/- any more:
+ * There is no FIT key any more:
  *
  *   "I don't know what the icon/button is below the plus and minus on the left
  *    side of the screen for the map view, remove it."
@@ -49,6 +50,9 @@
  * Which is the answer by itself — a key whose owner cannot tell what it does is
  * not earning a third of a pad on a phone. Fit-to-frame is still one keystroke
  * away on 0, and zooming all the way out lands in the same place.
+ *
+ * ...and there are no +/- keys either, for the notch reason set out above the
+ * stylesheet. Pinch, wheel and the +/- keys still zoom; only the buttons went.
  *
  * It arms on the first tap and leaves on the second, within ARM_MS. A single
  * stray tap on a 38px key should not throw away a twenty-minute match, and a
@@ -114,8 +118,39 @@ const TILT_PER_PX = 1 / 190;   // how far two fingers travel for the full range
 /** How long the HOME key stays armed after the first tap, in ms. */
 const ARM_MS = 4200;
 
+/* THE PAD IS ONE KEY, AND IT IS IN THE CORNER.
+ *
+ *   "you cant see it from the image of the map. But the home button is getting
+ *    covered by the notch in the iPhone. Can you actually remove the plus and
+ *    minus buttons so they never get covered by the notches no matter what type
+ *    of iphone is used. Also move the home button to the top left of the screen
+ *    and out of the way of any notches."
+ *
+ * Two separate faults, one position.
+ *
+ * The ZOOM KEYS are gone outright. They were the two keys that had to live
+ * halfway down a side — a vertical stack has to start somewhere — and halfway
+ * down a side in landscape is exactly where an iPhone's sensor housing sits.
+ * They were also the only control on this panel with a gesture that already
+ * does the same job better: `zoomAt` is still here and still driven by pinch,
+ * wheel and the +/- keys, so nothing was lost but the two buttons.
+ *
+ * The HOME key then has no reason to be mid-panel and every reason not to be,
+ * so it moves to the top-left CORNER, which is the one part of a notched screen
+ * no sensor housing reaches at any rotation. `left` and `top` are declared in
+ * the stylesheet below rather than written by `layout()` — that was the actual
+ * bug. `frame.x + 12` knew how wide the player rail was and nothing whatever
+ * about the phone's safe area, so the key sat 18px from the glass on every
+ * device ever made.
+ *
+ * NOTE FOR THE NEXT EDIT: everything from here down is inside a template
+ * literal. A backtick in a comment closes it, and the module then fails to
+ * parse — which `main.js` swallows into a stub overview, so the map simply
+ * stops existing with no error anywhere. Ask how that is known.
+ */
 const CSS = `
-.ovz{position:absolute;display:flex;flex-direction:column;gap:5px;z-index:6;
+.ovz{position:absolute;left:var(--gLc,18px);top:var(--gT,10px);
+  display:flex;flex-direction:row;align-items:center;gap:5px;z-index:6;
   pointer-events:auto;-webkit-user-select:none;user-select:none;
   -webkit-tap-highlight-color:transparent}
 .ovz b{display:flex;align-items:center;justify-content:center;
@@ -126,10 +161,10 @@ const CSS = `
   transition:transform .1s ease,border-color .15s ease}
 .ovz b:active{transform:translateY(2px) scale(.95);border-color:rgba(255,201,60,.9)}
 .ovz b svg{display:block}
-/* The HOME key is the odd one out on this pad and is coloured to say so: it
-   leaves the match, it does not move the board. The 9px lower margin is the
-   seam between "get out" and the three map controls under it. */
-.ovz b.ovz-home{margin-bottom:9px;
+/* The HOME key is the only key on this pad now, and it is still coloured the
+   way it was when it had to be told apart from two zoom keys: it leaves the
+   match, it does not move the board. */
+.ovz b.ovz-home{
   background:linear-gradient(180deg,rgba(122,32,28,.96),rgba(62,12,10,.96));
   border-color:rgba(255,150,120,.62)}
 .ovz b.ovz-home.arm{
@@ -146,7 +181,7 @@ const CSS = `
   color:#fff2e2;opacity:1;transition:opacity .2s ease}
 .ovz-ask.off{opacity:0}
 @media (max-height:500px),(max-width:1023px){.ovz b{width:33px;height:30px}
-  .ovz b.ovz-home{margin-bottom:7px}.ovz-ask{font-size:7.5px}}
+  .ovz-ask{font-size:7.5px}}
 `;
 
 const SV = body =>
@@ -225,16 +260,21 @@ export function createOvPan(cv, proj, opts = {}) {
       });
       return b;
     };
-    pad = doc.createElement('div');
-    pad.className = 'ovz';
+    /* No HOME key means no pad at all. The two zoom keys were the only other
+       thing on it, and with them gone an empty 0x0 div in the corner is one
+       more rectangle for the capture rig to have an opinion about. */
     if (onLeave) {
+      pad = doc.createElement('div');
+      pad.className = 'ovz';
       homeKey = key(GLYPH.home, 'Leave the match and go home', () => tapHome());
       homeKey.className = 'ovz-home';
       pad.appendChild(homeKey);
+      host.appendChild(pad);
+      /* The map's own close key also lives in the top-left corner. It steps
+         aside for the HOME key rather than sharing the spot — see `.ov.ov-home
+         .ov-x` in ui.css. */
+      if (host.classList) host.classList.add('ov-home');
     }
-    pad.appendChild(key(GLYPH.plus, 'Zoom in', () => zoomAt(ZOOM_STEP)));
-    pad.appendChild(key(GLYPH.minus, 'Zoom out', () => zoomAt(1 / ZOOM_STEP)));
-    host.appendChild(pad);
 
     if (onLeave) {
       ask = doc.createElement('div');
@@ -347,23 +387,26 @@ export function createOvPan(cv, proj, opts = {}) {
     return proj;
   }
 
-  /** Park the buttons and the hint inside the frame, clear of the rail. */
+  /**
+   * Park the confirm chip beside the HOME key.
+   *
+   * THE PAD ITSELF IS NO LONGER LAID OUT HERE. It used to be placed at
+   * `frame.x + 12`, halfway down the panel — a position measured off the
+   * BOARD's frame, which knows how wide the player rail is and nothing at all
+   * about a phone's sensor housing. That is the whole of the notch bug. The pad
+   * is now a corner control positioned by CSS off `--gLc`/`--gT`, so it moves
+   * with the safe area on every device without this file being told about any
+   * of them; all that is left to do here is hang the "tap again" chip off it,
+   * and that is read from the pad's own resolved box rather than recomputed.
+   */
   function layout() {
     if (!pad) return;
     const f = frame();
-    // Measured, not counted: the pad is two keys without a HOME key and three
-    // with one, and the compact breakpoint shrinks every key. 78 is the
-    // two-key height and only stands in when the pad has not been laid out.
-    const padH = pad.offsetHeight || 78;
-    const left = Math.round(f.x + 12);
-    const top = Math.round(f.y + f.h / 2 - padH / 2);
-    pad.style.left = left + 'px';
-    pad.style.top = top + 'px';
     if (ask && homeKey && ask.style.display !== 'none') {
       const keyH = homeKey.offsetHeight || 34;
       const askH = ask.offsetHeight || 20;
-      ask.style.left = (left + (pad.offsetWidth || 38) + 8) + 'px';
-      ask.style.top = Math.round(top + keyH / 2 - askH / 2) + 'px';
+      ask.style.left = (pad.offsetLeft + (pad.offsetWidth || 38) + 8) + 'px';
+      ask.style.top = Math.round(pad.offsetTop + keyH / 2 - askH / 2) + 'px';
     }
     if (hint) {
       hint.style.left = Math.round(f.x + f.w / 2) + 'px';

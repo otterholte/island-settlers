@@ -487,7 +487,16 @@
    The player asked not to have to track rivals. They stay on screen, but
    small, flat and low-contrast; only their own row carries weight. */
 .hud-tr{
-  position:absolute;right:var(--gR);top:var(--gT);
+  /* THE CORNER GUTTER, not the safe-area one.
+   *
+   *   "for the leaderboard on the top right, please push it further to the
+   *    right so its closer to the edge of the screen, in alignment with the new
+   *    location for the build button on the bottom of the screen."
+   *
+   * `--gRc` is that alignment: this panel and `.hud-br` now stand off the same
+   * edge by the same amount, which is the inset capped at 22px because a
+   * corner is never under an iPhone's sensor housing. See ui-base.css. */
+  position:absolute;right:var(--gRc);top:var(--gT);
   /* Sized to its contents, not to a constant.
 
        "The point count itself is not fully fitting on the row — I won with 13
@@ -553,7 +562,13 @@
    A build card is not a price tag. It fills from the bottom as the purchase
    comes within reach, names every resource as have / need, flags the one
    still holding you up, and goes gold the instant it is buyable. */
-.hud-bc{position:absolute;bottom:var(--gB);left:50%;transform:translateX(-50%)}
+/*   "Also push the four build cards lower on the app screen, theyre sticking
+ *    too far up into the app content itself right now."
+ *
+ * `--gB` is `--edge` plus the home-indicator inset, which on a notched phone in
+ * landscape is 21px of clearance under a row of cards that is not a swipe
+ * target. `--gBc` caps it at 12 and gives the difference back to the board. */
+.hud-bc{position:absolute;bottom:var(--gBc);left:50%;transform:translateX(-50%)}
 .build-row{display:flex;gap:8px;align-items:flex-end}
 .bcard{
   position:relative;display:flex;flex-direction:column;align-items:center;
@@ -738,11 +753,19 @@
    both-right, both-left and either split all fall out of two switches. The
    row also reverses when it moves, so the button nearest the screen edge is
    the same button either way. */
+/*   "can you push the build/map/pause buttons further down and to the right in
+ *    the corner of the screen."
+ *
+ * The three keys are the clearest case for `--gRc`/`--gBc` in the game: a
+ * bottom-RIGHT cluster is diagonally opposite every obstruction a phone has —
+ * the housing is a band across the middle of a side, the home indicator is a
+ * bar across the middle of the bottom — so the full 44/21 insets were buying
+ * clearance from nothing at all and costing a thumb's reach. */
 .hud-br{
-  position:absolute;right:var(--gR);bottom:var(--gB);
+  position:absolute;right:var(--gRc);bottom:var(--gBc);
   display:flex;align-items:flex-end;gap:10px;
 }
-.hud.btn-left .hud-br{right:auto;left:var(--gL);flex-direction:row-reverse}
+.hud.btn-left .hud-br{right:auto;left:var(--gLc);flex-direction:row-reverse}
 
 /* --- bottom-left: EMPTY --------------------------------------------------
    The ground-report chip and the toast stack above it are both gone:

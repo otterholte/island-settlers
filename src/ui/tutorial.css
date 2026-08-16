@@ -344,6 +344,27 @@
    the right. The badge is then simply the width that is left, capped, so it can
    never grow into either corner at any viewport this game ships at.
    ========================================================================== */
+/* THE SIDE COLUMN, DECLARED ONCE.
+   ------------------------------------------------------------------------
+     "the right side of the screen step/tutorial instructions section is not
+      fully right aligned, and also its overlapping the true content of the
+      trading post, it should never do that."
+
+   Two faults with one cause: the card's width and the room the trade sheet
+   gives up for it were two independent constants that had to agree, and on a
+   notched iPhone neither knew about the 44px inset sitting between them. The
+   card stood 44px further left than the sheet had allowed for, so it landed on
+   the sheet's own right-hand column; and it left a strip of sea beside it.
+
+   `--tut-rail` is now the single declaration of that column's width, per
+   breakpoint, and `.panels` is narrowed by exactly it. The card runs to the
+   physical edge and pays the inset out of its right padding, the same shape
+   `.ov-rail` takes in ui.css and for the same reason: a full-height column IS
+   in the sensor housing's band and cannot just move closer to the glass.
+   ------------------------------------------------------------------------ */
+/* on :root, not #ui — the coach layer is a SIBLING of #ui, so anything
+   declared on #ui never reaches it. */
+:root{--tut-rail:186px}
 .coach{--tut-side:520px}
 
 .coach-card{
@@ -370,11 +391,11 @@
    TOP is the resource pill's own slot, and the pill is hidden whenever the
    badge is standing in it (see `tut-pack` at the foot of this file). */
 .coach-card.at-bottom{
-  bottom:calc(var(--gB,10px) + 126px);
+  bottom:calc(var(--gBc,10px) + 126px);
   transform:translateX(-50%) translateY(22px);
 }
 .coach-card.at-low{
-  bottom:calc(var(--gB,10px) + 80px);
+  bottom:calc(var(--gBc,10px) + 80px);
   transform:translateX(-50%) translateY(22px);
 }
 .coach-card.at-top{
@@ -398,7 +419,7 @@
    wardrobe at the foot of this file) and there is nothing left to clear, so
    FOOT drops onto the gutter itself — see the compact block. */
 .coach-card.at-foot{
-  bottom:calc(var(--gB,10px) + 80px);
+  bottom:calc(var(--gBc,10px) + 80px);
   transform:translateX(-50%) translateY(22px);
 }
 /* --------------------------------------------------------- SIDE: on the map
@@ -418,12 +439,15 @@
  * interchangeable, and the card scrolls internally rather than growing, because
  * a tall step must not push its own keys off the bottom of a 320px screen. */
 .coach-card.at-side{
-  left:auto;right:var(--gR,18px);
+  left:auto;right:0;
   top:var(--gT,10px);bottom:var(--gB,10px);
-  width:186px;max-width:calc(100vw - var(--gL,18px) - var(--gR,18px));
+  width:calc(var(--tut-rail) + var(--sar,0px));
+  max-width:calc(100vw - var(--gL,18px));
   max-height:none;
   flex-direction:column;align-items:stretch;justify-content:flex-start;gap:7px;
   overflow:auto;
+  padding-right:calc(clamp(10px,1.8vw,15px) + var(--sar,0px));
+  border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:0;
   transform:translateX(14px);
 }
 .coach-card.on.at-side{transform:translateX(0)}
@@ -573,10 +597,17 @@
  * "way too wide, and glitching on mobile" that was reported. `chromeFor` no
  * longer asks for SLIM in the column at all — this is the belt to that brace,
  * so the two can never disagree again whatever a future step asks for. */
+/* The width and padding here are `--tut-rail`'s job now and are NOT restated —
+   this rule sits below the SIDE band, so a second `width:186px` silently beat
+   the one up there and the column went back to ignoring the safe area. It
+   still has to give SLIM the column layout, which is the whole point of it. */
 .coach-card.slim.at-side,
 .coach-card.at-side{
-  width:186px;max-width:calc(100vw - var(--gL,18px) - var(--gR,18px));
-  flex-direction:column;align-items:stretch;padding:9px 11px 10px;
+  max-width:calc(100vw - var(--gL,18px));
+  flex-direction:column;align-items:stretch;
+}
+.coach-card.slim.at-side{
+  padding:9px calc(11px + var(--sar,0px)) 10px 11px;
 }
 .coach-card.slim.at-side .coach-h{display:block}
 .coach-card.slim.at-side .coach-step{width:34px;height:34px;border-radius:11px}
@@ -606,8 +637,14 @@
   0 0 26px rgba(72,163,85,.6),inset 0 3px 0 rgba(255,255,255,.9)}
 
 /* --- the exit chip: always available, never in the way ------------------ */
+/*   "The end practice button should be more right alighned closer to the edge
+ *    of the screen."
+ *
+ * It was carrying the whole `--sar` — 44px of clearance from a housing that is
+ * nowhere near the top-right corner. `--gRc` is the corner gutter; see
+ * ui-base.css. */
 .coach-quit{
-  position:absolute;right:calc(10px + var(--sar,0px));top:calc(10px + var(--sat,0px));
+  position:absolute;right:var(--gRc,10px);top:var(--gTc,10px);
   min-height:40px;padding:0 12px;border-radius:12px;font-size:10px;
   --f1:#e7ddc9;--f2:#d3c4a4;--f3:#bfae8a;--lip:#8f7d5c;--fg:#4a3a20;
   opacity:0;pointer-events:none;transition:opacity .25s ease;
@@ -721,7 +758,7 @@
   transition:opacity .25s ease,visibility 0s linear .25s;
 }
 /* With the band empty, the FOOT card drops onto the gutter at any size. */
-.coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
+.coach.tut-nokeys .coach-card.at-foot{bottom:calc(var(--gBc,10px) + 4px)}
 
 /* ---------------------------------------------- THE TRADE SHEET MAKES ROOM
  *
@@ -746,12 +783,15 @@
  * The scrim is deliberately NOT narrowed: it is the dark behind everything and
  * it should still cover the whole screen. Only the box the sheet centres in
  * moves. */
-#ui.tut-practice.tut-sidepanel .panels{right:216px}
-#ui.tut-practice.tut-sidepanel .panels .scrim{right:-216px}
-@media (max-height:500px),(max-width:1023px){
-  #ui.tut-practice.tut-sidepanel .panels{right:180px}
-  #ui.tut-practice.tut-sidepanel .panels .scrim{right:-180px}
-}
+/* Read off `--tut-rail` rather than restated, so the sheet gives up exactly the
+   column the card is standing in — plus the inset the card's padding is holding
+   open, plus a 16px seam so the two boxes read as separate objects. The 216 and
+   180 that used to be here were that sum done by hand at one screen size, and
+   they were the overlap. */
+#ui.tut-practice.tut-sidepanel .panels{
+  right:calc(var(--tut-rail) + var(--sar,0px) + 16px)}
+#ui.tut-practice.tut-sidepanel .panels .scrim{
+  right:calc(0px - var(--tut-rail) - var(--sar,0px) - 16px)}
 
 /*   "You can hide the players column on the right of the screen and put the
  *    instructions box for this step over there."
@@ -787,11 +827,11 @@
 
   .coach{--tut-side:300px}
   .coach-card{width:min(540px,calc(100vw - 24px));padding:7px 10px 8px;gap:9px}
-  .coach-card.at-bottom{bottom:calc(var(--gB,10px) + 110px)}
+  .coach-card.at-bottom{bottom:calc(var(--gBc,10px) + 110px)}
   /* The three circular keys are 58px tall and sit on `--gB`. 72 is that plus a
      14px gap, which is the clearance the capture rig asserts at every step. */
-  .coach-card.at-low{bottom:calc(var(--gB,10px) + 72px)}
-  .coach-card.at-foot{bottom:calc(var(--gB,10px) + 72px)}
+  .coach-card.at-low{bottom:calc(var(--gBc,10px) + 72px)}
+  .coach-card.at-foot{bottom:calc(var(--gBc,10px) + 72px)}
 
   /*   "On mobile just hide the build map and pause buttons for this step as
    *    well, so the instruction box can actually sit on the bottom without
@@ -804,7 +844,7 @@
     opacity:0 !important;visibility:hidden;pointer-events:none !important;
     transition:opacity .25s ease,visibility 0s linear .25s;
   }
-  .coach.tut-nokeys-sm .coach-card.at-foot{bottom:calc(var(--gB,10px) + 4px)}
+  .coach.tut-nokeys-sm .coach-card.at-foot{bottom:calc(var(--gBc,10px) + 4px)}
 
   /* The opening card gives up width before it gives up a word. */
   .coach-card.at-centre{width:min(420px,calc(100vw - 28px))}
@@ -815,13 +855,14 @@
      own border and padding are counted, and the card was growing rather than
      wrapping. It may now be as wide as the column or as wide as the screen
      allows, whichever is smaller. */
-  .coach-card.at-side{width:172px;padding:7px 9px 8px}
+  :root{--tut-rail:172px}
+  .coach-card.at-side{padding:7px calc(9px + var(--sar,0px)) 8px 9px}
   .coach-card.at-side .coach-h{font-size:13.5px}
   .coach-card.at-side .coach-t{font-size:12.5px;line-height:1.45}
   .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:10px;padding:0 4px}
 }
 @media (max-width:700px){
-  .coach-card.at-side{width:min(160px,calc(100vw - 176px))}
+  :root{--tut-rail:min(160px,calc(100vw - 176px))}
   .coach-card.at-side .coach-step{display:none}
   .coach-card.at-side .coach-h{font-size:12.5px}
   .coach-card.at-side .coach-t{font-size:12px;line-height:1.42}

@@ -828,9 +828,28 @@ export function buildIntro(state, onBegin) {
     return !!(typeof navigator !== 'undefined' && navigator.standalone);
   }
 
+  /*
+   * NOT ON APPLE, AND NOT IN THE APP.
+   *
+   *   "Remove the add to home screen button from the native app. and hide it
+   *    temporarily from the website as well on apple devices."
+   *
+   * The iOS branch of this chip was never an install button — Safari has no
+   * programmatic install, so it was a LABEL reading "Share ▸ Add to Home
+   * Screen", pointing at a menu item. Inside the TestFlight build that
+   * instruction is nonsense twice over: the game is already an installed app,
+   * and the WKWebView it runs in has no share sheet to point at. `standalone()`
+   * is supposed to catch that case and does not reliably do so in a Capacitor
+   * shell, which is how it survived onto the phone at all.
+   *
+   * So iOS loses the chip outright rather than being tested for
+   * installed-ness. Chrome and the other engines that actually fire
+   * `beforeinstallprompt` are untouched: `box.evt` only exists where the
+   * browser has offered, and a Capacitor Android shell never fires it either.
+   */
   function paintInstall() {
     const box = globalThis.__INSTALL__ || null;
-    const can = handheld() && !standalone() && (iOS || !!(box && box.evt));
+    const can = handheld() && !standalone() && !iOS && !!(box && box.evt);
     installBtn.classList.toggle('hid', !can);
   }
 

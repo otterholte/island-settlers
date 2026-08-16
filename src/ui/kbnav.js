@@ -147,6 +147,45 @@ export function createKeyNav(opts = {}) {
   const scopes = [];
   let lastTop = null;
   let captured = false;
+
+  /*
+   * =========================================================================
+   * NOTHING IS PRE-SELECTED UNTIL A KEYBOARD SAYS SO
+   * =========================================================================
+   *
+   *   "dont ever autoselect buttons on mobile. For Example, i dont need you to
+   *    select the PLAY button or the SOUND EFFECTS button in the settings menu,
+   *    etc."
+   *
+   * `sync()` puts the cursor on a scope's first control the moment that scope
+   * comes to the front, and on a laptop that is exactly right — it is the whole
+   * of "on the home screen the Play button is already selected". On a phone
+   * there is no cursor to place. What the player sees instead is one button on
+   * every screen wearing a gold selection halo it never asked for, which reads
+   * as "this one is special" or, worse, as already pressed.
+   *
+   * The fix is not to test the device and switch the feature off: an iPad with
+   * a Magic Keyboard is a coarse pointer with real arrow keys, and a laptop
+   * with a touchscreen is the same question the other way round. So the rule is
+   * about EVIDENCE rather than hardware. A touch-first device starts asleep and
+   * the first arrow key wakes it — after that it behaves exactly as it always
+   * has, for the rest of the session. A pointer press puts it back to sleep,
+   * which is the same event that already clears the drawn ring.
+   *
+   * Only the AUTOMATIC placement is gated. `focusTop(true)` called by hand
+   * still works, arrow navigation still works the moment it is used, and Enter
+   * was already inert without a visible ring (see the `.kb-on` check in
+   * `onKey`), so a sleeping navigator cannot swallow a key from anybody.
+   */
+  const touchFirst = () => {
+    if (typeof win.matchMedia !== 'function') return false;
+    try {
+      return win.matchMedia('(pointer: coarse)').matches
+        || win.matchMedia('(hover: none)').matches;
+    } catch (e) { return false; }
+  };
+  /** Has this session seen evidence of a keyboard? Always true on a desktop. */
+  let kbLive = !touchFirst();
   /* The navigator is built with the opening screen, long before `createInput`
      exists. Whoever makes the input hands it over later. */
   let input = opts.input || null;
@@ -263,6 +302,10 @@ export function createKeyNav(opts = {}) {
      cursor that is already on PLAY when the title lands. */
   function sync() {
     const scope = topScope();
+    /* Still track which screen is on top while the navigator is asleep — the
+       moment an arrow key wakes it, `focusTop` must land on THIS screen and not
+       on whatever was open when the session started. */
+    if (!kbLive) { lastTop = scope; return; }
     if (scope !== lastTop) {
       lastTop = scope;
       focusTop(true);
@@ -351,6 +394,17 @@ export function createKeyNav(opts = {}) {
 
     const list = controlsIn(scope);
     if (!list.length) return;
+    /* An arrow key IS the keyboard this device was waiting for. The first one
+       only wakes the navigator and lands the cursor on the screen's own default
+       — stepping off a control nobody could see would be a guess. */
+    if (!kbLive) {
+      kbLive = true;
+      lastTop = scope;
+      if (ev.preventDefault) ev.preventDefault();
+      ev.stopImmediatePropagation();
+      focusTop(true);
+      return;
+    }
     const from = (active && list.indexOf(active) >= 0) ? active : null;
     const next = nextInDirection(list, from, dir[0], dir[1]);
     if (!next) return;
@@ -368,6 +422,11 @@ export function createKeyNav(opts = {}) {
      using; the next arrow key puts it back. */
   function onPointer() {
     for (const node of doc.querySelectorAll('.kb-on')) node.classList.remove('kb-on');
+    /* ...and on a touch-first device it also puts the navigator back to sleep,
+       so the NEXT screen does not open with a halo on its first button. Without
+       this, one stray arrow key early in a session would re-arm the automatic
+       placement for every screen after it. */
+    if (touchFirst()) kbLive = false;
   }
   win.addEventListener('pointerdown', onPointer, true);
 
@@ -391,7 +450,13 @@ export function createKeyNav(opts = {}) {
         if (lastTop === spec) lastTop = null;
       };
     },
-    focusTop,
+    /* Callers ask for the cursor when they raise a sheet (`hud-help.js` does it
+       so the rules open ready for the arrow keys). On a touch-first device that
+       is the same unasked-for halo `sync` was gated for, so it takes the same
+       gate: the request is granted once the session has seen a keyboard, and
+       the sheet's scope is registered either way so the first arrow key still
+       lands inside it. */
+    focusTop(force) { return kbLive ? focusTop(force) : false; },
     sync,
     /** The input layer arrives after the menus do; this is how it gets here. */
     setInput(next) { input = next || null; },

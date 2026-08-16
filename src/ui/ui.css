@@ -36,6 +36,23 @@
   position:absolute;inset:0;
   opacity:0;transform:scale(1.05);
   transition:opacity .25s ease,transform .25s cubic-bezier(.2,.9,.3,1);
+  /* THE PANEL IS OPAQUE, AND IT WAS NOT.
+   *
+   *   "Theres also something that looks like the island itself glitching behind
+   *    the full map view as well."
+   *
+   * It is not a glitch, it is the 3D world. `draw()` in overview.js clips
+   * EVERYTHING it paints — the sea included — to the board's frame, and the
+   * frame is inset from the panel. Outside it the canvas was never painted at
+   * all, so those few pixels down each side were a window straight onto the
+   * live scene behind. On three edges that scene is open ocean and nobody could
+   * tell; along the bottom it is the beach the camera is pointed at, and there
+   * it read as the island tearing through the map.
+   *
+   * A background on the panel is the fix rather than a wider fill on the canvas,
+   * because it also covers the quarter second the panel spends scaling in from
+   * 1.05 — where a canvas-side fill is still the wrong size. */
+  background:#05203d;
 }
 .ov.on{opacity:1;transform:scale(1)}
 .ov-cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
@@ -45,12 +62,40 @@
    see. `.ov-title` and `.ov-hint` still exist as the panel's accessible name —
    see the `.ov-say` rule in overview.js's own stylesheet. */
 
-.ov-x{position:absolute;top:var(--gT);left:var(--gL)}
+/* The close key is a corner control, so it takes the corner gutter — and it
+   steps sideways when the HOME key is standing in that corner with it. See the
+   `.ovz` note in ovpan.js for why HOME moved here in the first place. */
+.ov-x{position:absolute;top:var(--gT);left:var(--gLc)}
+.ov.ov-home .ov-x{left:calc(var(--gLc) + 44px)}
+@media (max-height:500px),(max-width:1023px){
+  .ov.ov-home .ov-x{left:calc(var(--gLc) + 39px)}
+}
 
+/* THE RAIL RUNS TO THE PHYSICAL EDGE.
+ *
+ *   "the draft player section is not fully right aligned (theres ocean visible)
+ *    and its also partially covering the map, instead of outside of the map
+ *    section."
+ *
+ * Both halves of that are the same 44px. This column spans the full height of
+ * the panel, so unlike a corner control it IS in the sensor housing's band and
+ * cannot simply move closer to the edge — see the `--gRc` note in ui-base.css.
+ * What it can do is stop being a floating plate: the box now reaches the edge
+ * of the glass and pays the inset out of its own right PADDING instead of out
+ * of a margin. Nothing is ever drawn under the housing, and there is no strip
+ * of sea left over beside it, because there is no "beside it".
+ *
+ * The width grows by the inset for the same reason: the readable column is
+ * still 186px whatever the phone reports, so the rows are not squeezed on the
+ * one device that has a notch. `measure()` in overview.js reserves whatever
+ * this actually resolves to by measuring the element — it no longer guesses at
+ * a gutter, which is the "partially covering the map" half. */
 .ov-rail{
-  position:absolute;right:var(--gR);top:var(--gT);
-  bottom:var(--gB);width:186px;overflow:auto;
-  display:flex;flex-direction:column;gap:6px;padding:7px;
+  position:absolute;right:0;top:var(--gT);
+  bottom:var(--gB);width:calc(186px + var(--sar));overflow:auto;
+  display:flex;flex-direction:column;gap:6px;
+  padding:7px calc(7px + var(--sar)) 7px 7px;
+  border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:0;
 }
 .rail-head{font:800 9px/1 var(--ff);letter-spacing:.24em;text-transform:uppercase;
   color:rgba(255,231,154,.78);text-align:center;padding:2px 0 4px}
@@ -930,8 +975,13 @@
 @media (prefers-reduced-motion:reduce){.endwin.in .ew-paper i{animation-duration:6s}}
 
 /* --------------------------------------------------- the end-of-match bar */
+/*   "At the end of the game, the Home Results and board view section should
+ *    also be lower to the bottom of the screen."
+ *
+ * Same swap as the build cards it replaces: `--gBc` rather than `--gB`, so the
+ * bar sits on the same floor every other bottom cluster now does. */
 .endbar{
-  position:absolute;left:50%;bottom:var(--gB);transform:translateX(-50%);
+  position:absolute;left:50%;bottom:var(--gBc);transform:translateX(-50%);
   display:flex;align-items:center;gap:9px;padding:7px 11px;border-radius:17px;
   background:linear-gradient(180deg,rgba(12,32,58,.92),rgba(6,20,40,.92));
   border:2px solid rgba(255,201,60,.5);
@@ -1036,7 +1086,7 @@
   .ov-hint{display:none}
   .ov-bar{padding:5px 9px;gap:8px;border-radius:15px}
   .ov-sel{font-size:9px;max-width:30vw}
-  .ov-rail{width:158px;padding:6px}
+  .ov-rail{width:calc(158px + var(--sar));padding:6px calc(6px + var(--sar)) 6px 6px}
   .rr{padding:5px 6px 5px 11px}
   .rr-col{font-size:7px;letter-spacing:.16em}
   .rr-you{font-size:7px;padding:2px 5px 3px}
@@ -1234,7 +1284,7 @@
    disappearing below 560px and goes to a 126px column instead. Everything in
    it gives a little; nothing in it is dropped. */
 @media (max-width:560px){
-  .ov-rail{width:126px;padding:5px;gap:4px}
+  .ov-rail{width:calc(126px + var(--sar));padding:5px calc(5px + var(--sar)) 5px 5px;gap:4px}
   .rr{padding:4px 5px 4px 10px}
   .rr-av svg{width:22px;height:22px}
   .rr-name{font-size:10.5px}

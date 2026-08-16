@@ -32,6 +32,35 @@
   --gT:max(calc(var(--edge) + var(--sat)),10px);
   --gB:max(calc(var(--edge) + var(--sab)),10px);
 
+  /* CORNER gutters, and why they are not the four above.
+     ---------------------------------------------------
+     iOS reports the 44px sensor-housing inset on BOTH long edges in landscape,
+     not just the one the notch is actually on — the insets are symmetric so a
+     layout does not jump when the phone is flipped. `--gL`/`--gR` therefore
+     park EVERY edge-anchored control 55px in from a side whose housing only
+     ever covers the middle band of one of them, and on a real iPhone that
+     reads as a strip of dead ocean beside the panel:
+
+       "the draft player section is not fully right aligned (theres ocean
+        visible)"  ...  "the leaderboard on the top right, please push it
+       further to the right so its closer to the edge of the screen"
+
+     A control that lives in a CORNER is never under the housing at any
+     rotation — the housing is a band across the middle of a side, and the
+     corner is 130px away from it at the closest. All a corner control has to
+     clear is the display's own rounded corner. So it takes the inset capped at
+     22px and hugs the edge.
+
+     THIS IS NOT A REPLACEMENT FOR --gL/--gR. Anything that spans the middle of
+     a side — the map's player rail, the pip strip, the coach's side column —
+     is squarely in the housing's band and still owes it the full inset. Those
+     run to the physical edge and pad their CONTENTS by `--sar` instead, which
+     is the only shape that is both flush and safe. */
+  --gLc:max(var(--edge),min(var(--sal),22px));
+  --gRc:max(var(--edge),min(var(--sar),22px));
+  --gTc:max(var(--edge),min(var(--sat),12px));
+  --gBc:max(var(--edge),min(var(--sab),12px));
+
   --pad:10px;
   --shadow:0 6px 16px rgba(0,0,0,.42);
 }

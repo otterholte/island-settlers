@@ -601,16 +601,27 @@ export function createOverview(root, state, game) {
    */
   const sent = new Set();
 
-  /* The rail starts CLOSED on a phone and open on a desktop, and once the
-     player has touched the key their answer stands for the rest of the match.
-     760/400 is the same threshold ui-hud.css calls compact, so the map and the
-     HUD agree about what a small screen is. */
+  /* THE RAIL STARTS OPEN EVERYWHERE.
+   *
+   *   "you can see that the players tab on the right side is defaulted to being
+   *    minimized, i actually want it to start open seeing the full right side
+   *    player section."
+   *
+   * It used to start closed on a phone, on the reasoning that a 186px column is
+   * a lot of a 852px screen to spend on a list. That was the right trade when
+   * the column left a strip of sea beside it and ran over the board; it is the
+   * wrong one now that it runs to the glass and the board is fitted around
+   * whatever it actually measures. Opening a match on the pips and having to
+   * find the key is a worse first second than a narrower island.
+   *
+   * `compact()` stays because the tap-once-and-it-sticks behaviour below still
+   * needs a screen size, and so does the re-fit on rotate. */
   const compact = () => {
     const w = globalThis.innerWidth || wrap.clientWidth || 1024;
     const h = globalThis.innerHeight || wrap.clientHeight || 768;
     return w <= 760 || h <= 400;
   };
-  let railOpen = !compact();
+  let railOpen = true;
   let railChosen = false;
   /* The tutorial's "paint no placement markers this step" switch — see the
      note at the draw call. Nothing in a real match ever sets it. */
@@ -923,32 +934,47 @@ export function createOverview(root, state, game) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       lastW = w; lastH = h; lastDpr = dpr;
     }
-    // Matches the .ov-rail widths in ui.css (186px, 158px compact, 126px tiny).
-    //
-    // The rail used to vanish entirely under 560px, which was fine when this
-    // panel was only ever a map. It is now also the PAUSE screen — "pausing the
-    // game should still show me the full scores and board" — and a pause that
-    // drops the scores on a phone is half a feature. It gets narrower instead
-    // of going away; the board keeps the rest.
-    //
-    // Closed, it costs nothing: the frame runs the full width of the panel and
-    // the pip strip carries the reading. Nothing is lost by that trade, which
-    // is why the phone default is closed.
-    const railW = railOpen ? (w > 760 ? 186 : (w > 560 ? 158 : 126)) : 0;
-    /* Closed, the rail costs nothing but the pip column still stands on the
-       right edge, and the board must not run under it. Measured rather than
-       guessed — it is four pips tall and its width depends on whether the
-       scores are showing. */
-    let stripW = 0;
-    if (!railOpen && strip && strip.getBoundingClientRect) {
-      const sr = strip.getBoundingClientRect();
-      if (sr.width) stripW = Math.round(sr.width) + 12;
-    }
+    /* HOW MUCH OF THE RIGHT EDGE IS SPOKEN FOR — MEASURED, NEVER COUNTED.
+     *
+     *   "its also partially covering the map, instead of outside of the map
+     *    section."
+     *
+     * This used to be `railW + 26`: the rail's declared width plus an
+     * ALLOWANCE for its gutter, hard-coded at a number that was true on a
+     * laptop. On a notched iPhone the gutter is the 44px safe-area inset, the
+     * rail's real left edge is 27px further into the panel than the arithmetic
+     * believed, and the board was fitted straight underneath it. The rail is
+     * now full-bleed and its width carries the inset too (see `.ov-rail` in
+     * ui.css), which is a second number this file has no business knowing.
+     *
+     * So it asks. One `getBoundingClientRect` per open panel per frame, which
+     * is what the pip strip already cost, and the answer is right on every
+     * device including the ones that do not exist yet. */
+    const cvBox = cv.getBoundingClientRect ? cv.getBoundingClientRect() : null;
+    /** How far a right-anchored panel reaches in from the canvas's right edge. */
+    const reachIn = (node) => {
+      if (!cvBox || !node || !node.getBoundingClientRect) return 0;
+      const r = node.getBoundingClientRect();
+      if (!r.width) return 0;
+      return Math.max(0, Math.round(cvBox.right - r.left));
+    };
+
+    /* The rail used to vanish entirely under 560px, which was fine when this
+       panel was only ever a map. It is now also the PAUSE screen — "pausing the
+       game should still show me the full scores and board" — and a pause that
+       drops the scores on a phone is half a feature. It gets narrower instead
+       of going away (the three widths live in ui.css); the board keeps the
+       rest.
+
+       Closed, the rail costs nothing but the pip column still stands on the
+       right edge, and the board must not run under that either. */
+    const railW = railOpen ? reachIn(rail) : 0;
+    const stripW = railOpen ? 0 : reachIn(strip);
 
     // The framed map area: everything the board may occupy. The rail sits
     // outside it, so the frame never runs underneath the player list.
     const fx = 6;
-    const fr = railW ? railW + 26 : Math.max(6, stripW);
+    const fr = Math.max(6, (railW || stripW) ? (railW || stripW) + 12 : 6);
     const f = proj.frame;
     f.x = fx; f.y = 6;
     f.w = Math.max(80, w - fx - fr);
@@ -1776,9 +1802,10 @@ export function createOverview(root, state, game) {
     if (opts.draft) buildDraftRail(opts.draft);
     else { buildRail(); refreshRail(); }
     // The strip reads the same source as the rail and is up whether or not the
-    // rail is. A player who has not touched the key gets the current viewport's
-    // answer every time the map opens, so rotating a phone is not a trap.
-    if (!railChosen) railOpen = !compact();
+    // rail is. A player who has not touched the key gets the default every time
+    // the map opens — see the `railOpen` note above for why that is now OPEN at
+    // every size rather than the viewport's answer.
+    if (!railChosen) railOpen = true;
     pipSig = '';
     buildPips(opts.draft || null);
 
