@@ -95,6 +95,29 @@
      the raw inset. */
   --saln:var(--sal);
   --sarn:var(--sar);
+
+  /* HOW FAR THE BOARD MAP HOLDS ITS FRAME OFF THE GLASS.
+     ----------------------------------------------------
+       "on some iphones like mine, the edges of the phone are curved and its
+        actually cutting things off like the curved edges of the top left and
+        bottom left of the map."
+
+     The map's frame is a rounded rectangle drawn 6px in from the canvas, and
+     6px is fine on a rectangular screen. A phone's display corner is an arc of
+     roughly 55px, and a 16px-radius rectangle sitting 6px inside it pokes out
+     through that arc at all four corners — which is exactly the two the report
+     names, the other two being over dark sea where nobody could tell.
+
+     The arithmetic: a frame of radius R inset d from the corner clears a screen
+     arc of radius S when d >= S(1 - 1/sqrt2)/(1/sqrt2) - R*(1/sqrt2)... in the
+     numbers that matter here, S=55 and R=16 want d >= 11.4. 16 is that with
+     room, and it costs the island 20px of height on a phone.
+
+     Keyed off the home-indicator inset because that is the honest test for "has
+     rounded corners": every device that reports one has them, and no device
+     that reports none does. overview.js reads this through a probe, because
+     `measure()` works in canvas pixels and there is no env() in a canvas. */
+  --ovpad:max(6px,min(var(--sab),16px));
   --gLn:max(calc(var(--edge) + var(--saln)),18px);
   --gRn:max(calc(var(--edge) + var(--sarn)),18px);
 

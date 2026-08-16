@@ -467,49 +467,79 @@ export function createTargets(ctx, proj, paint, state) {
 
   /* ---------------------------------------------------------- corner rings */
 
-  function drawCornerTarget(id, chosen, warm, beat, glow, halo) {
+  /**
+   * An AVAILABLE corner: the SAME object as an available edge, in a circle.
+   *
+   *   "Update the settlement and city location selection so it looks instead of
+   *    a thin yellow circle to see where my potential placements are, its a
+   *    thicker white glowing circle, like the appearance of the ovals for the
+   *    potential road placements."
+   *
+   * The road slots were rebuilt into a hollow white glow at the same request,
+   * one step earlier in the run — "I'd rather them have glow slowly flashing
+   * pulsing white borders" — and the corners were left in the old language.
+   * Two kinds of "you may build here" in two colours at two pulse rates on one
+   * board is a thing the eye has to learn rather than read.
+   *
+   * So this is `drawRoadTarget` with `arc` where it had `edgeRun`: the same
+   * seat of shade inside the shape, the same four-pass white stack from a wide
+   * faint halo down to a bright hairline, the same `slow` breath. Nothing about
+   * the SIZE moved — `targetR()` is untouched and still owns it, along with the
+   * crowded-board rule and the capture rig that measures it.
+   *
+   * The gold survives in exactly one place, and it has to: the CHOSEN corner.
+   * That one is not an invitation any more, it is an answer, and it is the only
+   * ring on screen that means something different from the others.
+   */
+  function drawCornerTarget(id, chosen, warm, beat, glow, halo, slow) {
     const n = intersections[id];
     if (!n) return;
     const x = PX(n.x), y = PY(n.z);
     const r = targetR();
+    const rr = r * (chosen ? 1.22 : (warm ? 1.12 : 1));
     ctx.save();
 
     if (warm) {
       // One expanding sonar ripple, on the one under the finger only, and kept
       // close to the ring it comes off: a wide ripple on a small target is all
       // ripple and no target.
-      ctx.globalAlpha = (1 - halo) * 0.8;
+      ctx.globalAlpha = (1 - halo) * 0.7;
       ctx.beginPath(); ctx.arc(x, y, r * (1.0 + halo * 0.5), 0, Math.PI * 2);
       ctx.lineWidth = Math.max(1.3, r * 0.2);
-      ctx.strokeStyle = '#ffe79a';
+      ctx.strokeStyle = '#ffffff';
       ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
-    const rr = r * (chosen ? 1.22 : (warm ? 1.12 : 1));
-    ctx.globalAlpha = chosen || warm ? 1 : 0.82;
     if (chosen) {
+      // The answer, not an invitation: solid, gold, and the only one on screen.
       ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,238,190,.94)'; ctx.fill();
-    }
-    // Hollow: the hex under the ring stays legible, which is the whole reason a
-    // corner is worth choosing.
-    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(1.4, r * 0.28);
-    ctx.strokeStyle = 'rgba(20,12,4,.55)'; ctx.stroke();
-    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(1.3, r * 0.19) * (chosen ? 1.8 : 0.9 + 0.2 * beat);
-    ctx.strokeStyle = chosen ? '#fff4cf' : (warm ? '#ffe79a' : '#ffc93c');
-    if (chosen || warm) {
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(1.4, r * 0.28);
+      ctx.strokeStyle = 'rgba(20,12,4,.55)'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
+      ctx.lineWidth = Math.max(1.3, r * 0.19) * 1.8;
+      ctx.strokeStyle = '#fff4cf';
       ctx.shadowColor = 'rgba(255,201,60,.85)';
-      ctx.shadowBlur = proj.s * (chosen ? 2.4 : 1.2);
+      ctx.shadowBlur = proj.s * 2.4;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      return;
     }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    if (!chosen) {
-      ctx.beginPath();
-      ctx.arc(x, y, Math.max(1.2, r * 0.19) * (0.75 + 0.4 * glow), 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,250,225,.9)'; ctx.fill();
-    }
+
+    // ...and every other corner is a road slot that happens to be round.
+    const k = warm ? 1 : 0.52 + 0.48 * (slow === undefined ? beat : slow);
+    ctx.beginPath(); ctx.arc(x, y, rr, 0, Math.PI * 2);
+    // A whisper of shade inside the ring. Not a fill — a seat, so the white has
+    // something to sit against on bright sand and gold wheat.
+    ctx.fillStyle = `rgba(9,20,34,${0.10 + 0.05 * k})`;
+    ctx.fill();
+    ghost(Math.max(7, rr * 0.9), 0.055 + 0.075 * k);   // the halo
+    ghost(5.0, 0.10 + 0.16 * k);                       // the bloom
+    ghost(2.6, 0.34 + 0.40 * k);                       // the edge
+    ghost(1.2, 0.55 + 0.45 * k);                       // the hairline
     ctx.restore();
   }
 
@@ -630,7 +660,7 @@ export function createTargets(ctx, proj, paint, state) {
       if (mode === 'place-road') drawRoadTarget(id, warm, beat, slow);
       else if (mode === 'place-robber') drawRobberTarget(id, false, warm, beat);
       else if (mode === 'pick-port') drawPortTarget(id, false, warm, beat, glow);
-      else drawCornerTarget(id, false, warm, beat, glow, halo);
+      else drawCornerTarget(id, false, warm, beat, glow, halo, slow);
     }
 
     if (sel === null || sel === undefined) return;
@@ -638,7 +668,7 @@ export function createTargets(ctx, proj, paint, state) {
     else if (mode === 'place-robber') drawRobberTarget(sel, true, false, beat);
     else if (mode === 'pick-port') drawPortTarget(sel, true, false, beat, glow);
     else {
-      drawCornerTarget(sel, true, false, beat, glow, halo);
+      drawCornerTarget(sel, true, false, beat, glow, halo, slow);
       drawChosenPiece(sel, mode === 'place-city', beat);
     }
   }

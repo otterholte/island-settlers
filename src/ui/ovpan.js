@@ -149,7 +149,9 @@ const ARM_MS = 4200;
  * stops existing with no error anywhere. Ask how that is known.
  */
 const CSS = `
-.ovz{position:absolute;left:var(--gLc,18px);top:var(--gT,10px);
+.ovz{position:absolute;
+  left:calc(var(--ovpad,6px) + var(--saln,0px) + 20px);
+  top:calc(var(--ovpad,6px) + 20px);
   display:flex;flex-direction:row;align-items:center;gap:5px;z-index:6;
   pointer-events:auto;-webkit-user-select:none;user-select:none;
   -webkit-tap-highlight-color:transparent}

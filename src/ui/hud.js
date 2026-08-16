@@ -371,6 +371,25 @@ export function createHUD(root, state, game) {
    *
    * And a rail of four 58px circles plus PAUSE is 300-odd pixels on a 667px
    * phone, which is what pushed the pause key over the build cards. */
+  /*
+   * THE MAP KEY, AND WHY IT IS ONLY THERE ONLINE.
+   *
+   *   "I dont need a pause and a map button, they both do the same thing, so
+   *    for all versions, the web, android app and iphone app, i want all of
+   *    them to remove the map button, and keep the pause button ... The only
+   *    exception is in play with friends. I want that to actually keep both
+   *    buttons."
+   *
+   * They did do the same thing, and the note under PAUSE below says why: the
+   * board map has ALWAYS stopped the match dead — main.js gates the clock, the
+   * bots, the gathering and the settler on `overview.isOpen` — so MAP was a
+   * second door onto the same room, labelled as though it were a different one.
+   *
+   * Online is the exception because there the two genuinely differ: nobody can
+   * stop a match three other people are playing, so opening the board is
+   * looking at it and nothing else. Driven off `net.active` in `update`, not
+   * decided once here, because a room can be joined after the HUD is built.
+   */
   const btnMap = mkCircle('map', 'Map', 'blue', () => game.openOverview('view'));
   /*
    * PAUSE.
@@ -395,6 +414,10 @@ export function createHUD(root, state, game) {
    * for the match to be stopped and no way for the two to disagree.
    */
   const btnPause = mkCircle('pause', 'Pause', 'ghost', () => togglePause());
+  /* Hidden until something says otherwise — see the note on `btnMap`. A solo
+     match is the common case and it should not flash a key it is about to
+     take away. */
+  toggle(btnMap.node, 'hid', true);
   const br = el('div', { class: 'hud-br' },
     btnPause.node, btnMap.node, btnBuild.node);
 
@@ -1382,6 +1405,17 @@ export function createHUD(root, state, game) {
       const opened = game.openOverview('view', {
         title: 'Paused',
         hint: 'Nothing moves · Esc or P to resume',
+        /* SAY SO ON THE PANEL.
+         *
+         *   "keep the pause button, but make it a bit more clear that the game
+         *    is paused when the map/paused popup is visible."
+         *
+         * `title` and `hint` have been the panel's accessible name since the
+         * plate across the top of the board was removed for covering the third
+         * of the screen players most want to see — which means the one screen
+         * in the game that admits the match has stopped said so only to a
+         * screen reader. This raises a chip that says it out loud. */
+        paused: true,
         keepOpen: true
       });
       if (opened === false) return false;
@@ -1453,6 +1487,12 @@ export function createHUD(root, state, game) {
       paused = false;
       toggle(btnPause.node, 'on', false);
     }
+
+    /* MAP is an online-only key — see the note where it is built. Asked every
+       frame rather than latched, because joining a room, and being dropped from
+       one, both happen long after this HUD was made. */
+    const netNow = game.net;
+    toggle(btnMap.node, 'hid', !(netNow && netNow.active));
 
     /* The held numeral, counted down on the same clock as everything else here
        so that a paused match holds it rather than flipping it behind the pause

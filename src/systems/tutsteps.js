@@ -173,9 +173,22 @@ const AWARD_LESSON = {
   pack: true, ranks: true, awards: true,
   nobuild: true, nokeys: true, noquit: true
 };
-/* The last card. Everything that was introduced stays introduced, and the four
-   build cards stand down so the closing badge can sit as low as step 11's. */
-const DONE = { pack: true, ranks: true, awards: true, nobuild: true };
+/* The last card, and the only step in the run that clears the screen entirely.
+ *
+ *   "On the That is the Whole Game popup and the end of the tutorial, i want to
+ *    hide the build map pause button, the road and knight counter, the
+ *    leaderboard, and the your stack section. Basically the only things apart
+ *    from the game board/island itself should be the popup moved up into the
+ *    middle of the screen a bit more. and the end practice button."
+ *
+ * It used to be the opposite — everything introduced stayed introduced, on the
+ * reasoning that the last thing you see should be the interface a real match
+ * hands you. That reads well written down and badly on a phone: the sentence
+ * "that is the whole game" was arriving over five separate readouts, none of
+ * which the sentence is about. So every flag is off, `nogear` takes the last
+ * corner, and `noquit` is deliberately ABSENT — END PRACTICE is one of the two
+ * things that stays. */
+const DONE = { nobuild: true, nokeys: true, nogear: true };
 
 /* ============================================================ THE CHAPTERS
  *
@@ -1228,6 +1241,28 @@ export function buildSteps(t) {
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
+    /*   "Please also make it clear on the tutorial that you can also trade for
+     *    4:1 on the ports. They act like the trading post, plus the 2:1 of the
+     *    specific types of resources, or the 3:1. make that clear but also
+     *    simple."
+     *
+     * The whole rule in three sentences, and it IS the whole rule —
+     * `activeTradeRatio` in core/rules.js says a dock you have not built on
+     * charges TRADE_BASE like the post, a generic one you own charges its 3,
+     * and a named one charges its 2 for its own resource and TRADE_BASE for
+     * everything else. The numbers are read off the constants rather than
+     * typed, so a rebalance cannot leave this card lying.
+     *
+     * No map, no walk, no thing to press: the docks are already on the board
+     * the player has been staring at for six chapters, wearing the very labels
+     * this card explains. One veil and one paragraph. */
+    {
+      id: 'ports',
+      title: 'The docks trade too',
+      text: `Every dock on the coast is a trading post as well — walk to one and it is ${TRADE_BASE} for 1, the same price as the post in the middle. Build a settlement ON a dock and it gets cheaper for you: the plain 3:1 docks take 3 of anything, and a dock with a resource on its sign takes just 2 of that one.`,
+      veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
+    },
+
     /* ------------------------------------------------------- THE THREE CARDS
      *
      *   "Put the instructions in the middle of the screen, right now they're a
@@ -1556,9 +1591,10 @@ export function buildSteps(t) {
       onAction: () => t.roam(),
       action2: 'Play a Match',
       onAction2: () => t.restart(),
-      // Everything that was introduced stays introduced: the last thing the
-      // player sees is the whole interface a real match will hand them.
-      size: 'big', place: 'low', hud: DONE
+      // CENTRE, not LOW. The bands below it were measured to clear the build
+      // cards and the three round keys, and this step no longer has either —
+      // see `DONE`. With the screen empty the card belongs where the eye is.
+      size: 'big', place: 'centre', hud: DONE
     }
   ]);
 }

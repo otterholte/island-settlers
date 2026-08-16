@@ -364,6 +364,22 @@ export function createOverview(root, state, game) {
     'aria-label': 'Close map', on: { click: () => cancel() }
   }, el('span', { class: 'cb-ico', html: icon('close', 18) }));
 
+  /* THE PANEL SAYS IT IS A PAUSE.
+   *
+   *   "make it a bit more clear that the game is paused when the map/paused
+   *    popup is visible."
+   *
+   * The match has always stopped while this panel is up — main.js gates the
+   * clock, the bots, the gathering and the settler on `isOpen`, and the PAUSE
+   * key is only a label on that mechanism. What was missing was anything that
+   * SAID so: `titleEl` has carried the word "Paused" since the plate across the
+   * top of the board was removed, but it is off-screen furniture for a screen
+   * reader. Raised by `opts.paused`, so a placement map or a draft — which stop
+   * the match just as hard but are not a pause — do not claim to be one. */
+  const pausedChip = el('div', { class: 'ov-paused hid' },
+    el('i', {}), el('b', { text: 'Paused' }),
+    el('span', { text: 'Nothing moves' }));
+
   const rail = el('div', { class: 'ov-rail plate lift' });
 
   /* The strip that replaces the rail on a phone, and the key that brings the
@@ -549,7 +565,7 @@ export function createOverview(root, state, game) {
   const label = el('div', { class: 'ov-say' }, titleEl, hintEl);
   const wrap = el('div', {
     class: 'ov hid', 'data-ui': '', role: 'dialog', 'aria-label': 'Island map'
-  }, cv, label, strip, closeBtn, rail, sayEl, buyRow, actBar, portPop);
+  }, cv, label, strip, closeBtn, pausedChip, rail, sayEl, buyRow, actBar, portPop);
   root.appendChild(wrap);
 
   const ctx = (cv.getContext && cv.getContext('2d')) || null;
@@ -919,6 +935,39 @@ export function createOverview(root, state, game) {
   }
 
   /* ---------------------------------------------------------- projection */
+  /* The three CSS lengths `measure()` needs and cannot compute.
+   *
+   * `measure()` works in canvas pixels; `env()` and custom properties only
+   * resolve in the used value of a real element. So a 1px probe is inserted,
+   * measured and removed — and CACHED, because this runs inside the draw loop
+   * and a layout flush per frame is a real cost. The key is everything that can
+   * change the answer: the panel's size, and the `notch-left`/`notch-right`
+   * class index.html writes on <html> when the phone is turned over. */
+  let padKey = '';
+  let padVal = { ov: 6, left: 0, right: 0 };
+  function readPads() {
+    const doc = wrap.ownerDocument || document;
+    const root = doc.documentElement;
+    const key = `${cv.clientWidth}x${cv.clientHeight}|${root ? root.className : ''}`;
+    if (key === padKey) return padVal;
+    padKey = key;
+    const probe = doc.createElement('div');
+    probe.style.cssText = 'position:absolute;left:0;top:0;height:1px;'
+      + 'visibility:hidden;pointer-events:none;width:var(--ovpad,6px)';
+    const pl = probe.cloneNode(false);
+    pl.style.width = 'var(--saln,0px)';
+    const pr = probe.cloneNode(false);
+    pr.style.width = 'var(--sarn,0px)';
+    wrap.appendChild(probe); wrap.appendChild(pl); wrap.appendChild(pr);
+    padVal = {
+      ov: Math.round(probe.getBoundingClientRect().width) || 6,
+      left: Math.round(pl.getBoundingClientRect().width) || 0,
+      right: Math.round(pr.getBoundingClientRect().width) || 0
+    };
+    wrap.removeChild(probe); wrap.removeChild(pl); wrap.removeChild(pr);
+    return padVal;
+  }
+
   function measure() {
     const w = cv.clientWidth || wrap.clientWidth || 800;
     const h = cv.clientHeight || wrap.clientHeight || 400;
@@ -971,14 +1020,32 @@ export function createOverview(root, state, game) {
     const railW = railOpen ? reachIn(rail) : 0;
     const stripW = railOpen ? 0 : reachIn(strip);
 
-    // The framed map area: everything the board may occupy. The rail sits
-    // outside it, so the frame never runs underneath the player list.
-    const fx = 6;
-    const fr = Math.max(6, (railW || stripW) ? (railW || stripW) + 12 : 6);
+    /* THE FRAMED MAP AREA: everything the board may occupy.
+     *
+     * Three separate things decide how far in each edge starts, and the frame
+     * takes the largest of whichever apply.
+     *
+     *   THE ROUNDED CORNERS OF THE SCREEN. `--ovpad` — see the note on it in
+     *   ui-base.css. 6px on a rectangular display, 16 on a phone or tablet,
+     *   because a 16px-radius frame 6px inside a 55px screen arc pokes out
+     *   through it: "the edges of the phone are curved and its actually cutting
+     *   things off like the curved edges of the top left and bottom left".
+     *
+     *   THE SENSOR HOUSING, on whichever side it is actually on. The frame is
+     *   decoration, but the DOCK LABELS hang off the coast inside it and the
+     *   ones at half height on the housing's side were being covered. `--saln`
+     *   and `--sarn` are zero on the side that is clear, so this costs nothing
+     *   on the rotation and the devices where there is nothing to clear.
+     *
+     *   THE PLAYER RAIL, measured rather than counted — see `reachIn` above. */
+    const pad = readPads();
+    const fx = Math.max(pad.ov + pad.left, 6);
+    const rightPanel = (railW || stripW) ? (railW || stripW) + 12 : 0;
+    const fr = Math.max(6, pad.ov + pad.right, rightPanel);
     const f = proj.frame;
-    f.x = fx; f.y = 6;
+    f.x = fx; f.y = pad.ov;
     f.w = Math.max(80, w - fx - fr);
-    f.h = Math.max(80, h - 12);
+    f.h = Math.max(80, h - pad.ov * 2);
 
     // A foot only exists when something is standing in it; in plain view — and
     // now in a draft pick and a Knight's region too — the board gets that space
@@ -1759,6 +1826,7 @@ export function createOverview(root, state, game) {
     const info = MODE_INFO[mode];
     setText(titleEl, opts.title || info.title);
     setText(hintEl, opts.hint || info.hint);
+    toggle(pausedChip, 'hid', !opts.paused);
     /* An action turns the bar into a single button in ANY mode, including the
        two that normally have no bar at all. */
     action = opts.action && typeof opts.action.onPress === 'function'

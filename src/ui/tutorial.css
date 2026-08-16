@@ -451,6 +451,27 @@
   transform:translateX(14px);
 }
 .coach-card.on.at-side{transform:translateX(0)}
+/* THE MARGIN THE HOUSING LEAVES BEHIND.
+ *
+ *   "when the notch is on the right side, the popup just has a lot of bright
+ *    space, can you add a bit of a gradient, or something, so that it doesnt
+ *    seem so stark, maybe a darkness fading to where the notch is."
+ *
+ * On the rotation where this column IS the housing's side, its right padding
+ * grows by the inset and that band is 44px of flat cream with nothing on it.
+ * The card cannot simply stop there — it has to reach the glass or a strip of
+ * board shows beside it — so instead the band stops being flat: one extra
+ * background layer, darkest at the edge and gone by the time it reaches the
+ * text. Layered UNDER nothing and OVER nothing: it is prepended to the card's
+ * own gradient, so it scrolls with the box rather than with the content.
+ *
+ * Only on the notch side, and only when there is an inset to hide. */
+html.notch-right .coach-card.at-side{
+  background-image:
+    linear-gradient(270deg,rgba(74,48,22,.30),rgba(74,48,22,.10) calc(var(--sar) * .55),
+      rgba(74,48,22,0) calc(var(--sar) + 20px)),
+    linear-gradient(180deg,#fdf5e2 0%,var(--cream,#f6e7c6) 40%,var(--cream-2,#e6d6b2) 100%);
+}
 .coach-card.at-side .coach-main{flex-direction:column;align-items:flex-start;gap:7px}
 .coach-card.at-side .coach-acts{width:100%;justify-content:space-between;margin-top:auto}
 .coach-card.at-side .coach-acts .btn{flex:1 1 0;min-width:0;padding:0 6px;font-size:10.5px}
@@ -734,6 +755,16 @@
  * `map:robber` in systems/tutorial.js). */
 #ui.tut-practice .kn-cue{display:none !important}
 
+/*   "Basically the only things apart from the game board/island itself should
+ *    be the popup ... and the end practice button."
+ *
+ * The closing card's flag, and the only one that takes a whole CLUSTER rather
+ * than a readout: `.hud-tl` is the gear, the clock and the awards card in one
+ * column, and by the last step every one of them has either been turned off
+ * individually or has nothing left to say. `display` rather than opacity so the
+ * capture rig counts zero rectangles there, the same way the timer does. */
+#ui.tut-practice.tut-nogear .hud-tl{display:none !important}
+
 /* THE THREE CIRCULAR KEYS, TWO WAYS.
  *
  * `tut-nokeys` is unconditional — the score lesson asks for it at every size:
@@ -789,9 +820,24 @@
    180 that used to be here were that sum done by hand at one screen size, and
    they were the overlap. */
 #ui.tut-practice.tut-sidepanel .panels{
-  right:calc(var(--tut-rail) + var(--sarn,0px) + 16px)}
+  right:calc(var(--tut-rail) + var(--sarn,0px) + 16px);
+  /* AND THE LEFT EDGE, which only bites here.
+     -------------------------------------------
+       "On the trading post when the notch is on the left side, it covers part
+        of the left side of the trading post popup, push that edge a bit
+        further right."
+
+     In a normal match the sheet is 600px centred in the whole window and its
+     left edge lands 126px in — nowhere near a 44px housing. Narrowing this box
+     from the right re-centres the sheet into what is left, which walks it
+     leftward until its edge is at 32px and the notch is standing on it. The box
+     gives up the housing's width on this side too, so the sheet re-centres
+     clear of it. `--saln` is 0 on the rotation where the housing is on the
+     right, so the sheet does not wander for nothing. */
+  left:var(--saln,0px)}
 #ui.tut-practice.tut-sidepanel .panels .scrim{
-  right:calc(0px - var(--tut-rail) - var(--sarn,0px) - 16px)}
+  right:calc(0px - var(--tut-rail) - var(--sarn,0px) - 16px);
+  left:calc(0px - var(--saln,0px))}
 
 /*   "You can hide the players column on the right of the screen and put the
  *    instructions box for this step over there."

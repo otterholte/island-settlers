@@ -62,13 +62,60 @@
    see. `.ov-title` and `.ov-hint` still exist as the panel's accessible name —
    see the `.ov-say` rule in overview.js's own stylesheet. */
 
-/* The close key is a corner control, so it takes the corner gutter — and it
-   steps sideways when the HOME key is standing in that corner with it. See the
-   `.ovz` note in ovpan.js for why HOME moved here in the first place. */
-.ov-x{position:absolute;top:var(--gT);left:var(--gLc)}
-.ov.ov-home .ov-x{left:calc(var(--gLc) + 44px)}
+/* THE TWO KEYS IN THE MAP'S TOP-LEFT CORNER.
+ *
+ *   "the red home button on the map is not only covering items in the corner,
+ *    it shouldnt be touching the dot in the top left corner or the top bar of
+ *    the map edge. it needs a bit of seperation."
+ *
+ * They were placed off the SCREEN's corner gutter, which knows nothing about
+ * where the board's frame is — and the frame moved twice today, first out to
+ * `--ovpad` to clear the display's rounded corners and then further on the side
+ * the sensor housing is on. So the keys were left sitting on the gold moulding
+ * and its rivet.
+ *
+ * They are placed off the FRAME now, using the same two lengths `measure()` in
+ * overview.js builds it from, plus a fixed inset. That inset is the separation,
+ * and it holds at every screen size and both rotations because both terms move
+ * with the frame. See the `--ovpad` note in ui-base.css.
+ *
+ * The close key steps sideways when HOME is standing in the corner with it —
+ * see the `.ovz` note in ovpan.js for why HOME is there at all. */
+.ov-x{
+  position:absolute;
+  top:calc(var(--ovpad,6px) + 8px);
+  left:calc(var(--ovpad,6px) + var(--saln,0px) + 14px);
+}
+.ov.ov-home .ov-x{left:calc(var(--ovpad,6px) + var(--saln,0px) + 62px)}
 @media (max-height:500px),(max-width:1023px){
-  .ov.ov-home .ov-x{left:calc(var(--gLc) + 39px)}
+  .ov.ov-home .ov-x{left:calc(var(--ovpad,6px) + var(--saln,0px) + 57px)}
+}
+
+/* --- the pause chip ------------------------------------------------------
+   Top centre, which is the one part of this panel nothing else uses: the title
+   plate that used to live there is gone, the keys are in the corners and the
+   rail is down the right. Small, and it does not pulse — it is a statement of
+   fact, not an alarm. */
+.ov-paused{
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(var(--ovpad,6px) + 14px);
+  display:flex;align-items:center;gap:8px;
+  padding:5px 13px 6px;border-radius:13px;z-index:6;pointer-events:none;
+  background:linear-gradient(180deg,rgba(12,32,58,.94),rgba(6,20,40,.94));
+  border:1.5px solid rgba(255,201,60,.5);
+  box-shadow:0 4px 14px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.14);
+}
+.ov-paused.hid{display:none}
+.ov-paused i{width:9px;height:11px;flex:0 0 auto;
+  border-left:3px solid var(--gold,#ffc93c);border-right:3px solid var(--gold,#ffc93c)}
+.ov-paused b{font:800 12px/1 var(--ff);letter-spacing:.2em;text-transform:uppercase;
+  color:var(--gold-l,#ffe79a)}
+.ov-paused span{font:700 9px/1 var(--ff);letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(198,220,242,.7)}
+@media (max-width:700px){
+  .ov-paused span{display:none}
+  .ov-paused{padding:4px 10px 5px;gap:6px}
+  .ov-paused b{font-size:11px}
 }
 
 /* THE RAIL RUNS TO THE PHYSICAL EDGE.

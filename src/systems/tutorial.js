@@ -154,7 +154,7 @@ function withoutPracticeParams() {
 
 /** Every class this module may put on `#ui`. Listed once so it can be undone. */
 const HUD_FLAGS = ['tut-pack', 'tut-ranks', 'tut-awards', 'tut-nobuild',
-  'tut-nokeys', 'tut-nokeys-sm', 'tut-norail', 'tut-sidepanel'];
+  'tut-nokeys', 'tut-nokeys-sm', 'tut-norail', 'tut-sidepanel', 'tut-nogear'];
 
 function stub() {
   return {
@@ -1129,6 +1129,18 @@ export function createTutorial(state, game, deps = {}) {
        forgot to hide the rail would stack the two on top of each other. */
     const norail = !!want.norail
       || !!(step && step.onMap && step.onMap !== 'centre');
+    /* THE LAST STEP TAKES THE WHOLE CORNER, GEAR INCLUDED.
+     *
+     *   "Basically the only things apart from the game board/island itself
+     *    should be the popup moved up into the middle of the screen a bit more.
+     *    and the end practice button."
+     *
+     * Every other flag here subtracts one readout. This one subtracts the top-
+     * left cluster entire — the gear as well as the awards card — because the
+     * closing card is a picture of the island with a sentence on it, and a
+     * settings key is the last thing on screen that is not that. It is the only
+     * step that asks; a real match never carries this class. */
+    const nogear = !!want.nogear;
     const root = document.getElementById('ui');
     if (root) {
       toggle(root, 'tut-pack', !!want.pack);
@@ -1138,6 +1150,7 @@ export function createTutorial(state, game, deps = {}) {
       toggle(root, 'tut-nokeys', nokeys);
       toggle(root, 'tut-nokeys-sm', nokeysSm);
       toggle(root, 'tut-norail', norail);
+      toggle(root, 'tut-nogear', nogear);
       /* The trade sheet narrows so the coach can stand beside it rather than
          over it — "a pop-out from the right side that resizes the trade screen
          temporarily". Driven off `onSheet` for the same reason `norail` is
