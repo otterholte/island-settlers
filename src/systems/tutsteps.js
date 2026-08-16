@@ -707,6 +707,9 @@ export function buildSteps(t) {
         : 'Click and drag to move around the island. Scroll to zoom in and out.',
       needs: 'map:road',
       onMap: true, size: 'big', place: 'foot', hud: MAP_STEP,
+      /* The movement gesture is the whole lesson. Road candidates wait for the
+         later step that actually explains what they mean. */
+      hideMapTargets: true,
       check: () => t.mapMoved() > 0.55
     },
 
@@ -733,6 +736,9 @@ export function buildSteps(t) {
          dimmed — `spotBright` adds light to it instead. And the player's own
          pieces are NOT lit here: that is the next step's job.  */
       needs: 'map:road',
+      /* Let the final map gesture settle, then use the coach card's normal
+         opacity transition instead of replacing the gesture mid-frame. */
+      quiet: 0.5,
       onMap: 'centre', size: 'big', place: 'centre',
       /* "I don't need it darkened then artificially lightened, I just need
          that part not darkened in the first place." So: a hole, at full
@@ -1273,14 +1279,12 @@ export function buildSteps(t) {
        * reading a price is a rule most people never read. Ownership first, in
        * its own sentence, and the two prices after it.
        *
-       * One thing is deliberately said the way the CODE behaves rather than the
-       * way the note asks: an unowned dock is not locked, it simply charges
-       * TRADE_BASE like the post (see `activeTradeRatio` in core/rules.js), so
-       * walking to one you do not own buys you nothing. "Worth nothing to you"
-       * is the honest version of "you cannot use it" and it does not leave a
-       * player who tries it wondering why the sheet opened anyway.
+       * This now follows the interaction rule exactly: `tradeSpot` and
+       * `nearestPortFor` only expose docks in the player's unlocked set, and a
+       * settlement on either dock corner is what adds it to that set. Ownership
+       * is therefore the first sentence, before any of the better rates.
        */
-      text: `A dock is only yours once you have built a settlement on one of its two corners — until then it charges the same ${TRADE_BASE} for 1 as the post in the middle, so it is worth nothing to you. Once it IS yours: a plain dock takes 3 of anything for 1, and a dock with a resource on its sign takes just 2 of THAT one. Everything else there still costs ${TRADE_BASE}.`,
+      text: `You can only use a dock after you build a settlement on one of its two corners. A plain dock lets you trade 3 of any one resource for 1. A resource dock lets you trade 2 of the resource on its sign for 1 — for example, 2 wheat at a wheat dock. Other resources still cost ${TRADE_BASE} for 1.`,
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 

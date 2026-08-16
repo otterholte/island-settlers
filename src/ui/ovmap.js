@@ -41,10 +41,13 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  * Exported because `overview.js` draws the same disc for the confirm preview,
  * and because the player drew a hard line between the two things that used to
  * scale together: "make the little gold circles a little smaller, but keep my
- * circle of the settlement after I place it the same size." This is the one
- * that does not move. A city is 1.22x it.
+ * circle of the settlement after I place it the same size." Its size relative
+ * to the board stays fixed; a city is 1.22x it.
  */
-export const pipRadius = proj => Math.max(11, proj.s * 1.05);
+/* Pieces are part of the board, so zoom scales them with the board. The former
+   11px floor made them stop shrinking below the fit view and pile up while the
+   island continued to recede. */
+export const pipRadius = proj => proj.s * 1.05;
 
 /**
  * How far past the coastline a harbour sign reaches, in CSS pixels.
@@ -813,7 +816,7 @@ export function createPainter(ctx, proj) {
 
   function drawRoads(state) {
     const s = proj.s;
-    const w = Math.max(8, s * 1.3);
+    const w = s * 1.3;
     for (const [eid, pid] of state.roadOwner) {
       const e = edges[eid];
       const A = intersections[e.a], B = intersections[e.b];
@@ -823,12 +826,12 @@ export function createPainter(ctx, proj) {
       ctx.lineCap = 'round';
       if (mine) {
         ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-        ctx.lineWidth = w + Math.max(5, s * 0.46);
+        ctx.lineWidth = w + s * 0.46;
         ctx.strokeStyle = 'rgba(255,201,60,.42)';
         ctx.stroke();
       }
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-      ctx.lineWidth = w + Math.max(2.4, s * 0.24);
+      ctx.lineWidth = w + s * 0.24;
       ctx.strokeStyle = 'rgba(8,18,10,.72)';
       ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
@@ -853,7 +856,7 @@ export function createPainter(ctx, proj) {
     ctx.lineTo(x - k, y - k * 0.25);
     ctx.closePath();
     ctx.fillStyle = col.css; ctx.fill();
-    ctx.lineWidth = Math.max(1.1, k * 0.28);
+    ctx.lineWidth = k * 0.28;
     ctx.strokeStyle = 'rgba(10,20,32,.85)'; ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(x, y - k * 1.25); ctx.lineTo(x + k * 0.7, y - k * 0.3);
@@ -877,7 +880,7 @@ export function createPainter(ctx, proj) {
     ctx.lineTo(x + k * 1.25, y + k);
     ctx.closePath();
     ctx.fillStyle = col.css; ctx.fill();
-    ctx.lineWidth = Math.max(1.1, k * 0.26);
+    ctx.lineWidth = k * 0.26;
     ctx.strokeStyle = 'rgba(10,20,32,.85)'; ctx.stroke();
     ctx.fillStyle = col.light;
     ctx.fillRect(x - k * 1.25, y - k * 0.75, k * 2.5, k * 0.34);
@@ -908,7 +911,7 @@ export function createPainter(ctx, proj) {
     ctx.beginPath(); ctx.arc(x, y - r * 0.22, r * 0.72, Math.PI * 1.1, Math.PI * 1.9);
     ctx.lineWidth = r * 0.24; ctx.strokeStyle = col.light; ctx.stroke();
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.lineWidth = Math.max(2, r * 0.26);
+    ctx.lineWidth = r * 0.26;
     ctx.strokeStyle = 'rgba(8,18,30,.9)';
     ctx.stroke();
     const k = r * 0.56;
@@ -919,8 +922,8 @@ export function createPainter(ctx, proj) {
   function drawBuildings(state) {
     // A step up from the old 0.9 / 9.5px floor. With the gold gone the disc is
     // the only thing carrying "a settlement stands here", so it has to be big
-    // enough to read at a glance on a 375px-tall phone. Frozen at the player's
-    // request — only the choose-a-spot target shrank.
+    // enough to read at a glance on a 375px-tall phone at the fitted view. It
+    // now follows the projection at every zoom rather than keeping a pixel floor.
     const r = pipRadius(proj);
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
