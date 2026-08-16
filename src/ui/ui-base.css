@@ -72,9 +72,40 @@
   --gTc:clamp(10px,calc(var(--edge) + var(--sat)),12px);
   --gBc:clamp(10px,calc(var(--edge) + var(--sab)),12px);
 
+  /* THE INSET THAT IS ACTUALLY IN THE WAY, PER SIDE.
+     ------------------------------------------------
+     `--sal`/`--sar` are what iOS says, and in landscape it says 44 on BOTH
+     long edges however the phone is held — symmetric, so a layout does not
+     jump when it is flipped. The housing is on one of them. A full-height
+     column that pays both is holding 44px of clear glass open for nothing:
+
+       "if it's flipped one way, the notch is there on the left side, but if
+        it's flipped the other way, the notch is on the right side"
+
+     The inline script in index.html reads the orientation angle and puts
+     `notch-left` or `notch-right` on <html>; these two are the raw insets
+     with the free side zeroed. **If it cannot tell — portrait, an odd angle,
+     no orientation API — no class is set and these stay equal to the raw
+     insets, which is the old both-sides behaviour.** That is the whole safety
+     property: not knowing costs a margin, never a covered control.
+
+     Use `--saln`/`--sarn` for the padding a column holds open, and the two
+     gutters below for anything anchored to a side that can reach into the
+     housing's band. `--gL`/`--gR` remain for a caller that genuinely wants
+     the raw inset. */
+  --saln:var(--sal);
+  --sarn:var(--sar);
+  --gLn:max(calc(var(--edge) + var(--saln)),18px);
+  --gRn:max(calc(var(--edge) + var(--sarn)),18px);
+
   --pad:10px;
   --shadow:0 6px 16px rgba(0,0,0,.42);
 }
+
+/* Higher specificity than `:root` — (0,1,1) against (0,1,0) — so these win
+   without `!important`. */
+html.notch-left{--sarn:0px}
+html.notch-right{--saln:0px}
 
 *,*::before,*::after{box-sizing:border-box}
 

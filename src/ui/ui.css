@@ -92,9 +92,9 @@
  * a gutter, which is the "partially covering the map" half. */
 .ov-rail{
   position:absolute;right:0;top:var(--gT);
-  bottom:var(--gB);width:calc(186px + var(--sar));overflow:auto;
+  bottom:var(--gB);width:calc(186px + var(--sarn));overflow:auto;
   display:flex;flex-direction:column;gap:6px;
-  padding:7px calc(7px + var(--sar)) 7px 7px;
+  padding:7px calc(7px + var(--sarn)) 7px 7px;
   border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:0;
 }
 .rail-head{font:800 9px/1 var(--ff);letter-spacing:.24em;text-transform:uppercase;
@@ -1086,7 +1086,7 @@
   .ov-hint{display:none}
   .ov-bar{padding:5px 9px;gap:8px;border-radius:15px}
   .ov-sel{font-size:9px;max-width:30vw}
-  .ov-rail{width:calc(158px + var(--sar));padding:6px calc(6px + var(--sar)) 6px 6px}
+  .ov-rail{width:calc(158px + var(--sarn));padding:6px calc(6px + var(--sarn)) 6px 6px}
   .rr{padding:5px 6px 5px 11px}
   .rr-col{font-size:7px;letter-spacing:.16em}
   .rr-you{font-size:7px;padding:2px 5px 3px}
@@ -1284,7 +1284,7 @@
    disappearing below 560px and goes to a 126px column instead. Everything in
    it gives a little; nothing in it is dropped. */
 @media (max-width:560px){
-  .ov-rail{width:calc(126px + var(--sar));padding:5px calc(5px + var(--sar)) 5px 5px;gap:4px}
+  .ov-rail{width:calc(126px + var(--sarn));padding:5px calc(5px + var(--sarn)) 5px 5px;gap:4px}
   .rr{padding:4px 5px 4px 10px}
   .rr-av svg{width:22px;height:22px}
   .rr-name{font-size:10.5px}

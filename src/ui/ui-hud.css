@@ -27,8 +27,13 @@
 .hud.won .hud-bc,.hud.won .hud-br{transition-duration:.16s}
 
 /* --- top-left: settings, clock, scoreboard ------------------------------- */
+/* The one cluster still on a FULL side gutter, and on purpose: it sprouts two
+   award rows late in a match, which drops it into the housing's band where a
+   corner gutter would not be enough. `--gLn` is the full inset on the side the
+   housing is actually on and 18px on the side it is not — so on the rotation
+   that leaves this edge clear it lines up with the standings opposite it. */
 .hud-tl{
-  position:absolute;left:var(--gL);top:var(--gT);
+  position:absolute;left:var(--gLn);top:var(--gT);
   display:flex;flex-direction:column;gap:6px;align-items:flex-start;
 }
 .tl-row{display:flex;align-items:center;gap:8px}

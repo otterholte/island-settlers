@@ -441,12 +441,12 @@
 .coach-card.at-side{
   left:auto;right:0;
   top:var(--gT,10px);bottom:var(--gB,10px);
-  width:calc(var(--tut-rail) + var(--sar,0px));
+  width:calc(var(--tut-rail) + var(--sarn,0px));
   max-width:calc(100vw - var(--gL,18px));
   max-height:none;
   flex-direction:column;align-items:stretch;justify-content:flex-start;gap:7px;
   overflow:auto;
-  padding-right:calc(clamp(10px,1.8vw,15px) + var(--sar,0px));
+  padding-right:calc(clamp(10px,1.8vw,15px) + var(--sarn,0px));
   border-top-right-radius:0;border-bottom-right-radius:0;border-right-width:0;
   transform:translateX(14px);
 }
@@ -607,7 +607,7 @@
   flex-direction:column;align-items:stretch;
 }
 .coach-card.slim.at-side{
-  padding:9px calc(11px + var(--sar,0px)) 10px 11px;
+  padding:9px calc(11px + var(--sarn,0px)) 10px 11px;
 }
 .coach-card.slim.at-side .coach-h{display:block}
 .coach-card.slim.at-side .coach-step{width:34px;height:34px;border-radius:11px}
@@ -789,9 +789,9 @@
    180 that used to be here were that sum done by hand at one screen size, and
    they were the overlap. */
 #ui.tut-practice.tut-sidepanel .panels{
-  right:calc(var(--tut-rail) + var(--sar,0px) + 16px)}
+  right:calc(var(--tut-rail) + var(--sarn,0px) + 16px)}
 #ui.tut-practice.tut-sidepanel .panels .scrim{
-  right:calc(0px - var(--tut-rail) - var(--sar,0px) - 16px)}
+  right:calc(0px - var(--tut-rail) - var(--sarn,0px) - 16px)}
 
 /*   "You can hide the players column on the right of the screen and put the
  *    instructions box for this step over there."
@@ -856,7 +856,7 @@
      wrapping. It may now be as wide as the column or as wide as the screen
      allows, whichever is smaller. */
   :root{--tut-rail:172px}
-  .coach-card.at-side{padding:7px calc(9px + var(--sar,0px)) 8px 9px}
+  .coach-card.at-side{padding:7px calc(9px + var(--sarn,0px)) 8px 9px}
   .coach-card.at-side .coach-h{font-size:13.5px}
   .coach-card.at-side .coach-t{font-size:12.5px;line-height:1.45}
   .coach-card.at-side .coach-acts .btn{min-height:38px;font-size:10px;padding:0 4px}

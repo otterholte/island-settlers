@@ -286,6 +286,68 @@
     }, { passive: false });
   })();
 
+  /* ==================================================================
+     WHICH SIDE IS THE NOTCH ON?
+     ==================================================================
+
+       "maybe even do it so that only one side is pushed in at a time. So,
+        like, if it's flipped one way, the notch is there on the left side,
+        but if it's flipped the other way, the notch is on the right side"
+
+     iOS reports the sensor housing's 44px inset on BOTH long edges in
+     landscape — the insets are symmetric so a layout does not jump when the
+     phone is flipped — and the housing is only ever on one of them. Every
+     full-height column therefore held 44px open on a side that was clear
+     glass, which is the strip of dead ocean in the first TestFlight report.
+
+     The insets cannot say which side. The ORIENTATION can, and this is the
+     one number in the whole business that had to be measured rather than
+     reasoned about: Apple's docs for `window.orientation` and the Screen
+     Orientation spec describe the two landscape rotations in opposite terms,
+     so the mapping was read off a real iPhone 15 instead —
+
+         angle 90 -> the housing is on the LEFT.       (16 Aug 2026)
+
+     ...and 270 is the other one, there being only two.
+
+     WHAT HAPPENS WHEN WE DO NOT KNOW. Portrait, an unrecognised angle, a
+     browser with no orientation API, a device with no housing at all: the
+     class is simply not set, `--saln`/`--sarn` stay equal to the raw insets,
+     and every column pays both sides exactly as it did before this script
+     existed. Being wrong costs the old behaviour, not a covered control.
+
+     It lives here rather than in a module because a 44px column that jumps
+     sideways once the module graph has parsed is worse than one that was
+     never in the wrong place, and because main.js swallows a failed import
+     into a stub. `resize` covers the rotation: iOS fires it after
+     `orientationchange` and after the viewport has actually settled. */
+  (function () {
+    var el = document.documentElement;
+    function side() {
+      var so = window.screen && window.screen.orientation;
+      var a = so && typeof so.angle === 'number' ? so.angle
+        : (typeof window.orientation === 'number' ? window.orientation : null);
+      if (a === null) return '';
+      a = ((a % 360) + 360) % 360;
+      return a === 90 ? 'left' : (a === 270 ? 'right' : '');
+    }
+    function apply() {
+      var s = side();
+      el.classList.toggle('notch-left', s === 'left');
+      el.classList.toggle('notch-right', s === 'right');
+    }
+    apply();
+    window.addEventListener('resize', apply);
+    window.addEventListener('orientationchange', function () {
+      apply();
+      setTimeout(apply, 300);        // iOS reports the old angle for a moment
+    });
+    if (window.screen && window.screen.orientation
+      && window.screen.orientation.addEventListener) {
+      window.screen.orientation.addEventListener('change', apply);
+    }
+  })();
+
   /* Chrome fires `beforeinstallprompt` once, early — often before the module
      graph has finished parsing — and if nobody calls preventDefault it puts up
      its own mini-infobar and then never offers again. Catch it here, at the top

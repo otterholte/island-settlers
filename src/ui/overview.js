@@ -257,7 +257,7 @@ const DRAFT_CSS = `
 /* A column against the right edge, vertically centred: one pip per seat and
    the key that opens the rail. Off the board, out of the way, and the only
    thing between the player and the whole island. */
-.ov .ov-strip{position:absolute;right:var(--gR);top:50%;
+.ov .ov-strip{position:absolute;right:var(--gRn);top:50%;
   transform:translateY(-50%);z-index:6;
   display:flex;flex-direction:column;align-items:center;gap:6px;
   padding:6px 5px;border-radius:13px;
