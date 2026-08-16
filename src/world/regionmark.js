@@ -178,7 +178,22 @@ export function buildMarkers(list, atlas) {
         if (alpha < 0.005) discard;
         float progress = vData.x;     // 0 = just cleared, 1 = back
         float spent = vData.z;
-        float cell = vData.w;
+        /* ROUNDED, AND THAT IS THE WHOLE OF THE FLICKER FIX.
+         *
+         *   "the countdown timer for when the hex will regenerate, is flashing,
+         *    like its glitching."
+         *
+         * `cell` is an integer chosen on the CPU and handed over as a float in
+         * a varying, so it arrives here through the rasteriser's interpolation.
+         * Four corners carrying the same value still interpolate, and in
+         * mediump — which is what a phone or an iPad gives a fragment shader by
+         * default — 18.0 can land as 17.9999. The atlas lookup below is
+         * `mod(cell, 9)` and `floor(cell / 9)`, and both of those fall off a
+         * cliff at exactly that error: cell 18 is column 0 row 2, cell 17.9999
+         * is column 8 row 1. So every frame the badge picks one of two
+         * completely different glyphs, which is the flashing. One `floor(x+0.5)`
+         * snaps it back to the integer it always was. */
+        float cell = floor(vData.w + 0.5);
 
         // Disc in the top two thirds of the quad, a long pointer tail below it.
         vec2 q = vQ * 2.0 - 1.0;

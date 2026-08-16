@@ -159,14 +159,15 @@ const ROAD_PACK = Object.freeze({
 const SCORING = { pack: true, ranks: true, nobuild: true };
 /* The awards step, and the reason it carries `nobuild` like the scoring steps
    do. Its badge sits `low` — it has to, because it is pointing at the two rows
-   that have just appeared in the top-left corner and it must not stand in front
+   that have just appeared in the BOTTOM-left corner and it must not stand in front
    of them — and `low` on a 375px screen puts its foot 26px INSIDE the build
    cards. That is the owner's one hard rule about this badge, in his words:
    "but don't ever cover the build pause and map buttons. they shouldn't overlap
    at all." Nothing on this step asks the player to build, so the four cards
    stand down for it exactly as they do for step 11. */
 const EVERYTHING = { pack: true, ranks: true, awards: true, nobuild: true };
-/* The awards lesson. Everything down but the scoreboard in the top-left, which
+/* The awards lesson. Everything down but the awards card at the bottom-left,
+   which
    is the one thing the three slides are about — including END PRACTICE and the
    three keys, for the same reason the score lesson loses them. */
 const AWARD_LESSON = {
@@ -1259,7 +1260,27 @@ export function buildSteps(t) {
     {
       id: 'ports',
       title: 'The docks trade too',
-      text: `Every dock on the coast is a trading post as well — walk to one and it is ${TRADE_BASE} for 1, the same price as the post in the middle. Build a settlement ON a dock and it gets cheaper for you: the plain 3:1 docks take 3 of anything, and a dock with a resource on its sign takes just 2 of that one.`,
+      /* THE SETTLEMENT IS THE HEADLINE, NOT A FOOTNOTE.
+       *
+       *   "it makes it sound like you can use any maritime port for 4:1 even if
+       *    you havent built on it. Make it clear ... that you need to have a
+       *    settlement on the port in order to use it, and if you do you can
+       *    trade either 4:1 of any resource just like the trading post, but also
+       *    you can do 3:1 or 2:1 of that specific resource."
+       *
+       * The first version opened on the price and left ownership to the last
+       * clause, which is the wrong way round — a rule you only get to after
+       * reading a price is a rule most people never read. Ownership first, in
+       * its own sentence, and the two prices after it.
+       *
+       * One thing is deliberately said the way the CODE behaves rather than the
+       * way the note asks: an unowned dock is not locked, it simply charges
+       * TRADE_BASE like the post (see `activeTradeRatio` in core/rules.js), so
+       * walking to one you do not own buys you nothing. "Worth nothing to you"
+       * is the honest version of "you cannot use it" and it does not leave a
+       * player who tries it wondering why the sheet opened anyway.
+       */
+      text: `A dock is only yours once you have built a settlement on one of its two corners — until then it charges the same ${TRADE_BASE} for 1 as the post in the middle, so it is worth nothing to you. Once it IS yours: a plain dock takes 3 of anything for 1, and a dock with a resource on its sign takes just 2 of THAT one. Everything else there still costs ${TRADE_BASE}.`,
       veil: true, size: 'big', place: 'centre', hud: SCORING_NOKEYS
     },
 
@@ -1501,7 +1522,7 @@ export function buildSteps(t) {
        */
       id: 'awards',
       title: 'Two more ways to score',
-      text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the scoreboard, top left. I have put some numbers on them so there is something to read.`,
+      text: `There are ${LONGEST_ROAD_VP + LARGEST_ARMY_VP} points on the board that nobody builds. They sit in the card at the bottom left. I have put some numbers on them so there is something to read.`,
       enter: () => t.fakeAwards(),
       size: 'big', place: 'foot', hud: AWARD_LESSON,
       spotOverUi: true, spotGlow: true, spotDom: ['.scorecard']

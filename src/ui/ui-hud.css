@@ -27,15 +27,37 @@
 .hud.won .hud-bc,.hud.won .hud-br{transition-duration:.16s}
 
 /* --- top-left: settings, clock, scoreboard ------------------------------- */
-/* The one cluster still on a FULL side gutter, and on purpose: it sprouts two
-   award rows late in a match, which drops it into the housing's band where a
-   corner gutter would not be enough. `--gLn` is the full inset on the side the
-   housing is actually on and 18px on the side it is not — so on the rotation
-   that leaves this edge clear it lines up with the standings opposite it. */
+/* THE GEAR, ALONE, IN THE CORNER — and no longer inset for the housing.
+   It used to share a column with the awards card, which grows two rows late in
+   a match and drops into the sensor housing's band; that card is what made the
+   whole column owe the full inset, and the gear went with it. The card has its
+   own cluster at the foot now (`.hud-bl`), so both can take `--gCorner`, which
+   clears the display's rounded arc and nothing else. See ui-base.css. */
 .hud-tl{
-  position:absolute;left:var(--gLn);top:var(--gT);
+  position:absolute;left:var(--gCorner);top:var(--gT);
   display:flex;flex-direction:column;gap:6px;align-items:flex-start;
 }
+
+/* --- bottom-left: the two awards ----------------------------------------
+   "Then the longest road and largest army counter, would be on the bottom
+    left, again avoiding the notch, no inset, but aware of the curved corners."
+
+   `pointer-events:none` is not decoration. The joystick lives wherever a thumb
+   lands in this half of the screen (systems/input.js), and a readout that ate
+   the first touch of a drag would be a readout that stopped the player moving.
+   Nothing on this card is pressable, so nothing on it takes a press.
+
+   It swaps corners with the three round keys rather than sitting under them:
+   `btn-left` puts those bottom-left, and two boxes in one corner is the thing
+   the owner has said most often about this screen. */
+.hud-bl{
+  position:absolute;left:var(--gCorner);bottom:var(--gBc);
+  display:flex;flex-direction:column;gap:6px;align-items:flex-start;
+  pointer-events:none;
+}
+.hud.btn-left .hud-bl{left:auto;right:var(--gCorner);align-items:flex-end}
+/* With the match over, the bottom band clears for the end-of-match bar. */
+#ui.endgame .hud-bl{opacity:0;pointer-events:none;transition:opacity .25s ease}
 .tl-row{display:flex;align-items:center;gap:8px}
 
 /* THE GEAR KEY IS THE ONE GLASS BUTTON THAT MUST NOT BE GLASS.
@@ -562,6 +584,11 @@
 .rk.me .rk-vp b{font-size:20px;color:var(--gold);-webkit-text-stroke-width:1.8px;
   text-shadow:0 1px 3px rgba(0,0,0,.5)}
 .rk.lead:not(.me) .rk-vp b{color:var(--gold)}
+/* One cup, on the lead — see the note where it is built in hud.js. `display`
+   rather than opacity so the row's flex box closes the gap on every other
+   seat, and the numeral does not sit off-centre against its neighbours. */
+.rk-cup{display:inline-flex;align-items:center;line-height:0}
+.rk-cup.hid{display:none}
 
 /* --- bottom-centre: four live progress meters ---------------------------
    A build card is not a price tag. It fills from the bottom as the purchase
@@ -998,7 +1025,9 @@
    MATCH button three pixels below the fold with no scrollbar to hint at it (the
    game hides them all — see ui-base.css). It scrolls instead of overflowing. */
 .pop{
-  position:absolute;left:var(--gL);top:calc(var(--gT) + 56px);
+  /* Under the gear it drops out of, which moved to `--gCorner` when the awards
+     card left its column — see `.hud-tl`. */
+  position:absolute;left:var(--gCorner);top:calc(var(--gT) + 56px);
   width:238px;
   max-height:min(74vh,calc(100dvh - var(--gT) - var(--gB) - 64px));
   overflow:auto;padding:9px;
@@ -1045,6 +1074,20 @@
      and this panel appears mid-match by definition. */
   backdrop-filter:none;-webkit-backdrop-filter:none;
 }
+/* THE SHEET IS OVER EVERYTHING, INCLUDING THE COACH.
+ *
+ *   "The settings bar dropdown. Can you actually make that fall in front of the
+ *    tutorial steps. really it should fall in front of all other content if
+ *    open."
+ *
+ * `z-index` inside `#ui` could never do it: the practice run's badge lives in
+ * `.coach`, which is a SIBLING of `#ui` and later in the document, so it wins
+ * every time whatever the sheet does inside its own stacking context. The lift
+ * therefore has to be on `#ui` itself, and only while the sheet is down —
+ * `hud.js` puts `sheet-open` on the interface root in `toggleSettings`. Raising
+ * `#ui` permanently would put the whole HUD over the coach, which is the
+ * arrangement half the tutorial's wardrobe exists to prevent. */
+#ui.sheet-open{z-index:60}
 @keyframes popIn{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1}}
 .pop .sb-ico{line-height:0}
 

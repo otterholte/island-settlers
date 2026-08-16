@@ -692,6 +692,10 @@ html.notch-right .coach-card.at-side{
  * is a fact, an opacity is an opinion. */
 #ui.tut-practice .timechip{display:none !important}
 #ui.tut-practice .sc-awards{display:none !important}
+/* ...and the plate they live in, which is its own cluster at the foot of the
+   screen now (`.hud-bl` in ui-hud.css). Hiding only the rows would leave an
+   empty box down there on every step before the awards lesson. */
+#ui.tut-practice .hud-bl{display:none !important}
 
 /*   "Don't forget to mention the largest army and the longest road and the
  *    points associated, and where you can find that info. Don't show that
@@ -699,6 +703,7 @@ html.notch-right .coach-card.at-side{
  *
  * ...and here it is, at its own step and not a moment before. */
 #ui.tut-practice.tut-awards .sc-awards{display:flex !important}
+#ui.tut-practice.tut-awards .hud-bl{display:flex !important}
 
 /*   "And even hide the resource counter that would've been in the top middle of
  *    the screen." ... "add the pack/resources counter to the top middle of the

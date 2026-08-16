@@ -259,8 +259,26 @@ export function createHUD(root, state, game) {
     el('div', { class: 'sc-awards' }, awRoad.row, awArmy.row));
   const timerTxt = el('b', { text: '0:00' });
   const timeChip = el('div', { class: 'timechip plate' }, iconEl('clock', 14), timerTxt);
+  /*
+   * TWO CLUSTERS, NOT ONE.
+   *
+   *   "the notch is causing the content like the settings button and longest
+   *    road/largest army counter to be pushed in, i actually dont want that ...
+   *    the settings button is alone in the top left corner, not inset at all.
+   *    Ignoring a notch but aware of the curved edge of the screen. Then the
+   *    longest road and largest army counter, would be on the bottom left,
+   *    again avoiding the notch, no inset."
+   *
+   * The awards card was the reason this column owed the sensor housing anything
+   * at all: a gear is 48px in a corner and clears any housing ever made, but the
+   * card under it grew two rows late in a match and dropped into the housing's
+   * band, so the whole cluster had to sit at the full inset and the gear went
+   * with it. Split them and each one can take the gutter it actually needs —
+   * both corners, neither inset. See `--gCorner` in ui-base.css.
+   */
   const tl = el('div', { class: 'hud-tl' },
-    el('div', { class: 'tl-row' }, gearBtn, timeChip), scoreCard);
+    el('div', { class: 'tl-row' }, gearBtn, timeChip));
+  const bl = el('div', { class: 'hud-bl' }, scoreCard);
 
   /* --- top-centre: resources and region availability ----------------------
      One beveled pill in the prime slot: five 28px objects, 20px stroked
@@ -302,7 +320,18 @@ export function createHUD(root, state, game) {
       style: { '--c': p.color.css, '--cl': p.color.light }
     }, av, nameEl, award,
       el('span', { class: 'rk-vp' },
-        p.id === 0 ? iconEl('trophy', 16) : null, vp,
+        /* THE TROPHY IS THE LEAD, NOT THE PLAYER.
+         *
+         *   "Make the trophy icon only ever show up on whos winning, not just
+         *    on me all of the time."
+         *
+         * It sat on `p.id === 0` — a gold cup permanently beside the player's
+         * own score whether they were last or first, which reads as a label for
+         * "you" and made the one thing it could usefully say unsayable. Every
+         * row carries one now, hidden, and `refreshRanks` shows exactly one:
+         * the top of `rankings`, which is `scoreOf` and therefore counts the
+         * two awards and the victory-point cards as well as the buildings. */
+        el('span', { class: 'rk-cup hid' }, iconEl('trophy', 16)), vp,
         /* Your own row carries the celebration now that the left corner does not
            count points any more. Permanent and invisible until it is asked for,
            for the same reason it was in the old score row: creating a node per
@@ -313,7 +342,8 @@ export function createHUD(root, state, game) {
        from the default palette, and a networked match re-seats everybody a few
        seconds later — see `refreshRanks`. Keeping the painted value beside the
        row is what lets that be noticed. */
-    return { p, row, vp, award, nameEl, av, hex: p.color.hex };
+    return { p, row, vp, award, nameEl, av, cup: row.querySelector('.rk-cup'),
+      hex: p.color.hex };
   });
 
   /* The numeral the celebration bumps and holds back is the standings' own now.
@@ -324,7 +354,11 @@ export function createHUD(root, state, game) {
      twelve-cell track any more, and the loop that lights it simply has nothing
      to walk. */
   vpNum = rankRows[0].vp;
-  vpIco = rankRows[0].row.querySelector('.rk-vp .ico') || rankRows[0].row;
+  /* The celebration flies into the NUMERAL now rather than into the trophy
+     beside it: that trophy is only on screen when the player happens to be
+     winning (see the note where it is built), and a landing site that comes and
+     goes is a landing site that measures zero half the time. */
+  vpIco = rankRows[0].vp;
   vpBox = rankRows[0].row;
   const rankList = el('div', { class: 'ranks' }, rankRows.map(r => r.row));
   const tr = el('div', { class: 'hud-tr plate' }, rankList);
@@ -606,9 +640,29 @@ export function createHUD(root, state, game) {
    * The gear above is now the whole story: press to open, press to close, and it
    * wears a cross while the sheet is down so it reads as the way out rather than
    * as the way back in. See `setGearGlyph`. */
+  /*
+   * LEAVE MATCH IS THE THIRD ROW NOW, NOT THE LAST.
+   *
+   *   "can you push the leave match red button up higher so that i dont have to
+   *    scroll on smaller devices. Im thinking switching it to right below the
+   *    ocean sound toggle."
+   *
+   * It was last because it is the destructive one and last is where a
+   * destructive control belongs — except that on a 393px-tall phone "last" is
+   * below the fold, so the one control that has to be reachable was the one
+   * behind a scroll. Third, exactly where it was asked for. It keeps its red
+   * fill, which is what actually does the work of marking it out; the two rows
+   * that follow it are a preference and a help screen, and neither is worth a
+   * scroll either.
+   */
+  const leaveBtn = button('wide red', { on: { click: () => leaveMatch() } },
+    el('span', { class: 'sb-ico', html: icon('home', 20) }),
+    el('span', { class: 'sb-lab', text: 'Leave Match' }));
+
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     soundBtn,
     oceanBtn,
+    leaveBtn,
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node,
     /* The rules are no longer a drawer inside a drawer. This closes the
@@ -617,7 +671,7 @@ export function createHUD(root, state, game) {
        account of the rules again, which is most of why it scrolled at all. */
     button('wide cream', { on: { click: () => { toggleSettings(false); help.open(); } } },
       el('span', { class: 'sb-ico', html: icon('help', 20) }),
-      el('span', { class: 'sb-lab', text: 'How to Play' })),
+      el('span', { class: 'sb-lab', text: 'How to Play' }))
     /* ONE WAY OUT, AND IT IS RED.
      *
      *   "Please get rid of the restart match, I don't need that AND leave
@@ -627,14 +681,12 @@ export function createHUD(root, state, game) {
      * lands on the opening screen; `leaveMatch()` reloads the page — telling the
      * server first, which is the part that matters online — and lands on the
      * opening screen. Two buttons, one destination, and only one of them was
-     * safe to press in a networked match. */
-    button('wide red', { on: { click: () => leaveMatch() } },
-      el('span', { class: 'sb-ico', html: icon('home', 20) }),
-      el('span', { class: 'sb-lab', text: 'Leave Match' }))
+     * safe to press in a networked match. The button itself is built above the
+     * sheet now so it can sit third — see the note there. */
   );
 
   hud.appendChild(tl); hud.appendChild(tc); hud.appendChild(tr);
-  hud.appendChild(bc); hud.appendChild(br);
+  hud.appendChild(bl); hud.appendChild(bc); hud.appendChild(br);
   hud.appendChild(annWrap); hud.appendChild(settings);
   /* Last, so the flying trophy passes OVER the notice it comes out of and over
      every other cluster on its way to the corner. It is 44px of gold for half a
@@ -882,6 +934,10 @@ export function createHUD(root, state, game) {
     settingsOpen = force === undefined ? !settingsOpen : !!force;
     toggle(settings, 'hid', !settingsOpen);
     toggle(gearBtn, 'on', settingsOpen);
+    /* The lift that puts the sheet over the practice run's badge, which is not
+       inside `#ui` and so cannot be reached by a z-index within it. On the ROOT
+       and only while the sheet is down — see `#ui.sheet-open` in ui-hud.css. */
+    if (root && root.classList) toggle(root, 'sheet-open', settingsOpen);
     setGearGlyph(settingsOpen);
     // Only measurable once it is on the screen — a `hid` panel has no height to
     // compare against its own contents.
@@ -973,6 +1029,11 @@ export function createHUD(root, state, game) {
       const r = rankRows[e.p.id];
       setText(r.vp, e.vp);
       toggle(r.row, 'lead', i === 0);
+      /* Exactly one cup on the board, on whoever is top of `rankings` — see the
+         note where it is built. A tie is broken by the same cities-then-
+         settlements order the standings themselves are sorted by, so the cup
+         never sits on two rows at once. */
+      if (r.cup) toggle(r.cup, 'hid', i !== 0);
       let aw = '';
       if (e.p.hasLongestRoad) aw += icon('road', 16, 'aw');
       if (e.p.hasLargestArmy) aw += icon('knight', 16, 'aw');

@@ -118,6 +118,25 @@
      that reports none does. overview.js reads this through a probe, because
      `measure()` works in canvas pixels and there is no env() in a canvas. */
   --ovpad:max(6px,min(var(--sab),16px));
+
+  /* THE CORNER GUTTER THAT IGNORES THE HOUSING ALTOGETHER.
+     -----------------------------------------------------
+       "the notch is causing the content like the settings button and longest
+        road/largest army counter to be pushed in, i actually dont want that ...
+        not inset at all. Ignoring a notch but aware of the curved edge of the
+        screen."
+
+     `--gLc`/`--gRc` still take a slice of the inset, capped at 22px, which is
+     the difference between an 18px margin and a 22px one and buys nothing on a
+     corner. This one does not look at the inset at all. It is the display's
+     rounded arc and nothing else, which is what the 18px floor has always been
+     for — see the note on `--gL` above.
+
+     It is for objects that are SMALL and stay in a corner: a 48px gear, a two
+     row card at the foot. Anything that can grow down a side still owes the
+     housing its full inset, which is exactly why the awards card had to leave
+     the gear's column before either could use this. */
+  --gCorner:18px;
   --gLn:max(calc(var(--edge) + var(--saln)),18px);
   --gRn:max(calc(var(--edge) + var(--sarn)),18px);
 

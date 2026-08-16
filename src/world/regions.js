@@ -666,7 +666,15 @@ export function buildRegions(group, dressing, stumps) {
 
       r.bob += dt * 1.5;
       const pop = m.flash > 0.01 ? 1 + m.flash * 0.5 : 1;
-      const pulse = spent ? 1 + Math.sin(clock * 3.6) * 0.05 : 1;
+      /* NO SIZE PULSE ON A SPENT HEX.
+       *
+       * It was a 5% breath at 3.6 rad/s, against the shader's own halo breath
+       * at 3.0 — two beats a fifth of a turn apart, which is a slow throb
+       * rather than either of the things it was meant to be. Worse, it resized
+       * the quad every frame, so the numeral inside it was resampled from the
+       * atlas at a new scale sixty times a second and shimmered. The halo in
+       * the fragment shader is the breathing; the badge itself holds still. */
+      const pulse = 1;
       mp[i * 3] = r.tile.x;
       mp[i * 3 + 1] = r.y + Math.sin(r.bob) * 0.28;
       mp[i * 3 + 2] = r.tile.z;

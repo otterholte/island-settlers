@@ -519,25 +519,25 @@ export function createOverview(root, state, game) {
     if (hit.kind === 'market') {
       setText(popTitle, 'The Trading Post');
       setText(popRate, `${TRADE_BASE}:1`);
-      setText(popBody, `The post in the middle of the island. Anyone may use it, `
-        + `at ${TRADE_BASE} of any one resource for 1 of any other. Every harbour `
-        + `below is a discount on this rate.`);
+      setText(popBody, `Anyone may use it: ${TRADE_BASE} of any one resource `
+        + `for 1 of any other. Every harbour is a discount on this.`);
     } else {
       const p = hit.port;
       const owned = !!(state.players[0].ports && state.players[0].ports.has
         ? state.players[0].ports.has(p.id) : false);
       setText(popTitle, p.resource ? `${RES_LABEL[p.resource]} harbour` : 'Harbour');
       setText(popRate, p.label);
-      setText(popBody, (p.resource
-        ? `Give ${p.ratio} ${RES_LABEL[p.resource].toLowerCase()} and take 1 of anything. `
-          + `Only ${RES_LABEL[p.resource].toLowerCase()} is discounted here; everything `
-          + `else still costs ${TRADE_BASE}:1. `
-        : `Give ${p.ratio} of any ONE resource and take 1 of anything, instead of `
-          + `the ${TRADE_BASE}:1 the middle of the island charges. `)
-        + (owned
-          ? 'You own it — settle either of its two corners and it is yours.'
-          : 'You do not own it yet. Build a settlement on either of the two corners '
-            + 'it stands between and the rate is yours for the rest of the match.'));
+      /* SHORTER, AND BIGGER — see the `.ov-portpop` sizes in ui-build.css.
+         "Make all of the text on the popup when i click the ports in the map
+          view larger, its hard to read on a small screen and has a bit too much
+          text." Two sentences: what it charges, and whether it is yours. The
+         paragraph that used to spell out the 4:1 fallback is the same sentence
+         the rate chip beside the title is already showing. */
+      const res = p.resource ? RES_LABEL[p.resource].toLowerCase() : null;
+      setText(popBody, (res
+        ? `${p.ratio} ${res} for 1 of anything. Other resources still cost ${TRADE_BASE}.`
+        : `${p.ratio} of any one resource for 1 of anything.`)
+        + (owned ? ' Yours.' : ' Build a settlement on one of its two corners to unlock it.'));
     }
     toggle(portPop, 'hid', false);
   }
@@ -819,6 +819,7 @@ export function createOverview(root, state, game) {
 
   /* ------------------------------------------------------------ rail rows */
   function buildRail() {
+    railOrder = '';
     while (rail.firstChild) rail.removeChild(rail.firstChild);
     rail.appendChild(el('div', { class: 'rail-head', text: 'Players' }));
     railRows = state.players.map(p => {
@@ -842,7 +843,9 @@ export function createOverview(root, state, game) {
         stats);
       if (p.id === 0) row.appendChild(el('span', { class: 'rr-you', text: 'You' }));
       rail.appendChild(row);
-      return { p, vp, stats, last: '' };
+      // `row` is kept so `sortRail` can move it. Everything else here is a
+      // handle on something inside it.
+      return { p, row, vp, stats, last: '' };
     });
   }
 
@@ -916,7 +919,43 @@ export function createOverview(root, state, game) {
      * the eight slots — which is the information; that was the flavour. */
   }
 
+  /**
+   * The rail is a SCOREBOARD, so it is in score order.
+   *
+   *   "In the map view, sometimes the players are out of order, It should
+   *    always be the top is the highest score, going down to the lowest score on
+   *    the bottom. Make sure the longest road and largest army and victory
+   *    points are also accounted for in that total."
+   *
+   * It was built once in SEATING order and never resorted, which is why it
+   * drifted out of agreement with the standings in the corner of the match —
+   * those have always used `rankings`. All three of the things named are
+   * already in the total: `scoreOf` in core/rules.js is settlements + 2x cities
+   * + victory-point cards + the two awards, and it is the same function the
+   * victory check uses, so a rail that disagreed with it would be a rail that
+   * disagreed with who won.
+   *
+   * Reordered by moving the rows, not by rebuilding them: `railRows` holds live
+   * nodes with their own paint state, and appendChild on an element already in
+   * the parent MOVES it. Four rows, only touched when the order actually
+   * changes, so a lead that holds costs one string compare a beat.
+   */
+  let railOrder = '';
+  function sortRail() {
+    if (!railRows.length) return;
+    const ranked = railRows.slice().sort((a, b) =>
+      scoreOf(state, b.p) - scoreOf(state, a.p)
+      || (b.p.cities.size - a.p.cities.size)
+      || (b.p.settlements.size - a.p.settlements.size)
+      || (a.p.id - b.p.id));
+    const sig = ranked.map(r => r.p.id).join(',');
+    if (sig === railOrder) return;
+    railOrder = sig;
+    for (const r of ranked) rail.appendChild(r.row);
+  }
+
   function refreshRail() {
+    sortRail();
     for (const r of railRows) {
       setText(r.vp, scoreOf(state, r.p));
       const key = `${r.p.longestRoadLen}|${r.p.knightsPlayed}|${r.p.hasLongestRoad}|` +
@@ -1834,7 +1873,13 @@ export function createOverview(root, state, game) {
     const acting = !!action;
     if (acting) setText(actionBtn.querySelector('.sb-lab'), opts.action.label || 'Start');
     toggle(actBar, 'hid', !acting);
-    toggle(closeBtn, 'hid', mode !== 'view' && opts.cancellable === false);
+    const canClose = !(mode !== 'view' && opts.cancellable === false);
+    toggle(closeBtn, 'hid', !canClose);
+    /* HOME is the alternative to the close key, never its neighbour — see
+       `setHomeShown` in ovpan.js. It is up only in the state that has no close
+       key, which is the locked draft the "let me leave mid-draft" request was
+       about. */
+    if (pan.setHomeShown) pan.setHomeShown(!canClose);
     // The chips and the review button are mutually exclusive: a screen with one
     // thing to do is not also a shop. `refreshBuy` decides the chips' own case.
     sent.clear();

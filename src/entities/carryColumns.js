@@ -282,7 +282,18 @@ export function createCarryColumns() {
   const tags = new THREE.Mesh(new THREE.BufferGeometry(), tagMat);
   tags.name = 'carryTags';
   tags.frustumCulled = false;
-  tags.renderOrder = 21;
+  /* UNDER THE COUNTDOWN BADGE, NOT OVER IT.
+   *
+   *   "the x42 is in front of the count down timer for how long it will take
+   *    for a tile/hex to replenish, i actually want it to fall behind instead."
+   *
+   * Both of these draw with `depthTest:false` — they are overlays, and neither
+   * is allowed to be swallowed by a hill — so the depth buffer has no say and
+   * `renderOrder` decides the whole argument. The badge is 18 (regionmark.js),
+   * this was 21, and 21 wins. 17 puts the pile count under it while still
+   * keeping it clear of everything that is actually part of the world: rings at
+   * 8, particles at 10 and 12, gather effects at 12. */
+  tags.renderOrder = 17;
   tags.visible = false;
   group.add(tags);
 

@@ -346,26 +346,39 @@
  * different flip rules to stay on screen. One place, always the same place, and
  * it is dismissed by its own key or by the next tap anywhere on the board.
  */
+/* BIGGER TYPE, FEWER WORDS.
+ *
+ *   "Make all of the text on the popup when i click the ports in the map view
+ *    larger, its hard to read on a small screen and has a bit too much text."
+ *
+ * Both halves, because either alone fails: growing the type on the old
+ * paragraph would have made a card that no longer fits a 393px-tall phone, and
+ * cutting the words at 10.5px would still have been 10.5px. The body is up from
+ * 10.5 to 14 and the title from 12 to 15, and `showPortPop` in overview.js is
+ * down to two sentences to pay for it — see the note there. */
 .ov-portpop{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  z-index:6;width:min(300px,calc(100vw - 60px));
-  display:flex;flex-direction:column;gap:7px;padding:11px 13px 12px;
+  z-index:6;width:min(340px,calc(100vw - 60px));
+  display:flex;flex-direction:column;gap:8px;padding:13px 15px 13px;
   border-radius:15px;
 }
 .ov-portpop.hid{display:none !important}
 .ovp-head{display:flex;align-items:baseline;gap:8px}
 .ovp-t{flex:1 1 auto;min-width:0;
-  font:800 12px/1.1 var(--ff);letter-spacing:.12em;text-transform:uppercase;
+  font:800 15px/1.15 var(--ff);letter-spacing:.09em;text-transform:uppercase;
   color:#ffe79a;text-shadow:0 1px 2px rgba(0,0,0,.7)}
-.ovp-rate{flex:0 0 auto;padding:3px 8px 4px;border-radius:8px;
+.ovp-rate{flex:0 0 auto;padding:4px 10px 5px;border-radius:8px;
   background:linear-gradient(180deg,#ffe79a,#ffc93c);
-  font:800 13px/1 var(--ff);color:#3a2208;box-shadow:0 1px 0 rgba(0,0,0,.35)}
-.ovp-b{font:700 10.5px/1.45 var(--ff);color:rgba(226,240,255,.9)}
-.ovp-x{align-self:flex-end;min-height:38px;padding:0 16px;font-size:11px}
+  font:800 16px/1 var(--ff);color:#3a2208;box-shadow:0 1px 0 rgba(0,0,0,.35)}
+.ovp-b{font:700 14px/1.5 var(--ff);color:rgba(232,244,255,.94)}
+.ovp-x{align-self:flex-end;min-height:40px;padding:0 20px;font-size:13px}
 
 @media (max-height:500px),(max-width:1023px){
-  .ov-portpop{width:min(268px,calc(100vw - 40px));padding:9px 11px 10px;gap:6px}
-  .ovp-t{font-size:11px}
-  .ovp-b{font-size:9.5px;line-height:1.4}
-  .ovp-x{min-height:36px;padding:0 13px}
+  /* The compact block used to SHRINK this card, which is the screen the
+     complaint came from. It now only trims the padding — the type is the whole
+     point and it does not give. */
+  .ov-portpop{width:min(320px,calc(100vw - 40px));padding:11px 13px 11px;gap:7px}
+  .ovp-t{font-size:14px}
+  .ovp-b{font-size:13.5px;line-height:1.45}
+  .ovp-x{min-height:38px;padding:0 17px}
 }

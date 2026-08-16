@@ -67,7 +67,8 @@
 
 import { HEX_SIZE } from '../core/constants.js';
 import { BOUNDS } from '../board/layout.js';
-import { mapTilt, setMapTilt } from '../core/options.js';
+/* `mapTilt`/`setMapTilt` are no longer imported: the tilt input is gone and
+   the stored value with it. See the `setTilt` note below. */
 
 const STYLE_ID = 'ovpan-style';
 
@@ -114,7 +115,7 @@ const DRAG_SLOP = 4;
  *
  * Stored through core/options.js, so it is remembered between matches. */
 const TILT_MIN_KY = 0.55;      // fully tilted: the board at 55% height
-const TILT_PER_PX = 1 / 190;   // how far two fingers travel for the full range
+/* TILT_PER_PX is gone with the gesture that used it. */
 /** How long the HOME key stays armed after the first tap, in ms. */
 const ARM_MS = 4200;
 
@@ -219,23 +220,27 @@ export function createOvPan(cv, proj, opts = {}) {
 
   /* `px`/`py` move the board CENTRE, in css px, away from where the fit-to-frame
      projection would have put it. Zoom multiplies the fit scale. */
-  /* `tilt` is 0..1 and is read back from options on construction, which is the
-     whole of "have it save that view the next time I open the map". */
-  const view = { zoom: 1, px: 0, py: 0, tilt: mapTilt() };
+  /*
+   * THE TILT IS GONE.
+   *
+   *   "Remove the 3d tilt. Its not needed just keep the birdseye standard
+   *    view."
+   *
+   * It was a two-finger vertical drag that squashed the board to 55% height,
+   * remembered between matches. Everything it touched is still here and still
+   * wired — `proj.ky`, the squash in overview.js's `tiltIn`, the un-tilt in the
+   * hit test — because a flat board is `ky === 1` and every one of those paths
+   * already short-circuits on that. Only the INPUT is removed, so the map is
+   * always the overhead view it was designed as, and the two-finger gesture
+   * means one thing again instead of racing a pinch for the same fingers.
+   *
+   * `tilt` stays on the view object at 0 and is still reported by `info()`, so
+   * the capture rig and anything else reading it keep working.
+   */
+  const view = { zoom: 1, px: 0, py: 0, tilt: 0 };
   /** Vertical squash factor the painter applies. 1 is flat overhead. */
   const kyOf = t => 1 - (1 - TILT_MIN_KY) * Math.min(1, Math.max(0, t));
-  let tiltSaveT = 0;
-  function setTilt(t) {
-    const next = Math.min(1, Math.max(0, t));
-    if (Math.abs(next - view.tilt) < 1e-4) return false;
-    view.tilt = next;
-    proj.ky = kyOf(next);
-    // Written on a debounce: a two-finger drag would otherwise touch
-    // localStorage sixty times a second.
-    if (tiltSaveT) clearTimeout(tiltSaveT);
-    tiltSaveT = setTimeout(() => { tiltSaveT = 0; setMapTilt(view.tilt); }, 320);
-    return true;
-  }
+  function setTilt() { return false; }
   proj.ky = kyOf(view.tilt);
   const base = { s: 1, ox: 0, oy: 0 };
   let gesturing = false;
@@ -503,12 +508,9 @@ export function createOvPan(cv, proj, opts = {}) {
          is not perfectly symmetric drags the tilt along with it, which reads
          as "I can't zoom out", because the board is being stood up at the same
          time as it is being pulled back. */
-      if (mid !== null) {
-        const dmid = my - mid;
-        if (Math.abs(dmid) > 0.01 && Math.abs(dmid) > spread * 0.6) {
-          if (setTilt(view.tilt + dmid * TILT_PER_PX)) stats.tilts++;
-        }
-      }
+      // ...and with the tilt gone (see `setTilt`), two fingers moving together
+      // are simply not a gesture any more. `mid` is still tracked so the branch
+      // above keeps its spread/travel comparison honest.
       mid = my;
       /* VERTICAL IS THE TILT, AND ONLY THE TILT. Panning as well would mean
          one gesture doing two things at once, and the board sliding out from
@@ -584,6 +586,25 @@ export function createOvPan(cv, proj, opts = {}) {
   on(win, 'keydown', onKey);
 
   return {
+    /*
+     * SHOW THE HOME KEY, OR DO NOT.
+     *
+     *   "see how theres an X and a red home button. I dont need the home button
+     *    there ever if the X is present."
+     *
+     * Right, and the reason both were there is worth keeping: HOME exists for
+     * `draft-watch`, the one state where the board is locked, there is nothing
+     * to close, and leaving the match is otherwise impossible. Every other mode
+     * has a close key, and closing the map puts the player back in a match
+     * whose gear already carries LEAVE MATCH. So the two are alternatives, not
+     * a pair — overview.js calls this with whether the close key is up.
+     */
+    setHomeShown(on) {
+      if (!pad) return;
+      pad.style.display = on ? '' : 'none';
+      if (!on) disarmHome();
+      if (host && host.classList) host.classList.toggle('ov-home', !!on);
+    },
     apply, reset, zoomAt, nudge,
     /** 0 flat, 1 fully tilted. Read by the capture rig; set by two fingers. */
     get tilt() { return view.tilt; },
