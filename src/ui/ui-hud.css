@@ -57,15 +57,14 @@
 }
 .hud.btn-left .hud-bl{left:auto;right:var(--gCorner);align-items:flex-end}
 
-/* On iPhone the awards are easier to check in the upper corner and the single
-   settings key is less intrusive below them. A 24px corner gutter is only six
-   pixels more than the shared layout, but it keeps both the controls and the
-   tutorial ring around the awards inside the curved display corners. */
+/* Keep the familiar iPhone order: settings above, awards below. A 24px corner
+   gutter is only six pixels more than the shared layout, but it keeps both the
+   controls and the tutorial ring around the awards inside curved corners. */
 html.apple-phone .hud-tl{
-  top:auto;bottom:24px;left:24px;
+  top:24px;bottom:auto;left:24px;
 }
 html.apple-phone .hud-bl{
-  top:14px;bottom:auto;left:24px;
+  top:auto;bottom:24px;left:24px;
 }
 html.apple-phone .hud.btn-left .hud-bl{
   left:auto;right:24px;
@@ -1044,9 +1043,9 @@ html.apple-phone .hud.btn-left .hud-bl{
      which corner owns the gear. */
   position:absolute;left:50%;top:50%;
   transform:translate(-50%,-50%);
-  width:238px;
-  max-height:min(82vh,calc(100dvh - var(--gT) - var(--gB) - 24px));
-  overflow:auto;padding:9px;
+  width:min(560px,calc(100vw - var(--gL) - var(--gR) - 24px));
+  max-height:none;
+  overflow:visible;padding:9px;
   display:flex;flex-direction:column;gap:7px;
   border-radius:16px;
   animation:popIn .18s ease-out;
@@ -1075,7 +1074,7 @@ html.apple-phone .hud.btn-left .hud-bl{
 .hud .pop{
   left:50%;top:50%;
   transform:translate(-50%,-50%);
-  max-height:min(82vh,calc(100dvh - var(--gT) - var(--gB) - 24px));
+  max-height:none;
 }
 /* COVERING means covering. The shared `.plate` fill is 94% opaque over a blur,
    which is right for a bar with the island moving behind it and wrong for a
@@ -1090,6 +1089,9 @@ html.apple-phone .hud.btn-left .hud-bl{
      precisely the allocation ui-base.css blames for the black-screen flashes,
      and this panel appears mid-match by definition. */
   backdrop-filter:none;-webkit-backdrop-filter:none;
+  /* The menu is deliberately a short landscape card now, so no content is
+     clipped and no scroll-edge fade belongs on its bottom. */
+  -webkit-mask-image:none !important;mask-image:none !important;
 }
 /* THE SHEET IS OVER EVERYTHING, INCLUDING THE COACH.
  *
@@ -1110,6 +1112,13 @@ html.apple-phone .hud.btn-left .hud-bl{
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}
 }
 .pop .sb-ico{line-height:0}
+
+/* Four clear horizontal bands: the two device controls share the first line,
+   the two audio switches share the second, then HOW TO PLAY and LEAVE MATCH
+   each get a full-width line of their own. */
+.settings-row{display:grid;grid-template-columns:1fr 1fr;gap:9px;min-width:0}
+.settings-row>*{min-width:0}
+.settings-controls .side-row{min-height:44px}
 
 /* IT LOOKS SCROLLABLE BECAUSE IT IS.
  *
@@ -1374,7 +1383,7 @@ html.apple-phone .hud.btn-left .hud-bl{
  * a build card that cannot be pressed. */
 @media (max-height:500px) and (max-width:820px){
   .hud .pop.settings{
-    max-height:calc(100dvh - var(--gT) - var(--gB) - 24px);
+    max-height:none;
   }
 }
 

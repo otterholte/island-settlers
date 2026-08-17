@@ -659,19 +659,26 @@ export function createHUD(root, state, game) {
     el('span', { class: 'sb-ico', html: icon('home', 20) }),
     el('span', { class: 'sb-lab', text: 'Leave Match' }));
 
-  const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
-    soundBtn,
-    oceanBtn,
-    leaveBtn,
+  const audioSettings = el('div', { class: 'settings-row settings-audio' },
+    soundBtn, oceanBtn);
+  const controlSettings = el('div', { class: 'settings-row settings-controls' },
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
-    power.node,
+    power.node);
+  const howBtn = button('wide cream', {
+    on: { click: () => { toggleSettings(false); help.open(); } }
+  },
+  el('span', { class: 'sb-ico', html: icon('help', 20) }),
+  el('span', { class: 'sb-lab', text: 'How to Play' }));
+
+  const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
+    controlSettings,
+    audioSettings,
+    howBtn,
+    leaveBtn
     /* The rules are no longer a drawer inside a drawer. This closes the
        settings and raises the paused slide sheet in the middle of the screen —
        see ui/hud-help.js. The settings sheet therefore never scrolls on
        account of the rules again, which is most of why it scrolled at all. */
-    button('wide cream', { on: { click: () => { toggleSettings(false); help.open(); } } },
-      el('span', { class: 'sb-ico', html: icon('help', 20) }),
-      el('span', { class: 'sb-lab', text: 'How to Play' }))
     /* ONE WAY OUT, AND IT IS RED.
      *
      *   "Please get rid of the restart match, I don't need that AND leave

@@ -645,6 +645,9 @@ export function createOverview(root, state, game) {
 
   const proj = {
     s: 1, ox: 0, oy: 0, w: 0, h: 0,
+    /* Fit scale before the user's pan/zoom. Mobile number discs use this so
+       their labels remain a constant readable size while the board moves. */
+    fitS: 1,
     /** Vertical squash, 1 flat. Owned by ovpan.js's two-finger tilt. */
     ky: 1,
     frame: { x: 0, y: 0, w: 0, h: 0 }
@@ -1195,6 +1198,7 @@ export function createOverview(root, state, game) {
       s = Math.min((availW - ov * 2) / bw, (availH - ov * 2) / (bd * ky));
       if (!(s > 0)) { s = Math.min(availW / bw, availH / (bd * ky)); break; }
     }
+    proj.fitS = s;
     pan.apply({
       s,
       ox: f.x + padX + availW / 2 - BOUNDS.cx * s,
@@ -2142,6 +2146,8 @@ export function createOverview(root, state, game) {
     get panInfo() { return pan.info; },
     /** Capture-rig hook: one notch out, so a rig can walk to the floor. */
     zoomOutForTest() { return pan.zoomAt(1 / 1.22); },
+    /** Capture-rig hook: one notch in, paired with `zoomOutForTest`. */
+    zoomInForTest() { return pan.zoomAt(1.22); },
 
     /**
      * Every size the placement layer paints at, in canvas css px.
@@ -2236,8 +2242,13 @@ export function createOverview(root, state, game) {
         })(),
         /** choose-a-spot ring radius */
         targetR: +targetR().toFixed(1),
-        /** PLACED settlement pip radius — deliberately unchanged */
+        /** PLACED settlement pip radius at the current board scale */
         pipR: +pipRadius(proj).toFixed(1),
+        /** Painted number-disc radius. Fixed across zoom on a phone. */
+        tokenR: (() => {
+          const rs = paint && paint.tokenRects ? paint.tokenRects() : [];
+          return rs.length ? +(rs[0].w / 2.16).toFixed(1) : 0;
+        })(),
         /** painted width of a road target's coloured core */
         roadPaintW: +roadPaintW().toFixed(1),
         /** the whole road slab, casing included */

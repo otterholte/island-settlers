@@ -738,7 +738,7 @@ export function buildSteps(t) {
       needs: 'map:road',
       /* Let the final map gesture settle, then use the coach card's normal
          opacity transition instead of replacing the gesture mid-frame. */
-      quiet: 0.5,
+      quiet: 1.0,
       onMap: 'centre', size: 'big', place: 'centre',
       /* "I don't need it darkened then artificially lightened, I just need
          that part not darkened in the first place." So: a hole, at full

@@ -125,6 +125,12 @@ const shot = async name => {
 };
 
 await send('Page.enable'); await send('Runtime.enable');
+/* `--window-size` is the outer Windows window, not its content viewport. Pin
+   the actual mobile page area so a requested 667x375 test is truly 667x375. */
+await send('Emulation.setDeviceMetricsOverride', {
+  width: W, height: H, deviceScaleFactor: 1, mobile: true
+});
+await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
 /* --------------------------------------------------------------- boot stage
    The splash is torn down the instant main.js finishes, so this stage cannot
@@ -314,9 +320,28 @@ if (STAGE === 'intro') {
 } else if (STAGE === 'map') {
   await finishDraft();
   await sleep(300);
-  await ev(`window.__ISLAND__.game.openOverview('view')`);
+  await ev(`(()=>{const ov=window.__ISLAND__.game.overview;
+    ov.open('view');ov.close=()=>{};return ov.isOpen;})()`);
   await sleep(600);
   await shot(`ov-map-${TAG}`);
+  const zoomCheck = await ev(`(()=>{const ov=window.__ISLAND__.game.overview;
+    const before=ov.metrics,z0=ov.panInfo.zoom;ov.zoomInForTest();
+    for(let i=0;i<8;i++)ov.update(1/60);
+    const after=ov.metrics,zIn=ov.panInfo.zoom;
+    ov.zoomOutForTest();ov.zoomOutForTest();
+    for(let i=0;i<8;i++)ov.update(1/60);
+    const afterOut=ov.metrics;
+    return {before:{zoom:z0,tokenR:before.tokenR,pipR:before.pipR},
+      afterIn:{zoom:zIn,tokenR:after.tokenR,pipR:after.pipR},
+      afterOut:{zoom:ov.panInfo.zoom,tokenR:afterOut.tokenR,pipR:afterOut.pipR}};})()`);
+  console.log('  ZOOM-CHECK ' + JSON.stringify(zoomCheck));
+  if (H <= 500 && zoomCheck &&
+      (zoomCheck.before.tokenR !== zoomCheck.afterIn.tokenR ||
+       zoomCheck.before.tokenR !== zoomCheck.afterOut.tokenR)) {
+    exceptions.push(`phone number token changed across zoom: ${JSON.stringify(zoomCheck)}`);
+  }
+  await sleep(250);
+  await shot(`ov-map-zoom-${TAG}`);
   console.log('  MEASURE-after ' + JSON.stringify(await measure()));
 }
 
