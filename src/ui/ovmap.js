@@ -42,12 +42,16 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  * and because the player drew a hard line between the two things that used to
  * scale together: "make the little gold circles a little smaller, but keep my
  * circle of the settlement after I place it the same size." Its size relative
- * to the board stays fixed; a city is 1.22x it.
+ * to the board stays fixed; a city is 1.28x it.
  */
 /* Pieces are part of the board, so zoom scales them with the board. The former
    11px floor made them stop shrinking below the fit view and pile up while the
    island continued to recede. */
-export const pipRadius = proj => proj.s * 1.05;
+/* Keep pieces tied to the board at every zoom, but give them enough presence
+   to read on a phone. The previous proportional pass fixed the pixel floor but
+   made the proportion itself too small: at the fitted iPhone view a settlement
+   was barely larger than a road joint. */
+export const pipRadius = proj => proj.s * 1.55;
 
 /**
  * How far past the coastline a harbour sign reaches, in CSS pixels.
@@ -448,7 +452,14 @@ export function createPainter(ctx, proj) {
      a disc is 0.91 of its flat size and 1.36x the height it would have had. */
   const tokenR = () => {
     const ky = proj.ky || 1;
-    return Math.max(10.5, HEX_SIZE * proj.s * 0.33 * (0.73 + 0.27 * ky));
+    /* Phone number discs are labels, not pieces of terrain. Keep their fitted
+       size while the board zooms under them; their centres still follow their
+       hexes. Desktop retains proportional zoom, where screen space is ample. */
+    const w = globalThis.innerWidth || proj.w || 0;
+    const h = globalThis.innerHeight || proj.h || 0;
+    const phone = h <= 500 || w <= 760;
+    const s = phone ? (proj.fitS || proj.s) : proj.s;
+    return Math.max(10.5, HEX_SIZE * s * 0.33 * (0.73 + 0.27 * ky));
   };
 
   /** Where every number disc sits, in canvas css px. Label placement treats
@@ -816,7 +827,9 @@ export function createPainter(ctx, proj) {
 
   function drawRoads(state) {
     const s = proj.s;
-    const w = s * 1.3;
+    /* Like the buildings, roads scale with `proj.s`; this is a larger board
+       proportion, not a return to a fixed screen-pixel minimum. */
+    const w = s * 1.85;
     for (const [eid, pid] of state.roadOwner) {
       const e = edges[eid];
       const A = intersections[e.a], B = intersections[e.b];
@@ -928,7 +941,7 @@ export function createPainter(ctx, proj) {
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
       const col = state.players[b.owner].color;
-      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.22 : r,
+      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.28 : r,
         col, b.type === 'city', b.owner === 0);
     }
   }

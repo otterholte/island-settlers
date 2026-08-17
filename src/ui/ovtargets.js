@@ -139,7 +139,7 @@ export function createTargets(ctx, proj, paint, state) {
    * exactly right. A city upgrade offers a spot that is already occupied — the
    * settlement disc is standing in it — so a ring at settlement size lands on
    * top of the thing it is pointing at and reads as a highlight rather than as
-   * a footprint. `drawBuildings` in ovmap.js paints a city at `pipRadius * 1.22`
+   * a footprint. `drawBuildings` in ovmap.js paints a city at `pipRadius * 1.28`
    * against a settlement's 1.0, so 1.58 of the ring's own 0.95 puts the stroke
    * at 1.5 pips: clear of the disc already there, and about where the city's
    * own edge is going to be.
@@ -589,7 +589,7 @@ export function createTargets(ctx, proj, paint, state) {
     const n = intersections[id];
     if (!n) return;
     const x = PX(n.x), y = PY(n.z);
-    const r = pipRadius(proj) * (city ? 1.22 : 1);
+    const r = pipRadius(proj) * (city ? 1.28 : 1);
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, r * (1.24 + 0.07 * beat), 0, Math.PI * 2);

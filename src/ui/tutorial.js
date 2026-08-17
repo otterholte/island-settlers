@@ -648,6 +648,7 @@ export function createCoach(root) {
 
   /** Put the card in one of the three sizes and one of the three places. */
   function chrome(nextSize, nextPlace) {
+    const wasGone = card.classList.contains('gone');
     if (nextSize) size = nextSize;
     if (nextPlace) place = nextPlace;
     toggle(card, 'big', size === 'big');
@@ -680,10 +681,24 @@ export function createCoach(root) {
      * dismiss it. A veil is the card's own backdrop and has no business
      * outliving it by even a frame. */
     toggle(veil, 'on', shown && wantVeil && size !== 'gone');
+
+    /* A quiet step must begin genuinely hidden, not as the previous visible
+       card with new words for one Safari paint. When GONE is lifted, reflow at
+       zero opacity and only then add ON, so the new card has one clean fade-in. */
+    if (size === 'gone') {
+      toggle(card, 'on', false);
+    } else if (shown && (wasGone || !card.classList.contains('on'))) {
+      void card.offsetWidth;
+      toggle(card, 'on', true);
+    }
   }
 
   function show(info) {
     const o = info || {};
+    /* Clear the previous step's visible state before changing any words. This
+       is intentionally before unhiding the layer: iOS Safari can otherwise
+       composite a stale ON card once between the old and new chrome states. */
+    toggle(card, 'on', false);
     toggle(layer, 'hid', false);
     toggle(card, 'good', false);
     /* "1a", "3d" — see CHAPTERS in tutsteps.js — with the chapter's short name
@@ -726,13 +741,8 @@ export function createCoach(root) {
     shown = true;
     wantVeil = !!o.veil;
     chrome(o.size, o.place);
-    // Same reasoning as `show()` above: the coach card is the thing the player
-    // reads on every step, and a step whose words arrive a frame late on a
-    // machine that draws twice a second is a step that arrives half a second
-    // late. Reflow, then class, so the fade still plays and the words do not
-    // wait on the renderer.
-    void card.offsetWidth;
-    toggle(card, 'on', shown);
+    /* `chrome()` owns the reveal. In particular it leaves a quiet step fully
+       off until its GONE state is lifted by the frame loop. */
   }
 
   /**

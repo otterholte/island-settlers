@@ -48,6 +48,7 @@ const OUT = resolve(ROOT, arg('out', 'progress/tut'));
 const PORT = +arg('port', 5173);
 const STAGE = arg('stage', 'all');
 const PREFIX = arg('prefix', '');
+const IPHONE = arg('iphone', '0') === '1';
 const CHROME = arg('chrome', '/tmp/chrome-headless-shell-linux64/chrome-headless-shell');
 const LIBS = arg('libs', '/tmp/xlibs/root/usr/lib/x86_64-linux-gnu');
 
@@ -71,7 +72,7 @@ let chromeErr = '';
 chrome.stderr.on('data', d => { chromeErr += d.toString(); });
 
 let wsUrl;
-for (let i = 0; i < 60; i++) {
+for (let i = 0; i < 180; i++) {
   try {
     const r = await fetch(`http://127.0.0.1:${DP}/json/list`);
     const p = (await r.json()).find(t => t.type === 'page');
@@ -363,6 +364,12 @@ const touchDrag = async (x, y, dist) => {
 /* ------------------------------------------------------------------- boot */
 
 await send('Page.enable'); await send('Runtime.enable');
+/* On Windows `--window-size` includes browser chrome. Emulate the requested
+   content viewport directly so phone captures are not accidentally 223px tall. */
+await send('Emulation.setDeviceMetricsOverride', {
+  width: W, height: H, deviceScaleFactor: 1, mobile: true
+});
+await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
 
 let booted = false;
@@ -372,6 +379,11 @@ for (let i = 0; i < 60; i++) {
 }
 if (!booted) { console.error('GAME DID NOT BOOT\n' + chromeErr.slice(-400)); ws.close(); chrome.kill('SIGKILL'); process.exit(1); }
 console.log(`booted ${W}x${H}`);
+
+/* Exercise the exact iPhone-only HUD branch without depending on the host
+   browser's user-agent string. */
+if (IPHONE) await ev(`(()=>{document.documentElement.classList.add('apple-phone');
+  dispatchEvent(new Event('resize'));return true})()`);
 
 await ev(`import('/src/core/rules.js').then(m=>{window.__R__=m}).then(()=>1)`, true);
 
@@ -428,6 +440,15 @@ async function stageSettings() {
 
   const gear = await rect('.hud-tl .tl-row .cbtn');
   if (!gear) { ok('gear button exists', false); return; }
+  if (IPHONE) {
+    const awards = await rect('.hud-bl .scorecard');
+    ok('iPhone settings button is in the top-left corner',
+      gear.x < W / 3 && gear.y < H / 3,
+      `gear ${Math.round(gear.x)},${Math.round(gear.y)}`);
+    ok('iPhone road and army counter is in the bottom-left corner',
+      !!awards && awards.x < W / 3 && awards.bottom > H * 2 / 3,
+      awards ? `awards ${Math.round(awards.x)},${Math.round(awards.y)}` : 'missing');
+  }
   await tap(gear.x + gear.w / 2, gear.y + gear.h / 2);
   await sleep(360);
 
@@ -510,63 +531,16 @@ async function stageSettings() {
     } else ok('captured the button fill', false);
   }
 
-  /* ------------------------------------------- AND IT MUST NOT EAT A CONTROL
-   *
-   *   "THE SETTINGS SHEET COVERS THE ROAD BUILD CARD ON PHONE... Covering the
-   *    awards cluster is sanctioned; covering a build action is not."
-   *
-   * The awards check above proves the sheet DOES cover the readout. This is the
-   * other side of the same rule and it is the one that changed. */
-  const buildRow = await rect('.hud-bc .build-row');
-  ok('the sheet stops above the build cards',
-    !!buildRow && !overlaps(pop, buildRow),
-    `sheet bottom ${pop ? Math.round(pop.bottom) : '?'}, cards top `
-    + `${buildRow ? Math.round(buildRow.y) : 'missing'} `
-    + `(x ${buildRow ? Math.round(buildRow.x) : '?'}..${buildRow ? Math.round(buildRow.right) : '?'} `
-    + `vs sheet ${pop ? Math.round(pop.x) : '?'}..${pop ? Math.round(pop.right) : '?'})`);
-
-  /* "It should be able to cover the longest road and largest army element."
-     The awards live in the top-left scorecard; the standings cluster is top
-     right. Overlap with the awards is the requirement, and the sheet must
-     actually HIDE them rather than let them read through. */
-  const aw = await rect('.sc-awards');
-  const tr = await rect('.hud-tr');
-  ok('sheet overlaps the Longest Road / Largest Army rows',
-    overlaps(pop, aw), `pop=${JSON.stringify(pop && { x: 0 | pop.x, y: 0 | pop.y, r: 0 | pop.right, b: 0 | pop.bottom })} awards=${JSON.stringify(aw && { x: 0 | aw.x, y: 0 | aw.y, r: 0 | aw.right, b: 0 | aw.bottom })}`);
-  ok('sheet is painted over the scorecard, not under it',
-    await ev(`(()=>{const p=document.querySelector('.pop.settings'),a=document.querySelector('.sc-awards');
-      if(!p||!a)return false;const r=a.getBoundingClientRect();
-      const hit=document.elementFromPoint(r.x+4,r.y+r.height/2);
-      return !!(hit&&(hit===p||p.contains(hit)));})()`) === true);
-
-  /* AND IT MUST ACTUALLY HIDE THEM.
-   *
-   * "Cover" is not "sit on top of": the shared plate is 94% opaque over a blur,
-   * and gold numerals under a 6% window read as ghosting behind the menu text.
-   * Comparing luminance would prove nothing here, because the brightest thing in
-   * that band is the sheet's own cream SOUND button.
-   *
-   * So the question is asked directly: photograph the covered band, then take
-   * the scoreboard away underneath and photograph it again. If a single pixel
-   * moves, something was showing through. */
-  if (aw && pop) {
-    const band = {
-      x: Math.max(0, Math.round(aw.x)), y: Math.max(0, Math.round(aw.y)),
-      width: Math.round(Math.min(aw.right, pop.right) - aw.x),
-      height: Math.round(aw.h)
-    };
-    const withCard = await grab(band);
-    await ev(`document.querySelector('.scorecard').style.visibility='hidden'`);
-    await sleep(120);
-    const without = await grab(band);
-    await ev(`document.querySelector('.scorecard').style.visibility=''`);
-    if (withCard && without) {
-      const d = diffRegion(withCard, without, 0, 0, band.width, band.height, 3);
-      ok('the awards do not read through the sheet at all',
-        d.frac === 0,
-        `${(d.frac * 100).toFixed(2)}% of the covered band changed when the scoreboard was removed underneath (max channel delta ${d.worst})`);
-    } else ok('captured the covered band', false);
-  }
+  /* The popup is a centred modal card now. It may cover readouts and build
+     cards while open; the important geometry is equal room on either side and
+     a full phone-safe viewport around it. */
+  ok('the settings sheet is centred in the phone viewport',
+    !!pop && Math.abs((pop.x + pop.w / 2) - W / 2) <= 1
+      && Math.abs((pop.y + pop.h / 2) - H / 2) <= 1,
+    pop ? `centre ${Math.round(pop.x + pop.w / 2)},${Math.round(pop.y + pop.h / 2)}` : 'missing');
+  ok('the complete settings sheet fits inside the viewport',
+    !!pop && pop.x >= 0 && pop.y >= 0 && pop.right <= W && pop.bottom <= H,
+    pop ? `edges ${Math.round(pop.x)},${Math.round(pop.y)}..${Math.round(pop.right)},${Math.round(pop.bottom)}` : 'missing');
 
   /* --- a press INSIDE must not close it ---------------------------------- */
   const inside = await rect('.pop.settings .side-row .side-lab');
@@ -577,85 +551,31 @@ async function stageSettings() {
     ok('a real press INSIDE the sheet leaves it open', stillOpen === true);
   } else ok('found a target inside the sheet', false);
 
-  /* --- a drag that STARTS on a button inside must scroll, not close ------- */
-  // The sheet only scrolls when it has more than fits, so open How to Play —
-  // which is what a player who is reading the rules has done anyway.
-  await ev(`(()=>{const b=[...document.querySelectorAll('.pop.settings .btn')]
-    .find(n=>/how to play/i.test(n.textContent||''));if(b){b.click();return 1}return 0})()`);
-  await sleep(320);
-  const scrollable = await ev(`(()=>{const p=document.querySelector('.pop.settings');
-    return {sh:p.scrollHeight,ch:p.clientHeight,top:p.scrollTop};})()`) || {};
-  ok('sheet has something to scroll', scrollable.sh > scrollable.ch + 8,
-    `scrollHeight=${scrollable.sh} clientHeight=${scrollable.ch}`);
-
-  const dragBtn = await rect('.pop.settings .btn.wide');
-  const soundWas = await ev(`document.querySelector('.pop.settings .btn.wide .sb-lab').textContent`);
-  if (dragBtn) {
-    await touchDrag(dragBtn.x + dragBtn.w / 2, dragBtn.y + dragBtn.h / 2, 130);
-    const after = await ev(`(()=>{const p=document.querySelector('.pop.settings');
-      return {top:p.scrollTop,open:!p.classList.contains('hid'),
-        sound:p.querySelector('.btn.wide .sb-lab').textContent};})()`);
-    ok('a touch drag starting ON a button scrolls the sheet', after.top > 4,
-      `dragged from the SOUND button; scrollTop ${scrollable.top} -> ${after.top}`);
-    ok('...and does NOT close the sheet', after.open === true);
-    // The other half of the same rule: the drag must not have counted as a press
-    // on the button it started from either.
-    ok('...and does NOT press the button it started on', after.sound === soundWas,
-      `"${soundWas}" -> "${after.sound}"`);
-
-    /* ------------------------------------------ IT LOOKS SCROLLABLE, TOO
-     *
-     *   "hud-settings-scrolled.png IS HARD-CLIPPED. '...you own a settlement
-     *    or' is cut mid-sentence at the sheet's bottom rounded corner with no
-     *    fade and no scrollbar."
-     *
-     * Two questions, and the second is the real one. Are the fade classes on
-     * (hud.js writes them from the scroll position), and does the panel
-     * ACTUALLY dissolve at that edge — measured as the last few rows of the
-     * sheet being progressively closer to what is behind it than the rows
-     * above them are. A mask that is declared but not composited would pass
-     * the first check and fail this one. */
-    const edge = await ev(`(()=>{const p=document.querySelector('.pop.settings');
-      const cs=getComputedStyle(p);
-      return {above:p.classList.contains('sc-above'),below:p.classList.contains('sc-below'),
-        mask:(cs.maskImage||cs.webkitMaskImage||'none')};})()`);
-    ok('the scrolled sheet is marked as having content off BOTH ends',
-      edge.above === true && edge.below === true,
-      `sc-above=${edge.above} sc-below=${edge.below}`);
-    ok('...and a real fade mask is applied to it',
-      typeof edge.mask === 'string' && /gradient/.test(edge.mask),
-      edge.mask.slice(0, 90));
-
-    const scrolledImg = await shot('hud-settings-scrolled');
-    const pop2 = await rect('.pop.settings');
-    if (scrolledImg && pop2) {
-      // Three bands: the middle of the sheet, six pixels off the bottom edge,
-      // and the last two pixels of it. Under a fade the outermost band has to
-      // sit visibly closer to the board than the middle does.
-      const mid = region(scrolledImg, pop2.x + 8, pop2.y + pop2.h * 0.5,
-        pop2.right - 8, pop2.y + pop2.h * 0.5 + 6);
-      const near = region(scrolledImg, pop2.x + 8, pop2.bottom - 9,
-        pop2.right - 8, pop2.bottom - 6);
-      const lip = region(scrolledImg, pop2.x + 8, pop2.bottom - 3,
-        pop2.right - 8, pop2.bottom - 1);
-      const outside = region(scrolledImg, pop2.x + 8, pop2.bottom + 3,
-        pop2.right - 8, pop2.bottom + 9);
-      ok('the bottom edge of the sheet genuinely dissolves into the board',
-        Math.abs(lip.mean - outside.mean) < Math.abs(mid.mean - outside.mean),
-        `sheet middle L=${mid.mean.toFixed(4)}, 8px up L=${near.mean.toFixed(4)}, `
-        + `last 2px L=${lip.mean.toFixed(4)}, board below L=${outside.mean.toFixed(4)}`);
-    }
-  } else ok('found a button to drag from', false);
-
-  // Put it back to the top so the outside-tap shot is the same sheet as before.
-  await ev(`(()=>{const p=document.querySelector('.pop.settings');p.scrollTop=0;
-    const b=[...p.querySelectorAll('.btn')].find(n=>/how to play/i.test(n.textContent||''));
-    if(b)b.click();return 1})()`);
-  await sleep(280);
+  /* The new four-band layout has no scrolling and therefore no edge fade. */
+  const layout = await ev(`(()=>{const p=document.querySelector('.pop.settings');
+    const rows=[...p.children].map(n=>{const r=n.getBoundingClientRect();return {
+      text:(n.textContent||'').trim(),x:r.x,y:r.y,w:r.width,h:r.height};});
+    const cs=getComputedStyle(p);return {rows,sh:p.scrollHeight,ch:p.clientHeight,
+      above:p.classList.contains('sc-above'),below:p.classList.contains('sc-below'),
+      mask:(cs.maskImage||cs.webkitMaskImage||'none')};})()`);
+  ok('the settings sheet uses four horizontal bands', layout.rows.length === 4,
+    `rows=${layout.rows.length}`);
+  ok('buttons and graphics share the first line',
+    /buttons/i.test(layout.rows[0]?.text || '') && /graphics/i.test(layout.rows[0]?.text || ''));
+  ok('sound effects and ocean share the second line',
+    /sound effects/i.test(layout.rows[1]?.text || '') && /ocean/i.test(layout.rows[1]?.text || ''));
+  ok('How to Play is the full-width third line',
+    /how to play/i.test(layout.rows[2]?.text || '') && Math.abs(layout.rows[2].w - (pop.w - 18)) <= 2);
+  ok('Leave Match is the full-width last line',
+    /leave match/i.test(layout.rows[3]?.text || '') && Math.abs(layout.rows[3].w - (pop.w - 18)) <= 2);
+  ok('the complete sheet needs no scrolling', layout.sh === layout.ch,
+    `scrollHeight=${layout.sh} clientHeight=${layout.ch}`);
+  ok('a non-scrolling sheet has no fade mask', !layout.above && !layout.below && layout.mask === 'none',
+    `above=${layout.above} below=${layout.below} mask=${layout.mask}`);
 
   /* --- a press OUTSIDE must close it, and must not eat the world tap ------ */
   const before = await ev(`(()=>{const s=window.__ISLAND__.state;return {t:s.time};})()`);
-  const outX = Math.round(W * 0.62), outY = Math.round(H * 0.72);
+  const outX = W - 12, outY = H - 12;
   const overUI = await ev(`(()=>{const h=document.elementFromPoint(${outX},${outY});
     return h? (h.id||h.className||h.tagName) : 'none';})()`);
   await tap(outX, outY);
