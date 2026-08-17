@@ -44,38 +44,37 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  * circle of the settlement after I place it the same size." Its size relative
  * to the board stays fixed; a city is 1.28x it.
  */
-/* Pieces are part of the board, so zoom scales them with the board. The former
-   11px floor made them stop shrinking below the fit view and pile up while the
-   island continued to recede. */
-/* Keep pieces tied to the board at every zoom, but give them enough presence
-   to read on a phone. The previous proportional pass fixed the pixel floor but
-   made the proportion itself too small: at the fitted iPhone view a settlement
-   was barely larger than a road joint. */
 /*
- * THE FLOOR IS BACK, AND IT IS THE WHOLE ANSWER AT THE FITTED VIEW.
+ * ONE SIZE ON THE BOARD, AT EVERY ZOOM. NO PIXEL FLOOR.
  *
- *   "The settlements and cities and roads are all still too small on the map."
+ *   "The sizes of the settlements and cities are changing as I zoom in and
+ *    zoom out, which I didn't want. I wanted them to be a static size, but
+ *    large enough where it's clear to see ... as I zoom in it looks a little
+ *    bit bigger, but as I zoom out it looks smaller because I'm further away
+ *    from the settlements."
  *
- * Measured on the build that complaint was made about, at 852x393 with the
- * placement map open at its fitted scale: `proj.s` is 2.8, so a settlement was
- * drawn at radius 4.3 — an 8.6px disc, on a 25px edge, beside a 21px number
- * token. Half the width of the road slot that was inviting you to build next
- * to it. Purely proportional sizing is right in principle and this is what it
- * costs in practice: the fitted view is where the board is SMALLEST, and it is
- * also the view the map opens in and the one every player spends their time in.
+ * That is one requirement, not two, and the word "static" means STATIC ON THE
+ * BOARD: a settlement is an object standing on a table, so it gets nearer when
+ * you lean in and further when you lean out, and it never changes size for any
+ * other reason. A pixel floor is exactly such an other reason — it pins the
+ * disc at a fixed number of screen pixels while the board shrinks under it, so
+ * zooming out makes a settlement grow relative to its own hex, and zooming in
+ * does nothing at all until the proportional term finally overtakes the floor
+ * and the disc lurches into life. That lurch is what was reported. So: no
+ * floor, here or on the road, the road slot, the corner ring or the number
+ * tile. Every one of them is a plain multiple of `proj.s`.
  *
- * So both terms, and the floor does the work at the fitted view while the
- * proportion still owns the zoom: 13.5px is a 27px settlement at the fitted
- * scale — a shade larger than the number disc beside it, which is right,
- * because the disc is a label and the settlement is the thing the player built.
- * 1.9 keeps pieces growing as the board is zoomed into, a little faster than
- * the 1.55 it replaces so the floor stops binding before the board has doubled.
+ * The proportion is what carries "large enough to see", and it is set from the
+ * FITTED view because that is the one the map opens in and the one that has to
+ * be legible without touching anything: at 852x393 the fitted `proj.s` is 2.8,
+ * so 4.2 draws a 23.5px settlement on a 50px hex. The 1.55 this replaces drew
+ * 8.6px, which is the complaint that started all of this.
  *
- * If this is ever made proportional-only again, measure `pipR` at the FITTED
- * scale on a 393px-tall phone first — the metrics readout in overview.js prints
- * it — because that is the number this note is about.
+ * MEASURE, DO NOT GUESS. `overview.js` publishes `pipR`, `tokenR`,
+ * `roadPaintW`, `roadSlabW` and `targetR` on its metrics object; read them at
+ * the fitted scale on a 393px-tall phone before changing any number here.
  */
-export const pipRadius = proj => Math.max(13.5, proj.s * 1.9);
+export const pipRadius = proj => proj.s * 4.2;
 
 /**
  * How far past the coastline a harbour sign reaches, in CSS pixels.
@@ -475,31 +474,27 @@ export function createPainter(ctx, proj) {
      apart and still leaves them taller than they would be squashed: at ky 0.67
      a disc is 0.91 of its flat size and 1.36x the height it would have had. */
   /*
-   * ...AND THE TILT TERM CAME OFF TOO.
+   * THE WOOD TILES ARE PART OF THE BOARD TOO.
    *
-   *   "The wooden tiles above the hexes shouldn't change in size."
+   *   "I'd want the wood tiles above the hexes to do the same, not to change
+   *    sizes. As I zoom in and out they should be static."
    *
-   * Pinning a phone's discs to `fitS` above took the ZOOM out of it. This takes
-   * the TILT out of it, which is the half the player was still watching: `ky` is
-   * driven by ovpan.js's two-finger tilt, so every disc on the board grew and
-   * shrank under the gesture. The reasoning in the note above is sound — a
-   * billboarded disc keeps its height while the board loses a third of its own,
-   * so at full tilt two discs on stacked hexes come close — but the answer to
-   * "they might touch at 0.67" is to draw them at the size that is safe at 0.67
-   * and leave them there, not to animate between two sizes while a finger is
-   * down. 0.30 IS `0.33 * (0.73 + 0.27 * 0.67)` to two places: the tightest size
-   * the old formula ever produced, now the only one it produces.
+   * Same requirement as `pipRadius`, and the same answer: one size ON THE
+   * BOARD. This drops BOTH of the things that were making a disc resize on its
+   * own — the `fitS` pin, which held a phone's tiles at a fixed screen size
+   * while the board moved underneath them, and the `ky` tilt term, which grew
+   * and shrank every tile on the board under a two-finger gesture. What is
+   * left is a hex-relative constant, so a tile is always the same fraction of
+   * the hex it sits on, at every zoom and every tilt, on every device.
    *
-   * `fitS` on a phone and `proj.s` on a desktop is kept exactly as it was — that
-   * split is about screen space, not about this.
+   * 0.40 rather than the old 0.33 because the old value only ever reached the
+   * screen through a `max(10.5, ...)` floor: at the fitted scale the
+   * proportional term gave 8.4px and the floor gave 10.5px, so 10.5px is what
+   * players have actually been looking at. 0.40 is that number without the
+   * floor, which keeps the fitted view exactly as it was and lets the tiles
+   * grow with the board from there.
    */
-  const tokenR = () => {
-    const w = globalThis.innerWidth || proj.w || 0;
-    const h = globalThis.innerHeight || proj.h || 0;
-    const phone = h <= 500 || w <= 760;
-    const s = phone ? (proj.fitS || proj.s) : proj.s;
-    return Math.max(10.5, HEX_SIZE * s * 0.30);
-  };
+  const tokenR = () => HEX_SIZE * proj.s * 0.40;
 
   /** Where every number disc sits, in canvas css px. Label placement treats
       these as no-go zones — the numbers are what the player is reading. */
@@ -868,13 +863,11 @@ export function createPainter(ctx, proj) {
     const s = proj.s;
     /* Like the buildings, roads scale with `proj.s`; this is a larger board
        proportion, not a return to a fixed screen-pixel minimum. */
-    /* ...and like the buildings, they need a minimum as well. At the fitted
-       scale that proportion drew a 5px road on a 25px edge — see the note on
-       `pipRadius`, which is the same argument and the same measurement. The
-       proportion is untouched, so nothing about the zoomed-in board changes;
-       the floor is what stops a road becoming a pen stroke when the whole
-       island has to fit inside a phone's placement panel. */
-    const w = Math.max(10, s * 1.85);
+    /* No floor here either — see `pipRadius`. A road is a thing lying on the
+       board and it gets nearer and further with everything else on it. The
+       proportion is raised instead, from 1.85 to 3.0, which draws an 8.4px
+       road on a 25px edge at the fitted scale where it used to draw 5.2px. */
+    const w = s * 3.0;
     for (const [eid, pid] of state.roadOwner) {
       const e = edges[eid];
       const A = intersections[e.a], B = intersections[e.b];

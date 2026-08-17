@@ -1126,9 +1126,15 @@ html.apple-phone .hud.btn-left .hud-bl{
 .pop-wash{
   position:fixed;inset:0;
   background:rgba(3,10,20,.46);
-  opacity:0;pointer-events:none;
+  opacity:0;
   transition:opacity .18s ease;
 }
+/* `!important`, and belt-and-braces against the `#ui [data-ui]` rule in
+   ui-base.css that once turned this element into an invisible full-screen tap
+   sponge — see the note by `settingsWash` in hud.js. A wash that eats a single
+   tap is worse than no wash at all, so this is stated in the strongest terms
+   the cascade has and repeated on the `.on` state. */
+.pop-wash,.pop-wash.on{pointer-events:none !important}
 .pop-wash.on{opacity:1}
 
 @keyframes popIn{

@@ -148,22 +148,23 @@ export function createTargets(ctx, proj, paint, state) {
    * test and still claims a 52px zone around every corner, nearest wins.
    */
   const CITY_RING = 1.58;
-  /* The CROWDED size keeps a floor for the same reason `pipRadius` does — at
-     the fitted scale `HEX_SIZE * s * 0.15` is 3.8px, which is a 7.6px ring on a
-     25px corner spacing, and a draft board offering fifty of those is offering
-     nothing anyone can see. 7 is a 14px ring: still well inside the spacing,
-     still hollow, and still the smaller of the two sizes by a long way. */
+  /* Both sizes are plain multiples of `proj.s` — no floors, for the reason
+     given at length on `pipRadius` in ovmap.js. The CROWDED ring goes from 0.15
+     of the hex radius to 0.28: at the fitted scale 0.15 drew a 7.6px circle on
+     a 25px corner spacing, and a draft board offering fifty of those is
+     offering nothing anyone can see. 0.28 is a 14px ring — still well inside
+     the spacing, still hollow, and still much the smaller of the two sizes. */
   const targetR = () => {
     const base = (ringCount > 0 && ringCount <= CROWD)
-      ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.15)
-      : Math.max(7, HEX_SIZE * proj.s * 0.15);
+      ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.28)
+      : HEX_SIZE * proj.s * 0.28;
     return ringCity ? base * CITY_RING : base;
   };
 
   /**
    * The coloured core of a road target, in css px.
    *
-   * A built road is `max(10, s*1.85)` wide in ovmap.js. A target has to be at
+   * A built road is `s * 3.0` wide in ovmap.js. A target has to be at
    * least that — an invitation that is thinner than the thing it invites you to
    * build reads as a hairline, which is precisely what the player was looking
    * at. This is a shade wider again, and it carries a dark casing on top of
@@ -172,14 +173,14 @@ export function createTargets(ctx, proj, paint, state) {
    *
    *   "The glowing sections for where roads can go are also too small."
    *
-   * THE FLOOR AND THE ROAD'S FLOOR ARE ONE DECISION. Both were dropped in the
-   * proportional pass and the slot went to 9.3px at the fitted scale, which is
-   * where the complaint above comes from. It is back, and it is back at 1.25x
-   * the road's own floor — the same margin the proportional terms carry — so
-   * the slot stays visibly wider than the road it becomes at every scale. If
-   * `drawRoads` in ovmap.js changes, this changes with it, in the same commit.
+   * THE SLOT AND THE ROAD ARE ONE DECISION, and neither has a pixel floor —
+   * see the note on `pipRadius` in ovmap.js for why a floor is the thing that
+   * made pieces appear to resize on their own. 3.75 is 1.25x the road's own
+   * 3.0, the same margin the two carried before, so the slot stays visibly
+   * wider than the road it becomes at every scale. If `drawRoads` in ovmap.js
+   * changes, this changes with it, in the same commit.
    */
-  const roadBodyW = () => Math.max(12.5, proj.s * 2.3);
+  const roadBodyW = () => proj.s * 3.75;
 
   /** Radius of the tap zone around any target. >= 22 gives >= 44px across. */
   const hitRadius = () => Math.max(26, HEX_SIZE * proj.s * 0.5);

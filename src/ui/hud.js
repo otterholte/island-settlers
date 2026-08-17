@@ -685,7 +685,23 @@ export function createHUD(root, state, game) {
    * now would swallow the joystick drag of anybody who opened the menu
    * mid-walk. Dimming is all that was asked for and all it does.
    */
-  const settingsWash = el('div', { class: 'pop-wash', 'data-ui': '' });
+  /* NO `data-ui` ON THIS ELEMENT, EVER. It is what broke the whole game once.
+   *
+   * ui-base.css says:
+   *     #ui *{pointer-events:none}
+   *     #ui [data-ui],#ui [data-ui] *{pointer-events:auto}
+   *
+   * Every other node in the interface carries `data-ui` because every other
+   * node is something a thumb is meant to hit. This one is a full-screen sheet
+   * of colour that must never be hit, and that second rule beats the
+   * `pointer-events:none` in `.pop-wash` on specificity — so with `data-ui` on
+   * it the wash became an invisible tap sponge over the entire display: no
+   * joystick, no buttons, nothing. It shipped, because a headless rig drives
+   * the interface with `element.click()`, which does not consult
+   * `pointer-events` at all and therefore cannot see this class of bug. If you
+   * ever need to prove a control is reachable, dispatch a real pointer event at
+   * its coordinates, or check `document.elementFromPoint`. */
+  const settingsWash = el('div', { class: 'pop-wash' });
 
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     controlSettings,
