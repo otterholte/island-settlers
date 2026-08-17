@@ -237,6 +237,27 @@
   filter:none;box-shadow:0 4px 0 var(--lip),0 0 16px rgba(255,201,60,.45),
     inset 0 2px 0 rgba(255,255,255,.7);
 }
+/* KNIGHTS | DRAFT — two settings across one row.
+ *
+ * `flex-wrap:nowrap` on the pair and `min-width:0` on each half is the whole
+ * trick: without them the two halves wrap under each other at the first narrow
+ * viewport and the row this exists to save comes straight back. The labels are
+ * allowed to shrink (they are `clamp()`ed already) but the switches are not —
+ * `.fr-switch` is `flex:0 0 auto`, so a tap target never gives up a pixel. */
+.fr-set.fr-pair{flex-wrap:nowrap;gap:0;align-items:stretch}
+.fr-half{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  flex:1 1 0;min-width:0;
+}
+.fr-half .fr-slab{min-width:0}
+/* The divider. An element rather than a border-left on the second half so it is
+   the height of the row's CONTENT and not of whichever half wrapped taller, and
+   so the gap either side of it is symmetric. */
+.fr-rule{
+  flex:0 0 auto;align-self:center;
+  width:1.5px;height:26px;margin:0 clamp(8px,1.8vw,14px);
+  border-radius:1px;background:rgba(255,255,255,.16);
+}
 .btn.fr-switch{flex:0 0 auto}
 .fr-swtxt{
   font:800 clamp(9px,1.4vw,12px)/1 var(--ff);letter-spacing:.16em;
@@ -302,6 +323,28 @@
   .btn.fr-choice{min-height:46px}
   .fr-choices{gap:6px}
   .btn.fr-tiny{min-height:32px;min-width:32px}
+}
+
+/* ------------------------------------------------------- the shortest phones
+ *
+ *   "On the create a room, it needs to fit without needing to scroll."
+ *
+ * Pairing Knights with Draft and dropping the hint line under them bought two
+ * rows, which is enough at 375 and 393 tall. It is NOT enough at 360, which is
+ * a real Android landscape height: measured there the body still ran 17px past
+ * its own box. The rest comes off the two tallest things on the panel that are
+ * not tap targets — the four seat cells and the room-code plate — and off the
+ * gaps. Deliberately nothing here touches a button's `min-height`: a panel that
+ * fits because its controls became too small to hit has not been fixed.
+ *
+ * Keyed off height alone, since it is height this is about; a 360-tall window
+ * on a desktop gets the same treatment and wants it for the same reason. */
+@media (max-height:392px){
+  .fr-body{gap:4px}
+  .fr-seat{min-height:40px;padding:3px 8px 4px 12px}
+  .fr-codebox{padding:4px 12px 5px}
+  .fr-codeval{font-size:clamp(22px,5vw,28px)}
+  .fr-rule{height:22px}
 }
 
 /* ------------------------------------------------------------ everybody in

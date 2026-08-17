@@ -394,15 +394,32 @@ export function createRooms(root, opts = {}) {
     row.appendChild(diffRow);
     body.appendChild(row);
 
-    const krow = el('div', { class: 'fr-set' });
-    krow.appendChild(el('span', { class: 'fr-slab', text: 'Knights' }));
-    krow.appendChild(button('mf-switch fr-switch' + (room.settings.knights ? ' on' : ''), {
+    /* KNIGHTS AND DRAFT SHARE ONE ROW.
+     *
+     *   "On the create a room, it needs to fit without needing to scroll. My
+     *    suggestion is putting the Draft toggle on the same row as the Knights
+     *    toggle just with a vertical separator line."
+     *
+     * Two switches, each with a five-letter label and a two-letter readout,
+     * were taking a full row apiece down a panel that also has to hold four
+     * seats, a difficulty picker and a start button inside a 393px-tall
+     * landscape phone. Neither row was ever close to full, so pairing them
+     * gives the panel a whole row back — which, with the hint line below gone
+     * too, is what makes it fit. `.fr-rule` is the divider; it is a real
+     * element rather than a border on the second half so it can be the height
+     * of the CONTROLS rather than the height of whichever half wraps taller.
+     */
+    const krow = el('div', { class: 'fr-set fr-pair' });
+    const kHalf = el('div', { class: 'fr-half' });
+    kHalf.appendChild(el('span', { class: 'fr-slab', text: 'Knights' }));
+    kHalf.appendChild(button('mf-switch fr-switch' + (room.settings.knights ? ' on' : ''), {
       role: 'switch', 'aria-checked': room.settings.knights ? 'true' : 'false',
       disabled: host ? undefined : 'disabled',
       on: { click: () => host && setSetting({ knights: !room.settings.knights }) }
     }));
-    krow.appendChild(el('b', { class: 'fr-swtxt', text: room.settings.knights ? 'On' : 'Off' }));
-    body.appendChild(krow);
+    kHalf.appendChild(el('b', { class: 'fr-swtxt', text: room.settings.knights ? 'On' : 'Off' }));
+    krow.appendChild(kHalf);
+    krow.appendChild(el('i', { class: 'fr-rule' }));
 
     /* WHO PICKS THE OPENING — for the whole table.
      *
@@ -416,7 +433,7 @@ export function createRooms(root, opts = {}) {
      * "pick for me" watched their corners being taken without ever being asked.
      * It is a room setting now, beside the difficulty and the Knights, and the
      * host owns it exactly as they own those. */
-    const arow = el('div', { class: 'fr-set' });
+    const arow = el('div', { class: 'fr-half' });
     const drafting = !room.settings.autoDraft;
     arow.appendChild(el('span', { class: 'fr-slab', text: 'Draft' }));
     arow.appendChild(button('mf-switch fr-switch' + (drafting ? ' on' : ''), {
@@ -427,11 +444,21 @@ export function createRooms(root, opts = {}) {
     }));
     arow.appendChild(el('b', { class: 'fr-swtxt',
       text: drafting ? 'We pick' : 'Auto' }));
-    body.appendChild(arow);
+    krow.appendChild(arow);
+    body.appendChild(krow);
 
-    body.appendChild(el('p', { class: 'fr-hint', text: host
-      ? 'Empty seats become bots at this difficulty when you start.'
-      : 'The player who made the room picks the difficulty, the Knights and the draft.' }));
+    /* The host's line is gone — "you also don't need the sentence below that
+       says empty seats become bots at this difficulty when you start." It was
+       describing something the seat grid three rows above already shows: the
+       empty chairs say A BOT WILL TAKE THIS SEAT on them, in as many words.
+       The GUEST's line stays, because it is not a description of anything on
+       screen — it is the reason every control on this panel is greyed out for
+       them, and without it a guest is looking at a dead menu with no
+       explanation. */
+    if (!host) {
+      body.appendChild(el('p', { class: 'fr-hint',
+        text: 'The player who made the room picks the difficulty, the Knights and the draft.' }));
+    }
 
     /* --- everybody has to say yes -------------------------------------------
      *

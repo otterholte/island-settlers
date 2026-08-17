@@ -382,6 +382,11 @@
 }
 .coach-card.on{opacity:1;pointer-events:auto}
 .coach-card.on *{pointer-events:auto}
+/* Worn for exactly two reflows while the card is invisible and being moved from
+   one place to another — see `chrome()` in ui/tutorial.js. Without it the
+   `transform` transition above animates the move and the card SKATES across the
+   screen, which is what "step 3d flashes before it actually shows" was. */
+.coach-card.nofx{transition:none !important}
 
 /* --- where it stands ------------------------------------------------------
    BOTTOM is the band this card has always lived in: above the four build

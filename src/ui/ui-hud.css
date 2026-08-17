@@ -1107,6 +1107,30 @@ html.apple-phone .hud.btn-left .hud-bl{
  * `#ui` permanently would put the whole HUD over the coach, which is the
  * arrangement half the tutorial's wardrobe exists to prevent. */
 #ui.sheet-open{z-index:60}
+
+/* THE WASH BEHIND THE SETTINGS SHEET.
+ *
+ *   "When the settings popup is open, slightly darken the background."
+ *
+ * `fixed` rather than absolute: `.hud` is inset by the safe-area gutters, and a
+ * dim that stops short of the glass on a notched phone reads as a grey
+ * rectangle floating on the island rather than as the lights going down. It is
+ * built in hud.js immediately before the sheet, so the sheet is painted over it
+ * with no z-index needed on either — and `#ui.sheet-open` above carries the
+ * pair over the practice run's badge.
+ *
+ * SLIGHTLY. 46% is enough to sink the moving sea behind a menu and not so much
+ * that the match stops being visible — the player has not left the game, they
+ * have opened a drawer in it. `pointer-events:none` is load-bearing: this must
+ * never eat the joystick drag of somebody who opened the settings mid-walk. */
+.pop-wash{
+  position:fixed;inset:0;
+  background:rgba(3,10,20,.46);
+  opacity:0;pointer-events:none;
+  transition:opacity .18s ease;
+}
+.pop-wash.on{opacity:1}
+
 @keyframes popIn{
   from{opacity:0;transform:translate(-50%,calc(-50% - 8px)) scale(.96)}
   to{opacity:1;transform:translate(-50%,-50%) scale(1)}

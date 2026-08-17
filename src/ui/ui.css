@@ -1054,21 +1054,40 @@
 
 /* The boot splash lives in ui-boot.css. */
 
-/* ============================================================ rotate gate */
+/* ============================================================ rotate gate
+ *
+ * ABOVE THE BOOT SPLASH, NOT UNDER IT.
+ *
+ *   "On the iPad it should force you to turn the view sideways as well,
+ *    instead of just leaving the top and bottom of the screen black."
+ *
+ * The iPad half of that lives in the app's Info.plist — the app now accepts
+ * portrait on iPad so the system stops letterboxing a landscape-only window,
+ * and THIS is what the player gets instead. Which means the gate is now the
+ * FIRST thing an iPad held upright shows, before a frame of the game has been
+ * dealt: `#boot` is z-index 50 and was painting straight over it, so a portrait
+ * launch showed the splash stretched down a tall screen for several seconds
+ * with no explanation, and only then the instruction. 60 puts the gate over the
+ * splash and over everything else it can be raised in front of. */
 #rotate-gate{
-  position:absolute;inset:0;z-index:40;display:none;
+  position:absolute;inset:0;z-index:60;display:none;
   align-items:center;justify-content:center;
   background:linear-gradient(180deg,#0b2444,#061529);
 }
 #rotate-gate.show{display:flex}
 .rg-inner{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;
   padding:22px}
-.rg-inner p{margin:0;font:800 20px/1 var(--ff);letter-spacing:.16em;text-transform:uppercase;
-  color:var(--gold-l);text-shadow:0 2px 0 #6b4405}
-.rg-inner span{font:700 11px/1.3 var(--ff);letter-spacing:.12em;text-transform:uppercase;
-  color:rgba(198,220,242,.75)}
+/* Sized off the viewport rather than fixed, because this screen is no longer a
+   phone-only screen: an iPad held upright is 1024px across, and 20px of gold
+   lettering in the middle of it reads as a caption somebody forgot to remove
+   rather than as the one instruction on the display. The floors are the old
+   fixed values exactly, so nothing about a phone changes. */
+.rg-inner p{margin:0;font:800 clamp(20px,2.4vmin,34px)/1 var(--ff);letter-spacing:.16em;
+  text-transform:uppercase;color:var(--gold-l);text-shadow:0 2px 0 #6b4405}
+.rg-inner span{font:700 clamp(11px,1.3vmin,18px)/1.3 var(--ff);letter-spacing:.12em;
+  text-transform:uppercase;color:rgba(198,220,242,.75)}
 .rg-phone{
-  width:58px;height:100px;border-radius:12px;
+  width:clamp(58px,7vmin,96px);height:clamp(100px,12vmin,166px);border-radius:12px;
   background:linear-gradient(160deg,#1e4470,#0d2340);
   border:3px solid rgba(255,201,60,.75);
   box-shadow:0 10px 26px rgba(0,0,0,.55),inset 0 2px 0 rgba(255,255,255,.16);

@@ -664,21 +664,43 @@ export function createHUD(root, state, game) {
   const controlSettings = el('div', { class: 'settings-row settings-controls' },
     sideRow('Buttons', buttonsSide, v => { setButtonsSide(v); applyButtonSide(); }),
     power.node);
-  const howBtn = button('wide cream', {
-    on: { click: () => { toggleSettings(false); help.open(); } }
-  },
-  el('span', { class: 'sb-ico', html: icon('help', 20) }),
-  el('span', { class: 'sb-lab', text: 'How to Play' }));
+  /*
+   * THE ISLAND, TURNED DOWN, WHILE THE SETTINGS ARE OPEN.
+   *
+   *   "When the settings popup is open, slightly darken the background."
+   *
+   * The sheet is a centred card over a live 3D scene now, and a menu that has
+   * to compete with moving colour for attention loses. This is the usual
+   * answer — one flat wash over everything else — with two deliberate
+   * restrictions:
+   *
+   * It is INSIDE `.hud`, appended immediately before the sheet, so the sheet
+   * paints over it without either of them needing a z-index; and `#ui` is
+   * already lifted to z-index 60 while the sheet is down (see `sheet-open` in
+   * ui-hud.css), so the wash reaches the practice run's badge as well, which
+   * lives outside `#ui` and would otherwise sit brightly on top of it.
+   *
+   * It is `pointer-events:none`. It is a WASH, not a modal backdrop: the
+   * settings sheet has never blocked the game underneath it and making it do so
+   * now would swallow the joystick drag of anybody who opened the menu
+   * mid-walk. Dimming is all that was asked for and all it does.
+   */
+  const settingsWash = el('div', { class: 'pop-wash', 'data-ui': '' });
 
   const settings = el('div', { class: 'pop settings plate lift hid', 'data-ui': '' },
     controlSettings,
     audioSettings,
-    howBtn,
     leaveBtn
-    /* The rules are no longer a drawer inside a drawer. This closes the
-       settings and raises the paused slide sheet in the middle of the screen —
-       see ui/hud-help.js. The settings sheet therefore never scrolls on
-       account of the rules again, which is most of why it scrolled at all. */
+    /* NO HOW TO PLAY IN HERE ANY MORE.
+     *
+     *   "Remove the How to Play button from the settings popup."
+     *
+     * It was the only row on this sheet that was not a SETTING: the others
+     * change how the game behaves for the rest of the match, and this one left
+     * the match's settings entirely to raise a slide deck. The rules are still
+     * reachable — `help.open()` is called from the pause screen and from the
+     * opening menu, and `createHelp` below is untouched — so what has gone is a
+     * row, not a route. */
     /* ONE WAY OUT, AND IT IS RED.
      *
      *   "Please get rid of the restart match, I don't need that AND leave
@@ -694,7 +716,7 @@ export function createHUD(root, state, game) {
 
   hud.appendChild(tl); hud.appendChild(tc); hud.appendChild(tr);
   hud.appendChild(bl); hud.appendChild(bc); hud.appendChild(br);
-  hud.appendChild(annWrap); hud.appendChild(settings);
+  hud.appendChild(annWrap); hud.appendChild(settingsWash); hud.appendChild(settings);
   /* Last, so the flying trophy passes OVER the notice it comes out of and over
      every other cluster on its way to the corner. It is 44px of gold for half a
      second and it must not disappear behind the resource pill halfway there. */
@@ -940,6 +962,10 @@ export function createHUD(root, state, game) {
   function toggleSettings(force) {
     settingsOpen = force === undefined ? !settingsOpen : !!force;
     toggle(settings, 'hid', !settingsOpen);
+    // The wash goes up and down with the sheet, and only with the sheet — see
+    // the note by `settingsWash`. It fades rather than snaps, so opening the
+    // menu reads as a light going down instead of as a frame being dropped.
+    toggle(settingsWash, 'on', settingsOpen);
     toggle(gearBtn, 'on', settingsOpen);
     /* The lift that puts the sheet over the practice run's badge, which is not
        inside `#ui` and so cannot be reached by a z-index within it. On the ROOT

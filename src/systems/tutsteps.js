@@ -710,7 +710,20 @@ export function buildSteps(t) {
       /* The movement gesture is the whole lesson. Road candidates wait for the
          later step that actually explains what they mean. */
       hideMapTargets: true,
-      check: () => t.mapMoved() > 0.55
+      check: () => t.mapMoved() > 0.55,
+      /* AND THEN LET THEM PLAY WITH IT FOR TWO SECONDS.
+       *
+       *   "It's showing too quickly ... it should show up 2 seconds after I
+       *    zoom in and out on the map."
+       *
+       * `mapMoved() > 0.55` is crossed by the first real flick, so the step
+       * that had just said "drag to move around, pinch to zoom" was taken away
+       * mid-gesture: the player was still moving when the next card arrived,
+       * which is both the "too quickly" and most of why the arrival read as a
+       * flash. `settle` holds the advance for two seconds of the player
+       * continuing to work the map, and resets if they stop. See `settleT` in
+       * systems/tutorial.js. */
+      settle: 2
     },
 
     /* 11 ------------------------------------------------- WHO IS ON THE BOARD
@@ -738,7 +751,12 @@ export function buildSteps(t) {
       needs: 'map:road',
       /* Let the final map gesture settle, then use the coach card's normal
          opacity transition instead of replacing the gesture mid-frame. */
-      quiet: 1.0,
+      /* Down from 1.0: the two-second `settle` on the step BEFORE this one now
+         does the waiting, and the coach card takes itself down for 200ms across
+         a change of place (see `show` in ui/tutorial.js), so a full extra
+         second here only added up to three seconds of blank map between the
+         gesture and the explanation. This is the last beat of it. */
+      quiet: 0.4,
       onMap: 'centre', size: 'big', place: 'centre',
       /* "I don't need it darkened then artificially lightened, I just need
          that part not darkened in the first place." So: a hole, at full

@@ -148,24 +148,38 @@ export function createTargets(ctx, proj, paint, state) {
    * test and still claims a 52px zone around every corner, nearest wins.
    */
   const CITY_RING = 1.58;
+  /* The CROWDED size keeps a floor for the same reason `pipRadius` does — at
+     the fitted scale `HEX_SIZE * s * 0.15` is 3.8px, which is a 7.6px ring on a
+     25px corner spacing, and a draft board offering fifty of those is offering
+     nothing anyone can see. 7 is a 14px ring: still well inside the spacing,
+     still hollow, and still the smaller of the two sizes by a long way. */
   const targetR = () => {
     const base = (ringCount > 0 && ringCount <= CROWD)
       ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.15)
-      : HEX_SIZE * proj.s * 0.15;
+      : Math.max(7, HEX_SIZE * proj.s * 0.15);
     return ringCity ? base * CITY_RING : base;
   };
 
   /**
    * The coloured core of a road target, in css px.
    *
-   * A built road is `max(8, s*1.3)` wide in ovmap.js. A target has to be at
+   * A built road is `max(10, s*1.85)` wide in ovmap.js. A target has to be at
    * least that — an invitation that is thinner than the thing it invites you to
    * build reads as a hairline, which is precisely what the player was looking
-   * at. This is a shade wider again, and it carries a 4.5px dark casing on top
-   * of that, so an available edge is a ~15px slab on a ~28px edge: unmistakably
+   * at. This is a shade wider again, and it carries a dark casing on top of
+   * that, so an available edge is a slab on a ~25px edge: unmistakably
    * road-shaped, and impossible to confuse with the map's own strokes.
+   *
+   *   "The glowing sections for where roads can go are also too small."
+   *
+   * THE FLOOR AND THE ROAD'S FLOOR ARE ONE DECISION. Both were dropped in the
+   * proportional pass and the slot went to 9.3px at the fitted scale, which is
+   * where the complaint above comes from. It is back, and it is back at 1.25x
+   * the road's own floor — the same margin the proportional terms carry — so
+   * the slot stays visibly wider than the road it becomes at every scale. If
+   * `drawRoads` in ovmap.js changes, this changes with it, in the same commit.
    */
-  const roadBodyW = () => proj.s * 1.7;
+  const roadBodyW = () => Math.max(12.5, proj.s * 2.3);
 
   /** Radius of the tap zone around any target. >= 22 gives >= 44px across. */
   const hitRadius = () => Math.max(26, HEX_SIZE * proj.s * 0.5);
@@ -332,10 +346,15 @@ export function createTargets(ctx, proj, paint, state) {
     // border has something to sit against on bright sand and gold wheat.
     ctx.fillStyle = `rgba(9,20,34,${0.10 + 0.05 * k})`;
     ctx.fill();
+    /* The three inner passes are absolute pixels on purpose — a glowing border
+       is a border, and a border that thins as the board is zoomed out is the
+       hairline this whole treatment exists to stop being. Widened by about a
+       quarter along with the slot itself ("the glowing sections for where roads
+       can go are also too small"); the halo is tied to `w` and grew with it. */
     ghost(w * 0.62 + 9, 0.055 + 0.075 * k);       // the halo
-    ghost(6.5, 0.10 + 0.16 * k);                  // the bloom
-    ghost(3.0, 0.34 + 0.40 * k);                  // the edge
-    ghost(1.4, 0.55 + 0.45 * k);                  // the hairline
+    ghost(8.0, 0.10 + 0.16 * k);                  // the bloom
+    ghost(3.8, 0.34 + 0.40 * k);                  // the edge
+    ghost(1.8, 0.55 + 0.45 * k);                  // the hairline
     ctx.restore();
   }
 

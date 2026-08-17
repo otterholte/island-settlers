@@ -261,6 +261,26 @@ export function createTutorial(state, game, deps = {}) {
    * mid-gap cannot raise a badge into a match that is no longer a tutorial.
    */
   let quietT = 0;
+
+  /**
+   * How long a step's `check` has been true, for a step that carries `settle`.
+   *
+   *   "Also it's showing too quickly ... it should show up 2 seconds after I
+   *    zoom in and out on the map."
+   *
+   * `quiet` is the other half of this and is NOT the same thing: `quiet` delays
+   * the BADGE of the step you have already arrived on, while `settle` delays the
+   * ARRIVAL. The step that needed it is "Move the map", whose check is
+   * `mapMoved() > 0.55` — a threshold the very first flick of a finger crosses,
+   * so the lesson was snatched away in the middle of the gesture it had just
+   * asked for. A settle turns that threshold into "and then keep working it for
+   * a moment", which is what "after a few seconds of them doing that" meant.
+   *
+   * Counted in the frame loop, like `quiet`, and RESET whenever the check goes
+   * back to false — pan the board back where it started and the clock starts
+   * again, because the player has visibly stopped doing the thing.
+   */
+  let settleT = 0;
   /* Which steps the player has really completed this run, for `holdNext`. */
   const satisfied = new Set();
   let homeTile = -1;
@@ -1495,6 +1515,7 @@ export function createTutorial(state, game, deps = {}) {
     heldNow = !!step.holdNext && phase === 'body'
       && !satisfied.has(step.id) && surfaceOk(step);
     quietT = (phase === 'body' && step.quiet > 0) ? step.quiet : 0;
+    settleT = 0;
 
     const c = chromeFor(step);
     coach.show({
@@ -1695,7 +1716,11 @@ export function createTutorial(state, game, deps = {}) {
       /* `armed` is what stops an already-satisfied step from throwing the
          player forward the instant they press Back — see the note by its
          declaration. A held step re-presents once so NEXT lights up. */
-      if (ok && armed) { advance(1); return; }
+      /* The settle clock — see `settleT`. Only runs while the check is true,
+         and only on a step that asked for one; every other step is untouched. */
+      if (ok && step.settle > 0) settleT += dt; else settleT = 0;
+      const settled = !(step.settle > 0) || settleT >= step.settle;
+      if (ok && armed && settled) { advance(1); return; }
       /* A held step that has just been done stays where it is — the player
          asked for it — but NEXT has to come back to life, so re-present once. */
       if (ok && heldNow) { heldNow = false; present(0); }

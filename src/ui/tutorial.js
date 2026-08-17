@@ -645,10 +645,31 @@ export function createCoach(root) {
   let shown = false;
   let wantVeil = false;
   let size = 'big', place = 'top';
+  /* The pending dark half of a move between two places — see `show`. */
+  let moveTimer = 0, moveSeq = 0;
 
   /** Put the card in one of the three sizes and one of the three places. */
   function chrome(nextSize, nextPlace) {
     const wasGone = card.classList.contains('gone');
+    /* MOVING HOUSE IS NOT AN ANIMATION.
+     *
+     *   "Step 3d is flashing for a second before it actually shows. Make it not
+     *    flash, but fade in naturally."
+     *
+     * `.coach-card` transitions `transform`, and the places are different
+     * transforms — 3c stands in the map's right-hand column and 3d in the
+     * middle of the board. So a change of place made the card SKATE across the
+     * screen, and it did so with the new step's words already painted on it.
+     * Suppressing transitions across the reposition is half the fix; `show()`
+     * below is the other half, and takes the card down first so what the player
+     * sees is a fade rather than a hard cut.
+     *
+     * Two reflows, and both are load-bearing: one commits the new geometry
+     * while `nofx` is on, the other commits its removal before anything asks
+     * for `on`. Drop either and the browser folds the lot into one style pass
+     * and the slide comes straight back. */
+    const moved = !!nextPlace && nextPlace !== place;
+    if (moved) card.classList.add('nofx');
     if (nextSize) size = nextSize;
     if (nextPlace) place = nextPlace;
     toggle(card, 'big', size === 'big');
@@ -682,6 +703,12 @@ export function createCoach(root) {
      * outliving it by even a frame. */
     toggle(veil, 'on', shown && wantVeil && size !== 'gone');
 
+    if (moved) {
+      void card.offsetWidth;
+      card.classList.remove('nofx');
+      void card.offsetWidth;
+    }
+
     /* A quiet step must begin genuinely hidden, not as the previous visible
        card with new words for one Safari paint. When GONE is lifted, reflow at
        zero opacity and only then add ON, so the new card has one clean fade-in. */
@@ -693,8 +720,46 @@ export function createCoach(root) {
     }
   }
 
+  /**
+   * A CARD THAT CHANGES HOUSE FADES OUT FIRST; IT DOES NOT CUT.
+   *
+   * Clearing `on` and re-adding it in the same task is not a fade — the browser
+   * folds both into one style pass and the card never actually goes dark, so
+   * all the player sees is the words changing under a card that has jumped
+   * somewhere else. That is what "flashing for a second before it actually
+   * shows" describes, and `nofx` in `chrome()` only stops it from SLIDING while
+   * it does so.
+   *
+   * So when the place is genuinely changing, the card comes down where it is
+   * standing, and the rest of `show()` runs 200ms later — a real gap, several
+   * frames wide, with the reposition happening inside it. A change of words at
+   * the same place still swaps in place, which is right: 3a to 3b should not
+   * blink.
+   *
+   * `moveSeq` guards the gap. A player pressing NEXT twice quickly, or a
+   * `check` coming true mid-fade, calls `show()` again while a timer is in
+   * flight, and the stale one must not paint an older step over the newer one.
+   */
   function show(info) {
     const o = info || {};
+    const nextPlace = o.place || place;
+    const moving = shown && !layer.classList.contains('hid')
+      && card.classList.contains('on') && nextPlace !== place;
+    moveSeq++;
+    if (moveTimer) { clearTimeout(moveTimer); moveTimer = 0; }
+    if (!moving) { paint(o); return; }
+    const seq = moveSeq;
+    toggle(card, 'on', false);
+    // Matched to the 280ms opacity transition on `.coach-card`, less a little:
+    // a fade-out does not have to finish to be read as one, and a full beat of
+    // empty screen between two steps reads as a stall.
+    moveTimer = setTimeout(() => {
+      moveTimer = 0;
+      if (seq === moveSeq) paint(o);
+    }, 200);
+  }
+
+  function paint(o) {
     /* Clear the previous step's visible state before changing any words. This
        is intentionally before unhiding the layer: iOS Safari can otherwise
        composite a stale ON card once between the old and new chrome states. */
@@ -806,6 +871,10 @@ export function createCoach(root) {
   function hide() {
     shown = false;
     wantVeil = false;
+    // A move still in its dark half must not paint a card back onto a run that
+    // has just been left. `moveSeq` is what the pending timer checks.
+    moveSeq++;
+    if (moveTimer) { clearTimeout(moveTimer); moveTimer = 0; }
     toggle(card, 'on', false);
     toggle(mark, 'on', false);
     toggle(arrow, 'on', false);
