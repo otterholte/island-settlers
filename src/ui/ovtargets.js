@@ -164,7 +164,7 @@ export function createTargets(ctx, proj, paint, state) {
   /**
    * The coloured core of a road target, in css px.
    *
-   * A built road is `s * 3.0` wide in ovmap.js. A target has to be at
+   * A built road is `s * 2.2` wide in ovmap.js. A target has to be at
    * least that — an invitation that is thinner than the thing it invites you to
    * build reads as a hairline, which is precisely what the player was looking
    * at. This is a shade wider again, and it carries a dark casing on top of
@@ -175,12 +175,12 @@ export function createTargets(ctx, proj, paint, state) {
    *
    * THE SLOT AND THE ROAD ARE ONE DECISION, and neither has a pixel floor —
    * see the note on `pipRadius` in ovmap.js for why a floor is the thing that
-   * made pieces appear to resize on their own. 3.75 is 1.25x the road's own
-   * 3.0, the same margin the two carried before, so the slot stays visibly
+   * made pieces appear to resize on their own. 2.75 is 1.25x the road's own
+   * 2.2, the same margin the two have always carried, so the slot stays visibly
    * wider than the road it becomes at every scale. If `drawRoads` in ovmap.js
    * changes, this changes with it, in the same commit.
    */
-  const roadBodyW = () => proj.s * 3.75;
+  const roadBodyW = () => proj.s * 2.75;
 
   /** Radius of the tap zone around any target. >= 22 gives >= 44px across. */
   const hitRadius = () => Math.max(26, HEX_SIZE * proj.s * 0.5);

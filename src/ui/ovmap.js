@@ -42,7 +42,7 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  * and because the player drew a hard line between the two things that used to
  * scale together: "make the little gold circles a little smaller, but keep my
  * circle of the settlement after I place it the same size." Its size relative
- * to the board stays fixed; a city is 1.28x it.
+ * to the board stays fixed; a city is 1.25x it.
  */
 /*
  * ONE SIZE ON THE BOARD, AT EVERY ZOOM. NO PIXEL FLOOR.
@@ -67,14 +67,20 @@ export const f = (w, s) => `${w} ${s}px ${FONT}`;
  * The proportion is what carries "large enough to see", and it is set from the
  * FITTED view because that is the one the map opens in and the one that has to
  * be legible without touching anything: at 852x393 the fitted `proj.s` is 2.8,
- * so 4.2 draws a 23.5px settlement on a 50px hex. The 1.55 this replaces drew
- * 8.6px, which is the complaint that started all of this.
+ * so 2.65 draws a 14.8px settlement — and an 18.5px city, at the 1.25x below —
+ * on a 25px edge. The 1.55 this replaces drew 8.6px, which is the complaint
+ * that started all of this; 4.2 was the overshoot on the way back and 3.6 was
+ * still "way too big", both trimmed by eye against a capture of a real board
+ * with a city, a settlement, roads, road slots and number tiles all in frame.
+ * ALL FOUR SIZES MOVE TOGETHER — the board only looks right when the pieces,
+ * the roads and the tiles are in proportion to each other, so a change to one
+ * of them is a change to all of them.
  *
  * MEASURE, DO NOT GUESS. `overview.js` publishes `pipR`, `tokenR`,
  * `roadPaintW`, `roadSlabW` and `targetR` on its metrics object; read them at
  * the fitted scale on a 393px-tall phone before changing any number here.
  */
-export const pipRadius = proj => proj.s * 4.2;
+export const pipRadius = proj => proj.s * 2.65;
 
 /**
  * How far past the coastline a harbour sign reaches, in CSS pixels.
@@ -487,14 +493,21 @@ export function createPainter(ctx, proj) {
    * left is a hex-relative constant, so a tile is always the same fraction of
    * the hex it sits on, at every zoom and every tilt, on every device.
    *
-   * 0.40 rather than the old 0.33 because the old value only ever reached the
-   * screen through a `max(10.5, ...)` floor: at the fitted scale the
-   * proportional term gave 8.4px and the floor gave 10.5px, so 10.5px is what
-   * players have actually been looking at. 0.40 is that number without the
-   * floor, which keeps the fitted view exactly as it was and lets the tiles
-   * grow with the board from there.
+   * THE COEFFICIENT IS NOT THE ONE THE FITTED VIEW WANTS. 0.40 was chosen to
+   * reproduce the 10.5px the old `max(10.5, ...)` floor had been drawing at the
+   * fitted scale, so that nothing appeared to change. But the floor used to be
+   * the CEILING too — a tile never got bigger than 10.5px no matter how far you
+   * zoomed in, and now it does. Matching the old fitted size therefore made the
+   * ZOOMED-IN board far heavier than anyone had seen before, which is where
+   * "the wood chips are still too large" comes from.
+   *
+   * 0.30 is the size that reads right across the whole zoom range rather than
+   * at one end of it: 15.1px across at the fitted scale, 48px at 3.2x zoom.
+   * The numeral is `r * 1.36`, so a two-digit number still has 10px of type at
+   * the smallest the board ever gets — which is the floor on how far this can
+   * go, and it is nearly there.
    */
-  const tokenR = () => HEX_SIZE * proj.s * 0.40;
+  const tokenR = () => HEX_SIZE * proj.s * 0.30;
 
   /** Where every number disc sits, in canvas css px. Label placement treats
       these as no-go zones — the numbers are what the player is reading. */
@@ -864,10 +877,15 @@ export function createPainter(ctx, proj) {
     /* Like the buildings, roads scale with `proj.s`; this is a larger board
        proportion, not a return to a fixed screen-pixel minimum. */
     /* No floor here either — see `pipRadius`. A road is a thing lying on the
-       board and it gets nearer and further with everything else on it. The
-       proportion is raised instead, from 1.85 to 3.0, which draws an 8.4px
-       road on a 25px edge at the fitted scale where it used to draw 5.2px. */
-    const w = s * 3.0;
+       board and it gets nearer and further with everything else on it.
+       
+       The proportion has been walked to both ends and back. 1.85 drew 5.2px on
+       a 25px edge and was called too small; 3.0 drew 8.4px — a third of the
+       whole edge length — and was called "super bulky". 2.0 was under-corrected
+       ("roads a little bit larger"), so 2.2: a 6.2px core, 7.7px counting the
+       dark casing that is painted off `w` below, which is about what a wooden
+       road piece covers of the gap between two corners on a real board. */
+    const w = s * 2.2;
     for (const [eid, pid] of state.roadOwner) {
       const e = edges[eid];
       const A = intersections[e.a], B = intersections[e.b];
@@ -969,7 +987,11 @@ export function createPainter(ctx, proj) {
     ctx.lineWidth = r * 0.26;
     ctx.strokeStyle = 'rgba(8,18,30,.9)';
     ctx.stroke();
-    const k = r * 0.56;
+    // The castle is a wider, busier shape than the house — at the same 0.56 it
+    // ran to the inner edge of the ring and the disc read as a solid block of
+    // white. It gets its own, smaller number so both glyphs sit in about the
+    // same amount of air.
+    const k = r * (city ? 0.46 : 0.56);
     if (city) castleGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
     else houseGlyph(x, y + k * 0.1, k, { css: '#f4f8ff', light: '#ffffff' });
   }
@@ -983,7 +1005,7 @@ export function createPainter(ctx, proj) {
     for (const [iid, b] of state.buildings) {
       const n = intersections[iid];
       const col = state.players[b.owner].color;
-      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.28 : r,
+      ownerPip(PX(n.x), PY(n.z), b.type === 'city' ? r * 1.25 : r,
         col, b.type === 'city', b.owner === 0);
     }
   }
