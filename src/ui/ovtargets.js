@@ -147,17 +147,42 @@ export function createTargets(ctx, proj, paint, state) {
    * What the finger gets is unchanged either way: `hitRadius()` owns the hit
    * test and still claims a 52px zone around every corner, nearest wins.
    */
-  const CITY_RING = 1.58;
-  /* Both sizes are plain multiples of `proj.s` — no floors, for the reason
-     given at length on `pipRadius` in ovmap.js. The CROWDED ring goes from 0.15
-     of the hex radius to 0.28: at the fitted scale 0.15 drew a 7.6px circle on
-     a 25px corner spacing, and a draft board offering fifty of those is
-     offering nothing anyone can see. 0.28 is a 14px ring — still well inside
-     the spacing, still hollow, and still much the smaller of the two sizes. */
+  const CITY_RING = 1.88;
+  /* A RING IS A PLACE, NOT A PIECE, AND THE DRAFT IS THE PROOF.
+   *
+   *   "The circles showing at the beginning of the game where you can place a
+   *    settlement during the draft, or just in general, [should] be smaller.
+   *    They don't need to be the same size as the settlement itself. They just
+   *    need to be showing you where the places can be. Right now, since they're
+   *    so big, they're kind of in the way of everything."
+   *
+   * The two coefficients below were both set when a settlement was `s * 3.6`,
+   * and 0.28 of the hex radius came out at 14px — which was then a comfortable
+   * two-thirds of the 20px disc it was offering. Bringing the pieces down to
+   * `s * 2.65` left the rings where they were, so a 14px ring now stands next
+   * to a 14.8px settlement: same size, and on a draft board that is FIFTY-FOUR
+   * of them at once, covering every corner of the island. That is the report.
+   *
+   * So the crowded ring is 0.19 — a 9.6px circle on a 25px corner spacing,
+   * about two-thirds of the piece again and closer to a marked spot than to a
+   * building. It stays well clear of 0.15, which drew 7.6px and was invisible.
+   *
+   * THE SHORTLIST STAYS THE LARGER OF THE TWO. When only two or three corners
+   * are legal the ring is the answer to "where can this go at all", so it is
+   * still sized off `pipRadius` — but 0.80 of it rather than 0.95, so it reads
+   * as the outline of a spot instead of a white settlement already standing
+   * there. Both remain plain multiples of `proj.s`, with no pixel floor, for
+   * the reason given at length on `pipRadius` in ovmap.js.
+   *
+   * CITY_RING absorbs the change so the city ring does not move: 0.80 x 1.88 is
+   * 1.50 pips, the same radius 0.95 x 1.58 gave. It has to stay out there — a
+   * city ring is drawn around a settlement that is ALREADY on the spot, so it
+   * has to clear a 1.0-pip disc and land near the 1.25-pip edge of the city it
+   * is offering. Nothing about that argument changed. */
   const targetR = () => {
     const base = (ringCount > 0 && ringCount <= CROWD)
-      ? Math.max(pipRadius(proj) * 0.95, HEX_SIZE * proj.s * 0.28)
-      : HEX_SIZE * proj.s * 0.28;
+      ? Math.max(pipRadius(proj) * 0.80, HEX_SIZE * proj.s * 0.19)
+      : HEX_SIZE * proj.s * 0.19;
     return ringCity ? base * CITY_RING : base;
   };
 
