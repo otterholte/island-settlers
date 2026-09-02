@@ -534,8 +534,24 @@ export function drawCard(state, pid, free = false) {
    * lesson is that the player buys it themselves — so there is nowhere to pass
    * a parameter through. It is consumed by shifting, so a queue that runs out
    * simply hands the deck back to chance.
+   *
+   * SEAT 0 ONLY, WHICH IS THE WHOLE POINT OF A SCRIPTED DECK.
+   *
+   *   "I need it reliably to EVERY TIME, i click the specific step that leads
+   *    me into the knight card information, that it reliably and with 100%
+   *    accuracy always picks a knight card."
+   *
+   * The queue is a lesson plan for the HUMAN, and it used to be consumed by
+   * whoever drew next. `bots.js` calls this function with its own `pid`, so a
+   * rival buying a development card mid-lesson took the card the next step was
+   * written about and shifted the whole run by one — the player then tapped
+   * CARD on "one more" and was handed the Road Building the step before was
+   * about. The practice run freezes its rivals so this could not bite there
+   * today, but nothing said so, and one unfrozen bot would have made the
+   * tutorial deal at random again. A card scripted for seat 0 is now only ever
+   * dealt to seat 0; everyone else takes the weighted roll below.
    */
-  if (Array.isArray(state.forcedCards) && state.forcedCards.length) {
+  if (pid === 0 && Array.isArray(state.forcedCards) && state.forcedCards.length) {
     const forced = state.forcedCards.shift();
     if (forced && (forced !== 'knight' || knightsOn())) {
       return dealCard(state, p, pid, forced);

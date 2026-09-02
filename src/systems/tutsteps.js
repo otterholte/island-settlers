@@ -1322,7 +1322,11 @@ export function buildSteps(t) {
       id: 'cards',
       title: 'Development cards',
       text: `You can also purchase development cards. There are three different types in the deck, and each one costs ${COST.card.wool} wool, ${COST.card.wheat} wheat and ${COST.card.ore} ore. Tap the CARD tile.`,
-      enter: () => { t.give(CARD_PACK); t.scriptDeck(); },
+      /* Its OWN card, not all three. See `scriptDeck` in tutorial.js: a queue
+         laid down once here slid by one every time a draw happened away from
+         the step it belonged to. Each buy step loads the single card its own
+         lesson explains, on enter, so the sequence cannot drift. */
+      enter: () => { t.give(CARD_PACK); t.scriptDeck('victoryPoint'); },
       needs: 'buildcards',
       /*   "the popup for instructions is covering of the 4 build cards, can you
        *    actually hide the Your Stack section for this step, and so the popup,
@@ -1364,6 +1368,9 @@ export function buildSteps(t) {
       id: 'buycard2',
       title: 'Buy another',
       text: 'Tap the CARD card again.',
+      // The Road Building this step's lesson is written about, loaded here and
+      // nowhere else. See the note on `scriptDeck`.
+      enter: () => t.scriptDeck('roadBuilding'),
       needs: 'buildcards',
       size: 'big', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="card"]'],
@@ -1427,11 +1434,34 @@ export function buildSteps(t) {
       id: 'buycard3',
       title: 'One more',
       text: 'Tap the CARD card once more.',
+      /*
+       * THE THIRD TAP IS A KNIGHT. EVERY TIME.
+       *
+       *   "I need it reliably to EVERY TIME, i click the specific step that
+       *    leads me into the knight card information, that it reliably and
+       *    with 100% accuracy always picks a knight card. it should be tied to
+       *    that step where it says to click it a third time."
+       *
+       * So it is tied to this step and to nothing else. `enter` runs on every
+       * presentation of this step — arriving forward, arriving back, arriving
+       * after the player wandered off and returned — and it puts exactly one
+       * card in the deck. Whatever happened earlier in the run, however many
+       * cards were bought or skipped, the tap this step is asking for draws a
+       * Knight.
+       */
+      enter: () => t.scriptDeck('knight'),
       needs: 'buildcards',
       size: 'slim', place: 'top', hud: OPENING,
       dom: ['.bcard[data-kind="card"]'],
       spotDom: ['.hud-bc'],
-      check: () => cardsHeld() > t.base.cards
+      /* A KNIGHT IN HAND, not "one more card than we started with". The old
+         check passed on any card at all, so on the runs where the deck had
+         drifted the player was carried into five Knight steps holding a Road
+         Building — which is the mismatch that was reported. Now the step is
+         only satisfied by the card it is about, and the deck above guarantees
+         that card. NEXT is still available, so a check that somehow cannot be
+         met is a step to walk past rather than a dead end. */
+      check: () => me.cards.some(c => c && c.type === 'knight')
     },
 
     {

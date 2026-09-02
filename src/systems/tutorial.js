@@ -77,6 +77,7 @@ import { createBook, createCoach } from '../ui/tutorial.js';
 import { createSpotlight } from '../ui/tutspot.js';
 import { buildSteps } from './tutsteps.js';
 import { TUTORIAL_EVENT } from './flowIntro.js';
+import { knightsOn, setKnights } from '../core/options.js';
 
 const NOOP = () => {};
 
@@ -290,6 +291,40 @@ export function createTutorial(state, game, deps = {}) {
   const base = {
     gathered: 0, roads: 0, settlements: 0, cities: 0, traded: 0, cards: 0
   };
+
+  /*
+   * THE PRACTICE RUN TEACHES THE KNIGHT, SO THE PRACTICE RUN HAS KNIGHTS.
+   *
+   * Five steps of this script are about the Knight — buying it, aiming it,
+   * confirming it, what it costs a rival, and Largest Army — and the switch on
+   * the opening screen can turn Knights off for good: the choice is stored on
+   * the device (`core/options.js`) and outlives the match it was made in. With
+   * it off, `drawCard` drops the Knight from the deck AND from the scripted
+   * queue, so the third card lesson could not be given at all. A player who
+   * once switched Knights off in a real match had a tutorial that could never
+   * hand them a Knight, on every run, for ever — which is the shape of "I
+   * thought this was fixed previously but it seems broken now".
+   *
+   * So the run turns them on for its own duration and gives the player their
+   * setting back on the way out. Their choice is not overwritten; it is
+   * borrowed. `quit` and `destroy` both return it, and the value is captured
+   * before anything else in `startPractice` so a run that never starts cannot
+   * leave it borrowed.
+   */
+  let knightsBorrowed = null;
+  function borrowKnights() {
+    if (knightsBorrowed !== null) return;
+    const was = knightsOn();
+    if (was) return;
+    knightsBorrowed = was;
+    try { setKnights(true); } catch (e) { knightsBorrowed = null; }
+  }
+  function returnKnights() {
+    if (knightsBorrowed === null) return;
+    const was = knightsBorrowed;
+    knightsBorrowed = null;
+    try { setKnights(was); } catch (e) { /* silent */ }
+  }
 
   /* -------------------------------------------------------------- the book */
 
@@ -704,10 +739,28 @@ export function createTutorial(state, game, deps = {}) {
    * started after the run is dealt from the real weight table.
    */
   function scriptDeck(...types) {
-    /* One card per buy step rather than a queue laid down once: a player who
-       walks Back and buys again would otherwise take the NEXT card off the
-       queue and land on a step written about a different one. Each buy step
-       loads the card its own lesson explains. */
+    /*
+     * ONE CARD PER BUY STEP, NOT ONE QUEUE FOR THE RUN.
+     *
+     * This comment described the right design and the code did the other
+     * thing: only the FIRST card step called it, with no arguments, laying
+     * down all three at once — and from there any draw that did not line up
+     * with a step slid the whole sequence along by one. Press NEXT past "tap
+     * the CARD tile" without tapping it and the next buy hands you the Victory
+     * Point while the coach explains Road Building, and the buy after that
+     * hands you the Road Building while the coach says KNIGHT. Worse, the
+     * free-roads door below calls `scriptDeck('roadBuilding')`, which REPLACES
+     * the queue — so a player who reached that step without a Road Building
+     * card in hand destroyed the queued Knight outright, and the third tap
+     * fell through to the weighted roll.
+     *
+     * So each buy step now loads exactly the card its own lesson explains, on
+     * `enter`, which runs every time the step is presented — forward, back, or
+     * after a detour. The queue is one card deep, it is refilled the moment
+     * the step that needs it comes up, and nothing between two steps can shift
+     * the sequence. Called with no arguments it still lays down all three, for
+     * any caller that wants the old behaviour.
+     */
     state.forcedCards = types.length ? types.slice()
       : ['victoryPoint', 'roadBuilding', 'knight'];
   }
@@ -1751,6 +1804,7 @@ export function createTutorial(state, game, deps = {}) {
     // The set board, and the reload it takes to get there. See `TUTORIAL_SEED`.
     if (ensureBoard()) return;
     running = true;
+    borrowKnights();
 
     /* THE INSTRUCTION IS SPENT THE MOMENT IT IS CARRIED OUT.
      *
@@ -1863,6 +1917,7 @@ export function createTutorial(state, game, deps = {}) {
     // thinks a frozen bot has a five-road line.
     clearFakeAwards();
     clearDeck();
+    returnKnights();
     clearHud();
     // ...and the placement markers, if the run left them off (see
     // `hideMapTargets` in present): a real match must always show its targets.
@@ -1879,6 +1934,9 @@ export function createTutorial(state, game, deps = {}) {
     document.removeEventListener(TUTORIAL_EVENT, onAsk);
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     running = false;
+    // Last exit: a run torn down without a `quit` must not leave the player's
+    // Knight switch borrowed. See `borrowKnights`.
+    returnKnights();
     if (coach) coach.destroy();
     if (spot) spot.destroy();
     if (book) book.destroy();
