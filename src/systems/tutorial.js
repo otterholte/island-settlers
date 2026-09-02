@@ -951,12 +951,32 @@ export function createTutorial(state, game, deps = {}) {
    * Used by `spotDom` — the steps that darken the screen around a real control
    * rather than around a hex.
    */
+  /*
+   * A HOLE OVER SOMETHING THAT IS NOT DRAWN IS A LIT EMPTY RECTANGLE.
+   *
+   * The size test caught a cluster that was not laid out, and nothing caught
+   * one that was laid out but still transparent. Several HUD clusters arrive on
+   * their own opacity transition — the pack pill, the score rail, the build row
+   * — so a step can measure its target at full size a frame before anything is
+   * painted in it, punch a hole there, and light a rectangle of empty screen.
+   * It shows up on a desktop first because a bigger canvas means longer frames
+   * and a longer window in which the step is up and the cluster is not.
+   *
+   * Returning null is the whole fix: the shape is recomputed every frame, so
+   * the wash simply holds off for the frame or two the cluster takes to arrive
+   * and then lights it. Visibility is checked as well as opacity, since a
+   * `visibility:hidden` node still measures.
+   */
   function domRect(sel) {
     let n = null;
     try { n = document.querySelector(sel); } catch (e) { n = null; }
     if (!n || !n.getBoundingClientRect) return null;
     const r = n.getBoundingClientRect();
     if (r.width < 4 || r.height < 4) return null;
+    try {
+      const cs = getComputedStyle(n);
+      if (cs.visibility === 'hidden' || +cs.opacity <= 0.06) return null;
+    } catch (e) { /* no view: take the box on trust */ }
     return {
       x: r.left + r.width / 2, y: r.top + r.height / 2,
       w: r.width + 16, h: r.height + 14, r: 18

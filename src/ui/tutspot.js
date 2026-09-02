@@ -298,18 +298,61 @@ export function createSpotlight(app) {
    * pixels, or null to fade the wash back out. `dt` advances the ease; pass the
    * frame's own delta.
    */
+  /*
+   * THE EASE RUNS ON THE CLOCK, NOT ON THE FRAME.
+   *
+   *   "Check and fix the sections that are getting highlighted within the
+   *    tutorial on desktop. It looks good on mobile, but the desktop versions
+   *    are often highlighting steps in a totally different looking and strange
+   *    way."
+   *
+   * They were not highlighting anything different. They were highlighting the
+   * right thing, LATE — so late that a step could be read, and screenshotted,
+   * with the screen still at full brightness and nothing picked out at all.
+   * Measured at the same step on the same build, alpha out of 148:
+   *
+   *     phone 852x393    6 -> 64 -> 120 -> 138 -> 145 -> 148     full at 2.0s
+   *     desktop 1916x847 16 ->  9 ->   5 ->  65 -> 100 -> 120    full at 4.4s
+   *
+   * Same code, same ease constant, four times the pixels. The old line read
+   * `d = min(0.1, dt)`, which is an exponential ease only while a frame is
+   * shorter than 100ms; past that the wash advances as though just 100ms had
+   * gone by however long the frame really took. A 1916x847 scene with a
+   * full-window 2D wash repainted over it drops under ten frames a second on
+   * plenty of real machines, so the ease ran at half speed or worse — and it
+   * got worse the BIGGER the window, which is exactly backwards.
+   *
+   * So the elapsed time is measured off the wall clock and the ease is the
+   * exact exponential, `1 - e^(-dt/tau)`, which is correct for a frame of any
+   * length: three 33ms frames and one 100ms frame now move the fade by the
+   * same amount. The half-second cap is for a tab coming back from the
+   * background, where the honest elapsed time is a minute and snapping is
+   * better than a minute-long fade.
+   */
+  const RATE = 4.2;
+  let lastT = 0;
+
   function set(next, dt) {
     shape = next || null;
     const any = shape
       && ((shape.holes && shape.holes.length) || (shape.rects && shape.rects.length));
     const want = any ? 1 : 0;
-    const d = Math.min(0.1, Math.max(0, dt || 1 / 60));
-    fade += (want - fade) * Math.min(1, d * 4.2);
+    const now = (typeof performance !== 'undefined' && performance.now)
+      ? performance.now() / 1000 : Date.now() / 1000;
+    /* The caller's own delta is the fallback, for the first frame and for any
+       host without a clock. Whichever is larger is the one that really passed:
+       a caller that clamps its dt for game reasons must not slow the wash. */
+    let d = lastT ? now - lastT : 0;
+    const given = dt > 0 ? dt : 1 / 60;
+    if (!(d > 0) || given > d) d = given;
+    lastT = now;
+    d = Math.min(0.5, Math.max(0, d));
+    fade += (want - fade) * (1 - Math.exp(-d * RATE));
     if (want === 0 && fade < 0.004) fade = 0;
     paint();
   }
 
-  function clear() { shape = null; fade = 0; paint(); }
+  function clear() { shape = null; fade = 0; lastT = 0; paint(); }
 
   function destroy() {
     if (cv.parentNode) cv.parentNode.removeChild(cv);
