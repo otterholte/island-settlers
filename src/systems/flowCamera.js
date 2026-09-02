@@ -42,6 +42,8 @@ export function createFlowCamera(game) {
   // Parametric arc over the island — the establishing sweep.
   let arcT = 0, arcDur = 0;
   let a0 = 0, a1 = 0, r0 = 0, r1 = 0;
+  let arcEase = easeIO;      // see `arc`: a drift wants no fast middle
+  let arcLoop = false;       // ...and a menu that never times out wants no end
 
   /* ---------------------------------------------------------- borrow/return */
 
@@ -90,11 +92,26 @@ export function createFlowCamera(game) {
   /**
    * Sweep the focus along an arc centred on the island.
    * Angles in radians, 0 = +x, measured toward +z.
+   *
+   * `opts.linear` drops the ease-in-out, and `opts.pingPong` turns the sweep
+   * back on itself instead of stopping — both for the drift behind the opening
+   * screen. See the note on `arcEase` below and `T.titleDrift` in matchflow.js.
+   *
+   * A NON-FINITE DURATION IS NOT A DURATION, and it used to be taken as one:
+   * `num()` hands back its default for anything that is not a finite number, so
+   * `arc(..., Infinity)` quietly became a FOUR SECOND sweep. That is exactly
+   * what happened to the opening shot when the title screen stopped timing out
+   * — it was asked to last `T.boot + T.title`, `T.title` became `Infinity`, and
+   * a drift written to cross the island over a minute and a half started
+   * crossing it in four seconds with an ease-in-out's fast middle in the way.
+   * The guard is explicit now so the next caller gets the default it can see.
    */
-  function arc(fromA, toA, fromR, toR, dur) {
+  function arc(fromA, toA, fromR, toR, dur, opts) {
     a0 = num(fromA, 0); a1 = num(toA, 0);
     r0 = num(fromR, BOUNDS.radius * 0.5); r1 = num(toR, r0);
     arcDur = Math.max(0.001, num(dur, 4));
+    arcEase = (opts && opts.linear) ? (t => t) : easeIO;
+    arcLoop = !!(opts && opts.pingPong);
     arcT = 0;
     tgt.x = BOUNDS.cx + Math.cos(a0) * r0;
     tgt.z = BOUNDS.cz + Math.sin(a0) * r0;
@@ -143,12 +160,25 @@ export function createFlowCamera(game) {
 
     if (arcDur > 0) {
       arcT = Math.min(arcDur, arcT + d);
-      const k = easeIO(arcT / arcDur);
+      const k = arcEase(arcT / arcDur);
       const a = a0 + (a1 - a0) * k;
       const r = r0 + (r1 - r0) * k;
       tgt.x = BOUNDS.cx + Math.cos(a) * r;
       tgt.z = BOUNDS.cz + Math.sin(a) * r;
-      if (arcT >= arcDur) arcDur = 0;
+      if (arcT >= arcDur) {
+        /* Turn round rather than stop. The opening screen waits for a press and
+           nothing else, so a sweep that ends leaves the island frozen behind a
+           menu somebody may sit on for a minute; reversing keeps it alive and
+           costs one swap. The spring below smooths the turn, so there is no
+           corner at the end of the run. */
+        if (arcLoop) {
+          const ta = a0; a0 = a1; a1 = ta;
+          const tr = r0; r0 = r1; r1 = tr;
+          arcT = 0;
+        } else {
+          arcDur = 0;
+        }
+      }
     }
 
     const k = 1 - Math.exp(-ease * d);

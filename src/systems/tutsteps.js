@@ -1056,6 +1056,31 @@ export function buildSteps(t) {
          which way to walk. */
       pointTo: () => ({ x: MARKET.x, z: MARKET.z }),
       spotWorld: () => ({ x: MARKET.x, z: MARKET.z, lift: 1.0, r: 120 }),
+      /*
+       * THE WALK IS THE STEP, SO NEXT CANNOT STAND IN FOR IT.
+       *
+       *   "Don't let me click next to open the trading post. Make me walk over
+       *    to it. Because this is how it works right now that I can just press
+       *    next, it's breaking the functionality of what I can and can't do
+       *    inside of the trading post during the tutorial."
+       *
+       * Every one of the eleven steps after this one is written against a sheet
+       * that is open because the player is STANDING on the post: the rate board
+       * reads off `nearTrade`, the give and get pickers are only live at the
+       * venue, and `doTrade` refuses outright anywhere else. Pressing NEXT here
+       * carried the player past the only thing that turns all of that on, so
+       * they arrived at "ask for wheat" with a sheet that could not trade and a
+       * cue that was never raised — which is exactly the broken functionality
+       * being described.
+       *
+       * `holdNext` is the same first-visit hold the BUILD step uses and for the
+       * same reason: BACK is never held, the hold lifts the moment `nearTrade`
+       * comes true once, and walking back through the run and forward again is
+       * free. This is the second of the two steps in the tutorial a player
+       * cannot read their way past, and it earns it for the same reason the
+       * first one does.
+       */
+      holdNext: true,
       check: () => !!me.nearTrade
     },
 

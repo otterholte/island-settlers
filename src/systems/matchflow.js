@@ -76,6 +76,32 @@ const T = {
    * ones the player presses.
    */
   title: Infinity,
+  /*
+   * HOW LONG THE ISLAND TAKES TO DRIFT PAST, BEHIND THE OPENING SCREEN.
+   *
+   *   "On desktop, sometimes when I first load the game, the map behind the
+   *    home screen seems to be moving too fast. It's a little bit too visually
+   *    shocking, because it like glitches then goes quickly then slows down to
+   *    a normal pace at the end of the opening animation."
+   *
+   * That is an ease-in-out played over four seconds, and four seconds is not a
+   * number anybody chose. The establishing sweep was asked to last
+   * `T.boot + T.title`; when the opening screen stopped timing out `T.title`
+   * became `Infinity`, and `flowCamera.arc` — which takes its default for
+   * anything that is not a finite number — quietly ran the whole crossing in
+   * its fallback four. The slow middle of a ninety-second drift became the fast
+   * middle of a four-second one, and the "normal pace at the end" the player
+   * describes is the tail of the ease, which is the only part still moving at
+   * the speed the shot was written for.
+   *
+   * So the drift gets a duration of its own that does not depend on how long a
+   * player sits on the menu, and it is LINEAR — an ease-in-out is a shape for a
+   * shot with a beginning and an end, and this one has neither. Thirty seconds
+   * across two radians is a little over two degrees a second: enough that the
+   * island is alive behind the menu, slow enough that nothing about it asks to
+   * be looked at. It ping-pongs, so it never runs out and stops dead either.
+   */
+  titleDrift: 30,
   draftIntro: 1.90,    // board is up, the order is on it — let it be read
   // The camera blend out of the board framing runs under the start countdown,
   // so this is only the fallback for a build with no countdown view at all.
@@ -462,8 +488,11 @@ export function createMatchFlow(state, game) {
     setInput(false);
     cam.setActive(true);
     cam.overview(false);
-    // A slow, low arc across the island: this is the establishing shot.
-    cam.arc(-2.55, -0.52, BOUNDS.radius * 0.60, BOUNDS.radius * 0.44, T.boot + T.title);
+    // A slow, low drift across the island, behind the opening screen. Its own
+    // duration, not the screen's — see `T.titleDrift`, which is where the four
+    // second sweep came from and why it is gone.
+    cam.arc(-2.55, -0.52, BOUNDS.radius * 0.60, BOUNDS.radius * 0.44,
+      T.titleDrift, { linear: true, pingPong: true });
     stage = 'boot';
     stageT = 0;
   }

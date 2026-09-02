@@ -1065,9 +1065,30 @@ async function boot() {
     // this reconciler runs OUTSIDE the fixed-step loop `helpPaused` short-
     // circuits — so without it the placement map came up behind the rules sheet,
     // every frame, for as long as somebody read them.
+    /*
+     * AN OPEN MAP IS RE-AIMED HERE TOO, BUT NOT ONE ALREADY AIMED.
+     *
+     *   "If I already have the map open and I buy a card, I shouldn't have to
+     *    exit the map for the map to open back up to build my free two roads."
+     *
+     * `!overview.isOpen` was the other half of that: the card's own cue would
+     * hand the debt over and this reconciler would then sit on its hands until
+     * the board was closed. It now offers the map whenever the open one is
+     * showing something ELSE — the four build chips live inside the map, so the
+     * map the player is standing in is usually the one they bought the card
+     * from.
+     *
+     * The mode test is not a nicety, it is what stops a loop: this runs every
+     * frame, and `overview.open` clears the current selection each time it
+     * re-dresses, so re-offering a placement map that is ALREADY the free-road
+     * placement would wipe the player's first tap sixty times a second and no
+     * road could ever be confirmed. Once the re-aim has happened the mode is
+     * `place-road` and this stands down, which is exactly the intent.
+     */
     if (ecoM && ecoM.placeFreeRoads && state.phase === 'play' &&
         (state.players[0].freeRoads | 0) > 0 &&
-        !overview.isOpen && !(panels.kind) && !hud.helpOpen &&
+        !(overview.isOpen && overview.mode === 'place-road') &&
+        !(panels.kind) && !hud.helpOpen &&
         !(flow.stage && flow.stage !== 'play')) {
       ecoM.placeFreeRoads(game);
     }

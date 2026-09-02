@@ -284,6 +284,27 @@ export const BOT_SPEED = 11.0;
 export const INTERACT_RADIUS = 2.6;      // distance to auto-latch onto a node
 export const TRADE_RADIUS = 6.0;         // distance to open trading post / port
 
+/**
+ * How close to one of YOUR docks counts as standing at it.
+ *
+ *   "During the actual game, make it so that I can be slightly further away
+ *    from a port that I'm built next to for the popup to show."
+ *
+ * A dock is not a building you walk into, it is a jetty off the end of a
+ * coastal hex, and its two corners are the far side of a settlement — so the
+ * six units that feel right at the Trading Post, which you stand ON, left the
+ * player shuffling along the beach hunting for the spot where the prompt would
+ * appear. Two thirds of a hex radius further out is enough to cover the whole
+ * corner you built on.
+ *
+ * The three places that ask the question now ask it with the same number:
+ * `playerController` for `nearTrade` (the prompt), `economy.tradeSpot` (whether
+ * the trade is allowed) and `hud-trade` (the rate board). They used to disagree
+ * — the prompt at 6 and the rule at 9 — which is a prompt that can be missing
+ * from a spot where trading would have worked perfectly well.
+ */
+export const PORT_RADIUS = TRADE_RADIUS + 3;   // 9.0
+
 // ---------------------------------------------------------------- trade
 export const TRADE_BASE = 4;             // 4:1 at the central market
 export const PORT_GENERIC = 3;           // 3:1

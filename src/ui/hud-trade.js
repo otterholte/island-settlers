@@ -35,7 +35,7 @@
  * Owner: UI agent.
  */
 
-import { TRADE_BASE, TRADE_RADIUS } from '../core/constants.js';
+import { TRADE_BASE, PORT_RADIUS } from '../core/constants.js';
 import { nearestPortFor } from '../core/rules.js';
 import { MARKET, DESERT, edges, tileAt } from '../board/layout.js';
 import { el, setText, toggle } from './dom.js';
@@ -177,7 +177,7 @@ export function createTradeCue(root, state, game) {
       return { key: 'market', kind: 'market', ratio: TRADE_BASE, ...a };
     }
 
-    const p = nearestPortFor(state, 0, me.x, me.z, TRADE_RADIUS + 3);
+    const p = nearestPortFor(state, 0, me.x, me.z, PORT_RADIUS);
     if (p && portTileId(p) === here.id) {
       const a = portAnchor(p.id);
       if (a) {

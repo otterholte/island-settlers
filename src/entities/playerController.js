@@ -18,7 +18,7 @@
  */
 
 import {
-  PLAYER_SPEED, PLAYER_ACCEL, INTERACT_RADIUS, TRADE_RADIUS
+  PLAYER_SPEED, PLAYER_ACCEL, INTERACT_RADIUS, TRADE_RADIUS, PORT_RADIUS
 } from '../core/constants.js';
 import { clampToIsland, tileAt, MARKET } from '../board/layout.js';
 import { nearestItem } from '../board/nodes.js';
@@ -251,7 +251,10 @@ export function createPlayerController(state, settler, gameCamera, input, world,
     if (dm < TRADE_RADIUS) {
       p.nearTrade = 'market';
     } else {
-      const port = nearestPortFor(state, pid, p.x, p.z, TRADE_RADIUS);
+      /* PORT_RADIUS, not TRADE_RADIUS: a dock is a jetty you stand beside
+         rather than a hex you stand on, and the prompt now reaches as far as
+         the trade rule does. See PORT_RADIUS in core/constants.js. */
+      const port = nearestPortFor(state, pid, p.x, p.z, PORT_RADIUS);
       p.nearTrade = port ? port.id : null;
     }
   }

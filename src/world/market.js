@@ -34,6 +34,7 @@ import { seatHex } from '../core/seatcolor.js';
 import { heightAt } from './terrain.js';
 import { merge, place, instanced, setInstance, hideInstance, triCount } from './geo.js';
 import { villagerGeo, glowSolidMaterial, clothMaterial, rng } from './buildkit.js';
+import { uMoodTime, GLOW_HZ } from './mood.js';
 import * as MKT from './mktkit.js';
 import * as P from './buildport.js';
 
@@ -316,6 +317,30 @@ export function buildPorts(scene, state) {
   const LOCKED = new THREE.Color(0x8d98a6);
   const WEATHERED = new THREE.Color(0x8d98a6);
   const LIT = new THREE.Color(0xffffff);
+  /*
+   * ...AND A DOCK THAT IS YOURS BREATHES, THE WAY YOUR HEXES DO.
+   *
+   *   "I would also like them to glow slightly like your active hexes do."
+   *
+   * No new shader and no second clock. `glowSolidMaterial` — which is the
+   * material these harbours are already built from — carries a warm key: an
+   * instance colour with a high red and a low blue is fed back into
+   * `totalEmissiveRadiance`, so it lights from within instead of merely being
+   * tinted. Pushing an owned berth a little way toward this gold is therefore
+   * the same additive glow the island uses for a hex you may work.
+   *
+   * It rides `uMoodTime` at `GLOW_HZ`, the one clock in `mood.js` that the hex
+   * emissive, the region rim and the light wall all breathe on, so a dock you
+   * own and the land you own rise and fall together rather than beating against
+   * each other. And it is deliberately shallow — a dock is scenery you walk
+   * past, not a thing to find — so the swing is a fifth of the way to the gold
+   * and back, which reads as alive rather than as a beacon.
+   *
+   * ONLY YOUR OWN. `setUnlocked` fires for every seat, and a rival's harbour
+   * lighting up like your own would be a lie about where you can trade.
+   */
+  const MINE_GLOW = new THREE.Color(0xffdc8e);
+  const MINE_DEPTH = 0.20;
 
   const recs = ports.map((p, i) => {
     const a = anchors[i];
@@ -336,7 +361,7 @@ export function buildPorts(scene, state) {
     }
     return {
       port: p, i, x: a.x, z: a.z, y: a.y, ry: -p.bearing, cb, sb, toWorld,
-      lit: 0, want: 0, owner: -1, crew: crewList,
+      lit: 0, want: 0, owner: -1, mine: false, glow: 0, crew: crewList,
       bob: r() * 6.28
     };
   });
@@ -347,9 +372,13 @@ export function buildPorts(scene, state) {
     // owner banner off the warehouse gable — grows in as the port lights up
     const f = rec.toWorld(-2.60, 0);
     setInstance(flag, rec.i, f.x, rec.y + P.DECK_Y + 2.52, f.z, rec.ry, 1, Math.max(0.02, rec.lit));
+    /* `glow` is 0 on every berth but your own; see MINE_GLOW. */
+    const g = rec.mine ? rec.glow * MINE_DEPTH : 0;
     _c.copy(LOCKED).lerp(LIT, rec.lit);
+    if (g > 0) _c.lerp(MINE_GLOW, g);
     base.instanceColor.setXYZ(rec.i, _c.r, _c.g, _c.b);
     _c.copy(WEATHERED).lerp(LIT, rec.lit);
+    if (g > 0) _c.lerp(MINE_GLOW, g);
     ship.instanceColor.setXYZ(rec.i, _c.r, _c.g, _c.b);
     for (let v = 0; v < 4; v++) {
       sign.colors.setXYZ(rec.i * 4 + v,
@@ -379,6 +408,7 @@ export function buildPorts(scene, state) {
     if (!rec) return;
     rec.want = 1;
     rec.owner = pid ?? 0;
+    rec.mine = rec.owner === 0;
     writeStatic(rec);
     markDirty();
   }
@@ -389,7 +419,10 @@ export function buildPorts(scene, state) {
       if (p.ports) {
         for (const id of p.ports) {
           const rr = recs[id];
-          if (rr) { rr.want = 1; rr.lit = 1; rr.owner = p.id; writeStatic(rr); }
+          if (rr) {
+            rr.want = 1; rr.lit = 1; rr.owner = p.id; rr.mine = p.id === 0;
+            writeStatic(rr);
+          }
         }
       }
     }
@@ -402,10 +435,22 @@ export function buildPorts(scene, state) {
     if (!(dt > 0)) dt = 0;
     t += dt;
 
+    /* One phase for all of them, like the island's: nine harbours beating out
+       of step would read as flicker rather than as a heartbeat. */
+    const breath = 0.5 + 0.5 * Math.sin(uMoodTime.value * GLOW_HZ);
+
     let dirty = false;
     for (const rec of recs) {
       if (Math.abs(rec.lit - rec.want) > 0.001) {
         rec.lit += (rec.want - rec.lit) * Math.min(1, dt * 3.2);
+        writeStatic(rec);
+        dirty = true;
+      }
+      /* Only a berth of your own that is fully lit has anything to breathe
+         with, so nothing else costs a colour write. */
+      const wantGlow = rec.mine ? rec.lit * breath : 0;
+      if (Math.abs(wantGlow - rec.glow) > 0.004) {
+        rec.glow = wantGlow;
         writeStatic(rec);
         dirty = true;
       }

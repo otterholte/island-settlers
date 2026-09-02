@@ -192,7 +192,32 @@ export function createRoadCue(root, state, game) {
     if (!hasCard(me, 'roadBuilding')) return false;
     if (!flowIsPlaying()) return false;
     const ov = g.overview;
-    if (!ov || ov.isOpen) return false;                 // a map is already up
+    if (!ov) return false;
+    /*
+     * A MAP THAT IS ALREADY UP IS RE-AIMED, NOT REFUSED.
+     *
+     *   "If I already have the map open and I buy a card, I shouldn't have to
+     *    exit the map for the map to open back up to build my free two roads,
+     *    or place my knight. It should just work on the already open map."
+     *
+     * The four build chips live INSIDE the placement map, so buying a card
+     * from up there is the ordinary way to do it — and this line then refused
+     * the raise on the grounds that a map was open, which is to say it refused
+     * because of the very map the player was standing in. The card was drawn,
+     * the chip lit, and the only way to spend it was to close the board and
+     * let it come straight back.
+     *
+     * `overview.open` has re-dressed an open map in place since the opening
+     * draft was written — that is what makes the draft one continuous view,
+     * with no camera move between two picks — so `play()` below already does
+     * the right thing when it is called. Nothing needed building; the gate
+     * just had to stop standing in front of it.
+     *
+     * The guards that matter are still here and are all about somebody else
+     * using the screen: not during the setup draft (the phase test above),
+     * not while a sheet is open, not while a free road is still owed, and not
+     * during the practice run.
+     */
     if (g.panels && g.panels.isOpen) return false;      // trade / cards / score
     // Roads already owed from an earlier play are re-offered by main.js on the
     // very next frame; spending a second card into that is how a player ends up

@@ -35,7 +35,7 @@
  */
 
 import {
-  RES, RES_LABEL, COST, PIECE_LIMIT, TRADE_RADIUS,
+  RES, RES_LABEL, COST, PIECE_LIMIT, TRADE_RADIUS, PORT_RADIUS,
   canAfford, missingFrom
 } from '../core/constants.js';
 
@@ -121,10 +121,11 @@ export function netCommit(mode, id) {
 const FREE_ROAD_DEFER_SEC = 2.4;
 
 /* Radii match the HUD prompt exactly: economy must never refuse a trade the
-   on-screen prompt just offered. (playerController uses the tighter plain
-   TRADE_RADIUS for `nearTrade`, which we prefer when it is available.) */
+   on-screen prompt just offered. The dock number is now `PORT_RADIUS` from
+   core/constants.js, which `playerController` reads for `nearTrade` too, so
+   the prompt and the rule cannot drift apart again — they were 6 and 9. */
 const MARKET_REACH = TRADE_RADIUS + MARKET.radius;
-const PORT_REACH = TRADE_RADIUS + 3;
+const PORT_REACH = PORT_RADIUS;
 
 let G = null;   // the attached game
 
