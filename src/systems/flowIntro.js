@@ -647,7 +647,26 @@ export function buildIntro(state, onBegin) {
   const autoState = el('b', { class: 'mf-raid-state', text: 'I pick' });
   const autoSwitch = button('mf-switch', {
     role: 'switch',
-    'aria-label': 'Pick my opening for me — the bot claims your two corners and roads',
+    /*
+     * THE SWITCH ASKS "DO I PICK?", SO ON IS "I PICK".
+     *
+     *   "Switch the I pick / pick for me toggle at the beginning, switch the on
+     *    state. I want the I pick to be green with the toggle switched on, but
+     *    I pick to still be the default state."
+     *
+     * It used to be wired the other way round — the knob went green and slid
+     * right when you handed the draft over to the bot, so the DEFAULT, and the
+     * more engaged of the two answers, sat grey and switched off. A switch
+     * reads as "this thing is on", and the thing here is you claiming your own
+     * corners; a green, thrown switch for "the computer does it" has it exactly
+     * backwards.
+     *
+     * Only the paint changes. `autoDraft()` still means what it always meant
+     * and is still false by default, so nothing downstream of the option moves;
+     * `paintAuto` simply draws the switch as the NEGATION of it, and the
+     * aria-label below now names the question the knob actually answers.
+     */
+    'aria-label': 'I pick my own opening — claim your two corners and roads yourself',
     on: { click: () => pickAuto(!autoDraft()) }
   });
 
@@ -661,14 +680,18 @@ export function buildIntro(state, onBegin) {
    * two answers are "I pick" and "Pick for me". Nothing to infer. */
   function paintAuto() {
     const cur = autoDraft();
-    autoSwitch.classList.toggle('on', cur);
-    autoSwitch.setAttribute('aria-checked', cur ? 'true' : 'false');
-    autoState.classList.toggle('on', cur);
+    /* `mine` is what the KNOB shows: thrown and green when you are doing the
+       picking. `cur` is still the stored option and still drives everything
+       else. See the note on `autoSwitch`. */
+    const mine = !cur;
+    autoSwitch.classList.toggle('on', mine);
+    autoSwitch.setAttribute('aria-checked', mine ? 'true' : 'false');
+    autoState.classList.toggle('on', mine);
     autoState.textContent = cur ? 'Pick for me' : 'I pick';
     autoNote.textContent = cur
       ? 'Strong spots are claimed for you — look the board over, then start'
       : 'You claim your own two corners and two roads in the draft';
-    autoNote.classList.toggle('off', !cur);
+    autoNote.classList.toggle('off', cur);
     setText(startBtn.querySelector('.sb-lab'),
       cur ? 'Continue' : 'Begin the Draft');
   }

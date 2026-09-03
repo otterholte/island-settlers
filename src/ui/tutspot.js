@@ -203,17 +203,60 @@ export function createSpotlight(app) {
       const rad = Math.min(Number(b.r) || 14, w2 / 2, h2 / 2);
       const x0 = b.x - w2 / 2, y0 = b.y - h2 / 2;
       const OFF = 4000;
+      /*
+       * A SHADOW OFFSET IS IN DEVICE PIXELS. THE PATH IS NOT.
+       *
+       *   "Who else is here is highlighting the wrong section on desktop —
+       *    it's highlighting the middle of the screen instead of the right
+       *    side. Same with the you gained a victory point, the bright square is
+       *    in the top middle of the screen randomly. For multiple steps there's
+       *    a bright section in the bottom left corner."
+       *
+       * All three are one line. `shadowOffsetX` and `shadowBlur` are specified
+       * in the canvas's OUTPUT space and are NOT multiplied by the current
+       * transform; a path is. This canvas is drawn under
+       * `setTransform(dpr,0,0,dpr,0,0)`, so the rectangle moved `OFF * dpr`
+       * device pixels to the left while its shadow came back only `OFF`, and
+       * the stamp landed
+       *
+       *     OFF * (dpr - 1) / dpr   CSS pixels
+       *
+       * to the left of the control it was supposed to be lighting. On a plain
+       * 1x display that is zero, which is why every rig here has always passed
+       * and why this survived so long. On Windows at 125% -- `devicePixelRatio`
+       * 1.25, which is the default on a great many laptops -- it is 800px, and
+       * 800px is the whole story:
+       *
+       *   the player rail at x 1443 lit the middle of the map at x 643
+       *   the score rail at x 1400 lit the top middle at x 600
+       *   the build cards at x 768 lit the bottom LEFT CORNER at x -32
+       *
+       * Reproduced at 1536x864 dpr 1.25 by reading the painted buffer back:
+       * the rect was computed at 1443 and the hole came out at 546..740.
+       *
+       * The offset is now scaled with the transform so the two agree, and the
+       * blur with it -- a blur in device pixels is a softness that gets tighter
+       * the better the screen, which is backwards for something meant to read
+       * as the same edge everywhere.
+       */
       ctx.save();
       ctx.shadowColor = 'rgba(0,0,0,1)';
-      ctx.shadowBlur = 22;
-      ctx.shadowOffsetX = OFF;
+      ctx.shadowBlur = 22 * dpr;
+      ctx.shadowOffsetX = OFF * dpr;
       ctx.fillStyle = 'rgba(0,0,0,1)';
       ctx.beginPath();
       roundRect(ctx, x0 - OFF, y0, w2, h2, rad);
       ctx.fill();
       ctx.restore();
-      // ...and the crisp core, so the middle of the control is fully clear
-      // rather than merely 80% clear under the blur's own centre falloff.
+      /* ...and the crisp core, so the middle of the control is fully clear
+         rather than merely 80% clear under the blur's own centre falloff.
+         Opaque in its own right: `restore` above hands back whatever fill was
+         current when the holes were drawn -- the wash's own 58% colour -- and
+         under `destination-out` that erases 58% of the wash rather than all of
+         it. It never showed, because the stamp used to land on top of this and
+         cover for it. Now that the stamp lands where it is aimed, this has to
+         be a hole on its own. */
+      ctx.fillStyle = 'rgba(0,0,0,1)';
       ctx.beginPath();
       roundRect(ctx, x0, y0, w2, h2, rad);
       ctx.fill();
@@ -265,7 +308,9 @@ export function createSpotlight(app) {
       const white = b.glow === 'white';
       ctx.strokeStyle = white ? 'rgba(255,255,255,.95)' : 'rgba(255,201,60,.92)';
       ctx.shadowColor = white ? 'rgba(255,255,255,.75)' : 'rgba(255,201,60,.7)';
-      ctx.shadowBlur = 14;
+      /* Device pixels again — see the stamp above. Without the `dpr` the gold
+         halo is 14px on a plain display and 7px on a 2x one. */
+      ctx.shadowBlur = 14 * dpr;
       ctx.stroke();
       ctx.restore();
     }
